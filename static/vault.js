@@ -22,6 +22,8 @@
   const QR_PREFIX = 'ODMENY:';
   const DEVICE_STORAGE = 'odmeny.device.v1';
   const DATA_AAD = 'odmeny/data/v1';
+  // Verze tvaru dat, kterou server žádá u zápisu (stará otevřená stránka nové údaje neumí).
+  const CLIENT_VERSION = '2';
 
   /* ------------------------------------------------------------ bajty */
 
@@ -186,21 +188,21 @@
   }
 
   /** Stav → [verze 1][příznaky: 1 = gzip][IV 12][šifra] v base64. */
-  async function sealData(dek, value) {
+  async function sealData(dek, value, aad = DATA_AAD) {
     let plain = encoder.encode(JSON.stringify(value));
     let flags = 0;
     if (typeof CompressionStream === 'function') {
       plain = await transform(plain, CompressionStream);
       flags = 1;
     }
-    const sealed = await seal(dek, plain, DATA_AAD);
+    const sealed = await seal(dek, plain, aad);
     return toBase64(concatBytes(new Uint8Array([1, flags]), sealed));
   }
 
-  async function openData(dek, blob) {
+  async function openData(dek, blob, aad = DATA_AAD) {
     const bytes = fromBase64(blob);
     if (bytes[0] !== 1) throw new Error('Neznámý formát dat.');
-    let plain = await open(dek, bytes.subarray(2), DATA_AAD);
+    let plain = await open(dek, bytes.subarray(2), aad);
     if (bytes[1] & 1) {
       if (typeof DecompressionStream !== 'function') throw new Error('Prohlížeč neumí rozbalit data. Aktualizuj ho.');
       plain = await transform(plain, DecompressionStream);
@@ -226,7 +228,7 @@
         method,
         credentials: 'same-origin',
         cache: 'no-store',
-        headers: { 'X-Odmeny': '1', ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+        headers: { 'X-Odmeny': '1', 'X-Odmeny-Client': CLIENT_VERSION, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
         body: body !== undefined ? JSON.stringify(body) : undefined,
       });
     } catch (error) {
@@ -320,7 +322,7 @@
     }
     const key = await deviceKey(secret, fromBase64(result.server_share), pin);
     const dek = await unwrapDek(device.wrapped, key, `odmeny/dek|device:${device.id}`);
-    Object.assign(session, { dek, cardId: result.card_id, label: device.label, deviceId: device.id });
+    Object.assign(session, { dek, cardId: result.card_id, label: result.card_label || device.label, deviceId: device.id });
     return { deviceId: device.id };
   }
 
@@ -353,6 +355,31 @@
   async function saveData(state, baseRev) {
     const blob = await sealData(requireDek(), state);
     return api('data', { method: 'POST', body: { base_rev: baseRev, blob } });
+  }
+
+  /* Osobní nastavení pohledu: jen pro tuto kartičku, šifrované stejným klíčem jako data,
+     ale s jinými přidanými daty (AAD), takže je server nemůže podstrčit místo dat ani cizí kartičce. */
+  const prefsAad = cardId => `odmeny/prefs/v1|card:${cardId}`;
+
+  async function loadPrefs() {
+    const result = await api('prefs');
+    if (!result.blob) return null;
+    try {
+      return await openData(requireDek(), result.blob, prefsAad(session.cardId));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function savePrefs(prefs) {
+    const blob = await sealData(requireDek(), prefs, prefsAad(session.cardId));
+    return api('prefs', { method: 'POST', body: { blob } });
+  }
+
+  async function me() {
+    const result = await api('me');
+    session.cardId = result.card_id;
+    return result;
   }
 
   async function loadVersion(rev) {
@@ -403,7 +430,7 @@
     newAccessKey, parseAccessKey, normalizeKey, formatKey, qrText,
     readDevice, forgetDevice, deviceLabel,
     setup, loginWithKey, unlockWithPin, enrollDevice, createCard,
-    loadData, saveData, loadVersion, backup, openBackup, lock,
+    loadData, saveData, loadVersion, backup, openBackup, lock, loadPrefs, savePrefs, me,
     newDek, sealData, openData, cardSecrets, toBase64, fromBase64,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

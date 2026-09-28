@@ -24,6 +24,7 @@ try {
             'setup_required' => $setup,
             'authenticated' => $session !== null,
             'max_blob' => ODM_MAX_BLOB_CHARS,
+            'version' => ODM_VERSION,
         ]);
     }
 
@@ -64,7 +65,7 @@ try {
 
     if ($action === 'login' && $method === 'POST') {
         odm_throttle('login_fail', ODM_LOGIN_FAILS_PER_IP);
-        $auth = odm_b64(odm_input()['auth'] ?? null, 32, 32, 'otisk kartičky');
+        $auth = odm_b64(odm_input(ODM_MAX_SMALL_JSON_BYTES)['auth'] ?? null, 32, 32, 'otisk kartičky');
         $card = odm_one('SELECT * FROM cards WHERE auth_hash = ?', [hash('sha256', $auth)]);
         if ($card === null) {
             odm_record('login_fail');
@@ -76,7 +77,7 @@ try {
 
     if ($action === 'unlock' && $method === 'POST') {
         odm_throttle('pin_fail', ODM_LOGIN_FAILS_PER_IP);
-        $data = odm_input();
+        $data = odm_input(ODM_MAX_SMALL_JSON_BYTES);
         $deviceId = (string)($data['device_id'] ?? '');
         $proof = odm_b64($data['pin_proof'] ?? null, 32, 32, 'PIN');
         $device = preg_match('/^[a-f0-9]{32}$/', $deviceId) ? odm_one('SELECT * FROM devices WHERE id = ?', [$deviceId]) : null;
@@ -96,7 +97,8 @@ try {
         }
         odm_exec('UPDATE devices SET failures = 0, last_used_at = ? WHERE id = ?', [odm_now(), $deviceId]);
         odm_start_session((string)$device['card_id'], $deviceId);
-        odm_json(['server_share' => $device['server_share'], 'card_id' => $device['card_id']]);
+        $card = odm_one('SELECT label FROM cards WHERE id = ?', [$device['card_id']]);
+        odm_json(['server_share' => $device['server_share'], 'card_id' => $device['card_id'], 'card_label' => $card['label'] ?? '']);
     }
 
     if ($action === 'logout' && $method === 'POST') {
@@ -108,12 +110,38 @@ try {
 
     $session = odm_require_session();
 
+    if ($action === 'me' && $method === 'GET') {
+        $card = odm_one('SELECT label FROM cards WHERE id = ?', [$session['card_id']]);
+        $device = $session['device_id'] ? odm_one('SELECT label FROM devices WHERE id = ?', [$session['device_id']]) : null;
+        odm_json([
+            'card_id' => $session['card_id'], 'card_label' => $card['label'] ?? '',
+            'device_id' => $session['device_id'], 'device_label' => $device['label'] ?? null,
+            'version' => ODM_VERSION,
+        ]);
+    }
+
+    if ($action === 'prefs' && $method === 'GET') {
+        $row = odm_one('SELECT blob, updated_at FROM prefs WHERE card_id = ?', [$session['card_id']]);
+        odm_json(['blob' => $row['blob'] ?? null, 'updated_at' => $row['updated_at'] ?? null]);
+    }
+
+    if ($action === 'prefs' && $method === 'POST') {
+        odm_require_client();
+        $blob = odm_input(ODM_MAX_SMALL_JSON_BYTES)['blob'] ?? null;
+        odm_b64($blob, 30, ODM_MAX_PREFS_BYTES, 'nastavení');
+        odm_exec('INSERT INTO prefs (card_id, blob, updated_at) VALUES (?, ?, ?) ON CONFLICT(card_id) DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at', [
+            $session['card_id'], $blob, odm_now(),
+        ]);
+        odm_json(['ok' => true]);
+    }
+
     if ($action === 'data' && $method === 'GET') {
         $current = odm_current_version();
         odm_json(['rev' => $current === null ? 0 : (int)$current['rev'], 'blob' => $current['blob'] ?? null, 'saved_at' => $current['created_at'] ?? null]);
     }
 
     if ($action === 'data' && $method === 'POST') {
+        odm_require_client();
         $data = odm_input();
         $blob = odm_valid_blob($data['blob'] ?? null);
         $pdo = odm_db();
@@ -155,7 +183,7 @@ try {
     }
 
     if ($action === 'card' && $method === 'POST') {
-        $data = odm_input();
+        $data = odm_input(ODM_MAX_SMALL_JSON_BYTES);
         if ((int)(odm_one('SELECT COUNT(*) AS total FROM cards')['total'] ?? 0) >= ODM_MAX_CARDS) {
             odm_fail('Kartiček je už ' . ODM_MAX_CARDS . '. Nejdřív nějakou zruš.', 409);
         }
@@ -186,7 +214,7 @@ try {
     }
 
     if ($action === 'device' && $method === 'POST') {
-        $data = odm_input();
+        $data = odm_input(ODM_MAX_SMALL_JSON_BYTES);
         $proof = odm_b64($data['pin_proof'] ?? null, 32, 32, 'PIN');
         if ((int)(odm_one('SELECT COUNT(*) AS total FROM devices')['total'] ?? 0) >= ODM_MAX_DEVICES) {
             odm_fail('Zařízení je už ' . ODM_MAX_DEVICES . '. Nejdřív nějaké odeber.', 409);

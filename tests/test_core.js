@@ -208,6 +208,152 @@ test('export nespustí vzorec v Excelu', () => {
   return null;
 });
 
+/* ------------------------------------------------------------ verze 2 */
+
+test('historie změn: kdo co změnil, slučování a návrat hodnoty', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const id = S.current;
+    const me = { by: 'Vedoucí', card: 'aaaaaaaaaaaaaaaa' };
+    const a = sharedState(S);
+    S.employees['novak|martin'].level = 3;
+    S.employees['novak|martin'].skills = { p_bru: 2 };
+    S.sanctions.push({ id: 'xtest1', key: 'cerny|jiri', period: id, name: 'Zničení dílů', pct: 10, note: 'test', at: 1 });
+    (S.adjust[id] = S.adjust[id] || {})['novak|martin'] = 2;
+    S.settings.shift = 8;
+    S.positions[0].dept = 'Obrobna';
+    const b = sharedState(S);
+    const r1 = describeChanges(a, b, { ...me, at: 1000 });
+    let log = appendLog([], r1.entries);
+    S.adjust[id]['novak|martin'] = 3;
+    const c = sharedState(S);
+    log = appendLog(log, describeChanges(b, c, { ...me, at: 2000 }).entries);
+    delete S.adjust[id]['novak|martin'];
+    const d = sharedState(S);
+    const log2 = appendLog(log, describeChanges(c, d, { ...me, at: 3000 }).entries);
+    const other = appendLog(log, describeChanges(c, d, { by: 'Kolega', card: 'bbbbbbbbbbbbbbbb', at: 3000 }).entries);
+    const late = appendLog(log, describeChanges(c, d, { ...me, at: 2000 + 11 * 60000 }).entries);
+    JSON.stringify({ month: monthLabel(id), entries: r1.entries.map(e => e.kind + ': ' + e.text), by: r1.entries.map(e => e.by + '|' + e.card),
+      hist: r1.hist, log: log.map(e => e.text), log2: log2.map(e => e.text), other: other.map(e => e.text), late: late.map(e => e.text),
+      hasCurrent: 'current' in b, settings: Object.keys(b.settings), v: b.v })`));
+  const m = out.month;
+  assert.deepStrictEqual(out.entries.sort(), [
+    'adjust: Ruční úprava Novák Martin (' + m + '): 0 → +2',
+    'level: Novák Martin: CNC 2 (Pokročilý) → CNC 3 (Samostatný)',
+    'level: Novák Martin: zaučení na pozici Brusič 0 → 2',
+    'position: Pozice CNC, oddělení: — → Obrobna',
+    'sanction: Sankce: Černý Jiří – Zničení dílů 10 % (' + m + '): test',
+    'settings: Nastavení – délka směny: 7,5 h → 8 h',
+  ].sort());
+  assert.ok(out.by.every(x => x === 'Vedoucí|aaaaaaaaaaaaaaaa'));
+  assert.deepStrictEqual(out.hist, [['novak|martin', { at: 1000, pos: 'p_cnc', lvl: 3 }]]);
+  assert.ok(out.log.includes('Ruční úprava Novák Martin (' + m + '): 0 → +3'), 'opakovaná úprava se sloučí');
+  assert.ok(!out.log.some(t => t.includes('0 → +2')));
+  assert.ok(!out.log2.some(t => t.startsWith('Ruční úprava')), 'vrácení na původní hodnotu záznam odstraní');
+  assert.ok(out.other.some(t => t === 'Ruční úprava Novák Martin (' + m + '): +3 → 0'), 'jiná kartička se neslučuje');
+  assert.ok(out.late.some(t => t === 'Ruční úprava Novák Martin (' + m + '): +3 → 0'), 'po 10 minutách se neslučuje');
+  assert.strictEqual(out.hasCurrent, false, 'vybrané období je osobní');
+  assert.ok(!out.settings.includes('hiddenCols') && !out.settings.includes('lockMinutes'));
+  assert.strictEqual(out.v, 2);
+  return null;
+});
+
+test('hromadné změny se shrnou do jednoho záznamu', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const a = sharedState(S);
+    for (let i = 0; i < 12; i++) S.employees['x' + i + '|y'] = { key: 'x' + i + '|y', first: 'Y', last: 'X' + i, positionId: 'p_cnc', level: 1, note: '' };
+    const b = sharedState(S);
+    const r = describeChanges(a, b, { at: 5, by: 'V', card: '' });
+    JSON.stringify({ texts: r.entries.map(e => e.text), hist: r.hist.length })`));
+  assert.strictEqual(out.texts.length, 1);
+  assert.match(out.texts[0], /^Přidáno 12 lidí: X0 Y, X1 Y, X2 Y, X3 Y a další \(8\)$/);
+  assert.strictEqual(out.hist, 12, 'každý nový člověk dostane výchozí zařazení do historie');
+  return null;
+});
+
+test('sanitizeState: oddělení, zaučení, historie zařazení a změn', () => {
+  const core = loadCore();
+  core.__in = JSON.stringify({
+    positions: [{ id: 'p1', name: 'A', dept: '  Obrobna  ', levels: [{}, {}, {}, {}] }, { id: 'p2', name: 'B', levels: [{}, {}, {}, {}] }],
+    employees: {
+      'a|b': { first: 'B', last: 'A', positionId: 'p1', level: 2, skills: { p1: 3, p2: 9, p3: 2 } },
+      'c|d': { first: 'D', last: 'C', positionId: 'p2', level: 1, skills: { p1: '4' }, hist: [{ at: 5, pos: 'p2', lvl: 1 }, { at: 'x', pos: '<b>', lvl: 7 }] },
+    },
+    issued: { '2026-09': { 'a|b': { at: 1, tabaky: 2, kafe: 1, pos: 'p1', lvl: 2 }, 'c|d': { at: 1, tabaky: 2, pos: '"><x', lvl: 9 } } },
+    log: [{ at: 1, by: 'x'.repeat(100), card: 'zz', kind: 'evil', text: '<img src=x>', key: 'a|b', period: 'bad', m: 'adj:1', p: 'P', v0: '1', v1: '2' }, { text: 5 }, 'x'],
+  });
+  const o = JSON.parse(run(core, 'JSON.stringify(sanitizeState(JSON.parse(__in)))'));
+  assert.strictEqual(o.positions[0].dept, 'Obrobna');
+  assert.strictEqual(o.positions[1].dept, '');
+  assert.ok(!('skills' in o.employees['a|b']), 'zaučení na vlastní, neplatné nebo neexistující pozici zmizí');
+  assert.deepStrictEqual(o.employees['c|d'].skills, { p1: 4 });
+  assert.deepStrictEqual(o.employees['a|b'].hist, [{ at: 0, pos: 'p1', lvl: 2 }], 'výchozí stav pro starší data');
+  assert.deepStrictEqual(o.employees['c|d'].hist, [{ at: 0, pos: null, lvl: null }, { at: 5, pos: 'p2', lvl: 1 }]);
+  assert.deepStrictEqual(o.issued['2026-09']['a|b'], { at: 1, tabaky: 2, kafe: true, pos: 'p1', lvl: 2 });
+  assert.deepStrictEqual(o.issued['2026-09']['c|d'], { at: 1, tabaky: 2, kafe: false });
+  assert.strictEqual(o.log.length, 1);
+  assert.deepStrictEqual(o.log[0], { at: 1, by: 'x'.repeat(60), card: '', kind: 'data', text: '<img src=x>', key: 'a|b', m: 'adj:1', p: 'P', v0: '1', v1: '2' });
+  assert.strictEqual(o.v, 2);
+  return null;
+});
+
+test('profil: období od–do, úroveň z výdeje a z historie zařazení', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const id = S.current;
+    const keep = S.current;
+    S.issued[id] = S.issued[id] || {};
+    S.issued[id]['dvorak|petr'] = { at: 5, tabaky: 3, kafe: false, pos: 'p_cnc', lvl: 2 };
+    S.employees['novak|martin'].hist = [{ at: 0, pos: 'p_cnc', lvl: 1 }, { at: Date.now() + 1e10, pos: 'p_cnc', lvl: 2 }];
+    const pd = profileData('dvorak|petr');
+    const pn = profileData('novak|martin');
+    const none = profileData('dvorak|petr', '2001-01', '2001-12');
+    JSON.stringify({ id, same: S.current === keep, months: pd.months.map(m => [m.id, m.lvl, m.base, m.from, m.hasAtt, m.issued && m.issued.tabaky, m.sanctions.length]),
+      totals: pd.totals, pn: pn.months.map(m => [m.lvl, m.from]), none: none.months.length, range: monthsBetween('2025-11', '2026-02'),
+      changes: pd.changes.map(c => c.text) })`));
+  assert.ok(out.same, 'vybrané období se po výpočtu vrátí');
+  assert.deepStrictEqual(out.months, [[out.id, 2, 4, 'issued', true, 3, 1]]);
+  assert.strictEqual(out.totals.issuedTab, 3);
+  assert.strictEqual(out.totals.sanctions, 1);
+  assert.ok(out.totals.hours > 100 && out.totals.attendance > 0.5 && out.totals.attendance <= 1);
+  assert.ok(out.totals.prodTotal > 0 && out.totals.perDay > 0);
+  assert.deepStrictEqual(out.pn, [[1, 'hist']], 'pozdější povýšení se do starého měsíce nepromítne');
+  assert.strictEqual(out.none, 0);
+  assert.deepStrictEqual(out.range, ['2025-11', '2025-12', '2026-01', '2026-02']);
+  assert.deepStrictEqual(out.changes, ['CNC 4 (Profík)']);
+  return null;
+});
+
+test('matice dovedností podle oddělení', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    S.positions.find(p => p.id === 'p_bru').dept = 'Obrobna';
+    S.positions.find(p => p.id === 'p_cnc').dept = 'Obrobna';
+    S.employees['novak|martin'].skills = { p_bru: 3 };
+    S.employees['cerny|jiri'].skills = { p_cnc: 1 };
+    const m = skillMatrix('Obrobna');
+    const sheets = matrixSheets();
+    JSON.stringify({ depts: departments(), cols: m.cols.map(p => p.id), rows: m.rows.map(r => [r.e.key, r.home, r.cells.map(c => c.lvl)]),
+      ready: m.coverage.map(c => c.ready), trained: m.coverage.map(c => c.trained), sheets: sheets.map(s => s.name),
+      obrobna: sheets[1].rows.slice(2, 4) })`));
+  assert.deepStrictEqual(out.depts, ['Obrobna', 'Kontrola', 'Pískování', 'Lepení / Značení', 'Daiho']);
+  assert.deepStrictEqual(out.cols, ['p_cnc', 'p_bru']);
+  assert.deepStrictEqual(out.rows, [
+    ['dvorak|petr', true, [4, 0]], ['novak|martin', true, [2, 3]], ['prochazka|lukas', true, [0, 3]], ['cerny|jiri', false, [1, 0]],
+  ]);
+  assert.deepStrictEqual(out.ready, [1, 2]);
+  assert.deepStrictEqual(out.trained, [3, 2]);
+  assert.deepStrictEqual(out.sheets, ['Všechna oddělení', 'Obrobna', 'Kontrola', 'Pískování', 'Lepení - Značení', 'Daiho', 'Popis úrovní']);
+  assert.deepStrictEqual(out.obrobna[0], ['Příjmení', 'Jméno', 'Hlavní pozice', 'Úroveň', 'CNC', 'Brusič']);
+  assert.deepStrictEqual(out.obrobna[1], ['Dvořák', 'Petr', 'CNC', '4 · Profík', '● 4 *', '']);
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

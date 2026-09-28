@@ -567,9 +567,9 @@
       await loadScript(`app.php?f=app.js&v=${version}`);
       const app = $('#app');
       app.innerHTML = markup;
+      await window.OdmApp.start(loaded);
       $('#lock').remove();
       app.hidden = false;
-      window.OdmApp.start(loaded);
     } catch (error) {
       if (error.status === 401) { start(); return; }
       show(`<h1>Něco se nepovedlo</h1><div class="note e">${esc(error.message)}</div><div class="lock-actions"><button class="btn wide" type="button" id="retry">Zkusit znovu</button></div>`);

@@ -14,11 +14,17 @@ declare(strict_types=1);
  * a historii zašifrovaných verzí.
  */
 
+// Verze aplikace. Klient posílá verzi svého tvaru dat v hlavičce X-Odmeny-Client;
+// stránka otevřená ještě před aktualizací už nesmí uložit data ve starém tvaru.
+const ODM_VERSION = '2.0';
+const ODM_MIN_CLIENT = 2;
 const ODM_SESSION_COOKIE = 'odmeny_session';
 const ODM_SESSION_HOURS = 12;
 const ODM_IDLE_MINUTES = 60;
 const ODM_MAX_BLOB_CHARS = 12 * 1024 * 1024;
 const ODM_MAX_JSON_BYTES = 16 * 1024 * 1024;
+const ODM_MAX_SMALL_JSON_BYTES = 64 * 1024;
+const ODM_MAX_PREFS_BYTES = 32 * 1024; // v base64 i s obálkou se vejde do ODM_MAX_SMALL_JSON_BYTES
 // Historie: posledních 30 uložení celých, starší jen poslední stav z každé hodiny
 // (týden zpátky) a z každého dne, dohromady nejvýš 150 verzí.
 const ODM_KEEP_RECENT = 30;
@@ -103,6 +109,12 @@ CREATE TABLE IF NOT EXISTS versions (
     device_id TEXT,
     created_at TEXT NOT NULL
 );
+-- Osobní nastavení pohledu (filtry, období, sloupce) každé kartičky, šifrované.
+CREATE TABLE IF NOT EXISTS prefs (
+    card_id TEXT PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+    blob TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_attempts ON attempts(kind, ip, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_card ON sessions(card_id);
 SQL);
@@ -133,16 +145,26 @@ function odm_exec(string $sql, array $params = []): int
 
 /* ---------------------------------------------------------------- HTTP */
 
+function odm_from_loopback(): bool
+{
+    return in_array((string)($_SERVER['REMOTE_ADDR'] ?? ''), ['127.0.0.1', '::1'], true);
+}
+
 function odm_is_https(): bool
 {
     $https = strtolower((string)($_SERVER['HTTPS'] ?? ''));
-    return ($https !== '' && $https !== 'off') || strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+    if ($https !== '' && $https !== 'off') {
+        return true;
+    }
+    // X-Forwarded-Proto může poslat kdokoli; věří se mu jen od proxy na stejném stroji.
+    return odm_from_loopback() && strtolower((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
 }
 
+/** Vývoj na vlastním počítači: spojení i adresa musí být místní (hlavička Host sama nestačí). */
 function odm_is_local(): bool
 {
     $host = strtolower((string)parse_url('http://' . ($_SERVER['HTTP_HOST'] ?? ''), PHP_URL_HOST));
-    return in_array($host, ['localhost', '127.0.0.1', '[::1]', '::1'], true);
+    return odm_from_loopback() && in_array($host, ['localhost', '127.0.0.1', '[::1]', '::1'], true);
 }
 
 function odm_base_path(): string
@@ -196,13 +218,13 @@ function odm_fail(string $message, int $status = 400, array $extra = []): never
     odm_json(['error' => $message] + $extra, $status);
 }
 
-function odm_input(): array
+function odm_input(int $maxBytes = ODM_MAX_JSON_BYTES): array
 {
-    $raw = file_get_contents('php://input', false, null, 0, ODM_MAX_JSON_BYTES + 1);
+    $raw = file_get_contents('php://input', false, null, 0, $maxBytes + 1);
     if ($raw === false || $raw === '') {
         return [];
     }
-    if (strlen($raw) > ODM_MAX_JSON_BYTES) {
+    if (strlen($raw) > $maxBytes) {
         odm_fail('Data jsou příliš velká.', 413);
     }
     $decoded = json_decode($raw, true);
@@ -240,6 +262,14 @@ function odm_require_app_request(string $method): void
     $authority = strtolower($host . ($port !== null ? ':' . $port : ''));
     if ($host === '' || $authority !== strtolower((string)($_SERVER['HTTP_HOST'] ?? ''))) {
         odm_fail('Požadavek z cizí stránky byl odmítnut.', 403);
+    }
+}
+
+/** Zápis smí jen aktuální verze aplikace; stará otevřená stránka by jinak smazala nová pole. */
+function odm_require_client(): void
+{
+    if ((int)($_SERVER['HTTP_X_ODMENY_CLIENT'] ?? 0) < ODM_MIN_CLIENT) {
+        odm_fail('Aplikace byla aktualizována. Obnov stránku (F5) a přihlas se znovu; poslední změny z této stránky se neuložily.', 426, ['reload' => true]);
     }
 }
 

@@ -7,6 +7,7 @@
       </div>
       <div class="side-quick">
         <span class="save-dot" id="saveDot" data-state="saved" title="Uloženo a zašifrováno"></span>
+        <button class="icon-btn log-btn" type="button" id="logBtn" aria-label="Poslední změny" title="Poslední změny"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 4.5V9H8"/><path d="M12 7.5V12l3 2"/></svg><em class="log-badge" id="logBadge" hidden></em></button>
         <button class="icon-btn" type="button" id="lockBtnTop" aria-label="Zamknout aplikaci" title="Zamknout"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg></button>
       </div>
     </div>
@@ -17,6 +18,7 @@
     <nav class="nav" id="nav" aria-label="Hlavní menu">
       <button type="button" data-view="prehled"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/></svg><span>Přehled</span></button>
       <button type="button" data-view="lide"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.5.2 4.3 1.9 5 4.9"/></svg><span>Lidé</span><em class="nav-badge" id="navPeople" hidden></em></button>
+      <button type="button" data-view="matice"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9h17M9 3.5v17"/><circle cx="14.5" cy="14.5" r="2.5"/></svg><span>Dovednosti</span></button>
       <button type="button" data-view="sankce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg><span>Sankce</span></button>
       <button type="button" data-view="dochazka"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 13.5h2M14 13.5h2M8 17h2"/></svg><span>Docházka</span></button>
       <button type="button" data-view="vyroba"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5.5 20.5V11l5 3V11l5 3V6.5h3v14"/></svg><span>Výroba</span></button>
@@ -100,6 +102,29 @@
         </div>
         <div class="split-detail" id="lDetail"></div>
       </div>
+    </section>
+
+    <!-- ============ MATICE DOVEDNOSTÍ ============ -->
+    <section class="view" id="view-matice" aria-labelledby="mxTitle">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Kdo co umí</p>
+          <h1 id="mxTitle">Matice dovedností</h1>
+          <p class="lede">Lidé podle oddělení a jejich úroveň na každé pozici. Hlavní pozice určuje tabáky; zaučení na dalších pozicích se tu jen eviduje. Klikni na políčko a změníš zaučení.</p>
+        </div>
+        <div class="page-actions noprint">
+          <select id="matrixDept" aria-label="Oddělení"></select>
+          <button class="btn sec" type="button" id="btnMatrixXlsx">Excel</button>
+          <button class="btn sec" type="button" id="btnMatrixPrint">Tisk</button>
+        </div>
+      </header>
+      <div id="matrixView"></div>
+      <div class="mx-legend" id="matrixLegend"></div>
+    </section>
+
+    <!-- ============ PROFIL ============ -->
+    <section class="view" id="view-profil" aria-label="Profil zaměstnance">
+      <div id="profileView"></div>
     </section>
 
     <!-- ============ SANKCE ============ -->

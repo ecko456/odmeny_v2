@@ -100,7 +100,7 @@ function save(){_prodIdx=null;if(typeof onStateChange==="function")onStateChange
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],v:2};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -119,14 +119,15 @@ function migrate(o){
     const p=o.positions.find(x=>x.id===e.positionId);
     if(p&&Array.isArray(p.skills)&&p.skills.length){
       const tot=p.skills.reduce((s,x)=>s+(+x.pts||0),0)||1;
-      const set=new Set(e.skills||[]);
+      const set=new Set(Array.isArray(e.skills)?e.skills:[]);
       const have=p.skills.filter(x=>set.has(x.id)).reduce((s,x)=>s+(+x.pts||0),0);
       e.level=clamp(Math.ceil(have/tot*4),1,4);   // podíl zaškrtnutých -> úroveň 1..4
     }else e.level=p?1:null;
   });
   o.positions.forEach(p=>{if(p._old){delete p.skills;p.max=null;delete p._old;}
     if(p.max===undefined)p.max=null;});
-  Object.values(o.employees).forEach(e=>{delete e.skills;});
+  /* staré zaškrtávané podkategorie (pole); nové zaučení na dalších pozicích je objekt a zůstává */
+  Object.values(o.employees).forEach(e=>{if(Array.isArray(e.skills))delete e.skills;});
   ["wAtt","wSkill","wFund","wOt","otBase","bonusOverMax"].forEach(k=>{delete o.settings[k];});
   o.kafe=o.kafe||{};
   o.issued=o.issued||{};
@@ -614,9 +615,9 @@ function exportRows(rows){
    Soubor jde editovat v Excelu a poslat zpátky - matchuje se na příjmení + jméno. */
 function rosterSheets(){
   const people=Object.values(S.employees).sort((a,b)=>norm(a.last).localeCompare(norm(b.last),"cs"));
-  const main=[["Příjmení","Jméno","Pozice","Úroveň (1-4)","Název úrovně","Tabáky za úroveň","Zkrácený pátek","Vyřazen ze seznamu","Poznámka"]];
+  const main=[["Příjmení","Jméno","Pozice","Úroveň (1-4)","Název úrovně","Tabáky za úroveň","Zkrácený pátek","Vyřazen ze seznamu","Poznámka","Oddělení"]];
   people.forEach(e=>{const L=levelOf(e);
-    main.push([e.last,e.first,L.pos?L.pos.name:"",L.n||"",L.n?L.lv.name:"",L.n?L.base:"",e.shortFri?"ano":"",e.excluded?"ano":"",e.note||""]);});
+    main.push([e.last,e.first,L.pos?L.pos.name:"",L.n||"",L.n?L.lv.name:"",L.n?L.base:"",e.shortFri?"ano":"",e.excluded?"ano":"",e.note||"",L.pos?deptOf(L.pos):""]);});
   const posSheet=[["Pozice","Úroveň","Název úrovně","Tabáky","Co úroveň obnáší"]];
   S.positions.forEach(p=>p.levels.forEach((lv,i)=>posSheet.push([p.name,i+1,lv.name,+lv.tabaky||0,lv.desc||""])));
   const rules=[["Pozice","Typ","Práh","Tabáky","Význam"]];
@@ -760,6 +761,10 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss"];
+const DATA_VERSION=2;
+const LOG_MAX=2000;
+const HIST_MAX=200;
+const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data"];
 function sanitizeState(input){
   const o=(input&&typeof input==="object"&&!Array.isArray(input))?input:{};
   const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
@@ -782,7 +787,7 @@ function sanitizeState(input){
   const out=blank();
   out.demo=!!o.demo;
   out.positions=o.positions.filter(p=>typeof p.id==="string"&&SAFE_ID.test(p.id)).slice(0,100).map(p=>({
-    id:p.id,name:str(p.name,80),
+    id:p.id,name:str(p.name,80),dept:str(p.dept,60).trim(),
     max:(p.max==null||p.max==="")?null:int(p.max,0,0,200),
     levels:LEVEL_NAMES.map((n,i)=>{const l=obj(arr(p.levels)[i]);
       return {name:str(l.name==null?n:l.name,40),tabaky:int(l.tabaky,(i+1)*2,0,100),desc:str(l.desc,500)};}),
@@ -797,6 +802,16 @@ function sanitizeState(input){
       note:str(e.note,500)};
     if(e.shortFri)out.employees[k].shortFri=true;
     if(e.excluded)out.employees[k].excluded=true;
+    const emp=out.employees[k];
+    /* zaučení na dalších pozicích (jen pro matici dovedností, tabáky neovlivní) */
+    const skills={};
+    Object.entries(obj(e.skills)).forEach(([id,l])=>{const n=Math.round(+l);if(posIds.has(id)&&id!==emp.positionId&&n>=1&&n<=4)skills[id]=n;});
+    if(Object.keys(skills).length)emp.skills=skills;
+    /* historie zařazení; kdo ji ještě nemá, dostane výchozí stav platný „odjakživa“ */
+    emp.hist=arr(e.hist).filter(h=>h&&typeof h==="object").slice(-HIST_MAX).map(h=>({at:num(h.at,0,0,1e15),
+      pos:typeof h.pos==="string"&&SAFE_ID.test(h.pos)?h.pos:null,lvl:(h.lvl>=1&&h.lvl<=4)?Math.round(h.lvl):null}))
+      .sort((x,y)=>x.at-y.at);
+    if(!emp.hist.length&&emp.positionId)emp.hist.push({at:0,pos:emp.positionId,lvl:emp.level});
   });
   Object.entries(o.periods).forEach(([id,p])=>{
     if(!PERIOD_ID.test(id)||!p||typeof p!=="object")return;
@@ -837,8 +852,23 @@ function sanitizeState(input){
   Object.entries(o.prodMap).forEach(([n,k])=>{if(typeof k==="string"&&key(n,200)&&key(k,200))out.prodMap[key(n,200)]=key(k,200);});
   Object.entries(obj(o.kafe)).forEach(([id,v])=>{if(PERIOD_ID.test(id)&&v!==""&&v!=null&&Number.isFinite(+v))out.kafe[id]=num(v,0,0,1000);});
   Object.entries(obj(o.issued)).forEach(([id,b])=>{
-    const box={};Object.entries(obj(b)).forEach(([k,v])=>{if(v&&typeof v==="object"&&key(k,200))box[key(k,200)]={at:num(v.at,0,0,1e15),tabaky:int(v.tabaky,0,0,1000),kafe:!!v.kafe};});
+    const box={};Object.entries(obj(b)).forEach(([k,v])=>{if(v&&typeof v==="object"&&key(k,200)){
+      const rec={at:num(v.at,0,0,1e15),tabaky:int(v.tabaky,0,0,1000),kafe:!!v.kafe};
+      /* zařazení v době výdeje, ať profil ukáže skutečnost i po pozdějším povýšení */
+      if(typeof v.pos==="string"&&SAFE_ID.test(v.pos))rec.pos=v.pos;
+      if(v.lvl>=1&&v.lvl<=4)rec.lvl=Math.round(v.lvl);
+      box[key(k,200)]=rec;}});
     if(pid(id)&&Object.keys(box).length)out.issued[pid(id)]=box;
+  });
+  out.log=arr(o.log).filter(x=>x&&typeof x==="object"&&typeof x.text==="string").slice(-LOG_MAX).map(x=>{
+    const entry={at:num(x.at,0,0,1e15),by:str(x.by,60),card:/^[a-f0-9]{16}$/.test(String(x.card))?String(x.card):"",
+      kind:LOG_KINDS.includes(x.kind)?x.kind:"data",text:str(x.text,400)};
+    if(typeof x.key==="string"&&key(x.key,200))entry.key=key(x.key,200);
+    if(PERIOD_ID.test(String(x.period)))entry.period=String(x.period);
+    /* slučování rychle po sobě jdoucích úprav téže věci (viz appendLog) */
+    if(typeof x.m==="string"&&x.m)entry.m=str(x.m,120);
+    if(entry.m&&x.v1!=null){entry.p=str(x.p,200);entry.v0=str(x.v0,120);entry.v1=str(x.v1,120);}
+    return entry;
   });
   const st=obj(o.settings);
   out.settings={
@@ -854,7 +884,336 @@ function sanitizeState(input){
   };
   out.current=(typeof o.current==="string"&&PERIOD_ID.test(o.current))?o.current:null;
   if(!out.current||!out.periods[out.current])out.current=Object.keys(out.periods).sort().reverse()[0]||null;
+  out.v=DATA_VERSION;
   return out;
+}
+
+/* ================= verze 2: osobní pohled, historie změn, profil, matice dovedností ================= */
+
+/* Vybrané období, skryté sloupce a doba zamčení patří jen jedné kartičce (osobní nastavení);
+   se sdílenými daty na server nejdou. */
+function sharedState(st){
+  const out=JSON.parse(JSON.stringify(st));
+  delete out.current;delete out._demoIssue;
+  if(out.settings){delete out.settings.hiddenCols;delete out.settings.lockMinutes;}
+  out.v=DATA_VERSION;
+  return out;
+}
+
+function posIn(st,id){return (st.positions||[]).find(p=>p.id===id)||null;}
+function lvlText(st,posId,n){
+  if(!posId)return "bez pozice";
+  const p=posIn(st,posId);
+  const lv=p&&n?p.levels[n-1]:null;
+  return (p?p.name:"(smazaná pozice)")+(n?" "+n+(lv&&lv.name?" ("+lv.name+")":""):", bez úrovně");
+}
+const sgn0=v=>{v=Math.round(+v||0);return v>0?"+"+v:v<0?"−"+Math.abs(v):"0";};
+
+/* Lidsky čitelný seznam změn mezi dvěma uloženými stavy (kdo, co, kdy). Běží při ukládání,
+   takže zachytí každou ruční úpravu bez ohledu na to, kde v aplikaci vznikla.
+   Vrací i nové záznamy do historie zařazení (hist) jednotlivých lidí. */
+function describeChanges(a,b,meta){
+  const entries=[],hist=[];
+  if(!a||!b)return {entries,hist};
+  const at=(meta&&meta.at)||Date.now();
+  const base={at,by:String((meta&&meta.by)||"").slice(0,60),card:(meta&&meta.card)||""};
+  const add=(kind,text,extra)=>{
+    const en={...base,kind,...(extra||{})};
+    en.text=String(en.v1!=null?en.p+en.v0+" → "+en.v1:text).slice(0,400);
+    entries.push(en);
+  };
+  const same=(x,y)=>JSON.stringify(x)===JSON.stringify(y);
+  const ea=a.employees||{},eb=b.employees||{};
+  const nameIn=(st,k)=>{const e=(st.employees||{})[k];return e?(e.last+" "+e.first).trim():k;};
+  const who=k=>nameIn(eb[k]?b:a,k);
+  const list=(names,max=4)=>names.slice(0,max).join(", ")+(names.length>max?" a další ("+(names.length-max)+")":"");
+  const mon=id=>id==="_"?"bez období":monthLabel(id);
+  const per=id=>PERIOD_ID.test(id)?{period:id}:{};
+  if(a.demo&&!b.demo)add("data","Ukázková data nahrazena vlastními");
+
+  /* lidé a zařazení */
+  const added=Object.keys(eb).filter(k=>!ea[k]),removed=Object.keys(ea).filter(k=>!eb[k]);
+  if(added.length>5)add("person","Přidáno "+added.length+" lidí: "+list(added.map(who)));
+  else added.forEach(k=>add("person","Přidán do evidence: "+who(k),{key:k}));
+  if(removed.length>5)add("person","Smazáno "+removed.length+" lidí: "+list(removed.map(k=>nameIn(a,k))));
+  else removed.forEach(k=>add("person","Smazán z evidence: "+nameIn(a,k)));
+  added.forEach(k=>{if(eb[k].positionId)hist.push([k,{at,pos:eb[k].positionId,lvl:eb[k].level||null}]);});
+  const moves=[];
+  Object.keys(eb).filter(k=>ea[k]).forEach(k=>{
+    const x=ea[k],y=eb[k],n=who(k);
+    if((x.positionId||null)!==(y.positionId||null)||(x.level||null)!==(y.level||null)){
+      moves.push(k);
+      hist.push([k,{at,pos:y.positionId||null,lvl:y.level||null}]);
+    }
+    if(!!x.excluded!==!!y.excluded)add("person",n+(y.excluded?" vyřazen ze seznamu":" vrácen do seznamu"),{key:k});
+    if(!!x.shortFri!==!!y.shortFri)add("person",n+": zkrácený pátek "+(y.shortFri?"zapnut":"vypnut"),{key:k});
+    if((x.note||"")!==(y.note||""))add("person",n+": upravena poznámka",{key:k,m:"note:"+k});
+    const sx=x.skills||{},sy=y.skills||{};
+    [...new Set([...Object.keys(sx),...Object.keys(sy)])].filter(id=>(sx[id]||0)!==(sy[id]||0)).forEach(id=>{
+      const p=posIn(b,id)||posIn(a,id);
+      add("level","",{key:k,m:"skill:"+k+":"+id,p:n+": zaučení na pozici "+(p?p.name:"?")+" ",v0:String(sx[id]||0),v1:String(sy[id]||0)});
+    });
+  });
+  if(moves.length>8)add("level","Změněno zařazení u "+moves.length+" lidí: "+list(moves.map(who)));
+  else moves.forEach(k=>add("level","",{key:k,m:"lvl:"+k,p:who(k)+": ",v0:lvlText(a,ea[k].positionId,ea[k].level),v1:lvlText(b,eb[k].positionId,eb[k].level)}));
+
+  /* sankce */
+  const sanTxt=s=>who(s.key)+" – "+(s.pct!=null?s.name+" "+s.pct+" %":(s.reason||"Sankce")+" −"+(+s.points||0)+" tab.")+" ("+mon(s.period)+")"+(s.note?": "+s.note:"");
+  const SA=new Map((a.sanctions||[]).map(s=>[s.id,s])),SB=new Map((b.sanctions||[]).map(s=>[s.id,s]));
+  SB.forEach((s,id)=>{if(!SA.has(id))add("sanction","Sankce: "+sanTxt(s),{key:s.key,...per(s.period)});});
+  SA.forEach((s,id)=>{if(!SB.has(id))add("sanction","Smazána sankce: "+sanTxt(s),{key:s.key,...per(s.period)});});
+
+  /* ruční úpravy a výdej (po měsících) */
+  const perKey=(xa,xb,fn)=>{
+    [...new Set([...Object.keys(xa||{}),...Object.keys(xb||{})])].sort().forEach(id=>{
+      const A=(xa||{})[id]||{},B=(xb||{})[id]||{};
+      const keys=[...new Set([...Object.keys(A),...Object.keys(B)])].filter(k=>!same(A[k],B[k]));
+      if(keys.length)fn(id,keys,A,B);
+    });
+  };
+  perKey(a.adjust,b.adjust,(id,keys,A,B)=>{
+    if(keys.length>8)add("adjust","Ruční úpravy tabáků u "+keys.length+" lidí ("+mon(id)+")",per(id));
+    else keys.forEach(k=>add("adjust","",{key:k,...per(id),m:"adj:"+id+":"+k,p:"Ruční úprava "+who(k)+" ("+mon(id)+"): ",v0:sgn0(A[k]),v1:sgn0(B[k])}));
+  });
+  perKey(a.issued,b.issued,(id,keys,A,B)=>{
+    const given=keys.filter(k=>B[k]&&!A[k]),undone=keys.filter(k=>A[k]&&!B[k]),changed=keys.filter(k=>A[k]&&B[k]);
+    if(given.length>8)add("issue","Potvrzen výdej u "+given.length+" lidí ("+mon(id)+")",per(id));
+    else given.forEach(k=>add("issue","Potvrzen výdej "+who(k)+" ("+mon(id)+"): "+issueWhat(B[k].tabaky,B[k].kafe),{key:k,...per(id)}));
+    undone.forEach(k=>add("issue","Zrušeno potvrzení výdeje "+who(k)+" ("+mon(id)+")",{key:k,...per(id)}));
+    changed.forEach(k=>add("issue","Znovu potvrzen výdej "+who(k)+" ("+mon(id)+"): "+issueWhat(B[k].tabaky,B[k].kafe),{key:k,...per(id)}));
+  });
+
+  /* importy */
+  const pa=a.periods||{},pb=b.periods||{};
+  Object.keys(pb).sort().forEach(id=>{
+    const p=pb[id],info=" ("+Object.keys(p.rows||{}).length+" lidí"+(p.file?", "+p.file:"")+")";
+    if(!pa[id])add("import","Nahrána docházka za "+mon(id)+info,per(id));
+    else if(pa[id].at!==p.at)add("import","Docházka za "+mon(id)+" nahrána znovu"+info,per(id));
+  });
+  Object.keys(pa).filter(id=>!pb[id]).forEach(id=>add("import","Smazána docházka za "+mon(id),per(id)));
+  const qa=a.production||{},qb=b.production||{};
+  Object.keys(qb).sort().forEach(id=>{
+    const p=qb[id],info=" ("+(p.records||0)+" zápisů"+(p.file?", "+p.file:"")+")";
+    if(!qa[id])add("import","Nahrána evidence práce za "+mon(id)+info,per(id));
+    else if(qa[id].at!==p.at)add("import","Evidence práce za "+mon(id)+" nahrána znovu"+info,per(id));
+  });
+  Object.keys(qa).filter(id=>!qb[id]).forEach(id=>add("import","Smazána evidence práce za "+mon(id),per(id)));
+  const prodName=(st,n)=>{for(const p of Object.values(st.production||{}))if(p.names&&p.names[n])return p.names[n].name;return n;};
+  const ma=a.prodMap||{},mb=b.prodMap||{};
+  Object.keys(mb).filter(n=>ma[n]!==mb[n]).forEach(n=>add("import","Jméno z evidence práce „"+prodName(b,n)+"“ spárováno s "+who(mb[n]),{key:mb[n]}));
+  Object.keys(ma).filter(n=>!(n in mb)).forEach(n=>add("import","Zrušeno spárování „"+prodName(a,n)+"“ s "+who(ma[n]),{key:ma[n]}));
+
+  /* pozice */
+  const PA=new Map((a.positions||[]).map(p=>[p.id,p])),PB=new Map((b.positions||[]).map(p=>[p.id,p]));
+  PB.forEach((p,id)=>{
+    const q=PA.get(id),nm=p.name||"(bez názvu)";
+    if(!q){add("position","Nová pozice: "+nm);return;}
+    if(q.name!==p.name)add("position","",{m:"pname:"+id,p:"Pozice přejmenována: ",v0:"„"+(q.name||"")+"“",v1:"„"+nm+"“"});
+    if((q.dept||"")!==(p.dept||""))add("position","",{m:"pdept:"+id,p:"Pozice "+nm+", oddělení: ",v0:q.dept||"—",v1:p.dept||"—"});
+    if((q.max==null?null:+q.max)!==(p.max==null?null:+p.max))add("position","",{m:"pmax:"+id,p:"Pozice "+nm+", maximum: ",v0:q.max==null?"podle úrovní":String(q.max),v1:p.max==null?"podle úrovní":String(p.max)});
+    p.levels.forEach((lv,i)=>{const o=q.levels[i]||{};
+      if((+o.tabaky||0)!==(+lv.tabaky||0))add("position","",{m:"ptab:"+id+":"+i,p:"Pozice "+nm+", úroveň "+(i+1)+" (tabáky): ",v0:String(+o.tabaky||0),v1:String(+lv.tabaky||0)});});
+    if(p.levels.some((lv,i)=>(q.levels[i]||{}).name!==lv.name||(q.levels[i]||{}).desc!==lv.desc))add("position","Pozice "+nm+": upraveny názvy nebo popisy úrovní",{m:"pdesc:"+id});
+    if(!same(q.penalty,p.penalty)||!same(q.bonus,p.bonus))add("position","Pozice "+nm+": upravena pravidla docházky",{m:"prules:"+id});
+  });
+  PA.forEach((q,id)=>{if(!PB.has(id))add("position","Smazána pozice: "+(q.name||"(bez názvu)"));});
+
+  /* nastavení */
+  const SET={shift:["délka směny",v=>nf(v)+" h"],friShift:["zkrácený pátek",v=>nf(v)+" h"],excused:["kódy omluvené absence",v=>v||"—"],
+    excusedReducesFund:["omluvená absence snižuje fond",v=>v?"ano":"ne"],absenceCutoff:["bez nároku od dní absence",v=>v==null?"vypnuto":String(v)],
+    adjStep:["krok ruční úpravy",v=>String(v)],adjOver:["ruční úprava smí přes maximum o",v=>String(v)]};
+  Object.entries(SET).forEach(([k,[label,fmt]])=>{
+    const x=(a.settings||{})[k],y=(b.settings||{})[k];
+    if(!same(x,y))add("settings","",{m:"set:"+k,p:"Nastavení – "+label+": ",v0:fmt(x),v1:fmt(y)});
+  });
+  const ka=a.kafe||{},kb=b.kafe||{};
+  [...new Set([...Object.keys(ka),...Object.keys(kb)])].filter(id=>ka[id]!==kb[id]).forEach(id=>
+    add("settings","",{...per(id),m:"kafe:"+id,p:"Práh Kafe za "+mon(id)+": ",v0:ka[id]==null?"fond":nf(ka[id])+" h",v1:kb[id]==null?"fond":nf(kb[id])+" h"}));
+  if(!same(a.sanReasons,b.sanReasons))add("settings","Upraven seznam důvodů sankcí",{m:"reasons"});
+  return {entries,hist};
+}
+
+/* Přidá záznamy do historie. Opakovanou úpravu téže věci od stejné kartičky do 10 minut
+   sloučí do jednoho záznamu „původně → teď“; když se hodnota vrátí, záznam zmizí. */
+function appendLog(log,entries){
+  const out=(log||[]).slice();
+  entries.forEach(item=>{
+    let en=item;
+    if(en.m){
+      for(let i=out.length-1;i>=Math.max(0,out.length-60);i--){
+        const old=out[i];
+        if(old.m!==en.m)continue;
+        if(old.card!==en.card||en.at-old.at>10*60000)break;
+        out.splice(i,1);
+        if(old.v0!=null&&en.v1!=null){
+          en={...en,v0:old.v0,text:(en.p+old.v0+" → "+en.v1).slice(0,400)};
+          if(old.v0===en.v1)en=null;
+        }
+        break;
+      }
+    }
+    if(en)out.push(en);
+  });
+  return out.slice(-LOG_MAX);
+}
+
+/* Nové stavy zařazení do historie lidí (pro profil a vyhodnocení starších měsíců). */
+function applyHist(st,hist){
+  hist.forEach(([k,h])=>{
+    const e=st.employees[k];if(!e)return;
+    e.hist=e.hist||[];
+    const last=e.hist[e.hist.length-1];
+    if(last&&last.pos===h.pos&&last.lvl===h.lvl)return;
+    e.hist.push({at:h.at,pos:h.pos,lvl:h.lvl});
+    if(e.hist.length>HIST_MAX)e.hist=e.hist.slice(-HIST_MAX);
+  });
+}
+
+/* Zařazení platné k danému okamžiku; před prvním záznamem platí ten první
+   (kdo byl zařazen až po importu, hodnotí se i zpětně podle prvního zařazení). */
+function levelAt(e,ts){
+  const h=e.hist||[];
+  if(!h.length)return {pos:e.positionId||null,lvl:e.level||null};
+  let cur=h[0];
+  for(const x of h){if(x.at<=ts)cur=x;else break;}
+  return {pos:cur.pos,lvl:cur.lvl};
+}
+
+/* Dočasně přepne vybrané období (výpočty v core pracují s S.current). */
+function withPeriod(id,fn){
+  const keep=S.current;
+  S.current=id;_prodIdx=null;
+  try{return fn();}finally{S.current=keep;_prodIdx=null;}
+}
+function monthEnd(id){const y=+id.slice(0,4),m=+id.slice(5,7);return new Date(y,m,1).getTime()-1;}
+function monthsBetween(from,to){
+  const out=[];if(!PERIOD_ID.test(from)||!PERIOD_ID.test(to)||from>to)return out;
+  let y=+from.slice(0,4),m=+from.slice(5,7);
+  for(let guard=0;guard<600;guard++){
+    const id=y+"-"+String(m).padStart(2,"0");out.push(id);
+    if(id>=to)break;
+    m++;if(m>12){m=1;y++;}
+  }
+  return out;
+}
+
+/* Měsíce, ve kterých má člověk jakýkoli záznam: docházku, výrobu, sankci, úpravu nebo výdej. */
+function personMonths(key){
+  const ids=new Set();
+  Object.values(S.periods).forEach(p=>{if(p.rows[key])ids.add(p.id);});
+  Object.entries(S.production).forEach(([id,pp])=>{if(Object.values(pp.names).some(rec=>prodKeyFor(rec.name)===key))ids.add(id);});
+  S.sanctions.forEach(s=>{if(s.key===key&&PERIOD_ID.test(s.period))ids.add(s.period);});
+  Object.entries(S.adjust).forEach(([id,b])=>{if(PERIOD_ID.test(id)&&b[key])ids.add(id);});
+  Object.entries(S.issued||{}).forEach(([id,b])=>{if(PERIOD_ID.test(id)&&b[key])ids.add(id);});
+  return [...ids].sort();
+}
+
+/* Profil člověka za období od–do (včetně). Úroveň se bere z potvrzeného výdeje, jinak
+   z historie zařazení ke konci měsíce; pravidla pozic jsou dnešní. */
+function profileData(key,fromId,toId){
+  const e=S.employees[key];if(!e)return null;
+  const all=personMonths(key);
+  const ids=all.filter(id=>(!fromId||id>=fromId)&&(!toId||id<=toId));
+  const months=ids.map(id=>withPeriod(id,()=>{
+    const p=S.periods[id]||null;
+    const iss=issuedOf(key);
+    const snap=iss&&iss.pos?{pos:iss.pos,lvl:iss.lvl||null,from:"issued"}:{...levelAt(e,monthEnd(id)),from:"hist"};
+    const ev=evaluate({...e,positionId:snap.pos,level:snap.lvl},p);
+    const a=ev.att&&ev.att.found?ev.att:null;
+    const prod=productionOf(key);
+    const days=workedDays(a);
+    return {id,label:monthLabel(id),hasAtt:!!a,from:snap.from,
+      posId:snap.pos,pos:ev.pos?ev.pos.name:(snap.pos?"(smazaná pozice)":""),lvl:ev.L.n,lvlName:ev.L.n?ev.L.lv.name:"",base:ev.L.base,
+      workDays:a?a.workDays:0,wkDays:a?a.wkDays:0,hours:a?n2(a.totalHours):0,capped:a?n2(a.cappedHours):0,fund:a?n2(a.fund):0,
+      absence:a?ev.at.gross:0,missing:a?ev.at.missing:0,excused:a?a.excusedDays:0,shortDays:a?a.shortDays:0,codes:a?a.codes:{},
+      attDelta:a?ev.at.delta:0,attEff:a?ev.attEff:0,lost:ev.lost,narok:ev.narok,max:ev.max,
+      pctSum:ev.pctSum,pen:ev.pen,adj:ev.adj,total:ev.total,kafe:ev.kafe,kafeTh:ev.kafeTh,
+      issued:iss?{tabaky:iss.tabaky,kafe:!!iss.kafe,at:iss.at}:null,
+      prod:prod?{total:prod.total,days,perDay:days?prod.total/days:null,perHour:a&&a.totalHours?prod.total/a.totalHours:null}:null,
+      sanctions:sanFor(key,id).map(s=>({name:s.pct!=null?s.name:(s.reason||"Sankce"),pct:s.pct!=null?s.pct:null,points:s.pct==null?(+s.points||0):null,note:s.note||"",at:s.at})),
+      cells:a?a.cells.map(c=>({d:c.d.d,dow:c.d.dow,h:c.h,c:c.c||"",ex:!!c.isEx,wk:!!(c.d.weekend||c.d.hol),hol:c.d.hol||"",ds:c.ds})):null};
+  }));
+  const sum=f=>months.reduce((x,m)=>x+(+f(m)||0),0);
+  const att=months.filter(m=>m.hasAtt);
+  const prodMonths=months.filter(m=>m.prod);
+  const prodDays=prodMonths.reduce((x,m)=>x+(m.prod.days||0),0);
+  const prodTotal=prodMonths.reduce((x,m)=>x+m.prod.total,0);
+  const fund=att.reduce((x,m)=>x+m.fund,0);
+  const totals={months:months.length,attMonths:att.length,
+    workDays:sum(m=>m.workDays),wkDays:sum(m=>m.wkDays),hours:n2(sum(m=>m.hours)),fund:n2(fund),
+    attendance:fund>0?att.reduce((x,m)=>x+m.capped,0)/fund:null,
+    absence:sum(m=>m.absence),missing:sum(m=>m.missing),excused:sum(m=>m.excused),lost:months.filter(m=>m.lost).length,
+    kafe:att.filter(m=>m.kafe).length,tabaky:att.reduce((x,m)=>x+m.total,0),max:att.reduce((x,m)=>x+m.max,0),
+    issuedMonths:months.filter(m=>m.issued).length,issuedTab:sum(m=>m.issued?m.issued.tabaky:0),issuedKafe:months.filter(m=>m.issued&&m.issued.kafe).length,
+    sanctions:sum(m=>m.sanctions.length),pen:sum(m=>m.pen),adj:sum(m=>m.adj),
+    prodTotal,prodDays,perDay:prodDays?prodTotal/prodDays:null};
+  const endTs=toId?monthEnd(toId):Infinity,startTs=fromId?new Date(+fromId.slice(0,4),+fromId.slice(5,7)-1,1).getTime():-Infinity;
+  const changes=(e.hist||[]).map((h,i,arr)=>({at:h.at,pos:h.pos,lvl:h.lvl,text:lvlText(S,h.pos,h.lvl),first:i===0,prev:i?lvlText(S,arr[i-1].pos,arr[i-1].lvl):null}))
+    .filter(h=>h.at<=endTs&&(h.first||h.at>=startTs));
+  return {key,e,all,from:fromId||all[0]||null,to:toId||all[all.length-1]||null,months,totals,changes};
+}
+
+/* ---------------- matice dovedností ---------------- */
+const ILUO=["","◔","◑","◕","●"];
+function deptOf(p){return (p&&(p.dept||"").trim())||(p&&p.name)||"Bez oddělení";}
+function departments(){const out=[];S.positions.forEach(p=>{const d=deptOf(p);if(!out.includes(d))out.push(d);});return out;}
+function skillOf(e,posId){return e.positionId===posId?(e.level||0):((e.skills&&e.skills[posId])||0);}
+/* Lidé × pozice oddělení: hlavní pozice podle zařazení, další podle zaučení. dept=null = všechna oddělení. */
+function skillMatrix(dept){
+  const cols=S.positions.filter(p=>!dept||deptOf(p)===dept);
+  const ids=new Set(cols.map(p=>p.id));
+  const order=new Map(S.positions.map((p,i)=>[p.id,i]));
+  const rows=Object.values(S.employees).filter(e=>!e.excluded&&((e.positionId&&ids.has(e.positionId))||cols.some(p=>skillOf(e,p.id)>0)))
+    .map(e=>({e,home:!!(e.positionId&&ids.has(e.positionId)),pos:posOf(e),cells:cols.map(p=>({lvl:skillOf(e,p.id),main:e.positionId===p.id}))}))
+    .sort((x,y)=>(y.home-x.home)||((order.get(x.e.positionId)??999)-(order.get(y.e.positionId)??999))||((y.e.level||0)-(x.e.level||0))||norm(x.e.last).localeCompare(norm(y.e.last),"cs"));
+  const coverage=cols.map((p,i)=>{const c=[0,0,0,0,0];rows.forEach(r=>{c[r.cells[i].lvl]++;});return {counts:c,ready:c[3]+c[4],trained:c[1]+c[2]+c[3]+c[4]};});
+  return {dept,cols,rows,coverage};
+}
+function sheetName(name,used){
+  let n=String(name).replace(/[\[\]:*?\/\\]/g,"-").replace(/\s+/g," ").trim().slice(0,31)||"List";
+  let base=n,i=2;while(used.has(n.toLowerCase())){n=(base.slice(0,28)+" "+i++).slice(0,31);}
+  used.add(n.toLowerCase());return n;
+}
+/* Listy pro Excel: přehled všech oddělení, list za každé oddělení a popis úrovní. */
+function matrixSheets(){
+  const used=new Set(),sheets=[];
+  const cell=c=>c.lvl?ILUO[c.lvl]+" "+c.lvl+(c.main?" *":""):"";
+  const build=(title,m)=>{
+    const head=["Příjmení","Jméno","Hlavní pozice","Úroveň",...m.cols.map(p=>p.name)];
+    const rows=[[title+" – matice dovedností ("+new Date().toLocaleDateString("cs-CZ")+")"],
+      m.dept?[]:["","","","",...m.cols.map(p=>deptOf(p))],head];
+    m.rows.forEach(r=>rows.push([r.e.last,r.e.first,r.pos?r.pos.name:"",r.e.level?r.e.level+(r.pos&&r.pos.levels[r.e.level-1]?" · "+r.pos.levels[r.e.level-1].name:""):"",...r.cells.map(cell)]));
+    rows.push([]);
+    rows.push(["Samostatní (úroveň 3–4)","","","",...m.coverage.map(c=>c.ready)]);
+    rows.push(["Zaučení celkem (1–4)","","","",...m.coverage.map(c=>c.trained)]);
+    rows.push([]);
+    rows.push(["◔ 1 zaučuje se · ◑ 2 pokročilý · ◕ 3 samostatný · ● 4 profík, zaučuje ostatní · * hlavní pozice"]);
+    return rows;
+  };
+  sheets.push({name:sheetName("Všechna oddělení",used),rows:build("Všechna oddělení",skillMatrix(null)),cols:[16,12,16,16,...S.positions.map(()=>12)]});
+  departments().forEach(d=>{const m=skillMatrix(d);sheets.push({name:sheetName(d,used),rows:build(d,m),cols:[16,12,16,16,...m.cols.map(()=>14)]});});
+  const legend=[["Oddělení","Pozice","Úroveň","Značka","Název úrovně","Co člověk na úrovni zvládá"]];
+  S.positions.forEach(p=>p.levels.forEach((lv,i)=>legend.push([deptOf(p),p.name,i+1,ILUO[i+1],lv.name,lv.desc||""])));
+  sheets.push({name:sheetName("Popis úrovní",used),rows:legend,cols:[16,16,8,8,14,60]});
+  return sheets;
+}
+
+/* Profil do Excelu: měsíce, sankce a změny zařazení. */
+function profileSheets(pd){
+  const e=pd.e,name=e.last+" "+e.first;
+  const months=[["Profil: "+name+" · "+(pd.from?monthLabel(pd.from):"")+" – "+(pd.to?monthLabel(pd.to):"")],
+    ["Měsíc","Pozice","Úroveň","Dny","Víkend. směny","Hodiny","Fond","Absence (dny)","Po vyplnění víkendem","Kafe","Docházka ±","Sankce %","Sankce (tab.)","Ruční úprava","Tabáky (výpočet)","Vydáno tabáků","Vydáno kafe","Vyrobeno ks","Ø ks/den"]];
+  pd.months.forEach(m=>months.push([m.label,m.pos,m.lvl?m.lvl+" · "+m.lvlName:"",m.hasAtt?m.workDays:"",m.hasAtt?m.wkDays:"",m.hasAtt?m.hours:"",m.hasAtt?m.fund:"",
+    m.hasAtt?m.absence:"",m.hasAtt?m.missing:"",m.hasAtt?(m.kafe?"ano":"ne"):"",m.hasAtt?m.attDelta:"",m.pctSum||"",m.pen?-m.pen:"",m.adj||"",m.hasAtt?m.total:"",
+    m.issued?m.issued.tabaky:"",m.issued?(m.issued.kafe?"ano":"ne"):"",m.prod?Math.round(m.prod.total):"",m.prod&&m.prod.perDay!=null?n2(m.prod.perDay):""]));
+  const t=pd.totals;
+  months.push(["CELKEM","","",t.workDays,t.wkDays,t.hours,t.fund,t.absence,t.missing,t.kafe+"×","","",t.pen?-t.pen:"",t.adj||"",t.tabaky,t.issuedTab,t.issuedKafe+"×",Math.round(t.prodTotal),t.perDay!=null?n2(t.perDay):""]);
+  const sans=[["Měsíc","Důvod","Srážka","Poznámka","Zadáno"]];
+  pd.months.forEach(m=>m.sanctions.forEach(s=>sans.push([m.label,s.name,s.pct!=null?s.pct+" %":"−"+s.points+" tab.",s.note,s.at?new Date(s.at).toLocaleDateString("cs-CZ"):""])));
+  const hist=[["Od","Zařazení"]];
+  pd.changes.forEach(h=>hist.push([h.at?new Date(h.at).toLocaleDateString("cs-CZ"):"od začátku evidence",h.text]));
+  return [{name:"Měsíce",rows:months,cols:[14,16,16,6,8,8,8,8,10,6,10,9,10,10,12,12,10,12,10]},
+    {name:"Sankce",rows:sans,cols:[14,30,10,40,12]},{name:"Zařazení",rows:hist,cols:[20,40]}];
 }
 
 /* Oprava: CSV z Excelu bývá ve Windows-1250, z Google Tabulek a Macu v UTF-8.

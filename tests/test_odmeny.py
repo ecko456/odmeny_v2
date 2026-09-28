@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from http.cookiejar import CookieJar
 from pathlib import Path
 import base64
+import http.client
 import json
 import os
 import secrets
@@ -77,7 +78,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "2", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -228,6 +229,112 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertTrue(any(stamp[:13] < week for _, stamp in older), "zůstal i denní stav z doby před týdnem")
         status, result = self.client.api("GET", "versions")
         self.assertEqual(len(result["items"]), len(kept))
+
+
+@unittest.skipIf(PHP is None, "PHP není nainstalované")
+class OdmenyVersion2Tests(unittest.TestCase):
+    """Osobní nastavení, ochrana proti staré otevřené stránce, zálohy a hlavičky proxy."""
+
+    def setUp(self):
+        self.server = Server()
+        self.client = Client(self.server)
+
+    def tearDown(self):
+        self.server.stop()
+
+    def test_old_page_cannot_overwrite_new_data(self):
+        self.client.setup()
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": ""})
+        self.assertEqual(status, 426)
+        self.assertTrue(result.get("reload"))
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "1"})
+        self.assertEqual(status, 426)
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
+        self.assertEqual(status, 200, result)
+        # Čtení a přihlášení staré stránce nevadí, jen zápis.
+        status, _ = self.client.api("GET", "data", headers={"X-Odmeny-Client": ""})
+        self.assertEqual(status, 200)
+
+    def test_prefs_are_per_card(self):
+        first = self.client.setup()
+        status, result = self.client.api("GET", "me")
+        self.assertEqual(status, 200)
+        self.assertEqual(result["card_id"], first["id"])
+        self.assertEqual(result["card_label"], "Test")
+        self.assertEqual(result["version"], "2.0")
+        status, result = self.client.api("GET", "prefs")
+        self.assertEqual((status, result["blob"]), (200, None))
+        mine = b64(80)
+        self.assertEqual(self.client.api("POST", "prefs", {"blob": mine}, {"X-Odmeny-Client": ""})[0], 426)
+        self.assertEqual(self.client.api("POST", "prefs", {"blob": "není base64!"})[0], 422)
+        self.assertEqual(self.client.api("POST", "prefs", {"blob": b64(33 * 1024)})[0], 422)
+        self.assertEqual(self.client.api("POST", "prefs", {"blob": b64(32 * 1024)})[0], 200, "největší povolené nastavení projde")
+        self.assertEqual(self.client.api("POST", "prefs", {"blob": mine})[0], 200)
+        self.assertEqual(self.client.api("GET", "prefs")[1]["blob"], mine)
+        second = {"id": secrets.token_hex(8), "auth": b64(32), "wrapped_dek": b64(60), "label": "Kolega"}
+        self.assertEqual(self.client.api("POST", "card", second)[0], 201)
+        self.client.api("POST", "logout")
+        self.assertEqual(self.client.api("GET", "prefs")[0], 401)
+        self.assertEqual(self.client.api("POST", "login", {"auth": second["auth"]})[0], 200)
+        self.assertIsNone(self.client.api("GET", "prefs")[1]["blob"], "druhá kartička má vlastní nastavení")
+        theirs = b64(80)
+        self.client.api("POST", "prefs", {"blob": theirs})
+        self.client.api("POST", "logout")
+        self.client.api("POST", "login", {"auth": first["auth"]})
+        self.assertEqual(self.client.api("GET", "prefs")[1]["blob"], mine)
+        # Zrušená kartička si nastavení neodnese do databáze.
+        self.client.api("DELETE", "card", query=f"&id={second['id']}")
+        with sqlite3.connect(self.server.data / "odmeny.sqlite3") as db:
+            self.assertEqual([row[0] for row in db.execute("SELECT card_id FROM prefs")], [first["id"]])
+
+    def test_small_endpoints_reject_large_bodies(self):
+        status, _ = self.client.api("POST", "login", {"auth": b64(32), "pad": "x" * 70000})
+        self.assertEqual(status, 413)
+
+    def raw_get(self, path, headers):
+        """GET bez sledování přesměrování (přesměrování vede na cizí adresu)."""
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.port, timeout=10)
+        try:
+            connection.request("GET", path, headers=headers)
+            response = connection.getresponse()
+            return response.status, dict(response.getheaders()), response.read()
+        finally:
+            connection.close()
+
+    def test_forwarded_proto_and_host(self):
+        # Cizí adresa přes HTTP: přesměrování na HTTPS, API nic neudělá.
+        status, headers, _ = self.raw_get("/", {"Host": "odmeny.example"})
+        self.assertEqual(status, 301)
+        self.assertEqual(headers["Location"], "https://odmeny.example/")
+        status, _, _ = self.raw_get("/api.php?action=state", {"Host": "odmeny.example", "X-Odmeny": "1"})
+        self.assertEqual(status, 403)
+        # Proxy na stejném stroji smí říct, že spojení je HTTPS (Secure cookie, HSTS).
+        status, headers, _ = self.raw_get("/", {"Host": "odmeny.example", "X-Forwarded-Proto": "https"})
+        self.assertEqual(status, 200)
+        self.assertIn("max-age", headers.get("Strict-Transport-Security", ""))
+
+    def test_backup_script(self):
+        card = self.client.setup()
+        self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
+        target = self.server.data / "zalohy"
+        result = subprocess.run([PHP, str(APP / "bin" / "backup-db.php"), str(target)], capture_output=True, text=True, timeout=30,
+                                env=dict(os.environ, ODMENY_DATA_DIR=str(self.server.data)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        files = list(target.glob("odmeny-*.sqlite3"))
+        self.assertEqual(len(files), 1)
+        self.assertEqual(Path(result.stdout.strip()), files[0])
+        self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+        with sqlite3.connect(files[0]) as db:
+            self.assertEqual([row[0] for row in db.execute("SELECT id FROM cards")], [card["id"]])
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM versions").fetchone()[0], 1)
+        # Nechává se jen posledních 10 záloh.
+        for index in range(12):
+            (target / f"odmeny-2000010{index:02d}-000000.sqlite3").write_bytes(b"")
+        subprocess.run([PHP, str(APP / "bin" / "backup-db.php"), str(target)], capture_output=True, timeout=30,
+                       env=dict(os.environ, ODMENY_DATA_DIR=str(self.server.data)))
+        self.assertEqual(len(list(target.glob("odmeny-*.sqlite3"))), 10)
+        status, _, _ = self.client.request("GET", "/bin/backup-db.php")
+        self.assertEqual(status, 404)
 
 
 @unittest.skipIf(PHP is None or NODE is None, "chybí PHP nebo Node.js")

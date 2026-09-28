@@ -14,8 +14,84 @@ const ui = {
   ovSort: { k: 'score', dir: -1 }, openDetail: null,
   sanDraft: { key: '', period: '', reason: '', other: '', pct: 10, note: '' }, sanFilter: '',
   lastAoa: null, lastFile: '', locking: false,
+  me: { cardId: '', label: '', device: '' }, profileKey: null, prevView: 'lide',
 };
-const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null };
+/* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
+const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
+
+/* ==========================================================================
+   Osobní nastavení pohledu: jen pro tuto kartičku (šifrované na serveru).
+   Filtry, období nebo skryté sloupce jednoho člověka se ostatním nemění.
+   ========================================================================== */
+const PREF_DEFAULTS = {
+  period: null, sort: { k: 'score', dir: -1 }, pos: '', onlyImported: true, onlyOpen: false, hiddenCols: [],
+  sanFilter: '', lockMinutes: 15, logSeen: 0, matrixDept: '', profileRange: '12', profileFrom: '', profileTo: '',
+};
+let P = { ...PREF_DEFAULTS };
+const prefStore = { timer: null, saving: false, dirty: false };
+const SORT_KEYS = ['name', 'days', 'hours', 'wk', 'kafe', 'lvl', 'prod', 'att', 'pen', 'adj', 'score', 'iss'];
+const MONTH_RE = /^\d{4}-\d{2}$/;
+
+function cleanPrefs(input) {
+  const x = input && typeof input === 'object' ? input : {};
+  const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+  return {
+    period: MONTH_RE.test(String(x.period)) ? x.period : null,
+    sort: { k: SORT_KEYS.includes(x.sort?.k) ? x.sort.k : 'score', dir: x.sort?.dir === 1 ? 1 : -1 },
+    pos: str(x.pos, 40),
+    onlyImported: x.onlyImported !== false,
+    onlyOpen: x.onlyOpen === true,
+    hiddenCols: Array.isArray(x.hiddenCols) ? x.hiddenCols.filter(k => OV_COLUMN_KEYS.includes(k)) : [],
+    sanFilter: MONTH_RE.test(String(x.sanFilter)) ? x.sanFilter : '',
+    lockMinutes: [5, 10, 15, 30, 60].includes(+x.lockMinutes) ? +x.lockMinutes : 15,
+    logSeen: Number.isFinite(+x.logSeen) ? Math.max(0, +x.logSeen) : 0,
+    matrixDept: str(x.matrixDept, 60),
+    profileRange: ['month', '3', '6', '12', 'year', 'all', 'custom'].includes(x.profileRange) ? x.profileRange : '12',
+    profileFrom: MONTH_RE.test(String(x.profileFrom)) ? x.profileFrom : '',
+    profileTo: MONTH_RE.test(String(x.profileTo)) ? x.profileTo : '',
+  };
+}
+
+function setPref(patch) {
+  Object.assign(P, patch);
+  prefStore.dirty = true;
+  clearTimeout(prefStore.timer);
+  prefStore.timer = setTimeout(flushPrefs, 700);
+}
+
+async function flushPrefs() {
+  if (!prefStore.dirty || prefStore.saving || ui.locking) return;
+  prefStore.saving = true;
+  prefStore.dirty = false;
+  try {
+    await Vault.savePrefs(P);
+  } catch (error) {
+    if (error.status === 426) { updatedElsewhere(); return; }
+    if (error.status !== 401) { prefStore.dirty = true; prefStore.timer = setTimeout(flushPrefs, 10000); }
+  } finally {
+    prefStore.saving = false;
+  }
+}
+
+/** Vybrané období je osobní; když ho data nemají (třeba ho někdo smazal), platí nejnovější. */
+function applyPeriodPref() {
+  const ids = Object.keys(S.periods).sort().reverse();
+  S.current = P.period && S.periods[P.period] ? P.period : (ids[0] || null);
+}
+
+function setPeriod(id) {
+  S.current = id || null;
+  ui.openDetail = null;
+  setPref({ period: S.current });
+}
+
+let reloadAsked = false;
+async function updatedElsewhere() {
+  if (reloadAsked) return;
+  reloadAsked = true;
+  await dialog({ title: 'Aplikace byla aktualizována', html: '<p>Na serveru běží nová verze aplikace. Obnov stránku a přihlas se znovu. Změny z posledních několika vteřin se nemusely uložit.</p>', ok: 'Obnovit stránku', cancel: '' });
+  location.reload();
+}
 
 function toast(message, error = false) { window.odmToast(message, error); }
 function setWidths(root = document) { $$('[data-w]', root).forEach(element => { element.style.width = `${element.dataset.w}%`; }); }
@@ -108,20 +184,35 @@ onStateChange = () => {
 };
 
 async function flushSave() {
-  if (!store.dirty || store.saving || store.conflict) return;
+  if (!S || !store.dirty || store.saving || store.conflict) return;
   store.saving = true;
   store.dirty = false;
   store.firstDirty = 0;
   clearTimeout(store.timer);
   renderSaveState();
+  // Na server jdou jen sdílená data; co se proti poslednímu uložení změnilo, přibude do historie.
+  const shared = sharedState(S);
+  const meta = { at: Date.now(), by: ui.me.label, card: ui.me.cardId };
+  let changes = { entries: [], hist: [] };
+  if (store.note) changes.entries = [{ ...meta, kind: store.note.kind || 'data', text: store.note.text }];
+  else changes = describeChanges(store.base, shared, meta);
+  applyHist(shared, changes.hist);
+  shared.log = appendLog(shared.log, changes.entries);
   try {
-    const result = await Vault.saveData(S, store.rev);
+    const result = await Vault.saveData(shared, store.rev);
     store.rev = result.rev;
     store.savedAt = result.saved_at;
     store.error = null;
+    store.base = shared;
+    store.note = null;
+    if (S) { applyHist(S, changes.hist); S.log = shared.log; }
+    if (changes.entries.length) renderLogBadge();
   } catch (error) {
     store.dirty = true;
-    if (error.status === 409) {
+    if (error.status === 426) {
+      store.error = 'Aplikace byla aktualizována, obnov stránku.';
+      updatedElsewhere();
+    } else if (error.status === 409) {
       store.conflict = true;
       resolveConflict();
     } else if (error.status === 401) {
@@ -151,7 +242,8 @@ async function resolveConflict() {
     try {
       const loaded = await Vault.loadData();
       S = sanitizeState(loaded.state || {});
-      Object.assign(store, { rev: loaded.rev, savedAt: loaded.savedAt, dirty: false, conflict: false, error: null });
+      applyPeriodPref();
+      Object.assign(store, { rev: loaded.rev, savedAt: loaded.savedAt, dirty: false, conflict: false, error: null, base: sharedState(S), note: null });
       renderAll();
       toast('Načtena novější verze dat.');
     } catch (error) {
@@ -160,10 +252,17 @@ async function resolveConflict() {
     return;
   }
   try {
-    const loaded = await Vault.api('data');
+    // Přepsání: historie změn z druhého zařízení se zachová, přibudou k ní naše.
+    const loaded = await Vault.loadData();
     store.rev = loaded.rev;
+    if (loaded.state && Array.isArray(loaded.state.log)) {
+      const theirs = sanitizeState({ log: loaded.state.log }).log;
+      const seen = new Set(S.log.map(x => `${x.at}|${x.card}|${x.text}`));
+      S.log = theirs.filter(x => !seen.has(`${x.at}|${x.card}|${x.text}`)).concat(S.log).sort((x, y) => x.at - y.at).slice(-LOG_MAX);
+    }
   } catch (error) { /* uložení to zkusí znovu */ }
   store.conflict = false;
+  store.dirty = true;
   flushSave();
 }
 
@@ -196,6 +295,7 @@ async function lockApp(auto = false) {
   } else if (store.dirty) {
     await Promise.race([flushSave(), new Promise(resolve => setTimeout(resolve, 5000))]);
   }
+  if (prefStore.dirty) { clearTimeout(prefStore.timer); await Promise.race([flushPrefs(), new Promise(resolve => setTimeout(resolve, 3000))]); }
   ui.locking = true;
   S = null;
   await Vault.lock();
@@ -203,7 +303,7 @@ async function lockApp(auto = false) {
 }
 
 function checkIdle() {
-  const minutes = S?.settings?.lockMinutes || 15;
+  const minutes = P.lockMinutes || 15;
   if (Date.now() - lastActivity > minutes * 60000) lockApp(true);
 }
 
@@ -240,11 +340,18 @@ function renderAll() {
   renderAttendance();
   renderProduction();
   renderSettings();
+  renderMatrix();
+  if (ui.view === 'profil') renderProfile();
   renderSaveState();
+  renderLogBadge();
 }
 
 function showView(name) {
+  if (name !== 'profil' && ui.view !== 'profil') ui.prevView = name;
+  else if (name === 'profil' && ui.view !== 'profil') ui.prevView = ui.view;
   ui.view = name;
+  if (name === 'profil') renderProfile();
+  if (name === 'matice') renderMatrix();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -260,7 +367,11 @@ function renderDemoBanner() {
     <div class="banner-actions"><button class="btn small" type="button" data-go="dochazka">Nahrát docházku</button><button class="btn sec small" type="button" id="btnClearDemo">Vymazat ukázku</button></div></div>`;
   $('#btnClearDemo').onclick = async () => {
     if (!(await confirmBox('Vymazat ukázku?', 'Smažou se ukázkoví lidé, docházka, výroba a sankce. Pozice a nastavení zůstanou.', 'Vymazat'))) return;
-    S = blank(); S.current = null; save(); ui.selPerson = null; renderAll(); toast('Ukázka smazána. Nahraj docházku.');
+    // Pozice, nastavení a důvody sankcí zůstávají (jak slibuje dialog), mizí jen ukázkoví lidé a jejich data.
+    const keep = { positions: S.positions, settings: S.settings, sanReasons: S.sanReasons };
+    S = Object.assign(blank(), keep); setPeriod(null);
+    store.note = { kind: 'data', text: 'Ukázková data vymazána' };
+    save(); ui.selPerson = null; renderAll(); toast('Ukázka smazána. Nahraj docházku.');
   };
 }
 
@@ -371,7 +482,7 @@ async function handleIssueClick(event) {
   if (button.dataset.issue) {
     const r = allRows().find(x => x.e.key === button.dataset.issue);
     if (!r) return true;
-    setIssued(r.e.key, { at: Date.now(), tabaky: r.total, kafe: r.kafe });
+    setIssued(r.e.key, { at: Date.now(), tabaky: r.total, kafe: r.kafe, pos: r.e.positionId || undefined, lvl: r.e.level || undefined });
     renderAll();
     toast(`${nameOf(r.e.key)}: vydáno ${issueWhat(r.total, r.kafe)}.`);
   } else {
@@ -386,29 +497,28 @@ async function handleIssueClick(event) {
 
 const LOCKED_COLS = ['rank', 'name', 'score'];
 function visibleColumns() {
-  const hidden = new Set(S.settings.hiddenCols || []);
+  const hidden = new Set(P.hiddenCols || []);
   return ovColumns().filter(c => LOCKED_COLS.includes(c.k) || !hidden.has(c.k));
 }
 
 function renderColPicker() {
-  const hidden = new Set(S.settings.hiddenCols || []);
+  const hidden = new Set(P.hiddenCols || []);
   const optional = ovColumns().filter(c => !LOCKED_COLS.includes(c.k));
   const count = optional.filter(c => hidden.has(c.k)).length;
   $('#colSum').textContent = `Sloupce${count ? ` (${count} skryté)` : ''}`;
   $('#colPanel').innerHTML = `<p class="eyebrow">Zobrazit v přehledu</p>${optional.map(c => `<label class="colopt"><input type="checkbox" data-col="${esc(c.k)}"${hidden.has(c.k) ? '' : ' checked'}><span>${esc(c.t)}</span></label>`).join('')}
-    <p class="tiny muted">Jméno a Tabáky jsou vidět vždy. Export do Excelu obsahuje všechny sloupce.</p>
+    <p class="tiny muted">Jméno a Tabáky jsou vidět vždy. Výběr platí jen pro tvou kartičku; export do Excelu obsahuje všechny sloupce.</p>
     <div class="row"><button class="btn ghost small" type="button" id="colAll">Zobrazit vše</button><button class="btn ghost small" type="button" id="colCompact" title="Skryje Dny, Víkend, Úroveň a Ø ks/den">Úsporné</button></div>`;
   $$('#colPanel [data-col]').forEach(box => {
     box.onchange = () => {
-      const set = new Set(S.settings.hiddenCols || []);
+      const set = new Set(P.hiddenCols || []);
       if (box.checked) set.delete(box.dataset.col); else set.add(box.dataset.col);
-      S.settings.hiddenCols = [...set];
-      save();
+      setPref({ hiddenCols: [...set] });
       renderOverview();
     };
   });
-  $('#colAll').onclick = () => { S.settings.hiddenCols = []; save(); renderOverview(); };
-  $('#colCompact').onclick = () => { S.settings.hiddenCols = ['days', 'wk', 'lvl', 'prod']; save(); renderOverview(); };
+  $('#colAll').onclick = () => { setPref({ hiddenCols: [] }); renderOverview(); };
+  $('#colCompact').onclick = () => { setPref({ hiddenCols: ['days', 'wk', 'lvl', 'prod'] }); renderOverview(); };
 }
 
 function deltaCell(v, title) {
@@ -427,13 +537,13 @@ function kafeCell(r) {
 
 function ovData() {
   const q = norm($('#ovSearch').value);
-  const position = $('#ovPos').value;
+  const position = S.positions.some(p => p.id === P.pos) ? P.pos : '';
   let rows = activeRows();
-  if ($('#ovOnlyImported').checked && curPeriod()) rows = rows.filter(r => r.att && r.att.found);
-  if ($('#ovOnlyOpen').checked) rows = rows.filter(r => (r.toIssue && !r.issued) || r.issuedChanged);
+  if (P.onlyImported && curPeriod()) rows = rows.filter(r => r.att && r.att.found);
+  if (P.onlyOpen) rows = rows.filter(r => (r.toIssue && !r.issued) || r.issuedChanged);
   if (position) rows = rows.filter(r => r.e.positionId === position);
   if (q) rows = rows.filter(r => norm(`${r.e.last} ${r.e.first}`).includes(q));
-  const { k, dir } = ui.ovSort;
+  const { k, dir } = P.sort;
   const val = r => ({
     name: norm(`${r.e.last} ${r.e.first}`), days: r.att ? r.att.workDays : -1, hours: r.att ? r.att.totalHours : -1,
     wk: r.att ? r.att.wkDays : -1, kafe: r.kafe ? 1 : 0, lvl: r.L.n * 1000 + r.L.base, att: r.attEff,
@@ -463,11 +573,13 @@ function renderTodo(all) {
 
 function renderOverview() {
   const p = curPeriod();
-  if (!visibleColumns().some(c => c.k === ui.ovSort.k)) ui.ovSort = { k: 'score', dir: -1 };
+  const sort = visibleColumns().some(c => c.k === P.sort.k) ? P.sort : { k: 'score', dir: -1 };
+  if (sort !== P.sort) P.sort = sort;
   const select = $('#ovPos');
-  const keep = select.value;
-  select.innerHTML = posOptions(keep, 'Všechny pozice');
-  select.value = keep;
+  select.innerHTML = posOptions(P.pos, 'Všechny pozice');
+  select.value = S.positions.some(p => p.id === P.pos) ? P.pos : '';
+  $('#ovOnlyImported').checked = P.onlyImported;
+  $('#ovOnlyOpen').checked = P.onlyOpen;
   $('#ovTitle').textContent = p ? periodName(p) : 'Zatím bez docházky';
   const meta = p ? periodMeta(p) : null;
   $('#ovLede').innerHTML = p
@@ -514,8 +626,8 @@ function renderOverview() {
   const excluded = excludedPeople();
   $('#ovExcluded').innerHTML = excluded.length ? `<p class="hint">Vyřazeno ze seznamu (${excluded.length}): ${excluded.map(e => esc(`${e.last} ${e.first}`)).join(', ')}. Vrátit je můžeš v části <button class="link" type="button" data-go="lide">Lidé</button>.</p>` : '';
   $('#ovHead').innerHTML = cols.map(c => {
-    const active = ui.ovSort.k === c.k;
-    return `<th class="${c.cls || ''} col-${c.k}${c.sort ? ' sortable' : ''}"${c.sort ? ` data-sort="${c.k}" tabindex="0" role="button" aria-sort="${active ? (ui.ovSort.dir > 0 ? 'ascending' : 'descending') : 'none'}"` : ''}${c.hint ? ` title="${esc(c.hint)}"` : ''}>${esc(c.t)}${active ? ` <span class="ar">${ui.ovSort.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`;
+    const active = P.sort.k === c.k;
+    return `<th class="${c.cls || ''} col-${c.k}${c.sort ? ' sortable' : ''}"${c.sort ? ` data-sort="${c.k}" tabindex="0" role="button" aria-sort="${active ? (P.sort.dir > 0 ? 'ascending' : 'descending') : 'none'}"` : ''}${c.hint ? ` title="${esc(c.hint)}"` : ''}>${esc(c.t)}${active ? ` <span class="ar">${P.sort.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`;
   }).join('');
 
   if (!rows.length) {
@@ -611,7 +723,7 @@ function ovDetailRow(r) {
     <div><p class="eyebrow">Docházka</p>${attKv(r)}</div>
     <div><p class="eyebrow">Úroveň</p>${lvlKv(r)}</div>
     <div><p class="eyebrow">Tabáky</p>${sumKv(r)}
-      <div class="row gap">${adjCtrl(r)}<button class="btn sec small" type="button" data-edit="${esc(r.e.key)}">Upravit zařazení</button>${issueCell(r)}</div>
+      <div class="row gap">${adjCtrl(r)}<button class="btn sec small" type="button" data-edit="${esc(r.e.key)}">Upravit zařazení</button><button class="btn sec small" type="button" data-profile="${esc(r.e.key)}">Profil a historie</button>${issueCell(r)}</div>
       <button class="btn ghost small" type="button" data-exclude="${esc(r.e.key)}" title="Přestane se hodnotit, data zůstanou; vrátit jde v části Lidé">Vyřadit ze seznamu</button>
     </div>
     ${r.prod ? `<div><p class="eyebrow">Výroba · mimo bodování</p>${prodKv(r)}</div>` : pairBlock(r)}
@@ -698,6 +810,7 @@ function renderPersonDetail() {
       <div class="card-head">
         <div><p class="eyebrow">Zaměstnanec</p><h2>${esc(e.last)} ${esc(e.first)}</h2></div>
         <div class="row gap">
+          <button class="btn small" type="button" data-profile="${esc(e.key)}">Profil a historie</button>
           ${e.excluded ? `<button class="btn small" type="button" data-include="${esc(e.key)}">Vrátit do seznamu</button>` : `<button class="btn sec small" type="button" data-exclude="${esc(e.key)}" title="Přestane se hodnotit, data zůstanou">Vyřadit</button>`}
           <button class="btn ghost small" type="button" id="pDel" title="Smaže člověka i jeho zařazení a sankce">Smazat</button>
         </div>
@@ -718,6 +831,15 @@ function renderPersonDetail() {
           <span class="lvltab num">${+lv.tabaky || 0}<small>${tabW(+lv.tabaky || 0)}</small></span>
         </label>`).join('')}</div>` : '<p class="muted small">Nejdřív vyber pozici.</p>'}
     </div>
+    ${S.positions.some(x => x.id !== e.positionId) ? `<div class="card">
+      <h3>Zaučení na dalších pozicích</h3>
+      <p class="small muted">Pro matici dovedností. Tabáky se počítají jen z hlavní pozice.</p>
+      <div class="skill-list">${S.positions.filter(x => x.id !== e.positionId).map(x => {
+        const v = (e.skills && e.skills[x.id]) || 0;
+        return `<div class="skill-row"><span class="skill-name">${iluo(v)}<span>${esc(x.name || '(bez názvu)')}<small>${esc(deptOf(x))}</small></span></span>
+          <div class="seg" role="group" aria-label="${esc(`Zaučení na pozici ${x.name}`)}">${[0, 1, 2, 3, 4].map(n => `<button type="button" class="${n === v ? 'on' : ''}" data-skill="${esc(x.id)}" data-key="${esc(e.key)}" data-lvl="${n}" aria-pressed="${n === v}" title="${esc(n ? `${n} · ${x.levels[n - 1].name}` : 'nezaučen')}">${n || '–'}</button>`).join('')}</div></div>`;
+      }).join('')}</div>
+    </div>` : ''}
     <div class="card">
       <h3>Tabáky · ${esc(periodName2(p))}</h3>
       ${sumKv(r)}
@@ -733,6 +855,7 @@ function renderPersonDetail() {
   $('#pPos').onchange = event => {
     e.positionId = event.target.value || null;
     if (e.positionId && !e.level) e.level = 1;
+    if (e.skills && e.positionId) { delete e.skills[e.positionId]; if (!Object.keys(e.skills).length) delete e.skills; }
     save(); renderPeople(); renderOverview(); renderPeriodBits();
   };
   $('#pNote').oninput = event => { e.note = event.target.value; save(); };
@@ -792,11 +915,12 @@ function renderSanctions() {
     <button class="btn sec small" type="button" id="sanReasonAdd">Přidat důvod</button>`;
 
   const months = [...new Set(S.sanctions.map(s => s.period))].sort().reverse();
-  $('#sanFilter').innerHTML = `<option value="">Všechny měsíce</option>${months.map(m => `<option value="${esc(m)}"${m === ui.sanFilter ? ' selected' : ''}>${esc(monthLabel(m))}</option>`).join('')}`;
-  $('#sanFilter').value = ui.sanFilter;
+  const sanFilter = months.includes(P.sanFilter) ? P.sanFilter : '';
+  $('#sanFilter').innerHTML = `<option value="">Všechny měsíce</option>${months.map(m => `<option value="${esc(m)}"${m === sanFilter ? ' selected' : ''}>${esc(monthLabel(m))}</option>`).join('')}`;
+  $('#sanFilter').value = sanFilter;
   const q = norm($('#sanSearch').value);
   let list = S.sanctions.slice().sort((a, b) => String(b.period).localeCompare(String(a.period)) || b.at - a.at);
-  if (ui.sanFilter) list = list.filter(s => s.period === ui.sanFilter);
+  if (sanFilter) list = list.filter(s => s.period === sanFilter);
   if (q) list = list.filter(s => norm(`${nameOf(s.key)} ${sanLabel(s)}`).includes(q));
   $('#sanList').innerHTML = list.length ? `<div class="table-card"><table class="stack"><thead><tr><th>Měsíc</th><th>Zaměstnanec</th><th>Důvod</th><th class="r">Srážka</th><th>Poznámka</th><th class="r">Zadáno</th><th></th></tr></thead><tbody>${list.map(s => `<tr>
       <td data-label="Měsíc" class="small nowrap">${esc(monthLabel(s.period))}</td>
@@ -898,8 +1022,10 @@ function renderPositions() {
     <div class="card">
       <div class="form-grid pos-head">
         <label class="field"><span>Název pozice</span><input type="text" id="posName" value="${esc(p.name)}" maxlength="80"></label>
+        <label class="field"><span>Oddělení</span><input type="text" id="posDept" value="${esc(p.dept || '')}" maxlength="60" placeholder="${esc(p.name || 'stejné jako pozice')}" list="deptList"><datalist id="deptList">${[...new Set(S.positions.map(x => (x.dept || '').trim()).filter(Boolean))].map(d => `<option value="${esc(d)}"></option>`).join('')}</datalist></label>
         <label class="field"><span>Maximum tabáků</span><input type="number" id="posMax" value="${p.max != null && p.max !== '' ? p.max : ''}" placeholder="${posMaxAuto(p)}" min="0" max="200" step="1"></label>
       </div>
+      <p class="small muted">Oddělení seskupuje pozice v matici dovedností. Když ho nevyplníš, pozice je oddělením sama pro sebe.</p>
       <p class="small muted">${counts[p.id] || 0} lidí na této pozici. Maximum je strop po sečtení úrovně a docházky; bonus za víkendy nikoho nepustí výš. ${p.max != null && p.max !== '' ? `Vlastní maximum ${posMax(p)}. Smaž hodnotu pro návrat k nejvyšší úrovni (${posMaxAuto(p)}).` : `Teď podle nejvyšší úrovně: ${posMaxAuto(p)}.`}</p>
       <div class="row end"><button class="btn danger small" type="button" id="posDel">Smazat pozici</button></div>
     </div>
@@ -925,6 +1051,10 @@ function renderPositions() {
     if (label) label.textContent = p.name || '(bez názvu)';
     refresh();
   };
+  $('#posDept').onchange = event => {
+    p.dept = String(event.target.value).trim().slice(0, 60);
+    save(); renderMatrix(); renderPositions();
+  };
   $('#posMax').onchange = event => {
     const v = String(event.target.value).trim();
     p.max = v === '' ? null : clamp(Math.round(+v || 0), 0, 200);
@@ -933,7 +1063,10 @@ function renderPositions() {
   $('#posDel').onclick = async () => {
     const n = Object.values(S.employees).filter(e => e.positionId === p.id).length;
     if (!(await confirmBox('Smazat pozici?', `Pozice ${p.name}${n ? ` zmizí a ${n} lidí zůstane bez zařazení.` : ' zmizí.'}`, 'Smazat', true))) return;
-    Object.values(S.employees).forEach(e => { if (e.positionId === p.id) e.positionId = null; });
+    Object.values(S.employees).forEach(e => {
+      if (e.positionId === p.id) e.positionId = null;
+      if (e.skills) { delete e.skills[p.id]; if (!Object.keys(e.skills).length) delete e.skills; }
+    });
     S.positions = S.positions.filter(x => x.id !== p.id);
     ui.selPos = null; ui.posOpen = false;
     save(); renderAll(); toast('Pozice smazána.');
@@ -1014,9 +1147,12 @@ async function doImport(aoa, name, fy, fm, force = false) {
   if (!force && !S.demo && S.periods[per.id]) {
     if (!(await confirmBox('Přepsat docházku?', `Docházka za ${periodName(per)} už je nahraná. Nový soubor ji nahradí; zařazení, sankce, ruční úpravy a výdeje zůstanou.`, 'Přepsat'))) return;
   }
-  if (S.demo) { S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; }
+  if (S.demo) {
+    S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; S.log = [];
+    store.note = { kind: 'import', text: `Nahrána první docházka za ${periodName(per)} (${Object.keys(per.rows).length} lidí, ${name}); ukázková data smazána` };
+  }
   S.periods[per.id] = per;
-  S.current = per.id;
+  setPeriod(per.id);
   let added = 0;
   Object.entries(per.rows).forEach(([k, r]) => {
     if (!S.employees[k]) { S.employees[k] = { key: k, first: r.first, last: r.last, positionId: null, level: null, note: '' }; added += 1; }
@@ -1222,7 +1358,10 @@ function renderSettings() {
       html: '<p>Smažou se pozice, lidé, docházka, výroba, sankce i výdeje. Dosavadní stav zůstane v historii verzí, odkud ho jde vrátit.</p><label class="field"><span>Pro potvrzení napiš SMAZAT</span><input name="confirm" autocomplete="off" required autofocus></label>',
       validate: form => (form.elements.confirm.value.trim().toUpperCase() === 'SMAZAT' ? null : 'Napiš SMAZAT velkými písmeny.') });
     if (result.value !== 'ok') return;
-    S = blank(); save(); ui.selPerson = null; renderAll(); toast('Vymazáno.');
+    const keepLog = S.log;
+    S = blank(); S.log = keepLog; setPeriod(null);
+    store.note = { kind: 'data', text: 'Vymazána všechna data (předchozí stav je v historii verzí)' };
+    save(); ui.selPerson = null; renderAll(); toast('Vymazáno.');
   };
 }
 
@@ -1230,17 +1369,18 @@ const secCache = { cards: null, devices: null };
 
 function renderSecurity() {
   const device = Vault.readDevice();
-  const lock = S.settings.lockMinutes || 15;
+  const lock = P.lockMinutes || 15;
   const spinner = '<div class="spinner small"></div>';
   $('#setSecurity').innerHTML = `<h3>${I.shield}Zabezpečení</h3>
     <p class="small muted">Do aplikace se dostane jen ten, kdo má přístupovou kartičku, nebo zapamatované zařízení s PINem. Každá kartička otevře stejná data.</p>
     <div class="sec-block"><div class="sec-head"><p class="eyebrow">Přístupové kartičky</p><button class="btn sec small" type="button" id="secNewCard">Nová kartička</button></div><div id="secCards" class="sec-list">${secCache.cards ?? spinner}</div></div>
     <div class="sec-block"><div class="sec-head"><p class="eyebrow">Zapamatovaná zařízení</p>${device ? '<button class="btn sec small" type="button" id="secRepin">Změnit PIN</button>' : '<button class="btn sec small" type="button" id="secEnroll">Zapamatovat toto zařízení</button>'}</div><div id="secDevices" class="sec-list">${secCache.devices ?? spinner}</div></div>
     <div class="form-grid">
-      <label class="field"><span>Zamknout po nečinnosti</span><select id="secLock">${[5, 10, 15, 30, 60].map(m => `<option value="${m}"${m === lock ? ' selected' : ''}>${m} minut</option>`).join('')}</select></label>
+      <label class="field"><span>Zamknout po nečinnosti (jen tvoje kartička)</span><select id="secLock">${[5, 10, 15, 30, 60].map(m => `<option value="${m}"${m === lock ? ' selected' : ''}>${m} minut</option>`).join('')}</select></label>
       <div class="field"><span>&nbsp;</span><button class="btn sec" type="button" id="secLockNow">Zamknout teď</button></div>
-    </div>`;
-  $('#secLock').onchange = event => { S.settings.lockMinutes = +event.target.value; save(); toast(`Aplikace se zamkne po ${S.settings.lockMinutes} minutách nečinnosti.`); };
+    </div>
+    <p class="tiny muted">Přihlášen${ui.me.label ? ` kartičkou <b>${esc(ui.me.label)}</b>` : ''}${ui.me.device ? ` na zařízení ${esc(ui.me.device)}` : ''}. Filtry, vybrané období, řazení a skryté sloupce si aplikace pamatuje zvlášť pro každou kartičku. Verze aplikace ${esc(ui.me.version || '')}.</p>`;
+  $('#secLock').onchange = event => { setPref({ lockMinutes: +event.target.value }); toast(`Aplikace se zamkne po ${P.lockMinutes} minutách nečinnosti.`); };
   $('#secLockNow').onclick = () => lockApp();
   $('#secNewCard').onclick = newCard;
   if ($('#secEnroll')) $('#secEnroll').onclick = () => enrollThisDevice(false);
@@ -1381,9 +1521,15 @@ async function askKeyForBackup() {
   return key;
 }
 
-async function replaceState(next, message) {
+/** Nahradí data (záloha, starší verze, původní aplikace). Historie změn pokračuje dál, jeden záznam o obnovení. */
+async function replaceState(next, message, note) {
+  const keepLog = S.log;
   S = sanitizeState(next);
-  ui.selPerson = null; ui.selPos = null; ui.openDetail = null;
+  S.log = keepLog;
+  applyPeriodPref();
+  store.note = { kind: 'data', text: note || message };
+  ui.selPerson = null; ui.selPos = null; ui.openDetail = null; ui.profileKey = null;
+  if (ui.view === 'profil') showView('lide');
   save();
   renderAll();
   toast(message);
@@ -1403,7 +1549,7 @@ async function restoreBackup(file) {
   }
   const when = data.created_at ? new Date(data.created_at).toLocaleString('cs-CZ') : 'neznámé datum';
   if (!(await confirmBox('Obnovit ze zálohy?', `Současná data se nahradí zálohou z ${when}. Dosavadní stav zůstane v historii verzí.`, 'Obnovit'))) return;
-  replaceState(opened.state, 'Data jsou obnovená ze zálohy.');
+  replaceState(opened.state, 'Data jsou obnovená ze zálohy.', `Obnoveno ze zálohy z ${when}`);
 }
 
 async function showVersions() {
@@ -1418,7 +1564,8 @@ async function showVersions() {
   if (!chosen) return;
   try {
     const state = await Vault.loadVersion(chosen);
-    replaceState(state, 'Data jsou vrácená do vybrané verze.');
+    const item = items.find(x => x.rev === chosen);
+    replaceState(state, 'Data jsou vrácená do vybrané verze.', `Data vrácena do verze z ${item ? new Date(item.created_at).toLocaleString('cs-CZ') : 'historie'}`);
   } catch (error) { toast(error.message, true); }
 }
 
@@ -1427,7 +1574,7 @@ async function importLegacy(file) {
   try { data = JSON.parse(await file.text()); } catch (error) { toast('Soubor nejde přečíst.', true); return; }
   if (!data || typeof data !== 'object' || !data.positions || !data.employees) { toast('Tohle není záloha původní aplikace (chybí pozice a lidé).', true); return; }
   if (!(await confirmBox('Načíst data z původní aplikace?', 'Současná data se nahradí obsahem souboru. Dosavadní stav zůstane v historii verzí.', 'Načíst'))) return;
-  replaceState(data, 'Data z původní aplikace jsou načtená a zašifrovaná.');
+  replaceState(data, 'Data z původní aplikace jsou načtená a zašifrovaná.', `Načtena data z původní aplikace (${file.name})`);
 }
 
 /* ==========================================================================
@@ -1480,6 +1627,485 @@ async function readRoster(file) {
 }
 
 /* ==========================================================================
+   HISTORIE ZMĚN (kdo, co a kdy změnil)
+   ========================================================================== */
+const svg = (d, cls = 'icon') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const LOG_ICON = {
+  person: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-3.8 3.8-5.5 7-5.5s6 1.7 7 5.5"/>'),
+  level: svg('<path d="M4 19h4v-4h4v-4h4V7h4"/>'),
+  sanction: svg('<path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/>'),
+  adjust: svg('<path d="M12 5v6M9 8h6M9 17h6"/>'),
+  issue: svg('<path d="m5 12.5 4.5 4.5L19 7.5"/>'),
+  import: svg('<path d="M14 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3.5V8h4.5M12 17.5v-6M9.5 14 12 11.5l2.5 2.5"/>'),
+  position: svg('<path d="M4 7h10M4 12h16M4 17h7"/><circle cx="17" cy="7" r="2"/><circle cx="14" cy="17" r="2"/>'),
+  settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>'),
+  data: svg('<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>'),
+};
+const LOG_FILTERS = [
+  ['all', 'Vše', null],
+  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings']],
+  ['people', 'Lidé a úrovně', ['person', 'level']],
+  ['sanction', 'Sankce', ['sanction']],
+  ['tab', 'Tabáky a výdej', ['adjust', 'issue']],
+  ['import', 'Importy a data', ['import', 'data']],
+  ['settings', 'Pozice a nastavení', ['position', 'settings']],
+];
+
+function unseenLog() {
+  return (S?.log || []).filter(x => x.at > P.logSeen && x.card !== ui.me.cardId).length;
+}
+
+function renderLogBadge() {
+  const badge = $('#logBadge');
+  if (!badge || !S) return;
+  const n = unseenLog();
+  badge.hidden = !n;
+  badge.textContent = n > 99 ? '99+' : String(n);
+  $('#logBtn').title = n ? `Poslední změny: ${n} nových od ostatních` : 'Poslední změny';
+}
+
+function logDay(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const start = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(today) - start(d)) / 864e5);
+  if (diff === 0) return 'Dnes';
+  if (diff === 1) return 'Včera';
+  return d.toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' });
+}
+
+function logListHtml(items, seen, withProfile = true) {
+  let html = '';
+  let day = '';
+  items.forEach(x => {
+    const d = logDay(x.at);
+    if (d !== day) { html += `<p class="log-day">${esc(d)}</p>`; day = d; }
+    const isNew = x.at > seen && x.card !== ui.me.cardId;
+    const time = new Date(x.at).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+    html += `<div class="log-item${isNew ? ' new' : ''}" data-kind="${esc(x.kind)}"><span class="log-ico">${LOG_ICON[x.kind] || LOG_ICON.data}</span>
+      <div class="log-body"><p>${esc(x.text)}</p><small>${esc(time)} · ${esc(x.by || 'neznámá kartička')}${ui.me.cardId && x.card === ui.me.cardId ? ' (ty)' : ''}${isNew ? ' · <b>nové</b>' : ''}</small></div>
+      ${withProfile && x.key && S.employees[x.key] ? `<button class="btn ghost small" type="button" data-logprofile="${esc(x.key)}">Profil</button>` : ''}</div>`;
+  });
+  return html;
+}
+
+async function openLog() {
+  await flushSave();
+  const seen = P.logSeen;
+  setPref({ logSeen: Date.now() });
+  renderLogBadge();
+  let filter = 'all';
+  let query = '';
+  let limit = 80;
+  let target = null;
+  await dialog({
+    title: 'Poslední změny', wide: true, ok: '', cancel: 'Zavřít',
+    html: `<p class="small muted">Každá úprava dat s tím, kdo ji udělal (podle přihlášené kartičky) a kdy. Opakované úpravy téže věci během pár minut se slučují.</p>
+      <div class="log-tools"><div class="chips">${LOG_FILTERS.map(([k, t]) => `<button type="button" class="chip${k === 'all' ? ' on' : ''}" data-lf="${k}" aria-pressed="${k === 'all'}">${t}</button>`).join('')}</div>
+      <input type="search" id="logQ" placeholder="Hledat jméno, kartičku nebo text…" aria-label="Hledat v historii"></div>
+      <div class="log-list" id="logList"></div>`,
+    onOpen: dlg => {
+      const draw = () => {
+        const kinds = LOG_FILTERS.find(f => f[0] === filter)[2];
+        const all = (S.log || []).slice().reverse().filter(x => (!kinds || kinds.includes(x.kind)) && (!query || norm(`${x.text} ${x.by}`).includes(query)));
+        const items = all.slice(0, limit);
+        $('#logList', dlg).innerHTML = items.length
+          ? logListHtml(items, seen) + (all.length > limit ? `<button class="btn sec small wide" type="button" id="logMore">Zobrazit starší (${all.length - limit})</button>` : '')
+          : emptyState(S.log.length ? 'Nic neodpovídá' : 'Zatím žádné změny', S.log.length ? 'Zkus jiný filtr nebo hledání.' : 'Každá úprava dat se tu objeví i s tím, kdo a kdy ji udělal.');
+        const more = $('#logMore', dlg);
+        if (more) more.onclick = () => { limit += 150; draw(); };
+      };
+      $$('[data-lf]', dlg).forEach(button => {
+        button.onclick = () => {
+          filter = button.dataset.lf;
+          $$('[data-lf]', dlg).forEach(x => { x.classList.toggle('on', x === button); x.setAttribute('aria-pressed', String(x === button)); });
+          limit = 80;
+          draw();
+        };
+      });
+      $('#logQ', dlg).oninput = event => { query = norm(event.target.value); limit = 80; draw(); };
+      $('#logList', dlg).onclick = event => {
+        const button = event.target.closest('[data-logprofile]');
+        if (button) { target = button.dataset.logprofile; dlg.close('cancel'); }
+      };
+      draw();
+    },
+  });
+  if (target) openProfile(target);
+}
+
+/* ==========================================================================
+   MATICE DOVEDNOSTÍ
+   ========================================================================== */
+/** Čtvrtinový kruh (ILUO): 1 = čtvrtina … 4 = plný kruh. */
+function iluo(n, main = false) {
+  const c = 9;
+  const r = 7;
+  let fill = '';
+  if (n >= 4) fill = `<circle class="fill" cx="${c}" cy="${c}" r="${r}"/>`;
+  else if (n > 0) {
+    const angle = n * Math.PI / 2;
+    const x = c + r * Math.sin(angle);
+    const y = c - r * Math.cos(angle);
+    fill = `<path class="fill" d="M${c} ${c}V${c - r}A${r} ${r} 0 ${n > 2 ? 1 : 0} 1 ${x.toFixed(2)} ${y.toFixed(2)}Z"/>`;
+  }
+  return `<svg class="iluo l${n}${main ? ' main' : ''}" viewBox="0 0 18 18" aria-hidden="true"><circle class="ring" cx="${c}" cy="${c}" r="${r}"/>${fill}</svg>`;
+}
+
+function setSkill(key, posId, lvl) {
+  const e = S.employees[key];
+  if (!e || e.positionId === posId || !S.positions.some(p => p.id === posId)) return;
+  e.skills = e.skills || {};
+  if (lvl >= 1 && lvl <= 4) e.skills[posId] = lvl; else delete e.skills[posId];
+  if (!Object.keys(e.skills).length) delete e.skills;
+  save();
+}
+
+function renderMatrix() {
+  const box = $('#matrixView');
+  if (!box || !S) return;
+  const depts = departments();
+  const dept = depts.includes(P.matrixDept) ? P.matrixDept : '';
+  $('#matrixDept').innerHTML = `<option value="">Všechna oddělení</option>${depts.map(d => `<option value="${esc(d)}"${d === dept ? ' selected' : ''}>${esc(d)}</option>`).join('')}`;
+  $('#matrixLegend').innerHTML = `<span>${iluo(1)} 1 zaučuje se</span><span>${iluo(2)} 2 pokročilý</span><span>${iluo(3)} 3 samostatný</span><span>${iluo(4)} 4 profík, zaučuje ostatní</span><span>${iluo(3, true)} hlavní pozice</span><span><i class="mx-risk-dot"></i> méně než 2 samostatní na pozici</span>`;
+  const m = skillMatrix(dept || null);
+  if (!m.cols.length || !m.rows.length) {
+    box.innerHTML = `<div class="card">${emptyState(m.cols.length ? 'Zatím nikdo' : 'Žádné pozice', m.cols.length ? 'Zařaď lidi na pozice v části Lidé, nebo jim přidej zaučení v jejich detailu.' : 'Nejdřív založ pozice.')}</div>`;
+    return;
+  }
+  const groups = [];
+  m.cols.forEach(p => {
+    const d = deptOf(p);
+    const last = groups[groups.length - 1];
+    if (last && last.d === d) last.n += 1; else groups.push({ d, n: 1 });
+  });
+  const cell = (r, c, j) => {
+    const p = m.cols[j];
+    if (c.main) return `<td class="mx-cell is-main"><span class="mx-static" title="${esc(`${p.name}: hlavní pozice, úroveň ${c.lvl || 'nevybraná'}. Mění se v detailu člověka.`)}">${iluo(c.lvl, true)}<b>${c.lvl || '?'}</b></span></td>`;
+    const next = (c.lvl + 1) % 5;
+    return `<td class="mx-cell"><button type="button" class="mx-btn" data-mx="${esc(r.e.key)}" data-pos="${esc(p.id)}" data-lvl="${c.lvl}" title="${esc(`${p.name}: ${c.lvl ? `zaučení ${c.lvl} (${p.levels[c.lvl - 1].name})` : 'nezaučen'}. Kliknutím ${next ? `na ${next}` : 'zrušíš'}.`)}" aria-label="${esc(`${r.e.last} ${r.e.first}, ${p.name}: ${c.lvl || 'nezaučen'}`)}">${iluo(c.lvl)}<b>${c.lvl || ''}</b></button></td>`;
+  };
+  box.innerHTML = `<div class="table-card matrix-card"><table class="matrix">
+    <thead>${dept ? '' : `<tr class="mx-depts"><th colspan="2"></th>${groups.map(g => `<th colspan="${g.n}" class="mx-dept">${esc(g.d)}</th>`).join('')}</tr>`}
+      <tr><th class="mx-name">Zaměstnanec</th><th class="mx-main">Hlavní pozice</th>${m.cols.map(p => `<th class="mx-col" title="${esc(p.name)}"><span>${esc(p.name)}</span></th>`).join('')}</tr></thead>
+    <tbody>${m.rows.map((r, i) => `${dept && !r.home && (i === 0 || m.rows[i - 1].home) ? `<tr class="mx-sep"><td colspan="${m.cols.length + 2}">Zaučení z jiných oddělení</td></tr>` : ''}<tr>
+      <th class="mx-name" scope="row"><button class="linkish" type="button" data-profile="${esc(r.e.key)}">${esc(r.e.last)} ${esc(r.e.first)}</button></th>
+      <td class="mx-main">${r.pos ? `${esc(r.pos.name)}${r.e.level ? ` <span class="lvl l${r.e.level}">${r.e.level}</span>` : ''}` : '<span class="muted">—</span>'}</td>
+      ${r.cells.map((c, j) => cell(r, c, j)).join('')}</tr>`).join('')}</tbody>
+    <tfoot><tr><th colspan="2">Samostatní (úroveň 3–4)</th>${m.coverage.map(c => `<td class="${c.ready < 2 ? 'mx-risk' : ''}" title="${esc(`${c.counts[4]}× profík, ${c.counts[3]}× samostatný`)}">${c.ready}</td>`).join('')}</tr>
+      <tr><th colspan="2">Zaučení celkem (1–4)</th>${m.coverage.map(c => `<td>${c.trained}</td>`).join('')}</tr></tfoot>
+  </table></div>`;
+}
+
+async function exportMatrix() {
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    matrixSheets().forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`matice-dovednosti-${new Date().toISOString().slice(0, 10)}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
+/* ==========================================================================
+   PROFIL ČLOVĚKA
+   ========================================================================== */
+const RANGE_PRESETS = [['month', 'Vybraný měsíc'], ['3', '3 měsíce'], ['6', '6 měsíců'], ['12', '12 měsíců'], ['year', 'Rok'], ['all', 'Celá historie'], ['custom', 'Vlastní období']];
+
+function openProfile(key) {
+  if (!S.employees[key]) { toast('Tenhle člověk už v evidenci není.', true); return; }
+  ui.profileKey = key;
+  showView('profil');
+}
+
+function shiftMonth(id, delta) {
+  const d = new Date(+id.slice(0, 4), +id.slice(5, 7) - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function profileRange(key) {
+  const all = personMonths(key);
+  const last = all[all.length - 1] || S.current || thisMonthId();
+  switch (P.profileRange) {
+    case 'month': { const id = S.current || last; return [id, id]; }
+    case '3': return [shiftMonth(last, -2), last];
+    case '6': return [shiftMonth(last, -5), last];
+    case 'year': return [`${last.slice(0, 4)}-01`, `${last.slice(0, 4)}-12`];
+    case 'all': return [all[0] || last, last];
+    case 'custom': {
+      const from = P.profileFrom || all[0] || last;
+      const to = P.profileTo || last;
+      return from <= to ? [from, to] : [to, from];
+    }
+    default: return [shiftMonth(last, -11), last];
+  }
+}
+
+function niceMax(v) {
+  if (v <= 0) return 1;
+  const pow = 10 ** Math.floor(Math.log10(v));
+  const n = v / pow;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * pow;
+}
+
+/** Sloupcový graf jedné řady po měsících (SVG). Hodnoty ukazuje tooltip i tabulka pod grafy. */
+function columnChart({ title, sub, months, value, tip, tone, yMax = null, fmt = v => nf(v, 1), ref = null }) {
+  const W = 340;
+  const H = 168;
+  const L = 34;
+  const R = 8;
+  const T = 16;
+  const B = 24;
+  const vals = months.map(value);
+  const present = vals.filter(v => v != null);
+  if (!present.length) return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption><div class="chart-empty">V tomto období bez údajů.</div></figure>`;
+  const top = yMax ?? niceMax(Math.max(...present) * 1.08);
+  const plotH = H - T - B;
+  const band = (W - L - R) / months.length;
+  const bw = Math.max(3, Math.min(24, band - 4));
+  const y = v => T + plotH - (Math.min(v, top) / top) * plotH;
+  const ticks = [0, top / 2, top];
+  const every = Math.ceil(months.length / 8);
+  let lastIdx = -1;
+  vals.forEach((v, i) => { if (v != null) lastIdx = i; });
+  const bars = vals.map((v, i) => {
+    const x = L + i * band + (band - bw) / 2;
+    const base = T + plotH;
+    let mark = '';
+    if (v != null && v > 0) {
+      const yy = y(v);
+      const r = Math.min(4, bw / 2, base - yy);
+      mark = `<path class="bar" d="M${x.toFixed(1)} ${base}V${(yy + r).toFixed(1)}Q${x.toFixed(1)} ${yy.toFixed(1)} ${(x + r).toFixed(1)} ${yy.toFixed(1)}H${(x + bw - r).toFixed(1)}Q${(x + bw).toFixed(1)} ${yy.toFixed(1)} ${(x + bw).toFixed(1)} ${(yy + r).toFixed(1)}V${base}Z"/>`;
+    } else if (v === 0) {
+      mark = `<rect class="bar zero" x="${x.toFixed(1)}" y="${base - 1}" width="${bw.toFixed(1)}" height="1"/>`;
+    }
+    const label = i % every === 0 || i === months.length - 1
+      ? `<text class="xl" x="${(L + i * band + band / 2).toFixed(1)}" y="${H - 8}">${esc(MON[+months[i].id.slice(5, 7) - 1])}${i === 0 || months[i].id.slice(5, 7) === '01' ? ` ${months[i].id.slice(2, 4)}` : ''}</text>` : '';
+    const cap = i === lastIdx && v != null ? `<text class="cap" x="${(x + bw / 2).toFixed(1)}" y="${(y(v) - 5).toFixed(1)}">${esc(fmt(v))}</text>` : '';
+    const hit = `<rect class="hit" x="${(L + i * band).toFixed(1)}" y="${T}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" data-tip="${esc(tip(months[i], v))}"/>`;
+    return mark + cap + label + hit;
+  }).join('');
+  const grid = ticks.map(t => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}"/><text class="yl" x="${L - 6}" y="${(y(t) + 3.5).toFixed(1)}">${esc(fmt(t))}</text>`).join('');
+  const refLine = ref != null && ref <= top ? `<line class="ref" x1="${L}" x2="${W - R}" y1="${y(ref).toFixed(1)}" y2="${y(ref).toFixed(1)}"/>` : '';
+  return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}${refLine}${bars}</svg></figure>`;
+}
+
+function pfCalendar(cells) {
+  return `<div class="calwrap"><div class="calrow">${cells.map(c => {
+    let cls = 'cell';
+    if (c.wk) cls += c.h > 0 ? ' wk' : ' wk0';
+    else if (c.h >= (c.ds || S.settings.shift) - 1e-9) cls += ' full';
+    else if (c.h > 0) cls += ' part';
+    else if (c.ex || c.c) cls += ' abs';
+    else cls += ' miss';
+    return `<div class="${cls}" title="${esc(`${DOW[c.dow]} ${c.d}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c || 'nic')}${c.hol ? ` — ${c.hol}` : ''}`)}">${c.d}</div>`;
+  }).join('')}</div></div>`;
+}
+
+function renderProfile() {
+  const box = $('#profileView');
+  if (!box || !S) return;
+  const e = ui.profileKey ? S.employees[ui.profileKey] : null;
+  if (!e) {
+    box.innerHTML = `<button class="btn ghost small" type="button" data-pfback>${I.back}Zpět</button><div class="card">${emptyState('Profil není k dispozici', 'Člověk už v evidenci není.')}</div>`;
+    return;
+  }
+  const [from, to] = profileRange(e.key);
+  const pd = profileData(e.key, from, to);
+  const t = pd.totals;
+  const L = levelOf(e);
+  const name = `${e.last} ${e.first}`;
+  const months = pd.months;
+  const rangeLabel = from === to ? monthLabel(from) : `${monthLabel(from)} – ${monthLabel(to)}`;
+  const skills = S.positions.filter(p => p.id !== e.positionId && e.skills && e.skills[p.id]);
+  const personLog = (S.log || []).filter(x => x.key === e.key).slice(-25).reverse();
+  const chartMonths = monthsBetween(from, to).map(id => months.find(m => m.id === id) || { id, label: monthLabel(id), hasAtt: false, prod: null, sanctions: [] });
+
+  box.innerHTML = `<div class="pf-top noprint"><button class="btn ghost small" type="button" data-pfback>${I.back}Zpět</button></div>
+    <header class="page-head pf-head">
+      <div>
+        <p class="eyebrow">Profil zaměstnance</p>
+        <h1>${esc(name)}</h1>
+        <p class="pf-meta">${L.pos ? `<span class="lvl l${L.n || 0}">${L.n || '?'}</span> <b>${esc(L.pos.name)}</b>${L.n ? ` · ${esc(L.lv.name)} (${L.base} ${tabW(L.base)})` : ' · bez úrovně'} · oddělení ${esc(deptOf(L.pos))}` : '<span class="crit">bez pozice</span>'}${e.shortFri ? ` · zkrácený pátek ${nf(friShift())} h` : ''}${e.excluded ? ' · <span class="tag">vyřazen ze seznamu</span>' : ''}</p>
+        ${e.note ? `<p class="small muted">${esc(e.note)}</p>` : ''}
+      </div>
+      <div class="page-actions noprint">
+        <button class="btn sec" type="button" data-pfedit>Upravit zařazení</button>
+        <button class="btn sec" type="button" data-pfxlsx>Excel</button>
+        <button class="btn sec" type="button" data-pfprint>Tisk</button>
+      </div>
+    </header>
+    <div class="range-bar noprint">
+      <div class="chips" role="group" aria-label="Období">${RANGE_PRESETS.map(([k, label]) => `<button type="button" class="chip${P.profileRange === k ? ' on' : ''}" data-range="${k}" aria-pressed="${P.profileRange === k}">${k === 'year' ? `Rok ${to.slice(0, 4)}` : label}</button>`).join('')}</div>
+      <div class="range-custom"${P.profileRange === 'custom' ? '' : ' hidden'}>
+        <label>Od <input type="month" id="pfFrom" value="${esc(from)}"></label>
+        <label>Do <input type="month" id="pfTo" value="${esc(to)}"></label>
+      </div>
+    </div>
+    <p class="pf-range"><b>${esc(rangeLabel)}</b> · ${t.months ? `${t.months} ${t.months === 1 ? 'měsíc' : t.months < 5 ? 'měsíce' : 'měsíců'} se záznamem, docházka za ${t.attMonths}` : 'v tomto období žádné záznamy'}</p>
+    <div class="stats">${[
+      statTile(`${I.tab}Tabáky (výpočet)`, `${nf(t.tabaky, 0)}<em>/ ${nf(t.max, 0)}</em>`, t.issuedMonths ? `vydáno ${nf(t.issuedTab, 0)} za ${t.issuedMonths} měs.` : 'zatím nic nevydáno', 'tab'),
+      statTile(`${I.kafe}Kafe`, t.attMonths ? `${t.kafe}<em>/ ${t.attMonths}</em>` : '—', t.attMonths ? 'měsíců splněno' : 'bez docházky', 'kafe'),
+      statTile('Docházka', t.attendance != null ? `${pct(t.attendance)} %` : '—', t.attMonths ? `${nf(t.hours)} h · ${t.workDays} dnů + ${t.wkDays} víkend.` : 'bez docházky', 'good'),
+      statTile('Absence', t.attMonths ? String(t.missing) : '—', t.attMonths ? `${dnW(t.missing)} po vyplnění víkendem (celkem ${t.absence})${t.lost ? `, ${t.lost}× bez nároku` : ''}` : 'bez docházky', t.missing ? 'crit' : ''),
+      statTile('Sankce', String(t.sanctions), t.sanctions ? `celkem −${t.pen} ${tabW(t.pen)}` : 'žádné', t.sanctions ? 'crit' : ''),
+      statTile('Výroba', t.perDay != null ? nf(t.perDay, 1) : '—', t.prodTotal ? `Ø ks/den · ${nf(t.prodTotal, 0)} ks celkem` : 'bez záznamu', ''),
+    ].join('')}</div>
+    <div class="pf-charts" id="pfCharts">
+      ${columnChart({ title: 'Tabáky po měsících', sub: 'výpočet podle úrovně, docházky a sankcí', tone: 'c-tab', months: chartMonths,
+        value: m => (m.hasAtt ? m.total : null), fmt: v => nf(v, 0),
+        tip: (m, v) => (m.hasAtt ? `${m.label}: ${v} z ${m.max} ${tabW(m.max)}${m.issued ? `, vydáno ${issueWhat(m.issued.tabaky, m.issued.kafe)}` : ''}` : `${m.label}: bez docházky`) })}
+      ${columnChart({ title: 'Docházka', sub: 'odpracováno z fondu hodin (%)', tone: 'c-acc', months: chartMonths, yMax: 100, ref: 100,
+        value: m => (m.hasAtt && m.fund ? Math.round(Math.min(1, m.capped / m.fund) * 100) : null), fmt: v => `${nf(v, 0)} %`,
+        tip: (m, v) => (m.hasAtt ? `${m.label}: ${v} % (${nf(m.hours)} h z fondu ${nf(m.fund)} h), absence ${m.absence} ${dnW(m.absence)}, víkend ${m.wkDays}×` : `${m.label}: bez docházky`) })}
+      ${columnChart({ title: 'Výroba', sub: 'Ø kusů na odpracovaný den', tone: 'c-prod', months: chartMonths,
+        value: m => (m.prod && m.prod.perDay != null ? m.prod.perDay : null), fmt: v => nf(v, v >= 100 ? 0 : 1),
+        tip: (m, v) => (m.prod ? `${m.label}: ${v != null ? `${nf(v, 1)} ks/den` : '—'}, celkem ${nf(m.prod.total, 0)} ks za ${m.prod.days} dnů` : `${m.label}: bez záznamu ve výrobě`) })}
+      <div class="chart-tip" id="pfTip" role="status" hidden></div>
+    </div>
+    <div class="card pf-months">
+      <h3>Měsíc po měsíci</h3>
+      ${months.length ? `<div class="table-card flat"><table class="stack pf-table"><thead><tr><th>Měsíc</th><th>Zařazení</th><th class="r">Dny</th><th class="r">Hodiny</th><th class="r">Absence</th><th class="c">Kafe</th><th class="r">Docházka</th><th class="r">Sankce</th><th class="r">Úprava</th><th class="r">Tabáky</th><th class="c">Vydáno</th><th class="r">Ø ks/den</th></tr></thead>
+      <tbody>${months.slice().reverse().map(m => `<tr data-pfmonth="${esc(m.id)}" class="${m.lost ? 'is-lost' : ''}">
+        <td data-label="Měsíc" class="name nowrap"><b>${esc(m.label)}</b></td>
+        <td data-label="Zařazení">${m.pos ? `${esc(m.pos)}${m.lvl ? ` <span class="lvl l${m.lvl}" title="${esc(m.lvlName)}${m.from === 'issued' ? ' (podle výdeje)' : ''}">${m.lvl}</span>` : ''}` : '<span class="muted">—</span>'}</td>
+        <td data-label="Dny" class="r num">${m.hasAtt ? `${m.workDays}${m.wkDays ? ` <span class="tag wk">+${m.wkDays}</span>` : ''}` : '<span class="muted">—</span>'}</td>
+        <td data-label="Hodiny" class="r num">${m.hasAtt ? nf(m.hours) : '<span class="muted">—</span>'}</td>
+        <td data-label="Absence" class="r num">${m.hasAtt ? (m.missing ? `<span class="pen">${m.missing}</span>` : '0') : '<span class="muted">—</span>'}</td>
+        <td data-label="Kafe" class="c">${m.hasAtt ? (m.kafe ? `<span class="kafe-ok" aria-label="Kafe splněno">${I.kafe}</span>` : '<span class="kafe-no">—</span>') : '<span class="muted">—</span>'}</td>
+        <td data-label="Docházka" class="r">${m.hasAtt ? (m.lost ? '<span class="losttag">bez nároku</span>' : deltaCell(m.attEff, '')) : '<span class="muted">—</span>'}</td>
+        <td data-label="Sankce" class="r">${m.sanctions.length ? `<span class="pen">${m.pctSum ? `−${m.pctSum} %` : ''} (−${m.pen})</span>` : '<span class="muted num">0</span>'}</td>
+        <td data-label="Úprava" class="r num">${m.adj ? sgn(m.adj) : '<span class="muted">0</span>'}</td>
+        <td data-label="Tabáky" class="r num"><b>${m.hasAtt ? `${m.total}` : '—'}</b>${m.hasAtt ? ` <small class="muted">/ ${m.max}</small>` : ''}</td>
+        <td data-label="Vydáno" class="c">${m.issued ? `<span class="issued" title="${esc(new Date(m.issued.at).toLocaleString('cs-CZ'))}">${I.check}${esc(issueWhat(m.issued.tabaky, m.issued.kafe))}</span>` : '<span class="muted small">ne</span>'}</td>
+        <td data-label="Ø ks/den" class="r num">${m.prod && m.prod.perDay != null ? nf(m.prod.perDay, 1) : '<span class="muted">—</span>'}</td>
+      </tr>`).join('')}</tbody>
+      <tfoot><tr><td data-label="Celkem"><b>Celkem</b></td><td></td><td data-label="Dny" class="r num">${t.workDays}${t.wkDays ? ` +${t.wkDays}` : ''}</td><td data-label="Hodiny" class="r num">${nf(t.hours)}</td><td data-label="Absence" class="r num">${t.missing}</td><td data-label="Kafe" class="c num">${t.kafe}×</td><td></td><td data-label="Sankce" class="r num">${t.pen ? `−${t.pen}` : '0'}</td><td data-label="Úprava" class="r num">${t.adj ? sgn(t.adj) : '0'}</td><td data-label="Tabáky" class="r num"><b>${t.tabaky}</b></td><td data-label="Vydáno" class="c num">${t.issuedTab}${t.issuedKafe ? ` + ${t.issuedKafe}× kafe` : ''}</td><td data-label="Ø ks/den" class="r num">${t.perDay != null ? nf(t.perDay, 1) : '—'}</td></tr></tfoot></table></div>
+      <p class="hint">Klikni na měsíc a uvidíš docházku po dnech a sankce. Úroveň je podle potvrzeného výdeje, jinak podle zařazení platného na konci měsíce; počítá se s dnešními pravidly pozice.</p>` : emptyState('Žádné záznamy', 'Pro vybrané období nemá docházku, výrobu, sankce ani výdej.')}
+    </div>
+    <div class="grid-2 pf-bottom">
+      <div class="card">
+        <h3>Sankce v období</h3>
+        ${months.some(m => m.sanctions.length) ? `<ul class="pf-sanctions">${months.slice().reverse().flatMap(m => m.sanctions.map(s => `<li><span class="pen">${s.pct != null ? `−${s.pct} %` : `−${s.points} tab.`}</span><div><b>${esc(s.name)}</b><small>${esc(m.label)}${s.note ? ` · ${esc(s.note)}` : ''}${s.at ? ` · zadáno ${esc(new Date(s.at).toLocaleDateString('cs-CZ'))}` : ''}</small></div></li>`)).join('')}</ul>` : '<p class="small muted">V tomto období žádné sankce.</p>'}
+      </div>
+      <div class="card">
+        <h3>Zařazení a dovednosti</h3>
+        <ul class="pf-timeline">${pd.changes.length ? pd.changes.slice().reverse().map(h => `<li><b>${esc(h.text)}</b><small>${h.at ? `od ${esc(new Date(h.at).toLocaleDateString('cs-CZ'))}` : 'od začátku evidence'}${h.prev ? ` · předtím ${esc(h.prev)}` : ''}</small></li>`).join('') : '<li><small>Zatím bez záznamu o zařazení.</small></li>'}</ul>
+        ${skills.length ? `<p class="eyebrow mt-s">Zaučen i na dalších pozicích</p><ul class="pf-skills">${skills.map(p => `<li>${iluo(e.skills[p.id])}<span>${esc(p.name)} <small class="muted">${e.skills[p.id]} · ${esc(p.levels[e.skills[p.id] - 1].name)}</small></span></li>`).join('')}</ul>` : ''}
+      </div>
+    </div>
+    <div class="card pf-log">
+      <h3>Poslední změny u tohoto člověka</h3>
+      ${personLog.length ? `<div class="log-list">${logListHtml(personLog, P.logSeen, false)}</div>` : '<p class="small muted">Zatím žádné zaznamenané změny.</p>'}
+    </div>`;
+}
+
+function toggleProfileMonth(row) {
+  const next = row.nextElementSibling;
+  if (next && next.classList.contains('pf-detail')) { next.remove(); row.classList.remove('open'); return; }
+  const [from, to] = [row.dataset.pfmonth, row.dataset.pfmonth];
+  const m = profileData(ui.profileKey, from, to).months[0];
+  if (!m) return;
+  const cols = row.children.length;
+  row.classList.add('open');
+  row.insertAdjacentHTML('afterend', `<tr class="pf-detail"><td colspan="${cols}">
+    ${m.cells ? pfCalendar(m.cells) : '<p class="small muted">Bez docházky.</p>'}
+    <div class="pf-detail-grid">
+      ${m.hasAtt ? `<dl class="kv"><dt>Fond</dt><dd>${nf(m.fund)} h</dd><dt>Odpracováno</dt><dd>${nf(m.hours)} h</dd><dt>Absence / po vyplnění</dt><dd>${m.absence} / ${m.missing}</dd><dt>Omluvená absence</dt><dd>${m.excused}</dd>${Object.keys(m.codes).length ? `<dt>Kódy</dt><dd>${esc(Object.entries(m.codes).map(([c, n]) => `${c}×${n}`).join(', '))}</dd>` : ''}</dl>` : ''}
+      <dl class="kv"><dt>Základ za úroveň</dt><dd>${m.base}</dd><dt>Docházka</dt><dd>${m.hasAtt ? sgn(m.attDelta) || '0' : '—'}</dd><dt>Nárok</dt><dd>${m.narok}</dd><dt>Sankce</dt><dd>${m.pen ? `−${m.pen}` : '0'}</dd><dt>Ruční úprava</dt><dd>${m.adj ? sgn(m.adj) : '0'}</dd><dt class="tot">Tabáky</dt><dd class="tot">${m.hasAtt ? m.total : '—'}</dd></dl>
+      ${m.prod ? `<dl class="kv"><dt>Vyrobeno</dt><dd>${nf(m.prod.total, 0)} ks</dd><dt>Odprac. dny</dt><dd>${m.prod.days || '—'}</dd><dt>Ø ks/den</dt><dd>${m.prod.perDay != null ? nf(m.prod.perDay, 1) : '—'}</dd><dt>Ø ks/h</dt><dd>${m.prod.perHour != null ? nf(m.prod.perHour, 2) : '—'}</dd></dl>` : ''}
+    </div>
+    ${m.sanctions.length ? `<ul class="sanlist">${m.sanctions.map(s => `<li>${esc(s.name)} ${s.pct != null ? `${s.pct} %` : `−${s.points} tab.`}${s.note ? ` – ${esc(s.note)}` : ''}</li>`).join('')}</ul>` : ''}
+  </td></tr>`);
+}
+
+async function exportProfile() {
+  try {
+    const e = S.employees[ui.profileKey];
+    if (!e) return;
+    const [from, to] = profileRange(e.key);
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    profileSheets(profileData(e.key, from, to)).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    const slug = norm(`${e.last}-${e.first}`).replace(/[^a-z0-9]+/g, '-');
+    downloadFile(`profil-${slug}-${from}-${to}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
+function bindExtraEvents() {
+  $('#matrixDept').addEventListener('change', event => { setPref({ matrixDept: event.target.value }); renderMatrix(); });
+  $('#btnMatrixXlsx').onclick = exportMatrix;
+  $('#btnMatrixPrint').onclick = () => window.print();
+  $('#matrixView').addEventListener('click', event => {
+    const cell = event.target.closest('[data-mx]');
+    if (cell) { setSkill(cell.dataset.mx, cell.dataset.pos, (+cell.dataset.lvl + 1) % 5); renderMatrix(); return; }
+    const person = event.target.closest('[data-profile]');
+    if (person) openProfile(person.dataset.profile);
+  });
+
+  const view = $('#profileView');
+  view.addEventListener('click', event => {
+    const target = event.target;
+    if (target.closest('[data-pfback]')) { showView(ui.prevView && ui.prevView !== 'profil' ? ui.prevView : 'lide'); return; }
+    if (target.closest('[data-pfedit]')) { ui.selPerson = ui.profileKey; ui.personOpen = true; renderPeople(); showView('lide'); return; }
+    if (target.closest('[data-pfxlsx]')) { exportProfile(); return; }
+    if (target.closest('[data-pfprint]')) { window.print(); return; }
+    const range = target.closest('[data-range]');
+    if (range) {
+      const patch = { profileRange: range.dataset.range };
+      if (range.dataset.range === 'custom' && !P.profileFrom) {
+        const [from, to] = profileRange(ui.profileKey);
+        Object.assign(patch, { profileFrom: from, profileTo: to });
+      }
+      setPref(patch);
+      renderProfile();
+      return;
+    }
+    const row = target.closest('tr[data-pfmonth]');
+    if (row) toggleProfileMonth(row);
+  });
+  view.addEventListener('change', event => {
+    if (event.target.id === 'pfFrom' || event.target.id === 'pfTo') {
+      const from = $('#pfFrom').value;
+      const to = $('#pfTo').value;
+      if (MONTH_RE.test(from) && MONTH_RE.test(to)) { setPref({ profileRange: 'custom', profileFrom: from, profileTo: to }); renderProfile(); }
+    }
+  });
+  // Tooltip grafů: myš i klávesnice (Tab na sloupec).
+  const showTip = hit => {
+    const tip = $('#pfTip');
+    const wrap = $('#pfCharts');
+    if (!tip || !wrap) return;
+    tip.textContent = hit.dataset.tip;
+    tip.hidden = false;
+    const a = hit.getBoundingClientRect();
+    const b = wrap.getBoundingClientRect();
+    const left = clamp(a.left - b.left + a.width / 2 - tip.offsetWidth / 2, 0, Math.max(0, b.width - tip.offsetWidth));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${Math.max(0, a.top - b.top - tip.offsetHeight - 6)}px`;
+    $$('.chart .hit.on', wrap).forEach(x => x.classList.remove('on'));
+    hit.classList.add('on');
+  };
+  const hideTip = () => {
+    const tip = $('#pfTip');
+    if (tip) tip.hidden = true;
+    $$('#pfCharts .hit.on').forEach(x => x.classList.remove('on'));
+  };
+  view.addEventListener('pointerover', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
+  view.addEventListener('pointerout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
+  view.addEventListener('focusin', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
+  view.addEventListener('focusout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
+}
+
+/* ==========================================================================
    START
    ========================================================================== */
 function bindEvents() {
@@ -1494,11 +2120,16 @@ function bindEvents() {
     if (pick.open && !pick.contains(event.target)) pick.open = false;
   });
   document.addEventListener('keydown', event => { if (event.key === 'Escape') $('#colPick').open = false; });
-  $('#periodSel').onchange = event => { S.current = event.target.value || null; ui.openDetail = null; save(); renderAll(); };
+  $('#periodSel').onchange = event => { setPeriod(event.target.value); renderAll(); };
   $('#lockBtn').onclick = () => lockApp();
   $('#lockBtnTop').onclick = () => lockApp();
+  $('#logBtn').onclick = () => openLog();
 
-  ['ovSearch', 'ovPos', 'ovOnlyImported', 'ovOnlyOpen'].forEach(id => $(`#${id}`).addEventListener(id === 'ovSearch' ? 'input' : 'change', renderOverview));
+  // Filtry přehledu jsou osobní: pamatují se jen pro tuto kartičku.
+  $('#ovSearch').addEventListener('input', renderOverview);
+  $('#ovPos').addEventListener('change', event => { setPref({ pos: event.target.value }); renderOverview(); });
+  $('#ovOnlyImported').addEventListener('change', event => { setPref({ onlyImported: event.target.checked }); renderOverview(); });
+  $('#ovOnlyOpen').addEventListener('change', event => { setPref({ onlyOpen: event.target.checked }); renderOverview(); });
   $('#kafeTh').addEventListener('change', event => { setKafe(event.target.value); save(); renderAll(); });
   $('#kafeTh').addEventListener('keydown', event => { if (event.key === 'Enter') event.target.blur(); });
   $('#kafeReset').onclick = () => { setKafe(''); save(); renderAll(); toast('Kafe se zase počítá z fondu.'); };
@@ -1506,8 +2137,7 @@ function bindEvents() {
     const th = event.target.closest('[data-sort]');
     if (!th) return;
     const k = th.dataset.sort;
-    ui.ovSort.dir = ui.ovSort.k === k ? -ui.ovSort.dir : (k === 'name' ? 1 : -1);
-    ui.ovSort.k = k;
+    setPref({ sort: { k, dir: P.sort.k === k ? -P.sort.dir : (k === 'name' ? 1 : -1) } });
     renderOverview();
   });
   $('#ovHead').addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.target.click(); } });
@@ -1528,6 +2158,8 @@ function bindEvents() {
     }
     const edit = event.target.closest('[data-edit]');
     if (edit) { ui.selPerson = edit.dataset.edit; ui.personOpen = true; renderPeople(); showView('lide'); return; }
+    const prof = event.target.closest('[data-profile]');
+    if (prof) { openProfile(prof.dataset.profile); return; }
     if (event.target.closest('button, select, input, a, label')) return;
     const tr = event.target.closest('tr[data-key]');
     if (!tr) return;
@@ -1551,6 +2183,10 @@ function bindEvents() {
   $('#lDetail').addEventListener('click', async event => {
     if (await handleIssueClick(event)) return;
     if (await handleExcludeClick(event)) return;
+    const prof = event.target.closest('[data-profile]');
+    if (prof) { openProfile(prof.dataset.profile); return; }
+    const skill = event.target.closest('[data-skill]');
+    if (skill) { setSkill(skill.dataset.key, skill.dataset.skill, +skill.dataset.lvl); renderPersonDetail(); return; }
     const adj = event.target.closest('[data-adj]');
     if (!adj) return;
     bumpAdj(adj.dataset.adj, +adj.dataset.dir);
@@ -1573,7 +2209,7 @@ function bindEvents() {
   $('#rosterFile').onchange = event => { readRoster(event.target.files[0]); event.target.value = ''; };
 
   $('#sanSearch').addEventListener('input', renderSanctions);
-  $('#sanFilter').addEventListener('change', event => { ui.sanFilter = event.target.value; renderSanctions(); });
+  $('#sanFilter').addEventListener('change', event => { setPref({ sanFilter: event.target.value }); renderSanctions(); });
 
   $('#posList').addEventListener('click', event => {
     const button = event.target.closest('[data-selpos]');
@@ -1598,7 +2234,7 @@ function bindEvents() {
     delete S.periods[S.current];
     delete S.adjust[S.current];
     if (S.issued) delete S.issued[S.current];
-    S.current = Object.keys(S.periods).sort().reverse()[0] || null;
+    setPeriod(Object.keys(S.periods).sort().reverse()[0] || null);
     save(); renderAll(); toast('Období smazáno.');
   };
   const wireDrop = (zone, button, input, fn) => {
@@ -1615,20 +2251,27 @@ function bindEvents() {
   ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => document.addEventListener(type, () => { lastActivity = Date.now(); }, { passive: true }));
   setInterval(checkIdle, 15000);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushSave();
+    if (document.visibilityState === 'hidden') { flushSave(); flushPrefs(); }
     else checkIdle();
   });
+  bindExtraEvents();
   window.addEventListener('beforeunload', event => {
     if (store.dirty || store.saving) { event.preventDefault(); event.returnValue = ''; }
   });
 }
 
 window.OdmApp = {
-  start(loaded) {
+  async start(loaded) {
+    const [me, prefs] = await Promise.all([Vault.me().catch(() => null), Vault.loadPrefs().catch(() => null)]);
+    ui.me = {
+      cardId: me?.card_id || Vault.session.cardId || '', label: me?.card_label || Vault.session.label || '',
+      device: me?.device_label || '', version: me?.version || '',
+    };
     store.rev = loaded.rev || 0;
     store.savedAt = loaded.savedAt || null;
     if (loaded.state) {
       S = sanitizeState(loaded.state);
+      store.base = sharedState(S);
     } else {
       // Čistá instalace: ukázkový měsíc, ať je hned vidět, jak aplikace funguje.
       S = demoData();
@@ -1640,10 +2283,19 @@ window.OdmApp = {
         if (!e) return;
         const r = evaluate(e, curPeriod());
         const box = S.issued[adjKey()] || (S.issued[adjKey()] = {});
-        box[key] = { at: t, tabaky: r.total + extra, kafe: r.kafe };
+        box[key] = { at: t, tabaky: r.total + extra, kafe: r.kafe, pos: e.positionId, lvl: e.level };
       });
+      S = sanitizeState(S);
       save();
     }
+    if (prefs) {
+      P = cleanPrefs(prefs);
+    } else {
+      // První otevření této verze s touto kartičkou: převezme se dosavadní společné nastavení pohledu.
+      P = cleanPrefs({ period: S.current, hiddenCols: S.settings.hiddenCols, lockMinutes: S.settings.lockMinutes, logSeen: Date.now() });
+      setPref({});
+    }
+    applyPeriodPref();
     bindEvents();
     renderAll();
     showView('prehled');
