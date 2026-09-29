@@ -98,7 +98,7 @@ async function login(page, key) {
     const after = await page.evaluate(() => ({ people: Object.keys(S.employees).length, sanctions: S.sanctions.length, total: allRows().reduce((x, r) => x + r.total, 0) }));
     if (JSON.stringify(after) !== JSON.stringify(before)) problems.push(`data se liší: ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
     if (await page.locator('#ovHead .col-wk').count()) problems.push('skrytý sloupec se nepřevedl do osobního nastavení');
-    if (!(await page.textContent('#setSecurity')).includes('2.0')) problems.push('verze 2.0 není vidět v nastavení');
+    if (!/Verze aplikace 2\.\d/.test(await page.textContent('#setSecurity'))) problems.push('nová verze není vidět v nastavení');
     // druhá kartička vydaná ještě před změnami: změny první kartičky pak uvidí jako nové
     await page.click('#nav [data-view="nastaveni"]');
     await page.click('#secNewCard');

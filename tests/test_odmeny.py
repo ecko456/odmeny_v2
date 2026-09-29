@@ -78,7 +78,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "2", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "3", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -117,14 +117,15 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertNotIn("style=", page)
 
     def test_private_code_needs_session(self):
-        for name in ("app.html", "app.css", "core.js", "app.js", "xlsx.js"):
+        for name in ("app.html", "app.css", "core.js", "app.js", "xlsx.js", "jspdf.js", "pdf-regular.ttf", "pdf-semibold.ttf"):
             status, _, body = self.client.request("GET", f"/app.php?f={name}")
             self.assertEqual(status, 401, name)
             self.assertEqual(body, b"")
         status, _, _ = self.client.request("GET", "/app.php?f=../lib/odmeny.php")
         self.assertEqual(status, 404)
         for path in ("/private/app.js", "/private/core.js", "/lib/odmeny.php", "/bin/setup-token.php", "/data/odmeny.sqlite3",
-                     "/tests/test_odmeny.py", "/deploy/install.sh", "/dev-router.php", "/.gitignore", "/static/vendor/LICENSE-jsqr.txt"):
+                     "/tests/test_odmeny.py", "/deploy/install.sh", "/dev-router.php", "/.gitignore", "/static/vendor/LICENSE-jsqr.txt",
+                     "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf"):
             status, _, _ = self.client.request("GET", path)
             self.assertEqual(status, 404, path)
         self.client.setup()
@@ -132,6 +133,13 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("javascript", headers["Content-Type"])
         self.assertIn(b"OdmApp", body)
+        # Knihovna a písma pro PDF s pravidly (PDF vzniká v prohlížeči).
+        status, headers, body = self.client.request("GET", "/app.php?f=jspdf.js")
+        self.assertEqual(status, 200)
+        self.assertIn(b"jsPDF", body[:400])
+        status, headers, body = self.client.request("GET", "/app.php?f=pdf-regular.ttf")
+        self.assertEqual((status, headers["Content-Type"]), (200, "font/ttf"))
+        self.assertEqual(body[:4], b"\x00\x01\x00\x00", "TrueType písmo")
 
     def test_api_rejects_foreign_requests(self):
         status, _, _ = self.client.request("GET", "/api.php?action=state")
@@ -249,6 +257,9 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertTrue(result.get("reload"))
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "1"})
         self.assertEqual(status, 426)
+        # Stránka verze 2.0 by zahodila navýšení platu a „jen Kafe“ z verze 2.1.
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "2"})
+        self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
         # Čtení a přihlášení staré stránce nevadí, jen zápis.
@@ -261,7 +272,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.0")
+        self.assertEqual(result["version"], "2.1")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

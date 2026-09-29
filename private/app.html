@@ -198,7 +198,7 @@
         <div class="drop-ico prod" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5.5 20.5V11l5 3V11l5 3V6.5h3v14"/></svg></div>
         <div class="drop-text">
           <h2>Přetáhni sem evidenci práce</h2>
-          <p>Sloupec C jméno a příjmení, D datum a čas, E počet kusů. Hlavičku hledat nemusím.</p>
+          <p>Zaměstnanec (jméno nebo ID z Nastavení), datum, kusy a volitelně strávený čas a norma v minutách. Sloupce vybereš při prvním importu, pak si je pamatuju.</p>
         </div>
         <button class="btn" type="button" id="pbtnPick">Vybrat soubor</button>
         <input type="file" id="pfile" accept=".xlsx,.xlsm,.xls,.csv,.txt" hidden>
@@ -214,9 +214,10 @@
         <div>
           <p class="eyebrow">Pravidla</p>
           <h1 id="posTitle">Pozice a úrovně</h1>
-          <p class="lede">Každá pozice má 4 úrovně od nováčka po profíka. Úroveň dává základ tabáků, docházka ho sníží nebo zvýší, maximum pozice je strop.</p>
+          <p class="lede">Každá pozice má 4 úrovně od nováčka po profíka. Úroveň dává základ tabáků, docházka ho sníží nebo zvýší, maximum pozice je strop. U úrovní jde nastavit navýšení platu a podmínky, které je potřeba splnit.</p>
         </div>
         <div class="page-actions">
+          <button class="btn sec" type="button" id="btnRulesPdf">Pravidla do PDF</button>
           <button class="btn" type="button" id="btnAddPos">Nová pozice</button>
         </div>
       </header>
@@ -238,6 +239,7 @@
       <div class="settings-grid">
         <div class="card" id="setScore"></div>
         <div class="card" id="setAtt"></div>
+        <div class="card" id="setIds"></div>
         <div class="card" id="setSecurity"></div>
         <div class="card" id="setData"></div>
       </div>

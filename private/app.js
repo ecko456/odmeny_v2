@@ -29,7 +29,7 @@ const PREF_DEFAULTS = {
 };
 let P = { ...PREF_DEFAULTS };
 const prefStore = { timer: null, saving: false, dirty: false };
-const SORT_KEYS = ['name', 'days', 'hours', 'wk', 'kafe', 'lvl', 'prod', 'att', 'pen', 'adj', 'score', 'iss'];
+const SORT_KEYS = ['name', 'days', 'hours', 'wk', 'kafe', 'lvl', 'prod', 'att', 'pen', 'adj', 'score', 'iss', 'raise'];
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
 function cleanPrefs(input) {
@@ -179,7 +179,9 @@ onStateChange = () => {
   store.dirty = true;
   if (!store.firstDirty) store.firstDirty = Date.now();
   clearTimeout(store.timer);
-  store.timer = setTimeout(flushSave, Date.now() - store.firstDirty > 6000 ? 0 : 1200);
+  // Hromadná změna (import, obnova, vymazání) se uloží hned a sama: v historii je jen jedním
+  // záznamem, a ruční úpravy po ní tak jdou do dalšího uložení i se svými záznamy.
+  store.timer = setTimeout(flushSave, store.note || Date.now() - store.firstDirty > 6000 ? 0 : 1200);
   renderSaveState();
 };
 
@@ -366,9 +368,10 @@ function renderDemoBanner() {
   box.innerHTML = `<div class="banner"><div><b>Ukázková data.</b> Vidíš vymyšlený měsíc, ať je poznat, jak aplikace funguje. Jakmile nahraješ vlastní docházku, ukázka zmizí.</div>
     <div class="banner-actions"><button class="btn small" type="button" data-go="dochazka">Nahrát docházku</button><button class="btn sec small" type="button" id="btnClearDemo">Vymazat ukázku</button></div></div>`;
   $('#btnClearDemo').onclick = async () => {
-    if (!(await confirmBox('Vymazat ukázku?', 'Smažou se ukázkoví lidé, docházka, výroba a sankce. Pozice a nastavení zůstanou.', 'Vymazat'))) return;
+    if (!(await confirmBox('Vymazat ukázku?', 'Smažou se ukázkoví lidé, docházka, výroba a sankce. Pozice a nastavení zůstanou (bez ukázkového navýšení platu).', 'Vymazat'))) return;
     // Pozice, nastavení a důvody sankcí zůstávají (jak slibuje dialog), mizí jen ukázkoví lidé a jejich data.
     const keep = { positions: S.positions, settings: S.settings, sanReasons: S.sanReasons };
+    dropDemoRaise(keep.positions);
     S = Object.assign(blank(), keep); setPeriod(null);
     store.note = { kind: 'data', text: 'Ukázková data vymazána' };
     save(); ui.selPerson = null; renderAll(); toast('Ukázka smazána. Nahraj docházku.');
@@ -413,7 +416,7 @@ function ovColumns() {
       cell: r => kafeCell(r),
       foot: rows => { const n = rows.filter(r => r.kafe).length; return n ? `<span class="num">${n}×</span>` : ''; } },
     { k: 'lvl', t: 'Úroveň', sort: true, hint: 'Úroveň v pozici a její tabáky',
-      cell: r => (r.L.n ? `<span class="lvlcell" title="${esc(r.L.lv.name)}"><span class="lvl l${r.L.n}">${r.L.n}</span><span class="lvlname">${esc(r.L.lv.name)}</span><b class="num">${r.L.base}</b></span>` : `<span class="muted small">${r.pos ? 'bez úrovně' : '—'}</span>`),
+      cell: r => (r.L.n ? `<span class="lvlcell" title="${esc(r.L.lv.name)}"><span class="lvl l${r.L.n}">${r.L.n}</span><span class="lvlname">${esc(r.L.lv.name)}</span>${r.kafeOnly ? '' : `<b class="num">${r.L.base}</b>`}</span>` : `<span class="muted small">${r.pos ? 'bez úrovně' : '—'}</span>`),
       foot: rows => `<span class="num">${SUMF(rows, r => r.L.base)}</span>` },
   ];
   const unmatched = prodPeriod() ? prodUnmatched().length : 0;
@@ -432,11 +435,14 @@ function ovColumns() {
       cell: r => ((r.pctSum || r.legacy) ? `<span class="pen" title="${esc(`${reasonsOf(r.e.key)} → −${r.pen} ${tabW(r.pen)}`)}">${r.pctSum ? `−${r.pctSum} %` : ''}</span> <span class="muted small num">(−${r.pen})</span>` : '<span class="muted num">0</span>'),
       foot: rows => { const v = SUMF(rows, r => r.pen); return v ? `<span class="pen">−${v}</span>` : ''; } },
     { k: 'adj', t: 'Ruční úprava', cls: 'c', hint: 'Přidat nebo ubrat tabáky nad rámec výpočtu',
-      cell: r => adjCtrl(r),
+      cell: r => (r.kafeOnly ? '<span class="muted">—</span>' : adjCtrl(r)),
       foot: rows => { const v = SUMF(rows, r => r.adj); return v ? `<span class="num">${sgn(v)}</span>` : ''; } },
     { k: 'score', t: 'Tabáky', sort: true, cls: 'score', hint: 'Úroveň ± docházka (nejvýš do maxima) − sankce ± ruční úprava',
-      cell: r => meter(r.max ? r.total / r.max : 0, `<b>${nf(r.total, 0)}</b> <small>/ ${nf(r.max, 0)}</small>`),
+      cell: r => (r.kafeOnly ? `<span class="onlykafe" title="${esc(`Pozice ${r.pos.name} nemá tabáky, hodnotí se jen Kafe`)}">jen Kafe</span>` : meter(r.max ? r.total / r.max : 0, `<b>${nf(r.total, 0)}</b> <small>/ ${nf(r.max, 0)}</small>`)),
       foot: rows => `<b class="num">${nf(SUMF(rows, r => r.total), 0)} ${tabW(SUMF(rows, r => r.total))}</b>` },
+    ...(S.positions.some(hasRaise) ? [{ k: 'raise', t: 'Plat', sort: true, cls: 'r', hint: 'Navýšení platu podle úrovně a splněných podmínek (docházka, plnění normy, využití fondu)',
+      cell: r => raiseCell(r),
+      foot: rows => { const n = rows.filter(r => r.raise.pct > 0).length; return n ? `<span class="num" title="Lidí s navýšením">${n}×</span>` : ''; } }] : []),
     { k: 'iss', t: 'Výdej', sort: true, cls: 'c', hint: 'Potvrzení, že byl benefit vydán',
       cell: r => issueCell(r),
       foot: rows => { const n = rows.filter(r => r.issued).length; const of = rows.filter(r => r.toIssue || r.issued).length; return of ? `<span class="num">${n} / ${of}</span>` : ''; } },
@@ -549,6 +555,7 @@ function ovData() {
     wk: r.att ? r.att.wkDays : -1, kafe: r.kafe ? 1 : 0, lvl: r.L.n * 1000 + r.L.base, att: r.attEff,
     prod: r.prod ? (avgPerDay(r.prod, r.att) ?? -0.5) : -1, pen: r.pctSum * 1000 + r.pen, score: r.total, adj: r.adj,
     iss: r.issued ? (r.issuedChanged ? 1 : 2) : (r.toIssue ? 0 : -1),
+    raise: r.raise.pct * 10 + r.raise.lvl,
   }[k]);
   rows.sort((a, b) => {
     const x = val(a);
@@ -696,7 +703,55 @@ function lvlKv(r) {
     <dl class="kv"><dt class="tot">Základ za úroveň</dt><dd class="tot">${r.L.base}</dd></dl>`;
 }
 
+/* ==========================================================================
+   NAVÝŠENÍ PLATU (podle úrovně a splněných podmínek)
+   ========================================================================== */
+function raiseTip(r) {
+  const x = r.raise;
+  if (!x.own) return 'Úroveň nemá navýšení platu';
+  const cond = c => `${c.label} ${pctText(c.val)} (potřeba ${nf(c.min, 1)} %)${c.ok ? '' : ' ✗'}`;
+  const head = `Úroveň ${x.own.lvl}: +${nf(x.own.pct, 1)} %${x.own.checks.length ? ` · ${x.own.checks.map(cond).join(', ')}` : ', bez podmínek'}`;
+  if (x.pct > 0 && x.lvl !== x.own.lvl) return `${head}\nNesplněno, platí úroveň ${x.lvl}: +${nf(x.pct, 1)} %`;
+  return x.pct > 0 ? head : `${head}\nNesplněno, žádné navýšení`;
+}
+
+function raiseCell(r) {
+  if (!r.pos || !r.L.n || !hasRaise(r.pos)) return '<span class="muted">—</span>';
+  const x = r.raise;
+  const tip = esc(raiseTip(r));
+  if (!(x.pct > 0)) return `<span class="raise-no" title="${tip}">0 %</span>`;
+  return `<span class="raise-cell" title="${tip}"><span class="raise-ok">+${nf(x.pct, 1)} %</span>${x.own && x.lvl !== x.own.lvl ? `<small class="raise-lvl">z ú. ${x.lvl}</small>` : ''}</span>`;
+}
+
+function raiseKv(r) {
+  const x = r.raise;
+  const pf = r.perf;
+  const lv = x.own ? r.pos.levels[x.own.lvl - 1] : null;
+  const rows = PERF_KEYS.map(([k, label, f]) => {
+    const min = lv ? lv[f] : null;
+    const val = pf[k];
+    const ok = min == null ? null : val != null && val >= min - 1e-9;
+    return `<dt>${esc(label[0].toUpperCase() + label.slice(1))}${min != null ? ` <small class="muted">≥ ${nf(min, 1)} %</small>` : ''}</dt><dd>${val == null ? '<span class="muted">—</span>' : `<span class="${ok === false ? 'pen' : ok ? 'dplus' : ''}">${nf(val, 1)} %</span>`}</dd>`;
+  }).join('');
+  const notes = [];
+  if (!pf.time) notes.push(prodPeriod() ? 'Evidence práce za tento měsíc nemá sloupec se stráveným časem, plnění normy a využití fondu se nespočítá.' : 'Pro tento měsíc není nahraná evidence práce, plnění normy a využití fondu se nespočítá.');
+  else if (pf.norm == null) notes.push('V evidenci práce nejsou řádky se stráveným časem i normou, plnění normy se nespočítá.');
+  let verdict = '';
+  if (!r.pos || !r.L.n) verdict = '<p class="muted small">Bez pozice nebo úrovně se navýšení neurčí.</p>';
+  else if (!hasRaise(r.pos)) verdict = '<p class="muted small">Pozice nemá u úrovní nastavené navýšení platu (Pozice).</p>';
+  else if (!x.own) verdict = `<p class="muted small">Úroveň ${r.L.n} ani nižší nemají navýšení platu.</p>`;
+  else if (x.pct > 0 && x.lvl === x.own.lvl) verdict = `<p class="explain">Splněny podmínky úrovně ${x.lvl}.</p>`;
+  else if (x.pct > 0) verdict = `<p class="explain">Podmínky úrovně ${x.own.lvl} (+${nf(x.own.pct, 1)} %) nesplněny: ${esc(x.own.checks.filter(c => !c.ok).map(c => `${c.label} ${pctText(c.val)} z ${nf(c.min, 1)} %`).join(', '))}. Platí nižší úroveň ${x.lvl}.</p>`;
+  else verdict = `<p class="explain">Podmínky nesplněny: ${esc(x.own.checks.filter(c => !c.ok).map(c => `${c.label} ${pctText(c.val)} z ${nf(c.min, 1)} %`).join(', '))}.</p>`;
+  return `<dl class="kv">${rows}<dt class="tot">Navýšení platu</dt><dd class="tot">${x.pct > 0 ? `+${nf(x.pct, 1)} %` : '0 %'}</dd></dl>${verdict}${notes.map(n => `<p class="small muted">${esc(n)}</p>`).join('')}`;
+}
+
 function sumKv(r) {
+  if (r.kafeOnly) {
+    return `<p class="small">Pozice <b>${esc(r.pos.name)}</b> nemá tabáky, hodnotí se jen Kafe.</p>
+    <dl class="kv"><dt class="tot">Kafe</dt><dd class="tot">${r.kafe ? `<span class="kafe-ok">${I.kafe}</span>` : r.lost ? '<span class="pen">bez nároku</span>' : '<span class="muted">nesplněno</span>'}</dd></dl>
+    ${r.issued ? `<div class="note ${r.issuedChanged ? 'w' : 'i'}"><b>Vydáno ${new Date(r.issued.at).toLocaleDateString('cs-CZ')}:</b> ${issueWhat(r.issued.tabaky, r.issued.kafe)}.</div>` : ''}`;
+  }
   return `<div class="total-big"><span class="num">${nf(r.total, 0)}</span> <span class="muted">${tabW(r.total)}</span></div>
     ${meter(r.max ? r.total / r.max : 0, `z ${r.max} max. pozice`)}
     <dl class="kv">
@@ -722,11 +777,12 @@ function ovDetailRow(r) {
   return `<tr class="detail"><td colspan="${visibleColumns().length}"><div class="detail-grid">
     <div><p class="eyebrow">Docházka</p>${attKv(r)}</div>
     <div><p class="eyebrow">Úroveň</p>${lvlKv(r)}</div>
-    <div><p class="eyebrow">Tabáky</p>${sumKv(r)}
-      <div class="row gap">${adjCtrl(r)}<button class="btn sec small" type="button" data-edit="${esc(r.e.key)}">Upravit zařazení</button><button class="btn sec small" type="button" data-profile="${esc(r.e.key)}">Profil a historie</button>${issueCell(r)}</div>
+    <div><p class="eyebrow">${r.kafeOnly ? 'Kafe' : 'Tabáky'}</p>${sumKv(r)}
+      <div class="row gap">${r.kafeOnly ? '' : adjCtrl(r)}<button class="btn sec small" type="button" data-edit="${esc(r.e.key)}">Upravit zařazení</button><button class="btn sec small" type="button" data-profile="${esc(r.e.key)}">Profil a historie</button>${issueCell(r)}</div>
       <button class="btn ghost small" type="button" data-exclude="${esc(r.e.key)}" title="Přestane se hodnotit, data zůstanou; vrátit jde v části Lidé">Vyřadit ze seznamu</button>
     </div>
-    ${r.prod ? `<div><p class="eyebrow">Výroba · mimo bodování</p>${prodKv(r)}</div>` : pairBlock(r)}
+    ${(r.pos && hasRaise(r.pos)) || r.perf.time ? `<div><p class="eyebrow">Navýšení platu</p>${raiseKv(r)}</div>` : ''}
+    ${r.prod ? `<div><p class="eyebrow">Výroba · mimo tabáky</p>${prodKv(r)}</div>` : pairBlock(r)}
     ${a && a.found && p ? `<div class="span-all"><p class="eyebrow">Měsíc po dnech</p>${calStrip(a)}</div>` : ''}
   </div></td></tr>`;
 }
@@ -736,7 +792,7 @@ function pairBlock(r) {
   const unmatched = prodUnmatched();
   return `<div class="span-all"><p class="eyebrow">Výroba · nespárováno</p>${unmatched.length
     ? `<p class="small muted">${esc(`${r.e.last} ${r.e.first}`)} nemá v evidenci práce za ${esc(monthLabel(prodPeriod().id))} žádný záznam. Vyber jméno, pod kterým je tam vedený. Volba platí i pro další měsíce.</p>
-      <div class="row gap"><select data-pairfor="${esc(r.e.key)}"><option value="">— jméno v evidenci —</option>${unmatched.map(rec => `<option value="${esc(norm(rec.name))}">${esc(rec.name)} · ${nf(rec.total, 0)} ks</option>`).join('')}</select><button class="btn sec small" type="button" data-pairset="${esc(r.e.key)}">Přiřadit</button></div>`
+      <div class="row gap"><select data-pairfor="${esc(r.e.key)}"><option value="">— jméno v evidenci —</option>${unmatched.map(rec => `<option value="${esc(norm(rec.name))}">${esc(prodLabel(rec.name))} · ${nf(rec.total, 0)} ks</option>`).join('')}</select><button class="btn sec small" type="button" data-pairset="${esc(r.e.key)}">Přiřadit</button></div>`
     : `<p class="small muted">V evidenci práce za tenhle měsíc nezbývá žádné nespárované jméno; ${esc(`${r.e.last} ${r.e.first}`)} tam nejspíš nic nevyrobil.</p>`}</div>`;
 }
 
@@ -753,6 +809,7 @@ function prodKv(r) {
     <dt class="tot">Ø kusů na odpracovaný den</dt><dd class="tot">${avg == null ? '—' : nf(avg, 1)}</dd>
     ${hours ? `<dt>Ø na hodinu</dt><dd>${nf(pr.total / hours, 2)}</dd>` : ''}
     ${pr.prodDays ? `<dt>Ø v den se zápisem</dt><dd>${nf(pr.avgEntryDay, 1)}</dd>` : ''}
+    ${r.perf && r.perf.time ? `<dt>Strávený čas nad zakázkami</dt><dd>${nf(pr.spent / 60, 1)} h</dd>${pr.nspent ? `<dt>Norma (u řádků s normou)</dt><dd>${nf(pr.norm / 60, 1)} h za ${nf(pr.nspent / 60, 1)} h</dd>` : ''}` : ''}
     ${pr.sources.length > 1 || norm(pr.sources[0]) !== norm(`${r.e.first} ${r.e.last}`) ? `<dt>V evidenci jako</dt><dd class="text">${esc(pr.sources.join(', '))}</dd>` : ''}
   </dl>`;
 }
@@ -819,6 +876,7 @@ function renderPersonDetail() {
       <div class="form-grid">
         <label class="field"><span>Pozice</span><select id="pPos">${posOptions(e.positionId)}</select></label>
         <label class="field"><span>Poznámka</span><input type="text" id="pNote" value="${esc(e.note || '')}" placeholder="volitelné" maxlength="500"></label>
+        <label class="field"><span>ID v evidenci práce</span><input type="text" id="pWid" value="${esc(e.wid || '')}" placeholder="volitelné" maxlength="40" autocomplete="off"></label>
       </div>
       <label class="switch"><input type="checkbox" id="pFri"${e.shortFri ? ' checked' : ''}><span>Zkrácený pátek: ${nf(friShift())} h se počítá jako celá směna</span></label>
     </div>
@@ -828,7 +886,7 @@ function renderPersonDetail() {
           <input type="radio" name="pLvl" value="${i + 1}"${e.level === i + 1 ? ' checked' : ''}>
           <span class="lvl l${i + 1}">${i + 1}</span>
           <span class="lvltxt"><b>${esc(lv.name)}</b>${lv.desc ? `<span>${esc(lv.desc)}</span>` : '<span class="muted">bez popisu</span>'}</span>
-          <span class="lvltab num">${+lv.tabaky || 0}<small>${tabW(+lv.tabaky || 0)}</small></span>
+          <span class="lvltab num">${pos.onlyKafe ? `<small>jen Kafe</small>` : `${+lv.tabaky || 0}<small>${tabW(+lv.tabaky || 0)}</small>`}${+lv.raise ? `<small class="lvlraise-tag">plat +${nf(+lv.raise, 1)} %</small>` : ''}</span>
         </label>`).join('')}</div>` : '<p class="muted small">Nejdřív vyber pozici.</p>'}
     </div>
     ${S.positions.some(x => x.id !== e.positionId) ? `<div class="card">
@@ -859,6 +917,11 @@ function renderPersonDetail() {
     save(); renderPeople(); renderOverview(); renderPeriodBits();
   };
   $('#pNote').oninput = event => { e.note = event.target.value; save(); };
+  $('#pWid').onchange = event => {
+    const v = String(event.target.value).trim();
+    if (!setWid(e.key, v)) { toast(`ID ${v} už má ${nameOf(keyByWid(v))}.`, true); event.target.value = e.wid || ''; return; }
+    save(); renderAll(); toast(v ? `ID ${v} uloženo.` : 'ID smazáno.');
+  };
   $('#pFri').onchange = event => {
     if (event.target.checked) e.shortFri = true; else delete e.shortFri;
     save(); renderAll();
@@ -1012,7 +1075,7 @@ function renderPositions() {
   if (!ui.selPos || !S.positions.some(x => x.id === ui.selPos)) ui.selPos = S.positions[0] ? S.positions[0].id : null;
   const p = S.positions.find(x => x.id === ui.selPos);
   $('#posList').innerHTML = S.positions.length ? S.positions.map(x => `<button class="list-item" type="button" data-selpos="${esc(x.id)}" aria-current="${x.id === ui.selPos}">
-      <span class="nm"><b>${esc(x.name || '(bez názvu)')}</b><span>${counts[x.id] || 0} lidí · úrovně ${x.levels.map(l => +l.tabaky || 0).join(' / ')} · max ${posMax(x)}</span></span>
+      <span class="nm"><b>${esc(x.name || '(bez názvu)')}</b><span>${counts[x.id] || 0} lidí · ${x.onlyKafe ? 'jen Kafe' : `úrovně ${x.levels.map(l => +l.tabaky || 0).join(' / ')} · max ${posMax(x)}`}${hasRaise(x) ? ` · plat ${x.levels.map(l => (+l.raise ? `+${nf(+l.raise, 1)}` : '0')).join(' / ')} %` : ''}</span></span>
     </button>`).join('') : emptyState('Žádné pozice', 'Přidej první pozici tlačítkem nahoře.');
   $('#posSplit').classList.toggle('show-detail', ui.posOpen);
   const editor = $('#posEditor');
@@ -1023,25 +1086,32 @@ function renderPositions() {
       <div class="form-grid pos-head">
         <label class="field"><span>Název pozice</span><input type="text" id="posName" value="${esc(p.name)}" maxlength="80"></label>
         <label class="field"><span>Oddělení</span><input type="text" id="posDept" value="${esc(p.dept || '')}" maxlength="60" placeholder="${esc(p.name || 'stejné jako pozice')}" list="deptList"><datalist id="deptList">${[...new Set(S.positions.map(x => (x.dept || '').trim()).filter(Boolean))].map(d => `<option value="${esc(d)}"></option>`).join('')}</datalist></label>
-        <label class="field"><span>Maximum tabáků</span><input type="number" id="posMax" value="${p.max != null && p.max !== '' ? p.max : ''}" placeholder="${posMaxAuto(p)}" min="0" max="200" step="1"></label>
+        <label class="field"><span>Maximum tabáků</span><input type="number" id="posMax" value="${p.max != null && p.max !== '' ? p.max : ''}" placeholder="${posMaxAuto(p)}" min="0" max="200" step="1"${p.onlyKafe ? ' disabled' : ''}></label>
       </div>
+      <label class="check onlykafe-check"><input type="checkbox" id="posOnlyKafe"${p.onlyKafe ? ' checked' : ''}><span><b>Jen Kafe, bez tabáků</b><small>Lidé na této pozici dostávají jen Kafe (a případně navýšení platu). Tabáky, jejich pravidla docházky a ruční úpravy se nepočítají.</small></span></label>
       <p class="small muted">Oddělení seskupuje pozice v matici dovedností. Když ho nevyplníš, pozice je oddělením sama pro sebe.</p>
-      <p class="small muted">${counts[p.id] || 0} lidí na této pozici. Maximum je strop po sečtení úrovně a docházky; bonus za víkendy nikoho nepustí výš. ${p.max != null && p.max !== '' ? `Vlastní maximum ${posMax(p)}. Smaž hodnotu pro návrat k nejvyšší úrovni (${posMaxAuto(p)}).` : `Teď podle nejvyšší úrovně: ${posMaxAuto(p)}.`}</p>
+      <p class="small muted">${counts[p.id] || 0} lidí na této pozici.${p.onlyKafe ? '' : ` Maximum je strop po sečtení úrovně a docházky; bonus za víkendy nikoho nepustí výš. ${p.max != null && p.max !== '' ? `Vlastní maximum ${posMax(p)}. Smaž hodnotu pro návrat k nejvyšší úrovni (${posMaxAuto(p)}).` : `Teď podle nejvyšší úrovně: ${posMaxAuto(p)}.`}`}</p>
       <div class="row end"><button class="btn danger small" type="button" id="posDel">Smazat pozici</button></div>
     </div>
     <div class="card">
-      <h3>Úrovně a tabáky</h3>
-      <p class="small muted">Úroveň dává základní počet tabáků. Do popisu napiš, co člověk na dané úrovni musí zvládat; uvidí se při zařazování.</p>
+      <h3>${p.onlyKafe ? 'Úrovně a navýšení platu' : 'Úrovně, tabáky a navýšení platu'}</h3>
+      <p class="small muted">${p.onlyKafe ? '' : 'Úroveň dává základní počet tabáků. '}Do popisu napiš, co člověk na dané úrovni musí zvládat; uvidí se při zařazování.</p>
       <div class="lvledits">${p.levels.map((lv, i) => `<div class="lvledit" data-li="${i}">
         <span class="lvl l${i + 1}">${i + 1}</span>
         <input type="text" data-lname value="${esc(lv.name)}" aria-label="Název úrovně ${i + 1}" maxlength="40">
-        <span class="tabin"><input type="number" data-ltab value="${+lv.tabaky || 0}" min="0" max="100" step="1" aria-label="Tabáky úrovně ${i + 1}"><span>tab.</span></span>
+        ${p.onlyKafe ? '<span class="tabin muted">bez tabáků</span>' : `<span class="tabin"><input type="number" data-ltab value="${+lv.tabaky || 0}" min="0" max="100" step="1" aria-label="Tabáky úrovně ${i + 1}"><span>tab.</span></span>`}
         <textarea data-ldesc rows="2" placeholder="Co úroveň obnáší…" aria-label="Popis úrovně ${i + 1}" maxlength="500">${esc(lv.desc || '')}</textarea>
+        <div class="lvlraise">
+          <label class="pctin raise"><span>Navýšení platu</span><span class="pctbox"><input type="number" data-lraise value="${+lv.raise || ''}" min="0" max="100" step="0.5" placeholder="0" aria-label="Navýšení platu na úrovni ${i + 1} v procentech"><i>%</i></span></label>
+          <span class="lvlraise-if">${+lv.raise ? 'když splní' : 'podmínky'}</span>
+          ${PERF_KEYS.map(([k, label, f]) => `<label class="pctin"><span>${esc(label[0].toUpperCase() + label.slice(1))} ≥</span><span class="pctbox"><input type="number" data-lmin="${f}" value="${lv[f] ?? ''}" min="0" max="${k === 'norm' ? 300 : 100}" step="0.5" placeholder="—" aria-label="${esc(`${label} na úrovni ${i + 1}, nejméně procent`)}"><i>%</i></span></label>`).join('')}
+        </div>
       </div>`).join('')}</div>
+      <p class="small muted mt-s">Navýšení dostane člověk podle své úrovně, když splní všechny vyplněné podmínky (prázdná se nehlídá). Když je nesplní, platí nejvyšší nižší úroveň, jejíž podmínky splnil. Docházka = odpracované hodiny z fondu, plnění normy = norma ÷ strávený čas, využití fondu = čas nad zakázkami ÷ hodiny v práci; obojí z evidence práce.</p>
     </div>
-    <div class="rule-grid">${ruleCard(p, 'penalty')}${ruleCard(p, 'bonus')}</div>
+    ${p.onlyKafe ? `<div class="note i">Kafe dostane, kdo odpracuje aspoň měsíční fond hodin (nebo práh nastavený u období v přehledu).${cutoffDays() ? ` Od ${cutoffDays()} dní absence po vyplnění víkendem nárok zaniká (Nastavení).` : ''}</div>` : `<div class="rule-grid">${ruleCard(p, 'penalty')}${ruleCard(p, 'bonus')}</div>
     <div class="note i">Platí vždy nejvyšší splněný řádek. Absence je celý pracovní den bez docházky; kratší směna absence není (projeví se jen v hodinách u Kafe). Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence a víkend použitý na vyplnění se do bonusu nepočítá.${cutoffDays() ? ` Od ${cutoffDays()} dní absence neplatí nic, bez nároku na tabák i kafe (Nastavení).` : ' Hranici, od které člověk ztrácí nárok úplně, nastavíš v Nastavení.'}
-      <div class="mt-s"><button class="btn sec small" type="button" id="posCopyRules">Použít srážky a bonusy u všech pozic</button></div></div>
+      <div class="mt-s"><button class="btn sec small" type="button" id="posCopyRules">Použít srážky a bonusy u všech pozic</button></div></div>`}
   </div>`;
   const refresh = () => { save(); renderOverview(); renderPeople(); };
   $('#posBack').onclick = () => { ui.posOpen = false; renderPositions(); };
@@ -1054,6 +1124,10 @@ function renderPositions() {
   $('#posDept').onchange = event => {
     p.dept = String(event.target.value).trim().slice(0, 60);
     save(); renderMatrix(); renderPositions();
+  };
+  $('#posOnlyKafe').onchange = event => {
+    p.onlyKafe = event.target.checked;
+    refresh(); renderPositions();
   };
   $('#posMax').onchange = event => {
     const v = String(event.target.value).trim();
@@ -1074,7 +1148,14 @@ function renderPositions() {
   $$('#posEditor [data-li]').forEach(row => {
     const lv = p.levels[+row.dataset.li];
     $('[data-lname]', row).oninput = event => { lv.name = event.target.value; refresh(); };
-    $('[data-ltab]', row).onchange = event => { lv.tabaky = clamp(Math.round(+event.target.value || 0), 0, 100); event.target.value = lv.tabaky; refresh(); renderPositions(); };
+    const tab = $('[data-ltab]', row);
+    if (tab) tab.onchange = event => { lv.tabaky = clamp(Math.round(+event.target.value || 0), 0, 100); event.target.value = lv.tabaky; refresh(); renderPositions(); };
+    /* procenta na desetiny; prázdná podmínka = nehlídá se */
+    const pctVal = (v, hi) => { const t = String(v).trim().replace(',', '.'); return t === '' || !Number.isFinite(+t) ? null : Math.round(clamp(+t, 0, hi) * 10) / 10; };
+    $('[data-lraise]', row).onchange = event => { lv.raise = pctVal(event.target.value, 100) || 0; event.target.value = lv.raise || ''; refresh(); renderPositions(); };
+    $$('[data-lmin]', row).forEach(input => {
+      input.onchange = event => { const f = input.dataset.lmin; lv[f] = pctVal(event.target.value, f === 'minNorm' ? 300 : 100); event.target.value = lv[f] ?? ''; refresh(); };
+    });
     $('[data-ldesc]', row).oninput = event => { lv.desc = event.target.value; save(); };
   });
   $$('#posEditor [data-rules]').forEach(card => {
@@ -1092,7 +1173,7 @@ function renderPositions() {
       refresh(); renderPositions();
     };
   });
-  $('#posCopyRules').onclick = async () => {
+  if ($('#posCopyRules')) $('#posCopyRules').onclick = async () => {
     if (!(await confirmBox('Použít pravidla u všech pozic?', `Srážky a bonusy všech ostatních pozic se přepíšou pravidly z pozice ${p.name}.`, 'Přepsat'))) return;
     S.positions.forEach(q => { if (q !== p) { q.penalty = JSON.parse(JSON.stringify(p.penalty)); q.bonus = JSON.parse(JSON.stringify(p.bonus)); } });
     refresh(); renderPositions(); toast('Pravidla zkopírována do všech pozic.');
@@ -1149,6 +1230,7 @@ async function doImport(aoa, name, fy, fm, force = false) {
   }
   if (S.demo) {
     S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; S.log = [];
+    dropDemoRaise(S.positions);
     store.note = { kind: 'import', text: `Nahrána první docházka za ${periodName(per)} (${Object.keys(per.rows).length} lidí, ${name}); ukázková data smazána` };
   }
   S.periods[per.id] = per;
@@ -1214,37 +1296,49 @@ function renderProduction() {
   const unmatched = prodUnmatched();
   const people = Object.values(S.employees).filter(e => !e.excluded).sort((a, b) => norm(a.last).localeCompare(norm(b.last), 'cs'));
   const manual = Object.entries(S.prodMap).filter(([n, k]) => S.employees[k] && pp.names[n]);
-  pair.innerHTML = (unmatched.length ? `<div class="card warn-card"><h3>Nespárováno · ${unmatched.length} ${jmenW(unmatched.length)} z evidence</h3><p class="small muted">Tahle jména v evidenci práce nesedí na nikoho v hodnocení. Přiřaď je ručně, třeba když je ve zdroji překlep. Volba platí i pro další měsíce.</p>
-      <div class="pair-list">${unmatched.map(rec => `<div class="pair-row"><div><b>${esc(rec.name)}</b><div class="tiny muted num">${nf(rec.total, 0)} ks · ${rec.count} zápisů</div></div>
+  pair.innerHTML = (unmatched.length ? `<div class="card warn-card"><h3>Nespárováno · ${unmatched.length} ${jmenW(unmatched.length)} z evidence</h3><p class="small muted">Tahle jména nebo ID v evidenci práce nesedí na nikoho v hodnocení. Přiřaď je ručně (ID se uloží k člověku), nebo nahraj seznam ID v Nastavení. Volba platí i pro další měsíce.</p>
+      <div class="pair-list">${unmatched.map(rec => `<div class="pair-row"><div><b>${esc(prodLabel(rec.name))}</b><div class="tiny muted num">${nf(rec.total, 0)} ks · ${rec.count} zápisů</div></div>
         <select data-pairsel="${esc(norm(rec.name))}" aria-label="Přiřadit k"><option value="">— přiřadit k —</option>${people.map(e => `<option value="${esc(e.key)}">${esc(`${e.last} ${e.first}`)}</option>`).join('')}</select>
         <button class="btn sec small" type="button" data-pairgo="${esc(norm(rec.name))}">Spárovat</button></div>`).join('')}</div></div>` : '')
-    + (manual.length ? `<div class="card"><h3>Ruční párování</h3>${manual.map(([n, k]) => `<div class="manual-pair"><span><b>${esc(pp.names[n].name)}</b> <span class="muted">→</span> ${esc(nameOf(k))}</span><button class="icon-btn" type="button" data-unpair="${esc(n)}" aria-label="Zrušit párování">${I.x}</button></div>`).join('')}</div>` : '');
+    + (manual.length ? `<div class="card"><h3>Ruční párování</h3>${manual.map(([n, k]) => `<div class="manual-pair"><span><b>${esc(prodLabel(pp.names[n].name))}</b> <span class="muted">→</span> ${esc(nameOf(k))}</span><button class="icon-btn" type="button" data-unpair="${esc(n)}" aria-label="Zrušit párování">${I.x}</button></div>`).join('')}</div>` : '');
   const rows = activeRows().filter(r => r.prod || (r.att && r.att.found) || r.e.positionId)
     .sort((a, b) => (b.prod ? (avgPerDay(b.prod, b.att) ?? -0.5) : -1) - (a.prod ? (avgPerDay(a.prod, a.att) ?? -0.5) : -1));
   const matched = rows.filter(r => r.prod).length;
   const totalKs = Object.values(pp.names).reduce((x, r) => x + r.total, 0);
+  const time = !!pp.time;
+  const shop = rows.filter(r => r.prod);
+  const shopNorm = SUMF(shop, r => r.prod.norm);
+  const shopNs = SUMF(shop, r => r.prod.nspent);
+  const shopSpent = SUMF(shop, r => r.prod.spent);
+  const shopHours = SUMF(shop, r => (r.att && r.att.found ? r.att.totalHours : 0));
+  const pctTd = (label, v, min) => `<td data-label="${label}" class="r num">${v == null ? '<span class="muted">—</span>' : `<span class="${min != null && v < min - 1e-9 ? 'pen' : ''}">${nf(v, 1)} %</span>`}</td>`;
   box.innerHTML = `<div class="stats">${[
     statTile('Vyrobeno kusů', nf(pp.total, 0), esc(monthLabel(pp.id))),
     statTile('Zápisů', pp.records, esc(pp.file || '')),
     statTile('Spárováno lidí', `${matched}<em>/ ${Object.keys(pp.names).length}</em>`, unmatched.length ? `${unmatched.length} ${jmenW(unmatched.length)} ${unmatched.length >= 2 && unmatched.length <= 4 ? 'čekají' : 'čeká'} na přiřazení` : 'všechna jména sedí'),
     statTile('Ø kusů na den', nf(rows.reduce((x, r) => x + (r.prod ? r.prod.total : 0), 0) / Math.max(1, rows.reduce((x, r) => x + (r.prod ? workedDays(r.att) : 0), 0)), 1), 'na odpracovaný den, napříč dílnou'),
+    ...(time ? [
+      statTile('Plnění normy', shopNs ? `${nf(shopNorm / shopNs * 100, 1)} %` : '—', shopNs ? `norma ${nf(shopNorm / 60, 0)} h za ${nf(shopNs / 60, 0)} h práce` : 'v evidenci chybí norma'),
+      statTile('Využití fondu', shopHours ? `${nf(shopSpent / (shopHours * 60) * 100, 1)} %` : '—', `${nf(shopSpent / 60, 0)} h nad zakázkami z ${nf(shopHours, 0)} h v práci`),
+    ] : []),
   ].join('')}</div>
-  <div class="table-card"><table class="stack"><thead><tr><th>Zaměstnanec</th><th class="r">Kusy</th><th class="r">Odprac. dny</th><th class="r">Ø ks/den</th><th class="r">Ø ks/h</th><th class="r">Zápisů</th><th class="r">Ø v den zápisu</th></tr></thead><tbody>${rows.map(r => {
+  <div class="table-card"><table class="stack"><thead><tr><th>Zaměstnanec</th><th class="r">Kusy</th><th class="r">Odprac. dny</th><th class="r">Ø ks/den</th><th class="r">Ø ks/h</th>${time ? '<th class="r">Čas nad zak.</th><th class="r" title="Norma ÷ strávený čas">Plnění normy</th><th class="r" title="Strávený čas ÷ hodiny v práci">Využití fondu</th>' : ''}<th class="r">Zápisů</th><th class="r">Ø v den zápisu</th></tr></thead><tbody>${rows.map(r => {
     const pr = r.prod;
     const who = `<td data-label="Zaměstnanec" class="name"><div class="who"><b>${esc(`${r.e.last} ${r.e.first}`)}</b><span class="pos">${r.pos ? esc(r.pos.name) + (r.L.n ? ` · ${esc(r.L.lv.name)}` : '') : ''}</span></div></td>`;
-    if (!pr) return `<tr class="muted-row">${who}<td colspan="6" class="muted small">bez záznamu v evidenci práce</td></tr>`;
+    if (!pr) return `<tr class="muted-row">${who}<td colspan="${time ? 9 : 6}" class="muted small">bez záznamu v evidenci práce</td></tr>`;
+    const own = r.raise.own ? r.pos.levels[r.raise.own.lvl - 1] : null;
     const days = workedDays(r.att);
     const hours = r.att ? r.att.totalHours : 0;
     const avg = avgPerDay(pr, r.att);
-    return `<tr>${who}<td data-label="Kusy" class="r num">${nf(pr.total, 0)}</td><td data-label="Odprac. dny" class="r num">${days || '<span class="muted">—</span>'}</td><td data-label="Ø ks/den" class="r num"><b>${avg == null ? '—' : nf(avg, 1)}</b></td><td data-label="Ø ks/h" class="r num">${hours ? nf(pr.total / hours, 2) : '—'}</td><td data-label="Zápisů" class="r num muted">${pr.entries}</td><td data-label="Ø v den zápisu" class="r num muted">${nf(pr.avgEntryDay, 1)}</td></tr>`;
-  }).join('')}</tbody><tfoot><tr><td><b>Celkem</b></td><td class="r num" data-label="Kusy"><b>${nf(totalKs, 0)}</b></td><td class="r num" data-label="Odprac. dny">${rows.reduce((x, r) => x + (r.prod ? workedDays(r.att) : 0), 0)}</td><td colspan="4"></td></tr></tfoot></table></div>
-  <p class="hint">Ø ks/den = vyrobené kusy dělené odpracovanými dny z docházky (všední i víkendové směny), takže díl rozdělaný přes několik dnů průměr nezkreslí. Poslední dva sloupce jsou kontrola evidence. Výroba se do tabáků nezapočítává.</p>`;
+    return `<tr>${who}<td data-label="Kusy" class="r num">${nf(pr.total, 0)}</td><td data-label="Odprac. dny" class="r num">${days || '<span class="muted">—</span>'}</td><td data-label="Ø ks/den" class="r num"><b>${avg == null ? '—' : nf(avg, 1)}</b></td><td data-label="Ø ks/h" class="r num">${hours ? nf(pr.total / hours, 2) : '—'}</td>${time ? `<td data-label="Čas nad zak." class="r num">${nf(pr.spent / 60, 1)} h</td>${pctTd('Plnění normy', r.perf.norm, own ? own.minNorm : null)}${pctTd('Využití fondu', r.perf.use, own ? own.minUse : null)}` : ''}<td data-label="Zápisů" class="r num muted">${pr.entries}</td><td data-label="Ø v den zápisu" class="r num muted">${nf(pr.avgEntryDay, 1)}</td></tr>`;
+  }).join('')}</tbody><tfoot><tr><td><b>Celkem</b></td><td class="r num" data-label="Kusy"><b>${nf(totalKs, 0)}</b></td><td class="r num" data-label="Odprac. dny">${rows.reduce((x, r) => x + (r.prod ? workedDays(r.att) : 0), 0)}</td><td colspan="${time ? 7 : 4}"></td></tr></tfoot></table></div>
+  <p class="hint">Ø ks/den = vyrobené kusy dělené odpracovanými dny z docházky (všední i víkendové směny), takže díl rozdělaný přes několik dnů průměr nezkreslí. Poslední dva sloupce jsou kontrola evidence. Výroba se do tabáků nezapočítává.${time ? ' Plnění normy a využití fondu rozhodují o navýšení platu; červeně je hodnota pod podmínkou úrovně člověka.' : ''}</p>`;
   $$('#prodPair [data-pairgo]').forEach(button => {
     button.onclick = () => {
       const n = button.dataset.pairgo;
       const sel = button.parentElement.querySelector('[data-pairsel]');
       if (!sel || !sel.value) { toast('Vyber, ke komu jméno patří.', true); return; }
-      S.prodMap[n] = sel.value; save(); renderAll(); toast(`Spárováno s ${nameOf(sel.value)}.`);
+      pairProd(pp.names[n] ? pp.names[n].name : n, sel.value); save(); renderAll(); toast(`Spárováno s ${nameOf(sel.value)}.`);
     };
   });
   $$('#prodPair [data-unpair]').forEach(button => {
@@ -1252,16 +1346,25 @@ function renderProduction() {
   });
 }
 
+/* Ruční spárování: ID z evidence se uloží jako ID člověka (uvidí se v Nastavení i v detailu),
+   pokud už jiné nemá; jinak jako spárování jména. */
+function pairProd(raw, key) {
+  const e = S.employees[key];
+  if (looksLikeId(raw) && e && !e.wid && setWid(key, raw)) return;
+  S.prodMap[norm(raw)] = key;
+}
+
 function showProdMsg(html) { $('#prodMsg').innerHTML = html; }
 
-function doProdImport(aoa, name) {
-  const res = buildProduction(aoa, name);
-  if (!res.ok) { showProdMsg(`<div class="note e"><b>Import selhal.</b> ${esc(res.err)}</div>`); return; }
+function doProdImport(aoa, name, map) {
+  const res = buildProduction(aoa, name, map);
+  if (!res.ok) { showProdMsg(`<div class="note e"><b>Import selhal.</b> ${esc(res.err)} <button class="link" type="button" data-prodcols>Vybrat sloupce</button></div>`); return; }
   const ids = Object.keys(res.buckets).sort();
   ids.forEach(id => { S.production[id] = res.buckets[id]; });
   save();
   const current = S.current && res.buckets[S.current];
-  showProdMsg(`<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data nebo počtu kusů.` : ''}</div>`
+  const time = map && map.spent != null;
+  showProdMsg(`<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data, kusů nebo času.` : ''} ${time ? `Strávený čas${map.norm != null ? ' a norma' : ''} načteny.` : 'Bez stráveného času, plnění normy a využití fondu se nespočítá.'} <button class="link" type="button" data-prodcols>Změnit sloupce</button></div>`
     + (!S.current ? '<div class="note w">Zatím není nahraná žádná docházka. Hodnocený měsíc se vybírá podle ní, takže se výroba zobrazí až po nahrání docházky.</div>'
       : (!current ? `<div class="note w">Vybrané období je ${esc(monthLabel(S.current))} a pro něj soubor data nemá. Období zůstává beze změny.</div>` : '')));
   renderAll();
@@ -1269,21 +1372,213 @@ function doProdImport(aoa, name) {
   toast(un ? `Načteno, ${un} ${jmenW(un)} ${un >= 2 && un <= 4 ? 'čekají' : 'čeká'} na spárování.` : 'Evidence práce načtena.');
 }
 
-async function readProdFile(file) {
+/* Výběr sloupců evidence práce. Uloží se pro všechny a další soubory se stejnou hlavičkou
+   se načtou rovnou; soubor s jinou hlavičkou se zeptá znovu. */
+async function chooseProdColumns(aoa, name, info) {
+  const saved = S.settings.prodCols;
+  const start = saved && prodMapFits(saved, info) ? saved : info.guess;
+  const opts = (field, optional) => `${optional ? '<option value="">— není v souboru —</option>' : ''}${info.cols.map(c => `<option value="${c.i}"${start[field] === c.i ? ' selected' : ''}>${esc(`${c.letter}${c.head ? ` · ${c.head}` : ''}${c.sample ? ` (${c.sample})` : ''}`)}</option>`).join('')}`;
+  const field = (f, label, optional, hint) => `<label class="field"><span>${esc(label)}${hint ? ` <small class="muted">${esc(hint)}</small>` : ''}</span><select name="${f}">${opts(f, optional)}</select></label>`;
+  const read = form => {
+    const v = n => (form.elements[n].value === '' ? null : +form.elements[n].value);
+    return { header: info.header, name: v('name'), date: v('date'), ks: v('ks'), spent: v('spent'), norm: v('norm'),
+      unit: form.elements.unit.value === 'h' ? 'h' : 'min', normPer: form.elements.normPer.value === 'piece' ? 'piece' : 'row' };
+  };
+  const preview = form => {
+    const map = read(form);
+    const res = buildProduction(aoa, name, map);
+    const box = $('#prodColsPreview');
+    if (!res.ok) { box.className = 'note e'; box.textContent = res.err; return; }
+    const recs = Object.values(res.buckets).flatMap(b => Object.values(b.names));
+    const spent = recs.reduce((x, r) => x + (r.spent || 0), 0);
+    const normMin = recs.reduce((x, r) => x + (r.norm || 0), 0);
+    const nspent = recs.reduce((x, r) => x + (r.nspent || 0), 0);
+    box.className = 'note i';
+    box.textContent = `Použitelných řádků ${res.used} (${recs.length} jmen, ${Object.keys(res.buckets).map(monthLabel).join(', ')}).`
+      + (map.spent != null ? ` Strávený čas celkem ${nf(spent / 60, 1)} h.` : '')
+      + (map.norm != null ? (nspent ? ` Plnění normy ${nf(normMin / nspent * 100, 1)} %.` : ' Norma: žádný řádek s časem i normou.') : '');
+  };
+  const result = await dialog({
+    title: 'Sloupce evidence práce', ok: 'Načíst', wide: true,
+    html: `<p class="small muted">${info.header >= 0 ? `Hlavička je na řádku ${info.header + 1}.` : 'Soubor nemá rozpoznanou hlavičku, beru data od prvního řádku.'} Vyber, co je ve kterém sloupci; volba se zapamatuje pro další soubory se stejnou hlavičkou.</p>
+      <div class="form-grid prodcols">
+        ${field('name', 'Zaměstnanec', false, 'jméno nebo ID')}${field('date', 'Datum', false)}${field('ks', 'Kusy', true)}
+        ${field('spent', 'Strávený čas', true, 'nad zakázkou')}
+        <label class="field"><span>Čas je v</span><select name="unit"><option value="min"${start.unit !== 'h' ? ' selected' : ''}>minutách</option><option value="h"${start.unit === 'h' ? ' selected' : ''}>hodinách</option></select></label>
+        ${field('norm', 'Norma', true, 'v minutách')}
+        <label class="field"><span>Norma platí</span><select name="normPer"><option value="row"${start.normPer !== 'piece' ? ' selected' : ''}>za celý řádek</option><option value="piece"${start.normPer === 'piece' ? ' selected' : ''}>za 1 kus (× kusy)</option></select></label>
+      </div>
+      <p class="tiny muted">Čas ve tvaru 1:30 nebo v časovém formátu Excelu se pozná sám. Plnění normy = norma ÷ strávený čas (jen řádky, kde je obojí), využití fondu = strávený čas ÷ hodiny v práci podle docházky.</p>
+      <div id="prodColsPreview" class="note i" role="status"></div>`,
+    onOpen: () => { const form = $('#dlgForm'); preview(form); $$('#dlgBody select').forEach(sel => { sel.onchange = () => preview(form); }); },
+    validate: form => { const m = read(form); if (m.name == null || m.date == null) return 'Vyber sloupec se zaměstnancem (jméno nebo ID) a s datem.'; if (m.ks == null && m.spent == null) return 'Vyber aspoň kusy, nebo strávený čas.'; return buildProduction(aoa, name, m).ok ? null : 'S tímhle výběrem nejde načíst žádný řádek.'; },
+  });
+  if (result.value !== 'ok') return;
+  const map = read(result.form);
+  S.settings.prodCols = cleanProdCols({ ...map, heads: info.heads });
+  doProdImport(aoa, name, map);
+}
+
+async function readProdFile(file, forceChoose = false) {
   if (!file) return;
   try {
     const sheets = await readTable(file);
+    const saved = S.settings.prodCols;
     let best = null;
     let bestN = -Infinity;
     sheets.forEach(sheet => {
-      const t = buildProduction(sheet.aoa, file.name);
-      const score = t.ok ? t.used : -1;
-      if (score > bestN) { bestN = score; best = sheet; }
+      const info = prodColumns(sheet.aoa);
+      const map = saved && prodMapFits(saved, info) ? saved : info.guess;
+      const t = buildProduction(sheet.aoa, file.name, map);
+      const score = t.ok ? t.used : info.header >= 0 ? 0 : -1;
+      if (score > bestN) { bestN = score; best = { ...sheet, info, known: map === saved }; }
     });
-    if (best) doProdImport(best.aoa, best.name);
-    else showProdMsg('<div class="note e"><b>Import selhal.</b> Soubor neobsahuje žádný list.</div>');
+    if (!best) { showProdMsg('<div class="note e"><b>Import selhal.</b> Soubor neobsahuje žádný list.</div>'); return; }
+    ui.lastProd = { aoa: best.aoa, name: best.name, info: best.info };
+    if (best.known && !forceChoose) doProdImport(best.aoa, best.name, saved);
+    else await chooseProdColumns(best.aoa, best.name, best.info);
   } catch (error) {
     showProdMsg(`<div class="note e">Soubor se nepodařilo otevřít: ${esc(error.message)}</div>`);
+  }
+}
+
+/* ==========================================================================
+   PRAVIDLA DO PDF: vzniká v prohlížeči z dešifrovaných dat, server obsah nevidí
+   ========================================================================== */
+async function pdfAsset(name) {
+  const res = await fetch(`app.php?f=${name}&v=${document.body.dataset.privateVersion || '1'}`, { credentials: 'same-origin' });
+  if (!res.ok) throw new Error(`nepodařilo se načíst ${name} (${res.status})`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+function drawRules(doc, d) {
+  const W = 210, H = 297, M = 16, CW = W - 2 * M;
+  const INK = [27, 31, 29], MUTED = [85, 92, 88], LINE = [214, 212, 203], ACC = [14, 107, 93], SOFT = [243, 242, 236];
+  const mm = pt => pt * 0.3528;
+  let y = M;
+  const font = (size, bold = false, color = INK) => { doc.setFont('Plex', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(...color); };
+  const lh = size => mm(size) * 1.38;
+  const need = h => { if (y + h > H - M - 6) { doc.addPage(); y = M; return true; } return false; };
+  const lines = (text, size, width, bold = false) => { font(size, bold); return doc.splitTextToSize(String(text), width); };
+  const write = (list, size, x, top, color = INK, bold = false) => { font(size, bold, color); list.forEach((line, i) => doc.text(line, x, top + i * lh(size) + mm(size) * 0.92)); };
+  const heading = (text, size) => { need(lh(size) + 12); font(size, true); doc.text(text, M, y + mm(size) * 0.92); y += lh(size) + 1.5; };
+
+  // Titulek
+  font(20, true); doc.text(d.title, M, y + mm(20) * 0.92); y += lh(20);
+  font(10.5, false, MUTED); doc.text(`${d.sub} · platné k ${d.date}`, M, y + mm(10.5) * 0.92); y += lh(10.5) + 2;
+  doc.setDrawColor(...ACC); doc.setLineWidth(0.7); doc.line(M, y, M + 28, y); y += 7;
+
+  // Obecná pravidla: štítek vlevo, text vpravo
+  heading('Jak se hodnotí', 12.5);
+  const LW = 30;
+  d.general.forEach(([label, text]) => {
+    const body = lines(text, 9.5, CW - LW);
+    const h = body.length * lh(9.5);
+    need(h + 2);
+    write([label], 9.5, M, y, INK, true);
+    write(body, 9.5, M + LW, y, INK);
+    y += h + 2.2;
+  });
+  y += 4;
+
+  // Pozice: tabulka úrovní
+  const cols = [['Úroveň', 50, 'left'], ['Tabáky', 18, 'center'], ['Navýšení platu', 24, 'center'], ['Docházka', 28, 'center'], ['Plnění normy', 29, 'center'], ['Využití fondu', 29, 'center']];
+  const cell = (text, [, w, align], x, top, size, color, bold) => {
+    const pad = 2;
+    const list = lines(text, size, w - 2 * pad, bold);
+    font(size, bold, color);
+    list.forEach((line, i) => doc.text(line, align === 'center' ? x + w / 2 : x + pad, top + 1.8 + i * lh(size) + mm(size) * 0.92, { align: align === 'center' ? 'center' : 'left' }));
+    return list.length;
+  };
+  d.positions.forEach(p => {
+    const rows = p.levels.map(lv => [`${lv.n} · ${lv.name}`, lv.tabaky, lv.raise, lv.att, lv.norm, lv.use]);
+    const descs = p.levels.filter(lv => lv.desc.trim());
+    // celá pozice se drží pohromadě, pokud se vejde na jednu stranu
+    const headLines = Math.max(...cols.map(c => lines(c[0], 8.5, c[1] - 4, true).length));
+    const blockH = lh(13) + 1.5 + headLines * lh(8.5) + 3.4
+      + rows.reduce((x, r) => x + Math.max(...r.map((t, i) => lines(t, 9.5, cols[i][1] - 4, i === 0).length)) * lh(9.5) + 3.4, 0) + 2.5
+      + descs.reduce((x, lv) => x + lines(`${lv.n} · ${lv.name}: ${lv.desc.trim()}`, 8.8, CW).length * lh(8.8) + 0.6, 0)
+      + p.rules.reduce((x, rule) => x + lines(rule, 8.8, CW).length * lh(8.8) + 0.4, 0);
+    if (blockH < H - 2 * M - 6) need(blockH); else need(lh(13) + 10 + 5 * 8);
+    font(13, true); doc.text(p.name, M, y + mm(13) * 0.92);
+    const tag = [p.dept && p.dept !== p.name ? `oddělení ${p.dept}` : '', p.onlyKafe ? 'jen Kafe, bez tabáků' : ''].filter(Boolean).join(' · ');
+    if (tag) { const nameW = doc.getTextWidth(p.name); font(9.5, false, MUTED); doc.text(tag, M + nameW + 3, y + mm(13) * 0.92); }
+    y += lh(13) + 1.5;
+    // hlavička tabulky (výška podle nejdelšího popisku)
+    const headH = Math.max(...cols.map(c => lines(c[0], 8.5, c[1] - 4, true).length)) * lh(8.5) + 3.4;
+    const drawHead = () => {
+      doc.setFillColor(...SOFT); doc.rect(M, y, CW, headH, 'F');
+      let x = M;
+      cols.forEach(c => { cell(c[0], c, x, y, 8.5, MUTED, true); x += c[1]; });
+      y += headH;
+    };
+    drawHead();
+    rows.forEach(r => {
+      const n = Math.max(...r.map((t, i) => lines(t, 9.5, cols[i][1] - 4, i === 0).length));
+      const h = n * lh(9.5) + 3.4;
+      if (need(h)) drawHead();
+      let cx = M;
+      r.forEach((t, i) => { cell(t, cols[i], cx, y, 9.5, t === '—' ? MUTED : INK, i === 0); cx += cols[i][1]; });
+      y += h;
+      doc.setDrawColor(...LINE); doc.setLineWidth(0.2); doc.line(M, y, M + CW, y);
+    });
+    y += 2.5;
+    descs.forEach(lv => {
+      const body = lines(`${lv.n} · ${lv.name}: ${lv.desc.trim()}`, 8.8, CW);
+      need(body.length * lh(8.8));
+      write(body, 8.8, M, y, MUTED);
+      y += body.length * lh(8.8) + 0.6;
+    });
+    p.rules.forEach(rule => {
+      const body = lines(rule, 8.8, CW);
+      need(body.length * lh(8.8));
+      write(body, 8.8, M, y, INK);
+      y += body.length * lh(8.8) + 0.4;
+    });
+    y += 7;
+  });
+
+  if (d.reasons.length) {
+    heading('Důvody sankcí', 12.5);
+    const body = lines(`${d.reasons.join(' · ')}. Srážka ${SAN_PCTS.join(' / ')} % z nároku za vybraný měsíc.`, 9.5, CW);
+    need(body.length * lh(9.5));
+    write(body, 9.5, M, y);
+    y += body.length * lh(9.5);
+  }
+
+  // Zápatí na každé stránce
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i += 1) {
+    doc.setPage(i);
+    font(8, false, MUTED);
+    doc.text(`Odměny · ${d.title} · ${d.date}`, M, H - 9);
+    doc.text(`strana ${i} / ${pages}`, W - M, H - 9, { align: 'right' });
+  }
+}
+
+async function exportRulesPdf() {
+  const button = $('#btnRulesPdf');
+  button.disabled = true;
+  try {
+    if (!window.jspdf) await OdmLock.loadScript(`app.php?f=jspdf.js&v=${document.body.dataset.privateVersion || '1'}`);
+    const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
+    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
+    doc.addFileToVFS('Plex-Regular.ttf', regular);
+    doc.addFont('Plex-Regular.ttf', 'Plex', 'normal');
+    doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
+    doc.addFont('Plex-SemiBold.ttf', 'Plex', 'bold');
+    const d = rulesDoc();
+    doc.setProperties({ title: d.title, subject: d.sub, creator: 'Odměny' });
+    drawRules(doc, d);
+    downloadFile(`pravidla-hodnoceni-${new Date().toISOString().slice(0, 10)}.pdf`, doc.output('blob'), 'application/pdf');
+    toast('PDF s pravidly se stahuje.');
+  } catch (error) {
+    toast(`PDF se nepovedlo: ${error.message}`, true);
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -1322,6 +1617,18 @@ function renderSettings() {
     <hr class="sep"><p class="small muted">Svátky ČR (včetně pohyblivých velikonočních) se počítají automaticky a do fondu se nezahrnují. Práce ve svátek se počítá jako víkendová směna.</p>`;
 
   renderSecurity();
+
+  const people = Object.values(S.employees);
+  const withId = people.filter(e => e.wid).length;
+  $('#setIds').innerHTML = `<h3>ID pro evidenci práce</h3>
+    <p class="small muted">Když evidence práce místo jmen obsahuje ID zaměstnance, nahraj tu seznam, kdo má jaké ID: tabulku se jménem (Příjmení a Jméno, nebo Jméno a příjmení v jednom sloupci) a sloupcem ID. Nejsnáz: stáhni seznam lidí, doplň ID a nahraj ho zpátky. ID jde zadat i u člověka v části Lidé.</p>
+    <p class="small"><b>${withId}</b> z ${people.length} lidí má ID.</p>
+    <div class="row gap"><button class="btn sec small" type="button" id="idDown">Stáhnout seznam lidí</button><button class="btn small" type="button" id="idUp">Nahrát seznam ID</button></div>
+    <input type="file" id="idFile" accept=".xlsx,.xls,.csv,.txt" hidden>
+    <div id="idMsg" class="mt-s">${ui.idMsg || ''}</div>`;
+  $('#idDown').onclick = exportWids;
+  $('#idUp').onclick = () => $('#idFile').click();
+  $('#idFile').onchange = event => { const file = event.target.files[0]; event.target.value = ''; if (file) readWids(file); };
 
   $('#setData').innerHTML = `<h3>Data a zálohy</h3>
     <p class="small muted">Data se ukládají na server zašifrovaná klíčem, který mají jen přístupové kartičky. Server drží posledních 30 uložení, k tomu stav z každé hodiny za poslední týden a z každého dne před tím.</p>
@@ -1611,6 +1918,35 @@ async function exportRoster() {
     X.utils.book_append_sheet(wb, sheet(rules, [18, 9, 7, 8, 34]), 'Pravidla');
     downloadFile(`zarazeni-${stamp}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
+async function exportWids() {
+  try {
+    const X = await xlsx();
+    const ws = X.utils.aoa_to_sheet(widSheet().map(row => row.map(safeCell)));
+    ws['!cols'] = [18, 14, 18, 20].map(wch => ({ wch }));
+    const wb = X.utils.book_new();
+    X.utils.book_append_sheet(wb, ws, 'ID zaměstnanců');
+    downloadFile(`id-zamestnancu-${new Date().toISOString().slice(0, 10)}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
+async function readWids(file) {
+  try {
+    const sheets = await readTable(file);
+    let res = null;
+    for (const sheet of sheets) { res = applyWids(sheet.aoa); if (!res.err) break; }
+    if (res.err) { ui.idMsg = `<div class="note e"><b>Načtení selhalo.</b> ${esc(res.err)}</div>`; renderSettings(); return; }
+    const parts = [`<b>ID načtena.</b> Nově přiřazeno ${res.set}${res.same ? `, beze změny ${res.same}` : ''}.`];
+    if (res.clash.length) parts.push(`ID přešlo na jiného člověka: ${esc(res.clash.join('; '))}.`);
+    if (res.unknown.length) parts.push(`Tahle jména v hodnocení nejsou (přeskočeno): ${esc(res.unknown.slice(0, 15).join(', '))}${res.unknown.length > 15 ? ` a dalších ${res.unknown.length - 15}` : ''}.`);
+    if (res.dup.length) parts.push(`Stejné ID u více lidí (přeskočeno): ${esc([...new Set(res.dup)].join(', '))}.`);
+    ui.idMsg = `<div class="note ${res.unknown.length || res.dup.length ? 'w' : 'i'}">${parts.join(' ')}</div>`;
+    save(); renderAll(); toast('Seznam ID načten.');
+  } catch (error) {
+    ui.idMsg = `<div class="note e">Soubor nejde otevřít: ${esc(error.message)}</div>`;
+    renderSettings();
+  }
 }
 
 async function readRoster(file) {
@@ -1932,6 +2268,12 @@ function renderProfile() {
   const skills = S.positions.filter(p => p.id !== e.positionId && e.skills && e.skills[p.id]);
   const personLog = (S.log || []).filter(x => x.key === e.key).slice(-25).reverse();
   const chartMonths = monthsBetween(from, to).map(id => months.find(m => m.id === id) || { id, label: monthLabel(id), hasAtt: false, prod: null, sanctions: [] });
+  /* ukazatele pro navýšení platu: sloupce jen když jsou data (čas v evidenci) nebo pozice navýšení má */
+  const showPerf = months.some(m => m.perf.time);
+  const showRaise = months.some(m => m.posId && hasRaise(S.positions.find(p => p.id === m.posId)));
+  const lastRaise = months.slice().reverse().find(m => m.hasAtt);
+  const perfTd = (label, v, min) => `<td data-label="${label}" class="r num nowrap">${v == null ? '<span class="muted">—</span>' : `<span class="${min != null && v < min - 1e-9 ? 'pen' : ''}" title="${nf(v, 1)} %${min != null ? ` (podmínka ${nf(min, 1)} %)` : ''}">${nf(v, 0)} %</span>`}</td>`;
+  const ownLv = m => { const p = m.raise.own ? S.positions.find(x => x.id === m.posId) : null; return p ? p.levels[m.raise.own.lvl - 1] : null; };
 
   box.innerHTML = `<div class="pf-top noprint"><button class="btn ghost small" type="button" data-pfback>${I.back}Zpět</button></div>
     <header class="page-head pf-head">
@@ -1962,6 +2304,8 @@ function renderProfile() {
       statTile('Absence', t.attMonths ? String(t.missing) : '—', t.attMonths ? `${dnW(t.missing)} po vyplnění víkendem (celkem ${t.absence})${t.lost ? `, ${t.lost}× bez nároku` : ''}` : 'bez docházky', t.missing ? 'crit' : ''),
       statTile('Sankce', String(t.sanctions), t.sanctions ? `celkem ${t.pen ? `−${t.pen}` : '0'} ${tabW(t.pen)}` : 'žádné', t.sanctions ? 'crit' : ''),
       statTile('Výroba', t.perDay != null ? nf(t.perDay, 1) : '—', t.prodTotal ? `Ø ks/den · ${nf(t.prodTotal, 0)} ks celkem` : 'bez záznamu', ''),
+      ...(showPerf || showRaise ? [statTile('Navýšení platu', lastRaise ? (lastRaise.raise.pct > 0 ? `+${nf(lastRaise.raise.pct, 1)} %` : '0 %') : '—',
+        `${lastRaise ? `${esc(lastRaise.label)} · ` : ''}norma ${pctText(t.normPct)} · využití ${pctText(t.usePct)}`, lastRaise && lastRaise.raise.pct > 0 ? 'good' : '')] : []),
     ].join('')}</div>
     <div class="pf-charts" id="pfCharts">
       ${columnChart({ title: 'Tabáky po měsících', sub: 'výpočet podle úrovně, docházky a sankcí', tone: 'c-tab', months: chartMonths,
@@ -1977,7 +2321,7 @@ function renderProfile() {
     </div>
     <div class="card pf-months">
       <h3>Měsíc po měsíci</h3>
-      ${months.length ? `<div class="table-card flat"><table class="stack pf-table"><thead><tr><th>Měsíc</th><th>Zařazení</th><th class="r">Dny</th><th class="r">Hodiny</th><th class="r">Absence</th><th class="c">Kafe</th><th class="r">Docházka</th><th class="r">Sankce</th><th class="r">Úprava</th><th class="r">Tabáky</th><th class="c">Vydáno</th><th class="r">Ø ks/den</th></tr></thead>
+      ${months.length ? `<div class="table-card flat"><table class="stack pf-table"><thead><tr><th>Měsíc</th><th>Zařazení</th><th class="r">Dny</th><th class="r">Hodiny</th><th class="r">Absence</th><th class="c">Kafe</th><th class="r">Docházka</th><th class="r">Sankce</th><th class="r">Úprava</th><th class="r">Tabáky</th><th class="c">Vydáno</th><th class="r">Ø ks/den</th>${showPerf ? '<th class="r" title="Norma ÷ strávený čas">Norma</th><th class="r" title="Čas nad zakázkami ÷ hodiny v práci">Využití</th>' : ''}${showRaise ? '<th class="r">Plat</th>' : ''}</tr></thead>
       <tbody>${months.slice().reverse().map(m => `<tr data-pfmonth="${esc(m.id)}" class="${m.lost ? 'is-lost' : ''}">
         <td data-label="Měsíc" class="name nowrap"><b>${esc(m.label)}</b></td>
         <td data-label="Zařazení">${m.pos ? `${esc(m.pos)}${m.lvl ? ` <span class="lvl l${m.lvl}" title="${esc(m.lvlName)}${m.from === 'issued' ? ' (podle výdeje)' : ''}">${m.lvl}</span>` : ''}` : '<span class="muted">—</span>'}</td>
@@ -1988,11 +2332,13 @@ function renderProfile() {
         <td data-label="Docházka" class="r">${m.hasAtt ? (m.lost ? '<span class="losttag">bez nároku</span>' : deltaCell(m.attEff, '')) : '<span class="muted">—</span>'}</td>
         <td data-label="Sankce" class="r">${m.sanctions.length ? `<span class="pen">${m.pctSum ? `−${m.pctSum} %` : ''} (${m.pen ? `−${m.pen}` : '0'})</span>` : '<span class="muted num">0</span>'}</td>
         <td data-label="Úprava" class="r num">${m.adj ? sgn(m.adj) : '<span class="muted">0</span>'}</td>
-        <td data-label="Tabáky" class="r num"><b>${m.hasAtt ? `${m.total}` : '—'}</b>${m.hasAtt ? ` <small class="muted">/ ${m.max}</small>` : ''}</td>
+        <td data-label="Tabáky" class="r num">${m.kafeOnly ? '<span class="onlykafe">jen Kafe</span>' : `<b>${m.hasAtt ? `${m.total}` : '—'}</b>${m.hasAtt ? ` <small class="muted">/ ${m.max}</small>` : ''}`}</td>
         <td data-label="Vydáno" class="c">${m.issued ? `<span class="issued" title="${esc(new Date(m.issued.at).toLocaleString('cs-CZ'))}">${I.check}${esc(issueWhat(m.issued.tabaky, m.issued.kafe))}</span>` : '<span class="muted small">ne</span>'}</td>
         <td data-label="Ø ks/den" class="r num">${m.prod && m.prod.perDay != null ? nf(m.prod.perDay, 1) : '<span class="muted">—</span>'}</td>
+        ${showPerf ? perfTd('Norma', m.perf.norm, ownLv(m)?.minNorm) + perfTd('Využití', m.perf.use, ownLv(m)?.minUse) : ''}
+        ${showRaise ? `<td data-label="Plat" class="r">${!m.hasAtt || !m.raise.own ? '<span class="muted">—</span>' : m.raise.pct > 0 ? `<span class="raise-ok">+${nf(m.raise.pct, 1)} %</span>` : `<span class="raise-no" title="${esc(m.raise.own.checks.filter(c => !c.ok).map(c => `${c.label} ${pctText(c.val)} z ${nf(c.min, 1)} %`).join(', '))}">0 %</span>`}</td>` : ''}
       </tr>`).join('')}</tbody>
-      <tfoot><tr><td><b>Celkem</b></td><td></td><td data-label="Dny" class="r num">${t.workDays}${t.wkDays ? ` +${t.wkDays}` : ''}</td><td data-label="Hodiny" class="r num">${nf(t.hours)}</td><td data-label="Absence" class="r num">${t.missing}</td><td data-label="Kafe" class="c num">${t.kafe}×</td><td></td><td data-label="Sankce" class="r num">${t.pen ? `−${t.pen}` : '0'}</td><td data-label="Úprava" class="r num">${t.adj ? sgn(t.adj) : '0'}</td><td data-label="Tabáky" class="r num"><b>${t.tabaky}</b></td><td data-label="Vydáno" class="c num">${t.issuedTab}${t.issuedKafe ? ` + ${t.issuedKafe}× kafe` : ''}</td><td data-label="Ø ks/den" class="r num">${t.perDay != null ? nf(t.perDay, 1) : '—'}</td></tr></tfoot></table></div>
+      <tfoot><tr><td><b>Celkem</b></td><td></td><td data-label="Dny" class="r num">${t.workDays}${t.wkDays ? ` +${t.wkDays}` : ''}</td><td data-label="Hodiny" class="r num">${nf(t.hours)}</td><td data-label="Absence" class="r num">${t.missing}</td><td data-label="Kafe" class="c num">${t.kafe}×</td><td></td><td data-label="Sankce" class="r num">${t.pen ? `−${t.pen}` : '0'}</td><td data-label="Úprava" class="r num">${t.adj ? sgn(t.adj) : '0'}</td><td data-label="Tabáky" class="r num"><b>${t.tabaky}</b></td><td data-label="Vydáno" class="c num">${t.issuedTab}${t.issuedKafe ? ` + ${t.issuedKafe}× kafe` : ''}</td><td data-label="Ø ks/den" class="r num">${t.perDay != null ? nf(t.perDay, 1) : '—'}</td>${showPerf ? perfTd('Norma', t.normPct, null) + perfTd('Využití', t.usePct, null) : ''}${showRaise ? '<td></td>' : ''}</tr></tfoot></table></div>
       <p class="hint">Klikni na měsíc a uvidíš docházku po dnech a sankce. Úroveň je podle potvrzeného výdeje, jinak podle zařazení platného na konci měsíce; počítá se s dnešními pravidly pozice.</p>` : emptyState('Žádné záznamy', 'Pro vybrané období nemá docházku, výrobu, sankce ani výdej.')}
     </div>
     <div class="grid-2 pf-bottom">
@@ -2026,7 +2372,9 @@ function toggleProfileMonth(row) {
       ${m.hasAtt ? `<dl class="kv"><dt>Fond</dt><dd>${nf(m.fund)} h</dd><dt>Odpracováno</dt><dd>${nf(m.hours)} h</dd><dt>Absence / po vyplnění</dt><dd>${m.absence} / ${m.missing}</dd><dt>Omluvená absence</dt><dd>${m.excused}</dd>${Object.keys(m.codes).length ? `<dt>Kódy</dt><dd>${esc(Object.entries(m.codes).map(([c, n]) => `${c}×${n}`).join(', '))}</dd>` : ''}</dl>` : ''}
       <dl class="kv"><dt>Základ za úroveň</dt><dd>${m.base}</dd><dt>Docházka</dt><dd>${m.hasAtt ? sgn(m.attDelta) || '0' : '—'}</dd><dt>Nárok</dt><dd>${m.narok}</dd><dt>Sankce</dt><dd>${m.pen ? `−${m.pen}` : '0'}</dd><dt>Ruční úprava</dt><dd>${m.adj ? sgn(m.adj) : '0'}</dd><dt class="tot">Tabáky</dt><dd class="tot">${m.hasAtt ? m.total : '—'}</dd></dl>
       ${m.prod ? `<dl class="kv"><dt>Vyrobeno</dt><dd>${nf(m.prod.total, 0)} ks</dd><dt>Odprac. dny</dt><dd>${m.prod.days || '—'}</dd><dt>Ø ks/den</dt><dd>${m.prod.perDay != null ? nf(m.prod.perDay, 1) : '—'}</dd><dt>Ø ks/h</dt><dd>${m.prod.perHour != null ? nf(m.prod.perHour, 2) : '—'}</dd></dl>` : ''}
+      ${m.raise.own || m.perf.time ? `<dl class="kv"><dt>Docházka</dt><dd>${pctText(m.perf.att)}</dd><dt>Plnění normy</dt><dd>${pctText(m.perf.norm)}</dd><dt>Využití fondu</dt><dd>${pctText(m.perf.use)}</dd>${m.perf.spent != null ? `<dt>Čas nad zakázkami</dt><dd>${nf(m.perf.spent / 60, 1)} h</dd>` : ''}<dt class="tot">Navýšení platu</dt><dd class="tot">${m.raise.pct > 0 ? `+${nf(m.raise.pct, 1)} %` : '0 %'}</dd></dl>` : ''}
     </div>
+    ${m.raise.own && !(m.raise.pct > 0 && m.raise.lvl === m.raise.own.lvl) ? `<p class="explain">Úroveň ${m.raise.own.lvl} (+${nf(m.raise.own.pct, 1)} %) nesplnila: ${esc(m.raise.own.checks.filter(c => !c.ok).map(c => `${c.label} ${pctText(c.val)} z ${nf(c.min, 1)} %`).join(', '))}${m.raise.pct > 0 ? `; platí úroveň ${m.raise.lvl}` : ''}.</p>` : ''}
     ${m.sanctions.length ? `<ul class="sanlist">${m.sanctions.map(s => `<li>${esc(s.name)} ${s.pct != null ? `${s.pct} %` : `−${s.points} tab.`}${s.note ? ` – ${esc(s.note)}` : ''}</li>`).join('')}</ul>` : ''}
   </td></tr>`);
 }
@@ -2049,6 +2397,11 @@ async function exportProfile() {
 }
 
 function bindExtraEvents() {
+  $('#btnRulesPdf').onclick = exportRulesPdf;
+  $('#prodMsg').addEventListener('click', event => {
+    if (!event.target.closest('[data-prodcols]')) return;
+    if (ui.lastProd) chooseProdColumns(ui.lastProd.aoa, ui.lastProd.name, ui.lastProd.info);
+  });
   $('#matrixDept').addEventListener('change', event => { setPref({ matrixDept: event.target.value }); renderMatrix(); });
   $('#btnMatrixXlsx').onclick = exportMatrix;
   $('#btnMatrixPrint').onclick = () => window.print();
@@ -2160,7 +2513,8 @@ function bindEvents() {
     if (pairSet) {
       const select = pairSet.parentElement.querySelector('[data-pairfor]');
       if (!select || !select.value) { toast('Vyber jméno z evidence práce.', true); return; }
-      S.prodMap[select.value] = pairSet.dataset.pairset;
+      const rec = prodPeriod() && prodPeriod().names[select.value];
+      pairProd(rec ? rec.name : select.value, pairSet.dataset.pairset);
       save(); renderAll(); toast('Spárováno s evidencí práce.');
       return;
     }

@@ -23,7 +23,7 @@
   const DEVICE_STORAGE = 'odmeny.device.v1';
   const DATA_AAD = 'odmeny/data/v1';
   // Verze tvaru dat, kterou server žádá u zápisu (stará otevřená stránka nové údaje neumí).
-  const CLIENT_VERSION = '2';
+  const CLIENT_VERSION = '3';
 
   /* ------------------------------------------------------------ bajty */
 

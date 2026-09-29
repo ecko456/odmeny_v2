@@ -31,6 +31,38 @@ Vychází z `hodnoceni-operatoru.html`. Výpočty jsou převzaté beze změny
   kartičky a nemáš zapamatované zařízení, k datům se už nedostane nikdo, ani správce
   serveru. Vytiskni si proto dvě kartičky a jednu ulož bokem.
 
+## Co je nového ve verzi 2.1
+
+- **Navýšení platu podle úrovně.** U každé úrovně pozice jde nastavit navýšení platu v %
+  a podmínky, které je potřeba za měsíc splnit: docházka, plnění normy a využití fondu
+  (každá v %, prázdná se nehlídá). Člověk dostane navýšení své úrovně, když splní všechny
+  její podmínky; když ne, platí nejvyšší nižší úroveň, jejíž podmínky splnil. V přehledu
+  je sloupec **Plat**, v rozpadu člověka ukazatele proti podmínkám a co chybí; profil ukazuje
+  navýšení a ukazatele po měsících; vše jde i do Excelu.
+  - Docházka = odpracované hodiny ve všední dny (nejvýš celá směna) z fondu hodin měsíce.
+  - Plnění normy = normovaný čas ÷ skutečně strávený čas z evidence práce (jen řádky, kde je
+    obojí); rychlejší než norma = přes 100 %.
+  - Využití fondu = čas strávený nad zakázkami ÷ hodiny v práci podle docházky.
+- **Evidence práce se stráveným časem a normou.** Při prvním importu se vybere, co je ve
+  kterém sloupci (zaměstnanec, datum, kusy, strávený čas, norma v minutách, norma za řádek
+  nebo za kus); aplikace sloupce odhadne podle hlavičky a ukáže náhled. Volba se zapamatuje
+  a soubory se stejnou hlavičkou se načtou rovnou. Čas může být v minutách, hodinách, ve tvaru
+  1:30 nebo v časovém formátu Excelu. Starý formát (jméno C, datum D, kusy E) funguje dál.
+- **ID zaměstnanců.** Evidence práce může místo jmen obsahovat ID. Seznam „kdo má jaké ID“
+  se nahraje v Nastavení → ID pro evidenci práce (tabulka se jménem a ID; předvyplněný
+  seznam lidí jde stáhnout), ID jde zadat i u člověka v části Lidé a je i v exportu zařazení.
+  Neznámé ID se ukáže ve Výrobě jako nespárované a ruční spárování ho uloží k člověku.
+- **Pozice jen s Kafe.** Zaškrtávátko „Jen Kafe, bez tabáků“ u pozice: lidé na ní tabáky
+  nedostávají (ani ruční úpravou), Kafe a navýšení platu se hodnotí normálně.
+- **Pravidla do PDF.** Tlačítko v části Pozice stáhne PDF s pravidly hodnocení: jak se počítají
+  tabáky, absence, Kafe a navýšení platu, a u každé pozice úrovně, tabáky, navýšení a podmínky.
+  PDF vzniká v prohlížeči (data jsou šifrovaná, server je nevidí).
+- **Oprava historie změn:** ruční úprava hned po importu (do vteřiny) se do historie
+  nezapsala; hromadné změny se teď ukládají hned a samostatně.
+- **Aktualizace bez ztráty dat:** všechna data z 2.0 zůstanou, nové volby mají výchozí
+  hodnoty (s tabáky, bez navýšení). Stránka otevřená ještě ve verzi 2.0 už nesmí uložit
+  (nová pole by zahodila) a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.0
 
 - **Osobní nastavení pohledu.** Vybrané období, filtry a řazení přehledu, skryté
@@ -141,7 +173,9 @@ v hlavičce každého skriptu:
 - `tests/e2e_browser.js`: celá aplikace (první spuštění, import, zařazení, sankce, výdej,
   zálohy, mobil, tmavý režim);
 - `tests/e2e_v2.js`: novinky 2.0 (osobní nastavení dvou kartiček, historie změn
-  s odznakem, matice, profil, export).
+  s odznakem, matice, profil, export);
+- `tests/e2e_v21.js`: novinky 2.1 (seznam ID, evidence práce s ID, časem a normou a výběr
+  sloupců, navýšení platu, jen Kafe, PDF s pravidly, historie, mobil).
 
 Test aktualizace 1.0 → 2.0 bez ztráty dat na lokálním Apachi (maže lokální
 `/var/lib/odmeny`, **nikdy ne na ostrém serveru**):
@@ -155,9 +189,21 @@ sudo bash odmeny/deploy/install.sh                   # aktualizace (záloha DB)
 node odmeny/tests/e2e_upgrade.js new                 # data zůstala, novinky fungují
 ```
 
+Test aktualizace 2.0 → 2.1 v jednom běhu: vytvoří data ve 2.0, nechá otevřenou starou
+stránku, spustí instalaci, ověří, že stará stránka nic neuloží, a porovná sdílená data,
+osobní nastavení i výpočty položku po položce:
+
+```bash
+rm -rf /tmp/stara20 && mkdir /tmp/stara20 && git archive a4e5c73 odmeny | tar -x -C /tmp/stara20
+sudo rm -rf /var/lib/odmeny /var/www/odmeny
+sudo bash /tmp/stara20/odmeny/deploy/install.sh      # verze 2.0
+UPGRADE_CMD="sudo bash odmeny/deploy/install.sh" node odmeny/tests/e2e_upgrade21.js
+```
+
 Rozpracovanou verzi jde zamknout souborem `odmeny/ROZPRACOVANO.md`: dokud existuje,
 `deploy/install.sh` ji odmítne nainstalovat (přebije jen `ODMENY_FORCE=1`).
 
 Knihovny: QR kódy (qrcode-generator, MIT), čtení QR (jsQR, Apache 2.0), Excel
-(SheetJS, Apache 2.0), písma IBM Plex a Barlow (SIL OFL). Vše je přibalené,
+(SheetJS, Apache 2.0), PDF (jsPDF, MIT), písma IBM Plex a Barlow (SIL OFL; pro PDF
+podmnožina IBM Plex Sans v TTF). Vše je přibalené,
 aplikace nic nenačítá z cizích serverů.

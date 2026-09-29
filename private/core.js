@@ -57,9 +57,12 @@ const DEF_BONUS=[{at:2,t:1},{at:3,t:2}];       // od X víkendových směn -> +t
 const SAN_PCTS=[10,30,50];
 const DEF_SAN_REASONS=["Nedodržení BOZP","Nedodržení výrobních předpisů","Malá produktivita",
   "Nedodržování stanovených přestávek","Zničení dílů"];
+/* Úroveň: tabáky, popis a navýšení platu (%) s podmínkami v % (null = podmínka se nehlídá). */
+function mkLevel(name,tabaky,desc){return {name,tabaky,desc:desc||"",raise:0,minAtt:null,minNorm:null,minUse:null};}
 function mkPos(id,name,descs){
   return {id,name,max:null,          // null = strop podle nejvyšší úrovně
-    levels:LEVEL_NAMES.map((n,i)=>({name:n,tabaky:(i+1)*2,desc:descs[i]||""})),
+    onlyKafe:false,                  // pozice bez tabáků: hodnotí se jen Kafe (a navýšení platu)
+    levels:LEVEL_NAMES.map((n,i)=>mkLevel(n,(i+1)*2,descs[i])),
     penalty:JSON.parse(JSON.stringify(DEF_PENALTY)),
     bonus:JSON.parse(JSON.stringify(DEF_BONUS))};
 }
@@ -86,7 +89,8 @@ const DEF_SETTINGS={
   adjStep:1,
   adjOver:2,               // o kolik smí ruční úprava jít nad maximum pozice
   hiddenCols:[],           // skryté sloupce přehledu
-  lockMinutes:15           // zamčení po nečinnosti (minuty)
+  lockMinutes:15,          // zamčení po nečinnosti (minuty)
+  prodCols:null            // sloupce importu výroby (jméno, datum, kusy, čas, norma); null = C, D, E
 };
 const n2=v=>Math.round((+v||0)*100)/100;
 const sgn=v=>(v>0?"+":v<0?"−":"")+Math.abs(Math.round(v));
@@ -100,15 +104,14 @@ function save(){_prodIdx=null;if(typeof onStateChange==="function")onStateChange
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],v:2};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],v:3};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
     if(!Array.isArray(p.levels)||p.levels.length!==4){
       const max=Math.max(1,Math.round(+p.max||8));
       const old=Array.isArray(p.skills)?p.skills:[];
-      p.levels=LEVEL_NAMES.map((n,i)=>({name:n,tabaky:Math.max(1,Math.round(max*(i+1)/4)),
-        desc:old[i]?old[i].name:""}));
+      p.levels=LEVEL_NAMES.map((n,i)=>mkLevel(n,Math.max(1,Math.round(max*(i+1)/4)),old[i]?old[i].name:""));
       p._old=true;                     // staré body-maximum nepřenášíme, strop dopočítá nejvyšší úroveň
     }
     if(!Array.isArray(p.penalty))p.penalty=JSON.parse(JSON.stringify(DEF_PENALTY));
@@ -303,11 +306,28 @@ function toNum(v){
   const t=String(v).replace(/\s/g,"").replace(",",".");
   return /^-?\d+(\.\d+)?$/.test(t)?parseFloat(t):null;
 }
-/* "Petr Dvořák" -> klíč zaměstnance; ruční spárování má přednost */
+/* ID zaměstnance z evidence práce: bez mezer a velikosti písmen, číslo bez úvodních nul
+   (Excel z „0123“ udělá 123). */
+function widKey(v){
+  let t=norm(v==null?"":String(v)).replace(/\s+/g,"");
+  if(/^\d+(\.0+)?$/.test(t))t=String(parseInt(t,10));
+  return t;
+}
+function keyByWid(raw){
+  const w=widKey(raw);if(!w)return null;
+  for(const e of Object.values(S.employees))if(e.wid&&widKey(e.wid)===w)return e.key;
+  return null;
+}
+/* Vypadá jako ID (ne jako jméno): bez mezer a s číslicí. */
+function looksLikeId(raw){const t=String(raw==null?"":raw).trim();return !!t&&!/\s/.test(t)&&/\d/.test(t);}
+function prodLabel(raw){return looksLikeId(raw)?"ID "+String(raw).trim():String(raw);}
+/* "Petr Dvořák" nebo ID -> klíč zaměstnance; ruční spárování má přednost, pak ID, pak jméno */
 function prodKeyFor(raw){
   const n=norm(raw);
   if(!n)return null;
   if(S.prodMap[n]&&S.employees[S.prodMap[n]])return S.prodMap[n];
+  const byId=keyByWid(raw);
+  if(byId)return byId;
   const t=n.split(" ").filter(Boolean);
   if(t.length<2)return null;
   const asFirstLast=t.slice(1).join(" ")+"|"+t[0];          // Jméno Příjmení
@@ -328,8 +348,9 @@ function prodIndex(){
   if(pp)Object.values(pp.names).forEach(rec=>{
     const key=prodKeyFor(rec.name);
     if(!key)return;
-    const a=idx[key]||(idx[key]={total:0,entries:0,days:{},sources:[]});
+    const a=idx[key]||(idx[key]={total:0,entries:0,days:{},sources:[],spent:0,norm:0,nspent:0});
     a.total+=rec.total;a.entries+=rec.count;a.sources.push(rec.name);
+    a.spent+=rec.spent||0;a.norm+=rec.norm||0;a.nspent+=rec.nspent||0;
     Object.entries(rec.days).forEach(([iso,ks])=>{a.days[iso]=(a.days[iso]||0)+ks;});
   });
   Object.values(idx).forEach(a=>{
@@ -353,28 +374,111 @@ function prodUnmatched(){
   const pp=prodPeriod();if(!pp)return [];
   return Object.values(pp.names).filter(rec=>!prodKeyFor(rec.name)).sort((a,b)=>b.total-a.total);
 }
-function buildProduction(aoa,fileName){
+/* Čas z buňky na minuty: číslo (minuty, nebo hodiny u unit "h"), zlomek dne z Excelu (frac),
+   text „h:mm“ nebo „h:mm:ss“. */
+function toMinutes(v,unit,frac){
+  if(v==null||v==="")return null;
+  if(v instanceof Date)return v.getHours()*60+v.getMinutes()+v.getSeconds()/60;
+  if(typeof v==="string"){
+    const m=v.trim().match(/^(\d{1,4}):(\d{1,2})(?::(\d{1,2}))?$/);
+    if(m)return +m[1]*60+ +m[2]+(m[3]?+m[3]/60:0);
+  }
+  const n=toNum(v);
+  if(n==null||n<0)return null;
+  return frac?n*1440:unit==="h"?n*60:n;
+}
+/* Výchozí sloupce evidence práce (bez hlavičky): jméno C, datum D, kusy E. */
+const PROD_DEFAULT={header:-1,name:2,date:3,ks:4,spent:null,norm:null,unit:"min",normPer:"row"};
+const PROD_FIELDS=[["name","Zaměstnanec (jméno nebo ID)"],["date","Datum"],["ks","Kusy"],["spent","Strávený čas"],["norm","Norma (min)"]];
+const PROD_WORDS={
+  name:["jmeno","pracovnik","zamestnanec","operator","osoba","prijmeni","id zamestnance","id pracovnika","osobni cislo","cislo zamestnance","os. c","os.c","id"],
+  date:["datum","den","date","dne"],
+  ks:["ks","kusy","kusu","mnozstvi","pocet","vyrobeno","dobre"],
+  spent:["straveny cas","skutecny cas","cas skutecny","odpracovany cas","doba","trvani","straveno","cas"],
+  norm:["norma","normocas","normohod","norm"]
+};
+function colLetter(i){let s="";i++;while(i>0){const r=(i-1)%26;s=String.fromCharCode(65+r)+s;i=Math.floor((i-1)/26);}return s;}
+/* Najde řádek s hlavičkou a odhadne, co je ve kterém sloupci. */
+function prodColumns(aoa){
+  const rows=aoa||[];let header=-1,best=0;
+  for(let r=0;r<Math.min(rows.length,15);r++){
+    const texts=(rows[r]||[]).filter(c=>typeof c==="string"&&c.trim()&&toNum(c)==null&&!cellToDateTime(c));
+    const hits=texts.filter(c=>Object.values(PROD_WORDS).some(w=>w.some(x=>norm(c).includes(x)))).length;
+    if(hits>=2&&hits>best){best=hits;header=r;}
+  }
+  const width=Math.min(60,Math.max(0,...rows.slice(0,Math.max(header+30,30)).map(r=>(r||[]).length)));
+  const first=rows.slice(header+1).find(r=>(r||[]).some(c=>c!=null&&c!==""))||[];
+  const cols=[];for(let i=0;i<width;i++){
+    const head=header>=0&&rows[header][i]!=null?String(rows[header][i]).trim().slice(0,80):"";
+    /* ukázka hodnoty: datum z Excelu (pořadové číslo dne nebo Date) jako datum */
+    const v=first[i];
+    const sample=v==null?"":v instanceof Date?v.toLocaleDateString("cs-CZ"):typeof v==="number"&&v>=20000&&v<80000&&cellToDateTime(v)?(d=>d.d+". "+d.m+". "+d.y)(cellToDateTime(v)):String(v);
+    cols.push({i,letter:colLetter(i),head,sample:sample.slice(0,40)});
+  }
+  const guess={...PROD_DEFAULT,header};
+  if(header>=0){
+    const used=new Set();
+    /* datum dřív než čas, ať „Datum a čas“ nevezme strávený čas */
+    ["name","date","norm","spent","ks"].forEach(f=>{
+      const words=PROD_WORDS[f];let hit=null;
+      /* „ID zakázky“ nebo „Operace“ není zaměstnanec */
+      const skip=c=>f==="name"&&/zakaz|operac|stroj|vyrob|dilu|polozk/.test(norm(c.head));
+      for(const w of words){hit=cols.find(c=>!used.has(c.i)&&c.head&&!skip(c)&&(norm(c.head)===w||norm(c.head).split(/[^a-z0-9]+/).includes(w)||(w.includes(" ")&&norm(c.head).includes(w))));if(hit)break;}
+      if(!hit)for(const w of words.filter(x=>x.length>=4)){hit=cols.find(c=>!used.has(c.i)&&c.head&&!skip(c)&&norm(c.head).includes(w));if(hit)break;}
+      guess[f]=hit?hit.i:(f==="spent"||f==="norm"?null:guess[f]);
+      if(hit)used.add(hit.i);
+    });
+  }
+  return {header,cols,guess,heads:cols.map(c=>c.head)};
+}
+/* Uložené mapování sedí na soubor, když má stejnou hlavičku (nebo oba žádnou). */
+function prodMapFits(map,info){
+  if(!map)return false;
+  const h=map.heads||[];
+  if(map.header<0||!h.length)return info.header<0;
+  return info.header===map.header&&h.every((x,i)=>!x||norm(x)===norm(info.heads[i]||""));
+}
+function buildProduction(aoa,fileName,map){
   if(!aoa||!aoa.length)return {ok:false,err:"Soubor je prázdný."};
+  const m={...PROD_DEFAULT,...(map||{})};
+  const at=(row,i)=>i==null||i<0?null:row[i];
+  /* sloupec času samými zlomky dne = časový formát z Excelu (1:30 = 0,0625) */
+  let frac=false;
+  if(m.spent!=null){
+    const nums=aoa.slice(m.header+1).map(r=>(r||[])[m.spent]).filter(v=>typeof v==="number"&&v>0);
+    frac=nums.length>0&&nums.every(v=>v<1);
+  }
   const buckets={};let used=0,skipped=0;
-  for(let r=0;r<aoa.length;r++){
+  for(let r=Math.max(0,m.header+1);r<aoa.length;r++){
     const row=aoa[r]||[];
-    const nm=row[2]==null?"":String(row[2]).trim();
-    const dt=cellToDateTime(row[3]);
-    const ks=toNum(row[4]);
-    if(!nm||!dt||ks==null||ks<=0){
-      if(nm&&(row[3]!=null||row[4]!=null)&&!SKIP_NAMES.includes(norm(nm)))skipped++;
+    const raw=at(row,m.name);
+    const nm=raw==null?"":String(raw).trim();
+    const dt=cellToDateTime(at(row,m.date));
+    const ks=m.ks!=null?toNum(at(row,m.ks)):null;
+    const spent=m.spent!=null?toMinutes(at(row,m.spent),m.unit,frac):null;
+    let nrm=m.norm!=null?toNum(at(row,m.norm)):null;
+    if(nrm!=null&&m.normPer==="piece")nrm=ks>0?nrm*ks:null;
+    const good=(ks!=null&&ks>0)||(spent!=null&&spent>0)||(nrm!=null&&nrm>0);
+    if(!nm||!dt||!good){
+      if(nm&&(at(row,m.date)!=null||at(row,m.ks)!=null)&&!SKIP_NAMES.includes(norm(nm)))skipped++;
       continue;
     }
     if(SKIP_NAMES.includes(norm(nm)))continue;
     const pid=dt.y+"-"+String(dt.m).padStart(2,"0");
     const iso=pid+"-"+String(dt.d).padStart(2,"0");
     const b=buckets[pid]||(buckets[pid]={id:pid,names:{},records:0,total:0,file:fileName,at:Date.now()});
+    if(m.spent!=null)b.time=true;
     const k=norm(nm);
     const rec=b.names[k]||(b.names[k]={name:nm,total:0,count:0,days:{}});
-    rec.total+=ks;rec.count++;rec.days[iso]=(rec.days[iso]||0)+ks;
-    b.records++;b.total+=ks;used++;
+    const q=ks>0?ks:0;
+    rec.total+=q;rec.count++;rec.days[iso]=(rec.days[iso]||0)+q;
+    if(m.spent!=null){
+      rec.spent=(rec.spent||0)+(spent>0?spent:0);
+      if(spent>0&&nrm>0){rec.norm=(rec.norm||0)+nrm;rec.nspent=(rec.nspent||0)+spent;}
+    }
+    b.records++;b.total+=q;used++;
   }
-  if(!used)return {ok:false,err:"Nenašel jsem žádný použitelný řádek. Čekám jméno ve sloupci C, datum ve sloupci D a počet kusů ve sloupci E."};
+  if(!used)return {ok:false,err:map?"Ve vybraných sloupcích jsem nenašel žádný použitelný řádek (jméno, datum a kusy nebo čas).":"Nenašel jsem žádný použitelný řádek. Čekám jméno ve sloupci C, datum ve sloupci D a počet kusů ve sloupci E."};
   return {ok:true,buckets,used,skipped};
 }
 
@@ -432,7 +536,7 @@ function levelOf(e){
   const pos=posOf(e);
   const n=(pos&&e.level>=1&&e.level<=4)?e.level:0;
   const lv=n?pos.levels[n-1]:null;
-  return {pos,n,lv,base:lv?Math.max(0,Math.round(+lv.tabaky||0)):0};
+  return {pos,n,lv,base:lv&&!pos.onlyKafe?Math.max(0,Math.round(+lv.tabaky||0)):0};
 }
 /* nejvyšší splněný řádek pravidel: {at: práh, t: tabáky} */
 function pickRule(rules,val){
@@ -451,7 +555,7 @@ function attTabaky(a,pos){
   r.filled=Math.min(a.wkDays,r.gross);
   r.missing=r.gross-r.filled;
   r.wkLeft=a.wkDays-r.filled;
-  if(!pos)return r;
+  if(!pos||pos.onlyKafe)return r;
   if(r.missing>0){
     const ru=pickRule(pos.penalty,r.missing);
     if(ru){r.rule=ru;r.kind="pen";r.delta=-Math.abs(Math.round(+ru.t||0));}
@@ -477,9 +581,9 @@ function setKafe(v){
   else S.kafe[p.id]=Math.max(0,n2(+t));
 }
 /* strop pozice: ruční hodnota, jinak nejvyšší úroveň */
-function posMaxAuto(p){return p?Math.max(0,...p.levels.map(l=>Math.round(+l.tabaky||0))):0;}
+function posMaxAuto(p){return p&&!p.onlyKafe?Math.max(0,...p.levels.map(l=>Math.round(+l.tabaky||0))):0;}
 function posMax(p){
-  if(!p)return 0;
+  if(!p||p.onlyKafe)return 0;
   return (p.max!=null&&p.max!==""&&isFinite(+p.max))?Math.max(0,Math.round(+p.max)):posMaxAuto(p);
 }
 /* srážka v tabácích z % součtu: zaokrouhlení na celé, ale každá sankce stojí aspoň 1 tabák; 100 % a víc = vše */
@@ -510,24 +614,68 @@ function evaluate(e,p){
   const sub=narok-pen;
   /* ruční úprava drží výsledek v 0..maximum + povolený přesah (jen ručně, bonus za víkendy strop nepřekročí) */
   const over=Math.max(0,Math.round(+S.settings.adjOver||0));
-  const adjMin=-sub, adjMax=lost?0:Math.max(0,max+over-sub);
+  const kafeOnly=!!(L.pos&&L.pos.onlyKafe);   // pozice bez tabáků: ani ruční úprava je nepřidá
+  const adjMin=-sub, adjMax=lost||kafeOnly?0:Math.max(0,max+over-sub);
   const adj=Math.round(clamp(adjOf(e.key),adjMin,adjMax));
-  const total=clamp(sub+adj,0,lost?0:max+over);
+  const total=clamp(sub+adj,0,lost||kafeOnly?0:max+over);
   const kth0=kafeThreshold(p);
   const kth=kth0==null?null:Math.max(0,kth0-(a?a.friDiff:0));   // zkrácený pátek sníží i práh Kafe
   const kafe=!lost&&!!(a&&a.found&&kth!=null&&a.totalHours>=kth-1e-9);
   const issued=p?issuedOf(e.key):null;
   const issuedChanged=!!(issued&&(issued.tabaky!==total||!!issued.kafe!==kafe));
   const toIssue=total>0||kafe;
-  return {att:a,L,at,pos:L.pos,max,raw,capped,narok,lost,cut,attEff:lost?-L.base:narok-L.base,
+  return {att:a,L,at,pos:L.pos,kafeOnly,max,raw,capped,narok,lost,cut,attEff:lost?-L.base:narok-L.base,
     issued,issuedChanged,toIssue,
     sans,pctSum,pctCount,sanT,legacy,pen,sub,adj,adjMin,adjMax,total,
     kafe,kafeTh:kth,pctv:max?pct(Math.min(1,total/max)):0};
 }
 function allRows(){
   const p=S.current?S.periods[S.current]:null;
-  return Object.values(S.employees).map(e=>({e,p,prod:productionOf(e.key),...evaluate(e,p)}));
+  return Object.values(S.employees).map(e=>{
+    const ev=evaluate(e,p),prod=productionOf(e.key),perf=perfOf(ev.att,prod);
+    return {e,p,prod,...ev,perf,raise:raiseOf(ev.L,perf)};
+  });
 }
+
+/* ---------- navýšení platu ----------
+   Tři ukazatele v % za měsíc:
+   - docházka = odpracované hodiny (ve všední dny, nejvýš směna) z fondu hodin, jako u grafu profilu;
+   - plnění normy = normované minuty ÷ strávené minuty (jen řádky evidence, kde je čas i norma);
+     rychlejší práce než norma dává přes 100 %;
+   - využití fondu = čas strávený nad zakázkami ÷ hodiny v práci podle docházky.
+   Hodnoty se porovnávají zaokrouhlené na desetiny (jak je vidět v aplikaci). */
+const round1=v=>Math.round(v*10)/10;
+function perfOf(att,prod){
+  const a=att&&att.found?att:null,pp=prodPeriod();
+  const time=!!(pp&&pp.time);
+  return {
+    att:a?round1(a.fundRatio*100):null,
+    norm:prod&&prod.nspent>0?round1(prod.norm/prod.nspent*100):null,
+    use:a&&a.totalHours>0&&time?round1((prod?prod.spent:0)/(a.totalHours*60)*100):null,
+    spent:prod&&time?prod.spent:null,normMin:prod&&time?prod.norm:null,nspent:prod&&time?prod.nspent:null,time
+  };
+}
+const PERF_KEYS=[["att","docházka","minAtt"],["norm","plnění normy","minNorm"],["use","využití fondu","minUse"]];
+function levelChecks(lv,perf){
+  return PERF_KEYS.filter(([,,f])=>lv[f]!=null).map(([k,label,f])=>({k,label,min:+lv[f],val:perf[k],ok:perf[k]!=null&&perf[k]>=+lv[f]-1e-9}));
+}
+/* Navýšení platu: nejvyšší úroveň do úrovně člověka včetně, která má navýšení a jejíž podmínky splnil.
+   own = podmínky vlastní úrovně (i když nesplněné), ať je vidět, co chybí. */
+function raiseOf(L,perf){
+  const out={pct:0,lvl:0,checks:[],own:null};
+  if(!L||!L.pos||!L.n)return out;
+  for(let n=L.n;n>=1;n--){
+    const lv=L.pos.levels[n-1],pct=+lv.raise||0;
+    if(!(pct>0))continue;
+    const checks=levelChecks(lv,perf);
+    if(!out.own)out.own={lvl:n,pct,checks};
+    if(checks.every(c=>c.ok))return {...out,pct,lvl:n,checks};
+  }
+  return out;
+}
+function hasRaise(p){return !!(p&&p.levels.some(l=>+l.raise>0));}
+function pctText(v){return v==null?"—":nf(v,1)+" %";}
+function raiseText(x){return x&&x.pct>0?"+"+nf(x.pct,1)+" %":"—";}
 /* vyřazení ze seznamu: člověk zůstává v evidenci, ale nehodnotí se a nikde se nenabízí */
 function activeRows(){return allRows().filter(r=>!r.e.excluded);}
 function excludedPeople(){return Object.values(S.employees).filter(e=>e.excluded)
@@ -571,6 +719,7 @@ function exportRows(rows){
     {t:"Příjmení",v:r=>r.e.last},
     {t:"Jméno",v:r=>r.e.first},
     {t:"Pozice",v:r=>r.pos?r.pos.name:""},
+    {t:"Jen Kafe",v:r=>r.kafeOnly?"ano":""},
     {t:"Úroveň",v:r=>r.L.n||""},
     {t:"Název úrovně",v:r=>r.L.n?r.L.lv.name:""},
     {t:"Zkrácený pátek",v:r=>r.e.shortFri?"ano":""},
@@ -601,7 +750,15 @@ function exportRows(rows){
     {t:"Vyrobené kusy",v:r=>r.prod?n2(r.prod.total):"",s:1},
     {t:"Ø kusů na odpracovaný den",v:r=>{const a=avgPerDay(r.prod,r.att);return a==null?"":n2(a);}},
     {t:"Ø kusů na hodinu",v:r=>(r.prod&&r.att&&r.att.totalHours)?n2(r.prod.total/r.att.totalHours):""},
-    {t:"Zápisů v evidenci",v:r=>r.prod?r.prod.entries:"",s:1}
+    {t:"Zápisů v evidenci",v:r=>r.prod?r.prod.entries:"",s:1},
+    {t:"Strávený čas (h)",v:r=>r.perf&&r.perf.spent!=null?n2(r.perf.spent/60):"",s:1},
+    {t:"Norma (h)",v:r=>r.perf&&r.perf.normMin!=null?n2(r.perf.normMin/60):"",s:1},
+    {t:"Docházka %",v:r=>r.perf&&r.perf.att!=null?r.perf.att:""},
+    {t:"Plnění normy %",v:r=>r.perf&&r.perf.norm!=null?r.perf.norm:""},
+    {t:"Využití fondu %",v:r=>r.perf&&r.perf.use!=null?r.perf.use:""},
+    {t:"Navýšení platu %",v:r=>r.raise&&r.raise.pct?r.raise.pct:""},
+    {t:"Navýšení podle úrovně",v:r=>r.raise&&r.raise.pct?r.raise.lvl:""},
+    {t:"Nesplněno pro navýšení",v:r=>r.raise&&r.raise.own&&r.raise.lvl!==r.raise.own.lvl?r.raise.own.checks.filter(c=>!c.ok).map(c=>c.label+" "+pctText(c.val)+" z "+nf(c.min,1)+" %").join(", "):""}
   ];
   const head=C.map(c=>c.t);
   const body=rows.map(r=>C.map(c=>c.v(r)));
@@ -615,11 +772,11 @@ function exportRows(rows){
    Soubor jde editovat v Excelu a poslat zpátky - matchuje se na příjmení + jméno. */
 function rosterSheets(){
   const people=Object.values(S.employees).sort((a,b)=>norm(a.last).localeCompare(norm(b.last),"cs"));
-  const main=[["Příjmení","Jméno","Pozice","Úroveň (1-4)","Název úrovně","Tabáky za úroveň","Zkrácený pátek","Vyřazen ze seznamu","Poznámka","Oddělení"]];
+  const main=[["Příjmení","Jméno","Pozice","Úroveň (1-4)","Název úrovně","Tabáky za úroveň","Zkrácený pátek","Vyřazen ze seznamu","Poznámka","Oddělení","ID v evidenci práce"]];
   people.forEach(e=>{const L=levelOf(e);
-    main.push([e.last,e.first,L.pos?L.pos.name:"",L.n||"",L.n?L.lv.name:"",L.n?L.base:"",e.shortFri?"ano":"",e.excluded?"ano":"",e.note||"",L.pos?deptOf(L.pos):""]);});
-  const posSheet=[["Pozice","Úroveň","Název úrovně","Tabáky","Co úroveň obnáší"]];
-  S.positions.forEach(p=>p.levels.forEach((lv,i)=>posSheet.push([p.name,i+1,lv.name,+lv.tabaky||0,lv.desc||""])));
+    main.push([e.last,e.first,L.pos?L.pos.name:"",L.n||"",L.n?L.lv.name:"",L.pos&&L.pos.onlyKafe?"jen Kafe":L.n?L.base:"",e.shortFri?"ano":"",e.excluded?"ano":"",e.note||"",L.pos?deptOf(L.pos):"",e.wid||""]);});
+  const posSheet=[["Pozice","Úroveň","Název úrovně","Tabáky","Co úroveň obnáší","Navýšení platu %","Docházka ≥ %","Plnění normy ≥ %","Využití fondu ≥ %"]];
+  S.positions.forEach(p=>p.levels.forEach((lv,i)=>posSheet.push([p.name,i+1,lv.name,p.onlyKafe?"jen Kafe":+lv.tabaky||0,lv.desc||"",+lv.raise||"",lv.minAtt??"",lv.minNorm??"",lv.minUse??""])));
   const rules=[["Pozice","Typ","Práh","Tabáky","Význam"]];
   S.positions.forEach(p=>{
     rules.push([p.name,"maximum","",posMax(p),p.max!=null&&p.max!==""?"vlastní strop pozice":"podle nejvyšší úrovně"]);
@@ -642,7 +799,8 @@ function applyRoster(aoa){
       else if(c.startsWith("nazev uroven"))m.lvlName=i;
       else if(c.startsWith("zkraceny patek"))m.fri=i;
       else if(c.startsWith("vyrazen"))m.excl=i;
-      else if(c.startsWith("poznamka"))m.note=i;});
+      else if(c.startsWith("poznamka"))m.note=i;
+      else if(c.startsWith("id v evidenci")||c==="id")m.wid=i;});
     if(m.last!=null&&m.first!=null&&m.pos!=null){hr=r;map=m;break;}
   }
   if(hr<0)return {err:"Nenašel jsem hlavičku se sloupci Příjmení, Jméno, Pozice."};
@@ -679,6 +837,7 @@ function applyRoster(aoa){
     if(map.fri!=null)e.shortFri=yes(row[map.fri]);
     if(map.excl!=null)e.excluded=yes(row[map.excl]);
     if(map.note!=null&&row[map.note]!=null)e.note=String(row[map.note]).trim();
+    if(map.wid!=null&&row[map.wid]!=null&&String(row[map.wid]).trim())setWid(e.key,row[map.wid]);
     touched++;
   }
   newPos=S.positions.length-newPos;
@@ -686,8 +845,80 @@ function applyRoster(aoa){
   return {touched,created,newPos,noLvl};
 }
 
+/* ---------------- ID zaměstnanců pro evidenci práce ----------------
+   Evidence práce může místo jmen obsahovat ID. Seznam „kdo má jaké ID“ se nahraje v Nastavení
+   (nebo se ID zadá u člověka); stejné ID nesmí mít dva lidé. */
+function setWid(key,raw){
+  const e=S.employees[key];if(!e)return false;
+  const v=String(raw==null?"":raw).trim().slice(0,40);
+  if(!v){delete e.wid;return true;}
+  const other=keyByWid(v);
+  if(other&&other!==key)return false;
+  e.wid=v;return true;
+}
+function widSheet(){
+  const rows=[["Příjmení","Jméno","Pozice","ID v evidenci práce"]];
+  Object.values(S.employees).sort((a,b)=>norm(a.last).localeCompare(norm(b.last),"cs"))
+    .forEach(e=>{const p=posOf(e);rows.push([e.last,e.first,p?p.name:"",e.wid||""]);});
+  return rows;
+}
+/* Najde člověka podle „Příjmení“ + „Jméno“, nebo podle celého jména v jednom sloupci (v obou pořadích). */
+function keyByName(last,first,full){
+  if(last||first){const k=norm(last)+"|"+norm(first);if(S.employees[k])return k;}
+  const t=norm(full||[first,last].filter(Boolean).join(" ")).split(" ").filter(Boolean);
+  if(t.length<2)return null;
+  const a=t.slice(1).join(" ")+"|"+t[0],b=t.slice(0,-1).join(" ")+"|"+t[t.length-1];
+  return S.employees[a]?a:S.employees[b]?b:null;
+}
+function applyWids(aoa){
+  if(!aoa||!aoa.length)return {err:"Soubor je prázdný."};
+  let hr=-1,m={};
+  for(let r=0;r<Math.min(aoa.length,15);r++){
+    const row=(aoa[r]||[]).map(c=>norm(c)),x={};
+    row.forEach((c,i)=>{
+      if(!c)return;
+      if(c.startsWith("prijmeni"))x.last=i;
+      else if(c==="jmeno"||c==="krestni jmeno")x.first=i;
+      else if(/^(jmeno a prijmeni|prijmeni a jmeno|cele jmeno|zamestnanec|pracovnik|jmeno)/.test(c)&&x.full==null)x.full=i;
+      else if(x.id==null&&(c==="id"||c.startsWith("id ")||c.includes("osobni cislo")||c.startsWith("os. c")||c.startsWith("cislo")||c.startsWith("kod")))x.id=i;
+    });
+    if(x.id!=null&&(x.last!=null||x.full!=null)){hr=r;m=x;break;}
+  }
+  if(hr<0)return {err:"Nenašel jsem hlavičku se jménem (Příjmení a Jméno, nebo Jméno a příjmení) a sloupcem ID."};
+  const cell=(row,i)=>i==null||row[i]==null?"":String(row[i]).trim();
+  const seen=new Map(),res={set:0,same:0,unknown:[],dup:[],clash:[]};
+  const pending=[];
+  for(let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]||[];
+    const id=cell(row,m.id),last=cell(row,m.last),first=cell(row,m.first),full=cell(row,m.full);
+    if(!id)continue;
+    const name=full||[last,first].filter(Boolean).join(" ");
+    const key=keyByName(last,first,full);
+    if(!key){if(name)res.unknown.push(name+" ("+id+")");continue;}
+    const w=widKey(id);
+    if(seen.has(w)&&seen.get(w)!==key){res.dup.push(id);continue;}
+    seen.set(w,key);pending.push([key,id]);
+  }
+  /* Soubor platí: ID se nejdřív odebere dosavadnímu majiteli (i při prohození dvou lidí), pak se přiřadí.
+     Kdo o ID přišel a v souboru nové nedostal, je v přehledu výsledku. */
+  const pendingKeys=new Set(pending.map(p=>p[0]));
+  pending.forEach(([key,id])=>{const o=keyByWid(id);
+    if(o&&o!==key){if(!pendingKeys.has(o))res.clash.push(id+": "+nameOf(o)+" → "+nameOf(key));delete S.employees[o].wid;}});
+  pending.forEach(([key,id])=>{const e=S.employees[key];if(e.wid&&widKey(e.wid)===widKey(id)){res.same++;return;}
+    if(setWid(key,id))res.set++;else res.dup.push(id);});
+  return res;
+}
+
 /* ---------------- ukázková data ---------------- */
 function rng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
+const DEMO_RAISE=i=>({raise:5*i,minAtt:90,minNorm:[0,85,95,105][i],minUse:[0,70,75,80][i]});
+/* Po ukázce zůstávají pozice, ale ukázkové navýšení platu ne (vlastní úpravy ano). */
+function dropDemoRaise(positions){
+  (positions||[]).forEach(p=>p.levels.forEach((lv,i)=>{
+    if(!i)return;const d=DEMO_RAISE(i);
+    if(Object.keys(d).every(k=>lv[k]===d[k])){lv.raise=0;lv.minAtt=null;lv.minNorm=null;lv.minUse=null;}
+  }));
+}
 function demoData(){
   const st=blank();st.demo=true;
   const now=new Date(),pm=new Date(now.getFullYear(),now.getMonth()-1,1);
@@ -726,19 +957,25 @@ function demoData(){
     const shown=(last==="Veselý"?"Veselí":last);
     const r=rng(i*104729+Y+M), base=[38,26,44,31,52,29,61,35][i%8];
     const key=norm(first+" "+shown);
-    const rec={name:first+" "+shown,total:0,count:0,days:{}};
+    const rec={name:first+" "+shown,total:0,count:0,days:{},spent:0,norm:0,nspent:0};
     const row=rows[norm(last)+"|"+norm(first)];
+    /* strávený čas nad zakázkami a norma v minutách: každý jinak rychlý a jinak vytížený */
+    const speed=[1.08,0.93,0.86,1.02,0.97,1.12,0.8,0.95][i%8],busy=[0.9,0.84,0.72,0.88,0.8,0.93,0.66,0.78][i%8];
     days.forEach((d,j)=>{
       if(!row||!(row.h[j]>0))return;
       const ks=Math.max(1,Math.round(base*(0.72+r()*0.56)*(row.h[j]/7.5)));
+      const spent=Math.round(row.h[j]*60*busy*(0.94+r()*0.12));
       rec.days[d.iso]=ks;rec.total+=ks;rec.count++;
+      rec.spent+=spent;rec.nspent+=spent;rec.norm+=Math.round(spent*speed*(0.95+r()*0.1));
     });
     if(rec.count)names[key]=rec;
   });
   st.production={};
-  st.production[id]={id,names,file:"ukázka-evidence-prace.xlsx",at:Date.now(),
+  st.production[id]={id,names,file:"ukázka-evidence-prace.xlsx",at:Date.now(),time:true,
     records:Object.values(names).reduce((x,r)=>x+r.count,0),
     total:Object.values(names).reduce((x,r)=>x+r.total,0)};
+  /* navýšení platu u úrovní 2–4 s podmínkami (ukázka) */
+  st.positions.forEach(p=>p.levels.forEach((lv,i)=>{if(i>0)Object.assign(lv,DEMO_RAISE(i));}));
   const sk=(last,first,name,pctV,note)=>({id:uid("x"),key:norm(last)+"|"+norm(first),period:id,name,pct:pctV,note,at:Date.now()});
   st.sanctions=[
     sk("Dvořák","Petr","Zničení dílů",30,"2 ks hřídele, špatné upnutí"),
@@ -760,8 +997,8 @@ function demoData(){
 const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
-const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss"];
-const DATA_VERSION=2;
+const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
+const DATA_VERSION=3;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data"];
@@ -786,11 +1023,15 @@ function sanitizeState(input){
 
   const out=blank();
   out.demo=!!o.demo;
+  /* procenta s jedním desetinným místem; prázdná podmínka = nehlídá se */
+  const pctOpt=(v,hi)=>(v==null||v===""||!Number.isFinite(Number(v)))?null:Math.round(clamp(Number(v),0,hi)*10)/10;
   out.positions=o.positions.filter(p=>typeof p.id==="string"&&SAFE_ID.test(p.id)).slice(0,100).map(p=>({
     id:p.id,name:str(p.name,80),dept:str(p.dept,60).trim(),
     max:(p.max==null||p.max==="")?null:int(p.max,0,0,200),
+    onlyKafe:!!p.onlyKafe,
     levels:LEVEL_NAMES.map((n,i)=>{const l=obj(arr(p.levels)[i]);
-      return {name:str(l.name==null?n:l.name,40),tabaky:int(l.tabaky,(i+1)*2,0,100),desc:str(l.desc,500)};}),
+      return {name:str(l.name==null?n:l.name,40),tabaky:int(l.tabaky,(i+1)*2,0,100),desc:str(l.desc,500),
+        raise:pctOpt(l.raise,100)||0,minAtt:pctOpt(l.minAtt,100),minNorm:pctOpt(l.minNorm,300),minUse:pctOpt(l.minUse,100)};}),
     penalty:rules(p.penalty),bonus:rules(p.bonus)
   }));
   const posIds=new Set(out.positions.map(p=>p.id));
@@ -802,6 +1043,8 @@ function sanitizeState(input){
       note:str(e.note,500)};
     if(e.shortFri)out.employees[k].shortFri=true;
     if(e.excluded)out.employees[k].excluded=true;
+    /* ID v evidenci práce (verze 2.1) */
+    if(e.wid!=null&&String(e.wid).trim())out.employees[k].wid=str(String(e.wid).trim(),40);
     const emp=out.employees[k];
     /* zaučení na dalších pozicích (jen pro matici dovedností, tabáky neovlivní) */
     const skills={};
@@ -845,9 +1088,13 @@ function sanitizeState(input){
     Object.entries(obj(pp.names)).slice(0,5000).forEach(([n,rec])=>{
       if(!rec||typeof rec!=="object"||!key(n,200))return;
       const days={};Object.entries(obj(rec.days)).forEach(([iso,ks])=>{if(ISO_DAY.test(iso))days[iso]=num(ks,0,0,1e9);});
-      names[key(n,200)]={name:str(rec.name,160),total:num(rec.total,0,0,1e12),count:int(rec.count,0,0,1e9),days};
+      const r={name:str(rec.name,160),total:num(rec.total,0,0,1e12),count:int(rec.count,0,0,1e9),days};
+      /* minuty z evidence práce: strávený čas, norma a čas u řádků s normou */
+      if(pp.time){r.spent=num(rec.spent,0,0,1e9);r.norm=num(rec.norm,0,0,1e9);r.nspent=num(rec.nspent,0,0,1e9);}
+      names[key(n,200)]=r;
     });
     out.production[id]={id,names,records:int(pp.records,0,0,1e9),total:num(pp.total,0,0,1e12),file:str(pp.file,200),at:num(pp.at,0,0,1e15)};
+    if(pp.time)out.production[id].time=true;
   });
   Object.entries(o.prodMap).forEach(([n,k])=>{if(typeof k==="string"&&key(n,200)&&key(k,200))out.prodMap[key(n,200)]=key(k,200);});
   Object.entries(obj(o.kafe)).forEach(([id,v])=>{if(PERIOD_ID.test(id)&&v!==""&&v!=null&&Number.isFinite(+v))out.kafe[id]=num(v,0,0,1000);});
@@ -880,12 +1127,24 @@ function sanitizeState(input){
     adjStep:int(st.adjStep,1,1,5),
     adjOver:int(st.adjOver,2,0,10),
     hiddenCols:arr(st.hiddenCols).filter(k=>OV_COLUMN_KEYS.includes(k)),
-    lockMinutes:int(st.lockMinutes,15,1,240)
+    lockMinutes:int(st.lockMinutes,15,1,240),
+    prodCols:cleanProdCols(st.prodCols)
   };
   out.current=(typeof o.current==="string"&&PERIOD_ID.test(o.current))?o.current:null;
   if(!out.current||!out.periods[out.current])out.current=Object.keys(out.periods).sort().reverse()[0]||null;
   out.v=DATA_VERSION;
   return out;
+}
+
+/* Mapování sloupců importu výroby (indexy sloupců od 0). */
+function cleanProdCols(v){
+  if(!v||typeof v!=="object"||Array.isArray(v))return null;
+  const col=(x,opt)=>{if((x==null||x==="")&&opt)return null;const n=Math.round(Number(x));return Number.isFinite(n)&&n>=0&&n<60?n:(opt?null:-1);};
+  const out={header:Math.max(-1,Math.min(14,Math.round(Number(v.header))||0)),name:col(v.name),date:col(v.date),ks:col(v.ks,true),
+    spent:col(v.spent,true),norm:col(v.norm,true),unit:v.unit==="h"?"h":"min",normPer:v.normPer==="piece"?"piece":"row",
+    heads:(Array.isArray(v.heads)?v.heads:[]).slice(0,60).map(h=>String(h==null?"":h).slice(0,80))};
+  if(!Number.isFinite(Number(v.header)))out.header=-1;
+  return out.name<0||out.date<0?null:out;
 }
 
 /* ================= verze 2: osobní pohled, historie změn, profil, matice dovedností ================= */
@@ -938,7 +1197,7 @@ function describeChanges(a,b,meta){
   if(removed.length>5)add("person","Smazáno "+removed.length+" lidí: "+list(removed.map(k=>nameIn(a,k))));
   else removed.forEach(k=>add("person","Smazán z evidence: "+nameIn(a,k)));
   added.forEach(k=>{if(eb[k].positionId)hist.push([k,{at,pos:eb[k].positionId,lvl:eb[k].level||null}]);});
-  const moves=[];
+  const moves=[],widMoves=[];
   Object.keys(eb).filter(k=>ea[k]).forEach(k=>{
     const x=ea[k],y=eb[k],n=who(k);
     if((x.positionId||null)!==(y.positionId||null)||(x.level||null)!==(y.level||null)){
@@ -948,12 +1207,15 @@ function describeChanges(a,b,meta){
     if(!!x.excluded!==!!y.excluded)add("person",n+(y.excluded?" vyřazen ze seznamu":" vrácen do seznamu"),{key:k});
     if(!!x.shortFri!==!!y.shortFri)add("person",n+": zkrácený pátek "+(y.shortFri?"zapnut":"vypnut"),{key:k});
     if((x.note||"")!==(y.note||""))add("person",n+": upravena poznámka",{key:k,m:"note:"+k});
+    if((x.wid||"")!==(y.wid||""))widMoves.push([k,x.wid||"",y.wid||""]);
     const sx=x.skills||{},sy=y.skills||{};
     [...new Set([...Object.keys(sx),...Object.keys(sy)])].filter(id=>(sx[id]||0)!==(sy[id]||0)).forEach(id=>{
       const p=posIn(b,id)||posIn(a,id);
       add("level","",{key:k,m:"skill:"+k+":"+id,p:n+": zaučení na pozici "+(p?p.name:"?")+" ",v0:String(sx[id]||0),v1:String(sy[id]||0)});
     });
   });
+  if(widMoves.length>8)add("person","ID v evidenci práce změněno u "+widMoves.length+" lidí: "+list(widMoves.map(m=>who(m[0]))));
+  else widMoves.forEach(([k,v0,v1])=>add("person","",{key:k,m:"wid:"+k,p:who(k)+": ID v evidenci práce ",v0:v0||"—",v1:v1||"—"}));
   if(moves.length>8)add("level","Změněno zařazení u "+moves.length+" lidí: "+list(moves.map(who)));
   else moves.forEach(k=>add("level","",{key:k,m:"lvl:"+k,p:who(k)+": ",v0:lvlText(a,ea[k].positionId,ea[k].level),v1:lvlText(b,eb[k].positionId,eb[k].level)}));
 
@@ -1014,6 +1276,11 @@ function describeChanges(a,b,meta){
     p.levels.forEach((lv,i)=>{const o=q.levels[i]||{};
       if((+o.tabaky||0)!==(+lv.tabaky||0))add("position","",{m:"ptab:"+id+":"+i,p:"Pozice "+nm+", úroveň "+(i+1)+" (tabáky): ",v0:String(+o.tabaky||0),v1:String(+lv.tabaky||0)});});
     if(p.levels.some((lv,i)=>(q.levels[i]||{}).name!==lv.name||(q.levels[i]||{}).desc!==lv.desc))add("position","Pozice "+nm+": upraveny názvy nebo popisy úrovní",{m:"pdesc:"+id});
+    if(!!q.onlyKafe!==!!p.onlyKafe)add("position","Pozice "+nm+(p.onlyKafe?": jen Kafe, bez tabáků":": znovu s tabáky"),{m:"pkafe:"+id});
+    const cond=lv=>PERF_KEYS.filter(([,,f])=>lv[f]!=null).map(([,label,f])=>label+" ≥ "+nf(lv[f],1)+" %").join(", ")||"bez podmínek";
+    p.levels.forEach((lv,i)=>{const o=q.levels[i]||{};
+      if((+o.raise||0)!==(+lv.raise||0))add("position","",{m:"praise:"+id+":"+i,p:"Pozice "+nm+", úroveň "+(i+1)+" (navýšení platu): ",v0:raiseText({pct:+o.raise||0}),v1:raiseText({pct:+lv.raise||0})});
+      if(cond(o)!==cond(lv))add("position","",{m:"pcond:"+id+":"+i,p:"Pozice "+nm+", úroveň "+(i+1)+" (podmínky navýšení): ",v0:cond(o),v1:cond(lv)});});
     if(!same(q.penalty,p.penalty)||!same(q.bonus,p.bonus))add("position","Pozice "+nm+": upravena pravidla docházky",{m:"prules:"+id});
   });
   PA.forEach((q,id)=>{if(!PB.has(id))add("position","Smazána pozice: "+(q.name||"(bez názvu)"));});
@@ -1030,6 +1297,7 @@ function describeChanges(a,b,meta){
   [...new Set([...Object.keys(ka),...Object.keys(kb)])].filter(id=>ka[id]!==kb[id]).forEach(id=>
     add("settings","",{...per(id),m:"kafe:"+id,p:"Práh Kafe za "+mon(id)+": ",v0:ka[id]==null?"fond":nf(ka[id])+" h",v1:kb[id]==null?"fond":nf(kb[id])+" h"}));
   if(!same(a.sanReasons,b.sanReasons))add("settings","Upraven seznam důvodů sankcí",{m:"reasons"});
+  if(!same((a.settings||{}).prodCols||null,(b.settings||{}).prodCols||null))add("settings","Nastavení – sloupce importu výroby",{m:"prodcols"});
   return {entries,hist};
 }
 
@@ -1122,7 +1390,8 @@ function profileData(key,fromId,toId){
     const a=ev.att&&ev.att.found?ev.att:null;
     const prod=productionOf(key);
     const days=workedDays(a);
-    return {id,label:monthLabel(id),hasAtt:!!a,from:snap.from,
+    const perf=perfOf(ev.att,prod),raise=raiseOf(ev.L,perf);
+    return {id,label:monthLabel(id),hasAtt:!!a,from:snap.from,perf,raise,kafeOnly:ev.kafeOnly,
       posId:snap.pos,pos:ev.pos?ev.pos.name:(snap.pos?"(smazaná pozice)":""),lvl:ev.L.n,lvlName:ev.L.n?ev.L.lv.name:"",base:ev.L.base,
       workDays:a?a.workDays:0,wkDays:a?a.wkDays:0,hours:a?n2(a.totalHours):0,capped:a?n2(a.cappedHours):0,fund:a?n2(a.fund):0,
       absence:a?ev.at.gross:0,missing:a?ev.at.missing:0,excused:a?a.excusedDays:0,shortDays:a?a.shortDays:0,codes:a?a.codes:{},
@@ -1146,7 +1415,11 @@ function profileData(key,fromId,toId){
     kafe:att.filter(m=>m.kafe).length,tabaky:att.reduce((x,m)=>x+m.total,0),max:att.reduce((x,m)=>x+m.max,0),
     issuedMonths:months.filter(m=>m.issued).length,issuedTab:sum(m=>m.issued?m.issued.tabaky:0),issuedKafe:months.filter(m=>m.issued&&m.issued.kafe).length,
     sanctions:sum(m=>m.sanctions.length),pen:sum(m=>m.pen),adj:sum(m=>m.adj),
-    prodTotal,prodDays,perDay:prodDays?prodTotal/prodDays:null};
+    prodTotal,prodDays,perDay:prodDays?prodTotal/prodDays:null,
+    /* souhrn za období: normované ÷ strávené minuty a strávený čas ÷ hodiny v práci (jen měsíce s časem) */
+    ...(()=>{let nm=0,ns=0,sp=0,hr=0;months.forEach(m=>{if(m.perf.norm!=null){nm+=m.perf.normMin||0;ns+=m.perf.nspent||0;}
+      if(m.perf.use!=null){sp+=m.perf.spent||0;hr+=m.hours;}});
+      return {normPct:ns>0?round1(nm/ns*100):null,usePct:hr>0?round1(sp/(hr*60)*100):null};})()};
   const endTs=toId?monthEnd(toId):Infinity,startTs=fromId?new Date(+fromId.slice(0,4),+fromId.slice(5,7)-1,1).getTime():-Infinity;
   const changes=(e.hist||[]).map((h,i,arr)=>({at:h.at,pos:h.pos,lvl:h.lvl,text:lvlText(S,h.pos,h.lvl),first:i===0,prev:i?lvlText(S,arr[i-1].pos,arr[i-1].lvl):null}))
     .filter(h=>h.at<=endTs&&(h.first||h.at>=startTs));
@@ -1202,18 +1475,49 @@ function matrixSheets(){
 function profileSheets(pd){
   const e=pd.e,name=e.last+" "+e.first;
   const months=[["Profil: "+name+" · "+(pd.from?monthLabel(pd.from):"")+" – "+(pd.to?monthLabel(pd.to):"")],
-    ["Měsíc","Pozice","Úroveň","Dny","Víkend. směny","Hodiny","Fond","Absence (dny)","Po vyplnění víkendem","Kafe","Docházka ±","Sankce %","Sankce (tab.)","Ruční úprava","Tabáky (výpočet)","Vydáno tabáků","Vydáno kafe","Vyrobeno ks","Ø ks/den"]];
+    ["Měsíc","Pozice","Úroveň","Dny","Víkend. směny","Hodiny","Fond","Absence (dny)","Po vyplnění víkendem","Kafe","Docházka ±","Sankce %","Sankce (tab.)","Ruční úprava","Tabáky (výpočet)","Vydáno tabáků","Vydáno kafe","Vyrobeno ks","Ø ks/den","Docházka %","Plnění normy %","Využití fondu %","Navýšení platu %"]];
+  const pv=v=>v==null?"":v;
   pd.months.forEach(m=>months.push([m.label,m.pos,m.lvl?m.lvl+" · "+m.lvlName:"",m.hasAtt?m.workDays:"",m.hasAtt?m.wkDays:"",m.hasAtt?m.hours:"",m.hasAtt?m.fund:"",
-    m.hasAtt?m.absence:"",m.hasAtt?m.missing:"",m.hasAtt?(m.kafe?"ano":"ne"):"",m.hasAtt?m.attDelta:"",m.pctSum||"",m.pen?-m.pen:"",m.adj||"",m.hasAtt?m.total:"",
-    m.issued?m.issued.tabaky:"",m.issued?(m.issued.kafe?"ano":"ne"):"",m.prod?Math.round(m.prod.total):"",m.prod&&m.prod.perDay!=null?n2(m.prod.perDay):""]));
+    m.hasAtt?m.absence:"",m.hasAtt?m.missing:"",m.hasAtt?(m.kafe?"ano":"ne"):"",m.hasAtt?m.attDelta:"",m.pctSum||"",m.pen?-m.pen:"",m.adj||"",m.hasAtt?(m.kafeOnly?"jen Kafe":m.total):"",
+    m.issued?m.issued.tabaky:"",m.issued?(m.issued.kafe?"ano":"ne"):"",m.prod?Math.round(m.prod.total):"",m.prod&&m.prod.perDay!=null?n2(m.prod.perDay):"",
+    pv(m.perf.att),pv(m.perf.norm),pv(m.perf.use),m.raise.pct||""]));
   const t=pd.totals;
-  months.push(["CELKEM","","",t.workDays,t.wkDays,t.hours,t.fund,t.absence,t.missing,t.kafe+"×","","",t.pen?-t.pen:"",t.adj||"",t.tabaky,t.issuedTab,t.issuedKafe+"×",Math.round(t.prodTotal),t.perDay!=null?n2(t.perDay):""]);
+  months.push(["CELKEM","","",t.workDays,t.wkDays,t.hours,t.fund,t.absence,t.missing,t.kafe+"×","","",t.pen?-t.pen:"",t.adj||"",t.tabaky,t.issuedTab,t.issuedKafe+"×",Math.round(t.prodTotal),t.perDay!=null?n2(t.perDay):"",
+    t.attendance!=null?round1(t.attendance*100):"",pv(t.normPct),pv(t.usePct),""]);
   const sans=[["Měsíc","Důvod","Srážka","Poznámka","Zadáno"]];
   pd.months.forEach(m=>m.sanctions.forEach(s=>sans.push([m.label,s.name,s.pct!=null?s.pct+" %":"−"+s.points+" tab.",s.note,s.at?new Date(s.at).toLocaleDateString("cs-CZ"):""])));
   const hist=[["Od","Zařazení"]];
   pd.changes.forEach(h=>hist.push([h.at?new Date(h.at).toLocaleDateString("cs-CZ"):"od začátku evidence",h.text]));
-  return [{name:"Měsíce",rows:months,cols:[14,16,16,6,8,8,8,8,10,6,10,9,10,10,12,12,10,12,10]},
+  return [{name:"Měsíce",rows:months,cols:[14,16,16,6,8,8,8,8,10,6,10,9,10,10,12,12,10,12,10,10,12,12,12]},
     {name:"Sankce",rows:sans,cols:[14,30,10,40,12]},{name:"Zařazení",rows:hist,cols:[20,40]}];
+}
+
+/* ---------------- pravidla hodnocení (PDF) ----------------
+   Obsah dokumentu s pravidly: obecná pravidla a každá pozice s úrovněmi, tabáky,
+   navýšením platu a podmínkami. Vykreslení do PDF je v app.js. */
+function rulesDoc(){
+  const st=S.settings;
+  const pct=v=>v==null?"—":"≥ "+nf(v,1)+" %";
+  const cut=cutoffDays();
+  const general=[
+    ["Tabáky","Úroveň člověka na pozici dává základní počet tabáků. Docházka ho podle pravidel pozice sníží (srážka za absenci) nebo zvýší (bonus za víkendové směny navíc), nejvýš do maxima pozice. Sankce strhávají "+SAN_PCTS.join(" / ")+" % z nároku, každá aspoň jeden tabák; součet 100 % a víc znamená nic."],
+    ["Absence","Absence je celý pracovní den bez docházky; kratší směna absencí není. Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence. Omluvená absence (kódy "+(st.excused||"—")+")"+(st.excusedReducesFund?" snižuje fond hodin.":" se počítá jako absence.")],
+    ["Kafe","Kafe dostane, kdo odpracuje aspoň fond hodin měsíce (pracovní dny × "+nf(st.shift)+" h"+(st.friShift&&st.friShift!==st.shift?"; kdo má zkrácený pátek, má v pátek plnou směnu "+nf(st.friShift)+" h":"")+"), pokud pro měsíc není nastaven jiný práh."],
+  ];
+  if(cut)general.push(["Bez nároku","Od "+cut+" "+dnW(cut)+" absence (po vyplnění víkendem) není nárok na tabáky ani Kafe."]);
+  general.push(["Navýšení platu","Navýšení platu určuje úroveň člověka na pozici. Dostane ho, když za měsíc splní všechny podmínky své úrovně. Když je nesplní, platí nejvyšší nižší úroveň, jejíž podmínky splnil. Prázdná podmínka se nehlídá."]);
+  general.push(["Ukazatele","Docházka = odpracované hodiny ve všední dny (nejvýš celá směna) z fondu hodin měsíce. Plnění normy = normovaný čas ÷ skutečně strávený čas nad zakázkami podle evidence práce; kdo je rychlejší než norma, má přes 100 %. Využití fondu = čas strávený nad zakázkami ÷ hodiny v práci podle docházky."]);
+  const positions=S.positions.map(p=>({
+    name:p.name||"(bez názvu)",dept:(p.dept||"").trim(),onlyKafe:!!p.onlyKafe,max:posMax(p),raise:hasRaise(p),
+    levels:p.levels.map((lv,i)=>({n:i+1,name:lv.name,desc:lv.desc||"",tabaky:p.onlyKafe?"—":String(+lv.tabaky||0),
+      raise:+lv.raise?"+"+nf(+lv.raise,1)+" %":"—",att:pct(lv.minAtt),norm:pct(lv.minNorm),use:pct(lv.minUse)})),
+    rules:p.onlyKafe?[]:[
+      "Maximum: "+posMax(p)+" "+tabW(posMax(p))+(p.max!=null&&p.max!==""?"":" (podle nejvyšší úrovně)")+".",
+      "Srážka za absenci: "+((p.penalty||[]).length?p.penalty.slice().sort((a,b)=>a.at-b.at).map(r=>"od "+r.at+" "+dnW(r.at)+" −"+r.t).join(", "):"žádná")+".",
+      "Bonus za víkendy navíc: "+((p.bonus||[]).length?p.bonus.slice().sort((a,b)=>a.at-b.at).map(r=>"od "+r.at+" "+smW(r.at)+" +"+r.t).join(", "):"žádný")+"."]
+  }));
+  return {title:"Pravidla hodnocení",sub:"Tabáky, Kafe a navýšení platu podle pozic",date:new Date().toLocaleDateString("cs-CZ"),
+    general,positions,reasons:(S.sanReasons||[]).slice()};
 }
 
 /* Oprava: CSV z Excelu bývá ve Windows-1250, z Google Tabulek a Macu v UTF-8.
