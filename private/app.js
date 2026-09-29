@@ -705,7 +705,7 @@ function sumKv(r) {
       ${r.lost ? `<dt>Absence ${r.at.missing} ${dnW(r.at.missing)} (hranice ${r.cut})</dt><dd><span class="pen">bez nároku</span></dd>` : ''}
       ${r.capped ? `<dt>Strop pozice</dt><dd>${r.max}</dd>` : ''}
       <dt class="tot">Nárok</dt><dd class="tot">${r.narok}</dd>
-      ${r.pctSum ? `<dt>Sankce −${r.pctSum} %</dt><dd><span class="pen">−${r.sanT}</span></dd>` : ''}
+      ${r.pctSum ? `<dt>Sankce −${r.pctSum} %</dt><dd><span class="pen">${r.sanT ? `−${r.sanT}` : '0'}</span></dd>` : ''}
       ${r.legacy ? `<dt>Sankce (starý záznam)</dt><dd><span class="pen">−${r.legacy}</span></dd>` : ''}
       <dt>Ruční úprava</dt><dd>${r.adj ? sgn(r.adj) : '0'}</dd>
       <dt class="tot">Tabáky</dt><dd class="tot">${r.total}</dd>
@@ -1749,7 +1749,8 @@ function iluo(n, main = false) {
     const y = c - r * Math.cos(angle);
     fill = `<path class="fill" d="M${c} ${c}V${c - r}A${r} ${r} 0 ${n > 2 ? 1 : 0} 1 ${x.toFixed(2)} ${y.toFixed(2)}Z"/>`;
   }
-  return `<svg class="iluo l${n}${main ? ' main' : ''}" viewBox="0 0 18 18" aria-hidden="true"><circle class="ring" cx="${c}" cy="${c}" r="${r}"/>${fill}</svg>`;
+  // Třída „is-home“, ne „main“: .main je rozvržení stránky a nafouklo by ikonu.
+  return `<svg class="iluo l${n}${main ? ' is-home' : ''}" viewBox="0 0 18 18" aria-hidden="true"><circle class="ring" cx="${c}" cy="${c}" r="${r}"/>${fill}</svg>`;
 }
 
 function setSkill(key, posId, lvl) {
@@ -1785,8 +1786,10 @@ function renderMatrix() {
     const next = (c.lvl + 1) % 5;
     return `<td class="mx-cell"><button type="button" class="mx-btn" data-mx="${esc(r.e.key)}" data-pos="${esc(p.id)}" data-lvl="${c.lvl}" title="${esc(`${p.name}: ${c.lvl ? `zaučení ${c.lvl} (${p.levels[c.lvl - 1].name})` : 'nezaučen'}. Kliknutím ${next ? `na ${next}` : 'zrušíš'}.`)}" aria-label="${esc(`${r.e.last} ${r.e.first}, ${p.name}: ${c.lvl || 'nezaučen'}`)}">${iluo(c.lvl)}<b>${c.lvl || ''}</b></button></td>`;
   };
+  // Řádek oddělení jen tehdy, když nějaká pozice oddělení má (jinak by opakoval názvy pozic).
+  const hasDepts = S.positions.some(p => (p.dept || '').trim());
   box.innerHTML = `<div class="table-card matrix-card"><table class="matrix">
-    <thead>${dept ? '' : `<tr class="mx-depts"><th colspan="2"></th>${groups.map(g => `<th colspan="${g.n}" class="mx-dept">${esc(g.d)}</th>`).join('')}</tr>`}
+    <thead>${dept || !hasDepts ? '' : `<tr class="mx-depts"><th colspan="2"></th>${groups.map(g => `<th colspan="${g.n}" class="mx-dept">${esc(m.cols.find(p => deptOf(p) === g.d)?.dept?.trim() ? g.d : '')}</th>`).join('')}</tr>`}
       <tr><th class="mx-name">Zaměstnanec</th><th class="mx-main">Hlavní pozice</th>${m.cols.map(p => `<th class="mx-col" title="${esc(p.name)}"><span>${esc(p.name)}</span></th>`).join('')}</tr></thead>
     <tbody>${m.rows.map((r, i) => `${dept && !r.home && (i === 0 || m.rows[i - 1].home) ? `<tr class="mx-sep"><td colspan="${m.cols.length + 2}">Zaučení z jiných oddělení</td></tr>` : ''}<tr>
       <th class="mx-name" scope="row"><button class="linkish" type="button" data-profile="${esc(r.e.key)}">${esc(r.e.last)} ${esc(r.e.first)}</button></th>
@@ -1795,6 +1798,9 @@ function renderMatrix() {
     <tfoot><tr><th colspan="2">Samostatní (úroveň 3–4)</th>${m.coverage.map(c => `<td class="${c.ready < 2 ? 'mx-risk' : ''}" title="${esc(`${c.counts[4]}× profík, ${c.counts[3]}× samostatný`)}">${c.ready}</td>`).join('')}</tr>
       <tr><th colspan="2">Zaučení celkem (1–4)</th>${m.coverage.map(c => `<td>${c.trained}</td>`).join('')}</tr></tfoot>
   </table></div>`;
+  // Druhý řádek hlavičky se lepí pod řádek oddělení: odsazení podle jeho skutečné výšky.
+  const deptRow = box.querySelector('tr.mx-depts');
+  if (deptRow) $$('thead tr:not(.mx-depts) th', box).forEach(th => { th.style.top = `${deptRow.offsetHeight}px`; });
 }
 
 async function exportMatrix() {
@@ -1844,15 +1850,17 @@ function profileRange(key) {
   }
 }
 
-function niceMax(v) {
+/** Horní mez osy (1, 2, 5, 10 × 10ⁿ). U celých čísel sudá, aby i prostřední značka byla celá. */
+function niceMax(v, integer = false) {
+  if (integer) return 2 * Math.max(1, Math.ceil(niceMax(v / 2)));
   if (v <= 0) return 1;
   const pow = 10 ** Math.floor(Math.log10(v));
   const n = v / pow;
-  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * pow;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * pow;
 }
 
 /** Sloupcový graf jedné řady po měsících (SVG). Hodnoty ukazuje tooltip i tabulka pod grafy. */
-function columnChart({ title, sub, months, value, tip, tone, yMax = null, fmt = v => nf(v, 1), ref = null }) {
+function columnChart({ title, sub, months, value, tip, tone, yMax = null, fmt = v => nf(v, 1), ref = null, integer = false }) {
   const W = 340;
   const H = 168;
   const L = 34;
@@ -1862,7 +1870,7 @@ function columnChart({ title, sub, months, value, tip, tone, yMax = null, fmt = 
   const vals = months.map(value);
   const present = vals.filter(v => v != null);
   if (!present.length) return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption><div class="chart-empty">V tomto období bez údajů.</div></figure>`;
-  const top = yMax ?? niceMax(Math.max(...present) * 1.08);
+  const top = yMax ?? niceMax(Math.max(...present) * 1.08, integer);
   const plotH = H - T - B;
   const band = (W - L - R) / months.length;
   const bw = Math.max(3, Math.min(24, band - 4));
@@ -1952,18 +1960,18 @@ function renderProfile() {
       statTile(`${I.kafe}Kafe`, t.attMonths ? `${t.kafe}<em>/ ${t.attMonths}</em>` : '—', t.attMonths ? 'měsíců splněno' : 'bez docházky', 'kafe'),
       statTile('Docházka', t.attendance != null ? `${pct(t.attendance)} %` : '—', t.attMonths ? `${nf(t.hours)} h · ${t.workDays} dnů + ${t.wkDays} víkend.` : 'bez docházky', 'good'),
       statTile('Absence', t.attMonths ? String(t.missing) : '—', t.attMonths ? `${dnW(t.missing)} po vyplnění víkendem (celkem ${t.absence})${t.lost ? `, ${t.lost}× bez nároku` : ''}` : 'bez docházky', t.missing ? 'crit' : ''),
-      statTile('Sankce', String(t.sanctions), t.sanctions ? `celkem −${t.pen} ${tabW(t.pen)}` : 'žádné', t.sanctions ? 'crit' : ''),
+      statTile('Sankce', String(t.sanctions), t.sanctions ? `celkem ${t.pen ? `−${t.pen}` : '0'} ${tabW(t.pen)}` : 'žádné', t.sanctions ? 'crit' : ''),
       statTile('Výroba', t.perDay != null ? nf(t.perDay, 1) : '—', t.prodTotal ? `Ø ks/den · ${nf(t.prodTotal, 0)} ks celkem` : 'bez záznamu', ''),
     ].join('')}</div>
     <div class="pf-charts" id="pfCharts">
       ${columnChart({ title: 'Tabáky po měsících', sub: 'výpočet podle úrovně, docházky a sankcí', tone: 'c-tab', months: chartMonths,
-        value: m => (m.hasAtt ? m.total : null), fmt: v => nf(v, 0),
+        value: m => (m.hasAtt ? m.total : null), fmt: v => nf(v, 0), integer: true,
         tip: (m, v) => (m.hasAtt ? `${m.label}: ${v} z ${m.max} ${tabW(m.max)}${m.issued ? `, vydáno ${issueWhat(m.issued.tabaky, m.issued.kafe)}` : ''}` : `${m.label}: bez docházky`) })}
       ${columnChart({ title: 'Docházka', sub: 'odpracováno z fondu hodin (%)', tone: 'c-acc', months: chartMonths, yMax: 100, ref: 100,
         value: m => (m.hasAtt && m.fund ? Math.round(Math.min(1, m.capped / m.fund) * 100) : null), fmt: v => `${nf(v, 0)} %`,
         tip: (m, v) => (m.hasAtt ? `${m.label}: ${v} % (${nf(m.hours)} h z fondu ${nf(m.fund)} h), absence ${m.absence} ${dnW(m.absence)}, víkend ${m.wkDays}×` : `${m.label}: bez docházky`) })}
       ${columnChart({ title: 'Výroba', sub: 'Ø kusů na odpracovaný den', tone: 'c-prod', months: chartMonths,
-        value: m => (m.prod && m.prod.perDay != null ? m.prod.perDay : null), fmt: v => nf(v, v >= 100 ? 0 : 1),
+        value: m => (m.prod && m.prod.perDay != null ? m.prod.perDay : null), fmt: v => nf(v, v >= 100 ? 0 : v < 1 ? 2 : 1),
         tip: (m, v) => (m.prod ? `${m.label}: ${v != null ? `${nf(v, 1)} ks/den` : '—'}, celkem ${nf(m.prod.total, 0)} ks za ${m.prod.days} dnů` : `${m.label}: bez záznamu ve výrobě`) })}
       <div class="chart-tip" id="pfTip" role="status" hidden></div>
     </div>
@@ -1978,13 +1986,13 @@ function renderProfile() {
         <td data-label="Absence" class="r num">${m.hasAtt ? (m.missing ? `<span class="pen">${m.missing}</span>` : '0') : '<span class="muted">—</span>'}</td>
         <td data-label="Kafe" class="c">${m.hasAtt ? (m.kafe ? `<span class="kafe-ok" aria-label="Kafe splněno">${I.kafe}</span>` : '<span class="kafe-no">—</span>') : '<span class="muted">—</span>'}</td>
         <td data-label="Docházka" class="r">${m.hasAtt ? (m.lost ? '<span class="losttag">bez nároku</span>' : deltaCell(m.attEff, '')) : '<span class="muted">—</span>'}</td>
-        <td data-label="Sankce" class="r">${m.sanctions.length ? `<span class="pen">${m.pctSum ? `−${m.pctSum} %` : ''} (−${m.pen})</span>` : '<span class="muted num">0</span>'}</td>
+        <td data-label="Sankce" class="r">${m.sanctions.length ? `<span class="pen">${m.pctSum ? `−${m.pctSum} %` : ''} (${m.pen ? `−${m.pen}` : '0'})</span>` : '<span class="muted num">0</span>'}</td>
         <td data-label="Úprava" class="r num">${m.adj ? sgn(m.adj) : '<span class="muted">0</span>'}</td>
         <td data-label="Tabáky" class="r num"><b>${m.hasAtt ? `${m.total}` : '—'}</b>${m.hasAtt ? ` <small class="muted">/ ${m.max}</small>` : ''}</td>
         <td data-label="Vydáno" class="c">${m.issued ? `<span class="issued" title="${esc(new Date(m.issued.at).toLocaleString('cs-CZ'))}">${I.check}${esc(issueWhat(m.issued.tabaky, m.issued.kafe))}</span>` : '<span class="muted small">ne</span>'}</td>
         <td data-label="Ø ks/den" class="r num">${m.prod && m.prod.perDay != null ? nf(m.prod.perDay, 1) : '<span class="muted">—</span>'}</td>
       </tr>`).join('')}</tbody>
-      <tfoot><tr><td data-label="Celkem"><b>Celkem</b></td><td></td><td data-label="Dny" class="r num">${t.workDays}${t.wkDays ? ` +${t.wkDays}` : ''}</td><td data-label="Hodiny" class="r num">${nf(t.hours)}</td><td data-label="Absence" class="r num">${t.missing}</td><td data-label="Kafe" class="c num">${t.kafe}×</td><td></td><td data-label="Sankce" class="r num">${t.pen ? `−${t.pen}` : '0'}</td><td data-label="Úprava" class="r num">${t.adj ? sgn(t.adj) : '0'}</td><td data-label="Tabáky" class="r num"><b>${t.tabaky}</b></td><td data-label="Vydáno" class="c num">${t.issuedTab}${t.issuedKafe ? ` + ${t.issuedKafe}× kafe` : ''}</td><td data-label="Ø ks/den" class="r num">${t.perDay != null ? nf(t.perDay, 1) : '—'}</td></tr></tfoot></table></div>
+      <tfoot><tr><td><b>Celkem</b></td><td></td><td data-label="Dny" class="r num">${t.workDays}${t.wkDays ? ` +${t.wkDays}` : ''}</td><td data-label="Hodiny" class="r num">${nf(t.hours)}</td><td data-label="Absence" class="r num">${t.missing}</td><td data-label="Kafe" class="c num">${t.kafe}×</td><td></td><td data-label="Sankce" class="r num">${t.pen ? `−${t.pen}` : '0'}</td><td data-label="Úprava" class="r num">${t.adj ? sgn(t.adj) : '0'}</td><td data-label="Tabáky" class="r num"><b>${t.tabaky}</b></td><td data-label="Vydáno" class="c num">${t.issuedTab}${t.issuedKafe ? ` + ${t.issuedKafe}× kafe` : ''}</td><td data-label="Ø ks/den" class="r num">${t.perDay != null ? nf(t.perDay, 1) : '—'}</td></tr></tfoot></table></div>
       <p class="hint">Klikni na měsíc a uvidíš docházku po dnech a sankce. Úroveň je podle potvrzeného výdeje, jinak podle zařazení platného na konci měsíce; počítá se s dnešními pravidly pozice.</p>` : emptyState('Žádné záznamy', 'Pro vybrané období nemá docházku, výrobu, sankce ani výdej.')}
     </div>
     <div class="grid-2 pf-bottom">
@@ -2265,6 +2273,7 @@ window.OdmApp = {
     const [me, prefs] = await Promise.all([Vault.me().catch(() => null), Vault.loadPrefs().catch(() => null)]);
     ui.me = {
       cardId: me?.card_id || Vault.session.cardId || '', label: me?.card_label || Vault.session.label || '',
+      created: Date.parse(me?.card_created || '') || 0,
       device: me?.device_label || '', version: me?.version || '',
     };
     store.rev = loaded.rev || 0;
@@ -2292,7 +2301,9 @@ window.OdmApp = {
       P = cleanPrefs(prefs);
     } else {
       // První otevření této verze s touto kartičkou: převezme se dosavadní společné nastavení pohledu.
-      P = cleanPrefs({ period: S.current, hiddenCols: S.settings.hiddenCols, lockMinutes: S.settings.lockMinutes, logSeen: Date.now() });
+      // Jako nové se ukážou změny od vydání kartičky (starší historie nové kartičky nezahltí).
+      const seen = ui.me.created ? Math.min(ui.me.created, Date.now()) : Date.now();
+      P = cleanPrefs({ period: S.current, hiddenCols: S.settings.hiddenCols, lockMinutes: S.settings.lockMinutes, logSeen: seen });
       setPref({});
     }
     applyPeriodPref();

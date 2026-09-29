@@ -46,6 +46,10 @@
   --crit-soft: #f6e1dd;
   --wknd: #6a57a6;
   --wknd-soft: #e8e3f4;
+  /* Série grafů: ověřeno validátorem palet (světlost, sytost, barvoslepost, kontrast). */
+  --ch-tab: #b06f12;
+  --ch-acc: #008876;
+  --ch-prod: #6a57a6;
   --focus: 0 0 0 3px color-mix(in srgb, var(--acc) 28%, transparent);
   --shadow-1: 0 1px 2px rgba(24, 30, 27, .06);
   --shadow-2: 0 1px 2px rgba(24, 30, 27, .05), 0 12px 28px -18px rgba(24, 30, 27, .28);
@@ -88,6 +92,9 @@
     --crit-soft: #3a1d19;
     --wknd: #a996e4;
     --wknd-soft: #272045;
+    --ch-tab: #c38323;
+    --ch-acc: #15a28b;
+    --ch-prod: #907cd1;
     --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
     --shadow-2: 0 1px 2px rgba(0, 0, 0, .35), 0 14px 30px -18px rgba(0, 0, 0, .8);
     --shadow-3: 0 28px 70px -24px rgba(0, 0, 0, .85);

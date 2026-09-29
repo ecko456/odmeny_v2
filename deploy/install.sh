@@ -71,6 +71,8 @@ find "${DATA_DIR}" -maxdepth 1 -type f -name 'odmeny.sqlite3*' -exec chown www-d
 chmod 0700 "${DATA_DIR}"
 
 install -m 0644 "${SOURCE_DIR}/deploy/apache-odmeny.conf" "${APACHE_CONF}"
+# Ochranné hlavičky pro statické soubory (apache-odmeny.conf) potřebují mod_headers.
+a2enmod headers >/dev/null
 a2enconf odmeny >/dev/null
 
 apache2ctl configtest

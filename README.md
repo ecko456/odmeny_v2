@@ -1,9 +1,5 @@
 # Odměny
 
-> **Verze 2.0 je rozpracovaná**: automatické testy prošly, zbývá ověření v prohlížeči a test
-> aktualizace. Viz [`ROZPRACOVANO.md`](ROZPRACOVANO.md).
-> Dokud ten soubor existuje, instalační skript ji odmítne nainstalovat a na serveru běží 1.0.
-
 Hodnocení operátorů (tabáky a Kafe) jako samostatná aplikace na serveru, na adrese
 `/odmeny/`. S Trading Deskem sdílí jen server: má vlastní adresář, vlastní data
 i vlastní přihlašování.
@@ -43,8 +39,9 @@ Vychází z `hodnoceni-operatoru.html`. Výpočty jsou převzaté beze změny
   nezmění ho ostatním.
 - **Poslední změny.** Ikona hodin v horní liště ukáže historii úprav: kdo (podle
   kartičky), co a kdy změnil – zařazení a úrovně, sankce, ruční úpravy, výdej, importy,
-  pozice i nastavení. Červené číslo = nové změny od ostatních. Opakovaná úprava téže
-  věci během pár minut se sloučí do jednoho záznamu „původně → teď“.
+  pozice i nastavení. Červené číslo = nové změny od ostatních od posledního otevření
+  historie (u nové kartičky od jejího vydání). Opakovaná úprava téže věci během pár
+  minut se sloučí do jednoho záznamu „původně → teď“.
 - **Matice dovedností** (nabídka Dovednosti). Lidé podle oddělení a jejich úroveň na
   každé pozici (čtvrtinové kroužky 1–4). Kromě hlavní pozice jde evidovat i zaučení na
   dalších pozicích (kliknutím v matici nebo v detailu člověka) – tabáky to nemění.
@@ -57,7 +54,8 @@ Vychází z `hodnoceni-operatoru.html`. Výpočty jsou převzaté beze změny
 - **Bezpečnost:** hlavička `X-Forwarded-Proto` se bere v potaz jen od proxy na stejném
   stroji a „místní vývoj“ už nejde předstírat hlavičkou `Host`; menší limity velikosti
   požadavků bez přihlášení; stará otevřená stránka (před aktualizací) už nesmí uložit
-  data a dostane výzvu k obnovení stránky.
+  data a dostane výzvu k obnovení stránky; ochranné hlavičky dostanou i statické soubory
+  (instalace zapne modul Apache `headers`).
 
 ## Instalace na server (Ubuntu + Apache)
 
@@ -136,6 +134,29 @@ ODMENY_DATA_DIR=/tmp/odmeny php -S 127.0.0.1:8490 -t odmeny odmeny/dev-router.ph
 # testy: server, šifrovaný tok, výpočty proti původní aplikaci
 python3 -m unittest discover -s odmeny/tests
 ```
+
+Průchody v prohlížeči (Playwright) na čistých datech lokálního serveru, návod je
+v hlavičce každého skriptu:
+
+- `tests/e2e_browser.js`: celá aplikace (první spuštění, import, zařazení, sankce, výdej,
+  zálohy, mobil, tmavý režim);
+- `tests/e2e_v2.js`: novinky 2.0 (osobní nastavení dvou kartiček, historie změn
+  s odznakem, matice, profil, export).
+
+Test aktualizace 1.0 → 2.0 bez ztráty dat na lokálním Apachi (maže lokální
+`/var/lib/odmeny`, **nikdy ne na ostrém serveru**):
+
+```bash
+rm -rf /tmp/stara && mkdir /tmp/stara && git archive ffe47d2 odmeny | tar -x -C /tmp/stara
+sudo rm -rf /var/lib/odmeny /var/www/odmeny
+sudo bash /tmp/stara/odmeny/deploy/install.sh        # verze 1.0
+node odmeny/tests/e2e_upgrade.js old                 # data ve staré verzi
+sudo bash odmeny/deploy/install.sh                   # aktualizace (záloha DB)
+node odmeny/tests/e2e_upgrade.js new                 # data zůstala, novinky fungují
+```
+
+Rozpracovanou verzi jde zamknout souborem `odmeny/ROZPRACOVANO.md`: dokud existuje,
+`deploy/install.sh` ji odmítne nainstalovat (přebije jen `ODMENY_FORCE=1`).
 
 Knihovny: QR kódy (qrcode-generator, MIT), čtení QR (jsQR, Apache 2.0), Excel
 (SheetJS, Apache 2.0), písma IBM Plex a Barlow (SIL OFL). Vše je přibalené,

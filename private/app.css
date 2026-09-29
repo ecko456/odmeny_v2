@@ -441,7 +441,6 @@ label.btn { cursor: pointer; }
 .matrix th, .matrix td { padding: 7px 8px; }
 .matrix thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); }
 .matrix thead tr.mx-depts th { top: 0; }
-.matrix thead tr.mx-depts + tr th { top: 35px; }
 .matrix .mx-dept { border-left: 1px solid var(--line); color: var(--ink-2); text-align: center; }
 .matrix .mx-name { position: sticky; left: 0; z-index: 1; min-width: 170px; background: var(--surface); text-align: left; font: 600 14px/1.25 var(--body); letter-spacing: 0; text-transform: none; color: var(--ink); white-space: nowrap; }
 .matrix thead .mx-name { z-index: 3; background: var(--surface-2); color: var(--ink-3); font: 600 12px/1.2 var(--disp); letter-spacing: .08em; text-transform: uppercase; }
@@ -462,7 +461,7 @@ label.btn { cursor: pointer; }
 .iluo { width: 18px; height: 18px; flex: none; vertical-align: middle; }
 .iluo .ring { fill: none; stroke: var(--line-2); stroke-width: 1.5; }
 .iluo .fill { fill: var(--acc); }
-.iluo.main .ring { stroke: var(--acc); stroke-width: 2; }
+.iluo.is-home .ring { stroke: var(--acc); stroke-width: 2; }
 .iluo.l0 .ring { stroke-dasharray: 2 2.4; }
 .mx-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 2px; color: var(--ink-2); font-size: 12.5px; }
 .mx-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -501,9 +500,9 @@ label.btn { cursor: pointer; }
 .chart .bar.zero { fill: var(--ink-3); }
 .chart .hit { fill: transparent; cursor: default; outline: none; }
 .chart .hit.on, .chart .hit:focus-visible { fill: color-mix(in srgb, var(--series) 10%, transparent); }
-.chart.c-tab { --series: var(--tab); }
-.chart.c-acc { --series: var(--acc); }
-.chart.c-prod { --series: var(--wknd); }
+.chart.c-tab { --series: var(--ch-tab); }
+.chart.c-acc { --series: var(--ch-acc); }
+.chart.c-prod { --series: var(--ch-prod); }
 .chart-empty { display: grid; place-items: center; min-height: 120px; color: var(--ink-3); font-size: 13px; }
 .chart-tip { position: absolute; z-index: 5; max-width: 280px; padding: 7px 10px; border-radius: 10px; background: var(--ink); color: var(--bg); font-size: 12.5px; line-height: 1.35; box-shadow: var(--shadow-2); pointer-events: none; }
 .pf-months { margin-bottom: 16px; }
@@ -591,8 +590,10 @@ label.btn { cursor: pointer; }
   table.stack thead { display: none; }
   table.stack tbody tr { padding: 12px 14px; border-bottom: 1px solid var(--line); }
   table.stack tbody tr:last-child { border-bottom: 0; }
-  table.stack td { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; padding: 3px 0; border: 0; text-align: right; }
-  table.stack td[data-label]::before { content: attr(data-label); flex: none; color: var(--ink-3); font-size: 12.5px; font-weight: 500; text-align: left; }
+  /* Popisek vlevo, hodnota (i z více částí, třeba „8 / 8“) pohromadě vpravo. */
+  table.stack td { display: flex; align-items: center; justify-content: flex-end; gap: 6px; min-height: 30px; padding: 3px 0; border: 0; text-align: right; }
+  table.stack td:last-child { padding-right: 0; }
+  table.stack td[data-label]::before { content: attr(data-label); flex: none; margin-right: auto; padding-right: 12px; color: var(--ink-3); font-size: 12.5px; font-weight: 500; text-align: left; }
   table.stack td.name { display: block; padding-bottom: 6px; text-align: left; font-size: 15.5px; }
   table.stack td.name::before, table.stack td.rank { display: none; }
   table.stack td.wrap { min-width: 0; }

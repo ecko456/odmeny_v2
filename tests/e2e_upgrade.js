@@ -2,7 +2,7 @@
 //   old = na nainstalované staré verzi (1.0): nastavení, import, zařazení, sankce, skrytý sloupec.
 //   new = po `sudo bash odmeny/deploy/install.sh` s novou verzí: stejná data, převedené osobní
 //         nastavení, historie změn, matice dovedností, profil, druhá kartička s vlastním nastavením.
-// Postup je popsaný v odmeny/ROZPRACOVANO.md. Proměnné: PW (cesta k playwright), S (pracovní
+// Postup je popsaný v odmeny/README.md (Vývoj a testy). Proměnné: PW (cesta k playwright), S (pracovní
 // adresář), BASE (výchozí http://127.0.0.1/odmeny/).
 const { chromium } = require(process.env.PW);
 const fs = require('fs');
@@ -99,6 +99,16 @@ async function login(page, key) {
     if (JSON.stringify(after) !== JSON.stringify(before)) problems.push(`data se liší: ${JSON.stringify(before)} → ${JSON.stringify(after)}`);
     if (await page.locator('#ovHead .col-wk').count()) problems.push('skrytý sloupec se nepřevedl do osobního nastavení');
     if (!(await page.textContent('#setSecurity')).includes('2.0')) problems.push('verze 2.0 není vidět v nastavení');
+    // druhá kartička vydaná ještě před změnami: změny první kartičky pak uvidí jako nové
+    await page.click('#nav [data-view="nastaveni"]');
+    await page.click('#secNewCard');
+    await page.fill('#dlg [name="value"]', 'Kolega');
+    await page.press('#dlg [name="value"]', 'Enter');
+    await page.waitForSelector('#dlg .odm-card');
+    const key2 = (await page.textContent('#dlg .card-key')).trim();
+    await page.click('#dlgOk');
+    await page.waitForTimeout(1200);
+    await page.click('#nav [data-view="prehled"]');
     // osobní filtr: pozice a řazení se uloží jen pro tuto kartičku
     await page.selectOption('#ovPos', { index: 1 });
     await page.click('#ovHead [data-sort="name"]');
@@ -134,14 +144,6 @@ async function login(page, key) {
     await page.screenshot({ path: `${shots}/profile-detail.png`, fullPage: true });
 
     // druhá kartička: vlastní nastavení, změny první kartičky vidí jako nové
-    await page.click('#nav [data-view="nastaveni"]');
-    await page.click('#secNewCard');
-    await page.fill('#dlg [name="value"]', 'Kolega');
-    await page.press('#dlg [name="value"]', 'Enter');
-    await page.waitForSelector('#dlg .odm-card');
-    const key2 = (await page.textContent('#dlg .card-key')).trim();
-    await page.click('#dlgOk');
-    await page.waitForTimeout(1200);
     const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
     const p2 = await ctx2.newPage();
     await watch(p2, 'kolega');

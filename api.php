@@ -111,10 +111,10 @@ try {
     $session = odm_require_session();
 
     if ($action === 'me' && $method === 'GET') {
-        $card = odm_one('SELECT label FROM cards WHERE id = ?', [$session['card_id']]);
+        $card = odm_one('SELECT label, created_at FROM cards WHERE id = ?', [$session['card_id']]);
         $device = $session['device_id'] ? odm_one('SELECT label FROM devices WHERE id = ?', [$session['device_id']]) : null;
         odm_json([
-            'card_id' => $session['card_id'], 'card_label' => $card['label'] ?? '',
+            'card_id' => $session['card_id'], 'card_label' => $card['label'] ?? '', 'card_created' => $card['created_at'] ?? null,
             'device_id' => $session['device_id'], 'device_label' => $device['label'] ?? null,
             'version' => ODM_VERSION,
         ]);
