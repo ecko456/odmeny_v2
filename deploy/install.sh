@@ -59,6 +59,7 @@ rsync -a --delete \
   --exclude '/deploy/' \
   --exclude '/dev-router.php' \
   --exclude '/README.md' \
+  --exclude 'CLAUDE.md' \
   --exclude '/ROZPRACOVANO.md' \
   --exclude '.*' \
   "${SOURCE_DIR}/" "${TARGET_DIR}/"

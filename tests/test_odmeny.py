@@ -125,7 +125,7 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual(status, 404)
         for path in ("/private/app.js", "/private/core.js", "/lib/odmeny.php", "/bin/setup-token.php", "/data/odmeny.sqlite3",
                      "/tests/test_odmeny.py", "/deploy/install.sh", "/dev-router.php", "/.gitignore", "/static/vendor/LICENSE-jsqr.txt",
-                     "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf"):
+                     "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf", "/CLAUDE.md"):
             status, _, _ = self.client.request("GET", path)
             self.assertEqual(status, 404, path)
         self.client.setup()
@@ -379,6 +379,8 @@ class OdmenyStaticTests(unittest.TestCase):
         desk = (root / "deploy" / "install.sh").read_text(encoding="utf-8")
         self.assertIn("--exclude '/odmeny/'", desk)
         self.assertIn('rm -rf "${TARGET_DIR}/odmeny"', desk)
+        # Poznámky pro vývoj (CLAUDE.md) se na server nekopírují.
+        self.assertIn("--exclude 'CLAUDE.md'", (APP / "deploy" / "install.sh").read_text(encoding="utf-8"))
         conf = (APP / "deploy" / "apache-odmeny.conf").read_text(encoding="utf-8")
         self.assertIn("private", conf.split("DirectoryMatch")[1])
         self.assertIn("SetEnv ODMENY_DATA_DIR /var/lib/odmeny", conf)
