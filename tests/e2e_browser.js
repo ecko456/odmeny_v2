@@ -2,10 +2,10 @@
 // přehled, zálohy, historie verzí, mobil, tmavý režim, export do Excelu.
 //
 // Spuštění proti lokálnímu serveru s čistými daty:
-//   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t odmeny odmeny/dev-router.php &
+//   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t odmeny_v2 odmeny_v2/dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state   # vytvoří setup-token.txt
-//   NO_PROXY=127.0.0.1 PW=$(npm root -g)/playwright S=$S node odmeny/tests/e2e_browser.js
-// Proti Apachi: BASE=http://127.0.0.1/odmeny/ TOKEN_FILE=/var/lib/odmeny/setup-token.txt
+//   NO_PROXY=127.0.0.1 PW=$(npm root -g)/playwright S=$S node odmeny_v2/tests/e2e_browser.js
+// Proti Apachi: BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt
 // S = pracovní adresář pro snímky a stažené soubory.
 const { chromium } = require(process.env.PW);
 const fs = require('fs');

@@ -1,11 +1,26 @@
-# Odměny
+# Odměny, verze 2
 
-Hodnocení operátorů (tabáky a Kafe) jako samostatná aplikace na serveru, na adrese
-`/odmeny/`. S Trading Deskem sdílí jen server: má vlastní adresář, vlastní data
-i vlastní přihlašování.
+Hodnocení operátorů (tabáky a Kafe) jako samostatná aplikace na serveru. **Verze 2 běží na
+adrese `/odmeny_v2/`, vedle ostré verze na `/odmeny/`**, která zůstává beze změny. S Trading
+Deskem sdílí jen server: má vlastní adresář, vlastní data i vlastní přihlašování.
 
 Vychází z `hodnoceni-operatoru.html`. Výpočty jsou převzaté beze změny
 (`private/core.js`, opravy jsou v kódu označené „Oprava:“), rozhraní je nové.
+
+## Verze 2 vedle ostré verze
+
+- **Ostrá verze `/odmeny/`** běží dál tak, jak je. Instalace verze 2 její kód
+  (`/var/www/odmeny`), data (`/var/lib/odmeny`) ani konfiguraci Apache (`odmeny.conf`) nemění.
+  Její zdrojový kód je v historii gitu (verze 1.0 = commit `ffe47d2`), v aktuální větvi už není.
+- **Verze 2 `/odmeny_v2/`** má vlastní kód (`/var/www/odmeny_v2`), vlastní šifrovaná data
+  (`/var/lib/odmeny_v2`), vlastní konfiguraci Apache (`odmeny_v2.conf`) a vlastní přihlášení.
+  Zapamatované zařízení s PINem si každá verze drží zvlášť, takže si PINy nepřepisují.
+- **Data:** verze 2 začne buď prázdná (nová kartička kódem z instalace), nebo s **kopií
+  ostrých dat** (`ODMENY_KOPIE=1`, viz níže). Kopie převezme kartičky i historii verzí, takže
+  se přihlásíš stejnou kartičkou. Ostrá databáze se při kopírování jen čte.
+- Změny ve verzi 2 se do ostré verze **nepropisují** a naopak. Verze 2 je na zkoušení; až se
+  osvědčí, domluvíme převod (čerstvá kopie dat a přepnutí adresy).
+- V aplikaci i na přihlašovací obrazovce je vidět „verze 2“, ať se okna nepletou.
 
 ## Zabezpečení
 
@@ -93,52 +108,56 @@ Vychází z `hodnoceni-operatoru.html`. Výpočty jsou převzaté beze změny
 
 ```bash
 cd /root/trading_desk
-git pull
-sudo bash odmeny/deploy/install.sh
+git pull origin claude/elegant-clarke-vl5n7d
+sudo ODMENY_KOPIE=1 bash odmeny_v2/deploy/install.sh    # verze 2 s kopií ostrých dat
 ```
 
-Instalace vypíše **kód pro první spuštění**. Otevři `https://<server>/odmeny/`,
-zadej kód, vytvoř kartičku, vytiskni ji nebo ulož obrázek a dokonči nastavení. Na
-telefonu pak otevři stejnou adresu a kartičku naskenuj.
+Pak otevři `https://<server>/odmeny_v2/` a přihlas se stejnou kartičkou jako do `/odmeny/`
+(PIN si na zařízení nastavíš znovu, verze 2 má zařízení zvlášť).
 
-Kód jde vypsat znovu (dokud neexistuje žádná kartička):
+Bez `ODMENY_KOPIE=1` začne verze 2 prázdná: instalace vypíše **kód pro první spuštění**,
+zadáš ho na `https://<server>/odmeny_v2/` a vytvoříš novou kartičku. Kód jde vypsat znovu
+(dokud neexistuje žádná kartička):
 
 ```bash
-sudo runuser -u www-data -- env ODMENY_DATA_DIR=/var/lib/odmeny php /var/www/odmeny/bin/setup-token.php
+sudo runuser -u www-data -- env ODMENY_DATA_DIR=/var/lib/odmeny_v2 php /var/www/odmeny_v2/bin/setup-token.php
 ```
 
-### Aktualizace (data zůstanou)
+**Čerstvá kopie ostrých dat** kdykoli později: stejný příkaz s `ODMENY_KOPIE=1`. Dosavadní
+data verze 2 se nejdřív zazálohují do `/var/lib/odmeny_v2/backups/` a pak je nahradí kopie.
 
-Stejný příkaz jako instalace. Skript pozná existující data, **nejdřív zazálohuje
-databázi** do `/var/lib/odmeny/backups/` (drží posledních 10 záloh), pak vymění jen kód
-aplikace v `/var/www/odmeny`. Data v `/var/lib/odmeny` nemění; nové tabulky si databáze
-doplní sama a starší data se převedou při prvním otevření. Kartičky, zařízení s PINem
-i historie verzí zůstávají.
+### Aktualizace verze 2 (data zůstanou)
 
 ```bash
 cd /root/trading_desk
-git pull
-sudo bash odmeny/deploy/install.sh
+git pull origin claude/elegant-clarke-vl5n7d
+sudo bash odmeny_v2/deploy/install.sh
 ```
 
-Kdo měl aplikaci během aktualizace otevřenou, dostane výzvu k obnovení stránky.
+Skript pozná existující data, **nejdřív zazálohuje databázi** do `/var/lib/odmeny_v2/backups/`
+(drží posledních 10 záloh), pak vymění jen kód aplikace v `/var/www/odmeny_v2`. Data
+v `/var/lib/odmeny_v2` nemění; nové tabulky si databáze doplní sama a starší data se převedou
+při prvním otevření. Kdo měl aplikaci během aktualizace otevřenou, dostane výzvu k obnovení
+stránky.
 
-Vrácení databáze ze zálohy (jen kdyby něco selhalo):
+Vrácení databáze verze 2 ze zálohy (jen kdyby něco selhalo):
 
 ```bash
-sudo ls /var/lib/odmeny/backups/
-sudo cp /var/lib/odmeny/backups/odmeny-RRRRMMDD-HHMMSS.sqlite3 /var/lib/odmeny/odmeny.sqlite3
-sudo rm -f /var/lib/odmeny/odmeny.sqlite3-wal /var/lib/odmeny/odmeny.sqlite3-shm
-sudo chown www-data:www-data /var/lib/odmeny/odmeny.sqlite3
+sudo ls /var/lib/odmeny_v2/backups/
+sudo cp /var/lib/odmeny_v2/backups/odmeny-RRRRMMDD-HHMMSS.sqlite3 /var/lib/odmeny_v2/odmeny.sqlite3
+sudo rm -f /var/lib/odmeny_v2/odmeny.sqlite3-wal /var/lib/odmeny_v2/odmeny.sqlite3-shm
+sudo chown www-data:www-data /var/lib/odmeny_v2/odmeny.sqlite3
 ```
 
-- Aplikace: `/var/www/odmeny`, šifrovaná data: `/var/lib/odmeny` (SQLite).
-- Apache: `/etc/apache2/conf-available/odmeny.conf` (z `deploy/apache-odmeny.conf`).
+- Aplikace: `/var/www/odmeny_v2`, šifrovaná data: `/var/lib/odmeny_v2` (SQLite).
+- Apache: `/etc/apache2/conf-available/odmeny_v2.conf` (z `deploy/apache-odmeny_v2.conf`).
 - Aplikace běží jen přes HTTPS (šifrování v prohlížeči bez něj nefunguje).
+- `odmeny/deploy/install.sh` (instalace ostré verze) v aktuální větvi není, ostrou verzi
+  tak nejde omylem přepsat.
 
 ## Zálohy a historie
 
-- Před každou aktualizací aplikace se databáze zazálohuje do `/var/lib/odmeny/backups/`.
+- Před každou aktualizací aplikace se databáze zazálohuje do `/var/lib/odmeny_v2/backups/`.
 - Každé uložení je nová verze. Server drží posledních 30 uložení a k tomu stav
   z každé hodiny za poslední týden a z každého dne před tím (nejvýš 150 verzí).
   Vrátit jde v Nastavení → Data a zálohy → Historie verzí.
@@ -161,10 +180,11 @@ sudo chown www-data:www-data /var/lib/odmeny/odmeny.sqlite3
 
 ```bash
 # lokální server (bez HTTPS jen na 127.0.0.1)
-ODMENY_DATA_DIR=/tmp/odmeny php -S 127.0.0.1:8490 -t odmeny odmeny/dev-router.php
+ODMENY_DATA_DIR=/tmp/odmeny php -S 127.0.0.1:8490 -t odmeny_v2 odmeny_v2/dev-router.php
 
-# testy: server, šifrovaný tok, výpočty proti původní aplikaci
-python3 -m unittest discover -s odmeny/tests
+# testy: server, šifrovaný tok, výpočty proti původní aplikaci, kopie ostrých dat
+python3 -m unittest discover -s odmeny_v2/tests
+node odmeny_v2/tests/test_core.js
 ```
 
 Průchody v prohlížeči (Playwright) na čistých datech lokálního serveru, návod je
@@ -177,30 +197,26 @@ v hlavičce každého skriptu:
 - `tests/e2e_v21.js`: novinky 2.1 (seznam ID, evidence práce s ID, časem a normou a výběr
   sloupců, navýšení platu, jen Kafe, PDF s pravidly, historie, mobil).
 
-Test aktualizace 1.0 → 2.0 bez ztráty dat na lokálním Apachi (maže lokální
-`/var/lib/odmeny`, **nikdy ne na ostrém serveru**):
+**Verze 2 vedle ostré verze** na lokálním Apachi v kontejneru (maže lokální `/var/lib/odmeny*`
+a `/var/www/odmeny*`, **nikdy ne na ostrém serveru**). Ověří, že instalace ostrou verzi
+nezmění (kód, konfigurace i databáze bajt po bajtu), že kopie dat sedí, že verze 2 nad
+zkopírovanými daty umí všechny novinky a že si verze nepletou data ani PINy:
 
 ```bash
-rm -rf /tmp/stara && mkdir /tmp/stara && git archive ffe47d2 odmeny | tar -x -C /tmp/stara
-sudo rm -rf /var/lib/odmeny /var/www/odmeny
-sudo bash /tmp/stara/odmeny/deploy/install.sh        # verze 1.0
-node odmeny/tests/e2e_upgrade.js old                 # data ve staré verzi
-sudo bash odmeny/deploy/install.sh                   # aktualizace (záloha DB)
-node odmeny/tests/e2e_upgrade.js new                 # data zůstala, novinky fungují
+rm -rf /tmp/v10 && mkdir /tmp/v10 && git archive ffe47d2 odmeny | tar -x -C /tmp/v10
+sudo rm -rf /var/lib/odmeny /var/www/odmeny /var/lib/odmeny_v2 /var/www/odmeny_v2
+sudo bash /tmp/v10/odmeny/deploy/install.sh                     # ostrá verze 1.0 na /odmeny/
+BASE=http://127.0.0.1/odmeny/ node odmeny_v2/tests/e2e_upgrade.js old     # data ve verzi 1.0
+node odmeny_v2/tests/e2e_vedle.js instalace                     # verze 2 s kopií dat
+BASE=http://127.0.0.1/odmeny_v2/ node odmeny_v2/tests/e2e_upgrade.js new  # data a novinky ve verzi 2
+node odmeny_v2/tests/e2e_vedle.js oddeleni                      # ostrá verze beze změn, PINy zvlášť
 ```
 
-Test aktualizace 2.0 → 2.1 v jednom běhu: vytvoří data ve 2.0, nechá otevřenou starou
-stránku, spustí instalaci, ověří, že stará stránka nic neuloží, a porovná sdílená data,
-osobní nastavení i výpočty položku po položce:
+Proměnné pro skripty: `PW` (cesta k Playwrightu), `S` (pracovní adresář pro snímky a klíč).
+`tests/e2e_upgrade21.js` je historický test aktualizace 2.0 → 2.1 na místě (`/odmeny/`)
+z doby před oddělením verze 2.
 
-```bash
-rm -rf /tmp/stara20 && mkdir /tmp/stara20 && git archive a4e5c73 odmeny | tar -x -C /tmp/stara20
-sudo rm -rf /var/lib/odmeny /var/www/odmeny
-sudo bash /tmp/stara20/odmeny/deploy/install.sh      # verze 2.0
-UPGRADE_CMD="sudo bash odmeny/deploy/install.sh" node odmeny/tests/e2e_upgrade21.js
-```
-
-Rozpracovanou verzi jde zamknout souborem `odmeny/ROZPRACOVANO.md`: dokud existuje,
+Rozpracovanou verzi jde zamknout souborem `odmeny_v2/ROZPRACOVANO.md`: dokud existuje,
 `deploy/install.sh` ji odmítne nainstalovat (přebije jen `ODMENY_FORCE=1`).
 
 Knihovny: QR kódy (qrcode-generator, MIT), čtení QR (jsQR, Apache 2.0), Excel

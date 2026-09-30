@@ -1,6 +1,6 @@
 """Odměny: server, šifrovaný tok v prohlížečovém kódu a výpočty.
 
-python3 -m unittest discover -s odmeny/tests
+python3 -m unittest discover -s odmeny_v2/tests
 """
 
 from datetime import datetime, timedelta, timezone
@@ -10,6 +10,7 @@ import base64
 import http.client
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -38,8 +39,8 @@ def b64(size):
 
 
 class Server:
-    def __init__(self):
-        self.data = Path(tempfile.mkdtemp(prefix="odmeny-"))
+    def __init__(self, data=None):
+        self.data = Path(data) if data else Path(tempfile.mkdtemp(prefix="odmeny-"))
         self.port = free_port()
         self.base = f"http://127.0.0.1:{self.port}"
         env = dict(os.environ, ODMENY_DATA_DIR=str(self.data), NO_PROXY="*")
@@ -347,6 +348,51 @@ class OdmenyVersion2Tests(unittest.TestCase):
         status, _, _ = self.client.request("GET", "/bin/backup-db.php")
         self.assertEqual(status, 404)
 
+    def test_copy_of_live_data(self):
+        # Kopie ostrých dat do verze 2: ostrá databáze se jen čte, kartičky a verze se přenesou,
+        # relace, pokusy a zapamatovaná zařízení ne (verze 2 má v prohlížeči vlastní zařízení).
+        card = self.client.setup()
+        self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
+        self.client.api("POST", "device", {"pin_proof": b64(32), "label": "Telefon"})
+        self.client.api("POST", "login", {"auth": b64(32)})  # neplatná kartička = záznam v attempts
+        live = self.server.data / "odmeny.sqlite3"
+        wal = Path(f"{live}-wal")
+        snapshot = lambda: (live.read_bytes(), wal.read_bytes() if wal.exists() else b"")
+        before = snapshot()
+        target_dir = Path(tempfile.mkdtemp(prefix="odmeny-v2-"))
+        self.addCleanup(shutil.rmtree, target_dir, True)
+        target = target_dir / "odmeny.sqlite3"
+        copy = lambda *args: subprocess.run([PHP, str(APP / "bin" / "copy-db.php"), *map(str, args)], capture_output=True, text=True, timeout=30)
+        result = copy(live, target)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("kartiček 1, uložených verzí 1", result.stdout)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        with sqlite3.connect(target) as db:
+            self.assertEqual([row[0] for row in db.execute("SELECT id FROM cards")], [card["id"]])
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM versions").fetchone()[0], 1)
+            for table in ("sessions", "attempts", "devices"):
+                self.assertEqual(db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0], 0, table)
+        self.assertEqual(snapshot(), before, "ostrá databáze se kopií nezměnila")
+        with sqlite3.connect(live) as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM devices").fetchone()[0], 1, "ostrá zařízení zůstala")
+        # Existující data verze 2 kopie nepřepíše a do stejného adresáře nekopíruje.
+        self.assertNotEqual(copy(live, target).returncode, 0)
+        self.assertNotEqual(copy(live, self.server.data / "jina.sqlite3").returncode, 0)
+        self.assertNotEqual(copy(target_dir / "neni.sqlite3", target_dir / "b.sqlite3").returncode, 0)
+        self.assertEqual(sorted(path.name for path in target_dir.iterdir()), ["odmeny.sqlite3"], "po chybě nezůstal rozdělaný soubor")
+        # Verze 2 nad kopií funguje: stejná kartička se přihlásí a vidí data.
+        other = Server(target_dir)
+        self.addCleanup(other.stop)
+        client = Client(other)
+        status, state = client.api("GET", "state")
+        self.assertEqual((status, state["setup_required"]), (200, False))
+        status, result = client.api("POST", "login", {"auth": card["auth"]})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(client.api("GET", "data")[1]["rev"], 1)
+        self.assertEqual(client.api("GET", "devices")[1]["items"], [])
+        status, _, _ = self.client.request("GET", "/bin/copy-db.php")
+        self.assertEqual(status, 404)
+
 
 @unittest.skipIf(PHP is None or NODE is None, "chybí PHP nebo Node.js")
 class OdmenyBrowserCodeTests(unittest.TestCase):
@@ -377,15 +423,38 @@ class OdmenyStaticTests(unittest.TestCase):
     def test_deploy_keeps_apps_apart(self):
         root = APP.parent
         desk = (root / "deploy" / "install.sh").read_text(encoding="utf-8")
-        self.assertIn("--exclude '/odmeny/'", desk)
-        self.assertIn('rm -rf "${TARGET_DIR}/odmeny"', desk)
+        for name in ("odmeny", "odmeny_v2"):
+            self.assertIn(f"--exclude '/{name}/'", desk)
+        self.assertIn('rm -rf "${TARGET_DIR}/odmeny" "${TARGET_DIR}/odmeny_v2"', desk)
+        self.assertIn("|odmeny|odmeny_v2)", (root / "router.php").read_text(encoding="utf-8"))
+        install = (APP / "deploy" / "install.sh").read_text(encoding="utf-8")
         # Poznámky pro vývoj (CLAUDE.md) se na server nekopírují.
-        self.assertIn("--exclude 'CLAUDE.md'", (APP / "deploy" / "install.sh").read_text(encoding="utf-8"))
-        conf = (APP / "deploy" / "apache-odmeny.conf").read_text(encoding="utf-8")
+        self.assertIn("--exclude 'CLAUDE.md'", install)
+        conf = (APP / "deploy" / "apache-odmeny_v2.conf").read_text(encoding="utf-8")
         self.assertIn("private", conf.split("DirectoryMatch")[1])
-        self.assertIn("SetEnv ODMENY_DATA_DIR /var/lib/odmeny", conf)
-        self.assertIn("/odmeny/data/", (root / ".gitignore").read_text(encoding="utf-8"))
+        self.assertIn("SetEnv ODMENY_DATA_DIR /var/lib/odmeny_v2\n", conf)
+        self.assertIn("/odmeny_v2/data/", (root / ".gitignore").read_text(encoding="utf-8"))
 
+    def test_version_2_never_touches_live_install(self):
+        # Verze 2 má vlastní adresu, kód, data i konfiguraci Apache. Ostrá /odmeny/ se jen čte
+        # (zdroj kopie dat), nikdy se do ní nezapisuje.
+        install = (APP / "deploy" / "install.sh").read_text(encoding="utf-8")
+        for line in ('TARGET_DIR="/var/www/odmeny_v2"', 'DATA_DIR="/var/lib/odmeny_v2"',
+                     'APACHE_CONF="/etc/apache2/conf-available/odmeny_v2.conf"', "a2enconf odmeny_v2",
+                     'LIVE_DB="/var/lib/odmeny/odmeny.sqlite3"'):
+            self.assertIn(line, install)
+        code = "\n".join(line for line in install.splitlines() if not line.lstrip().startswith("#"))
+        live = re.findall(r"/var/(?:www|lib)/odmeny(?!_v2)[^\s\"']*|conf-available/odmeny\.conf|a2enconf odmeny\b(?!_v2)", code)
+        self.assertEqual(live, ["/var/lib/odmeny/odmeny.sqlite3"], "jediná zmínka o ostré verzi je zdroj kopie")
+        self.assertIn('runuser -u www-data -- php "${TARGET_DIR}/bin/copy-db.php" "${LIVE_DB}" "${DB_FILE}"', install)
+        conf = (APP / "deploy" / "apache-odmeny_v2.conf").read_text(encoding="utf-8")
+        directives = "\n".join(line for line in conf.splitlines() if not line.lstrip().startswith("#"))
+        self.assertEqual(re.findall(r"/odmeny(?!_v2)\b", directives), [], "konfigurace verze 2 nezmiňuje ostré cesty")
+        self.assertIn("Alias /odmeny_v2/ /var/www/odmeny_v2/", conf)
+        self.assertIn("RedirectMatch 301 ^/odmeny_v2$ /odmeny_v2/", conf)
+        # Zapamatované zařízení s PINem má verze 2 v prohlížeči pod vlastním klíčem.
+        vault = (APP / "static" / "vault.js").read_text(encoding="utf-8")
+        self.assertIn("const DEVICE_STORAGE = deviceStorageKey(root.location && root.location.pathname);", vault)
 
 if __name__ == "__main__":
     unittest.main()

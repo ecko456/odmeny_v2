@@ -3,7 +3,7 @@
 /*
  * Výpočty v private/core.js proti původní aplikaci (hodnoceni-operatoru.html):
  * na datech, kde se opravy neprojeví, musí vyjít totéž. Pak testy samotných oprav.
- * node odmeny/tests/test_core.js
+ * node odmeny_v2/tests/test_core.js
  */
 const assert = require('assert');
 const fs = require('fs');

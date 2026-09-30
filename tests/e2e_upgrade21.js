@@ -5,7 +5,8 @@
 //   3. stará stránka už nesmí nic uložit (426, výzva k obnovení);
 //   4. ve 2.1 porovná sdílený stav položku po položce, osobní nastavení a výpočty,
 //      pak vyzkouší novinky nad převzatými daty.
-// Postup je v odmeny/README.md (Vývoj a testy). Proměnné: PW, S, BASE, UPGRADE_CMD.
+// Historický test aktualizace na místě (/odmeny/) z doby před oddělením verze 2 na /odmeny_v2/;
+// spouštěl se z checkoutu 10f98b5. Nové verze ověřuje e2e_vedle.js. Proměnné: PW, S, BASE, UPGRADE_CMD.
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
 const fs = require('fs');

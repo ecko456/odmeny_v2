@@ -23,7 +23,7 @@ $privateVersion = (string)max(array_map(static fn(string $file): int => (int)fil
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#0e6b5d">
-  <title>Odměny</title>
+  <title>Odměny 2</title>
   <link rel="icon" href="<?= $asset('static/icon.svg') ?>" type="image/svg+xml">
   <link rel="stylesheet" href="<?= $asset('static/lock.css') ?>">
 </head>
@@ -32,7 +32,7 @@ $privateVersion = (string)max(array_map(static fn(string $file): int => (int)fil
     <section class="lock-card" id="lockCard" aria-live="polite">
       <div class="lock-brand">
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="14.5" r="5.5"/><path d="M9 9.5 6.5 3h4L12 6.5 13.5 3h4L15 9.5"/><path d="m12 11.8.9 1.8 2 .3-1.45 1.4.35 2-1.8-.95-1.8.95.35-2-1.45-1.4 2-.3z"/></svg></span>
-        <div><strong>Odměny</strong><small>Hodnocení operátorů</small></div>
+        <div><strong>Odměny</strong><small>Hodnocení operátorů · verze 2</small></div>
       </div>
       <div id="lockBody"><div class="spinner" role="status" aria-label="Načítám"></div></div>
     </section>

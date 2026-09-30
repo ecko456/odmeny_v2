@@ -20,7 +20,10 @@
   const decoder = new TextDecoder();
   const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
   const QR_PREFIX = 'ODMENY:';
-  const DEVICE_STORAGE = 'odmeny.device.v1';
+  // Zapamatované zařízení patří jedné instalaci. Ostrá verze (/odmeny/) a verze 2 (/odmeny_v2/)
+  // běží na stejné doméně a sdílejí localStorage: se stejným klíčem by si zařízení přepisovaly
+  // a při neznámém zařízení by ho ta druhá smazala. /odmeny/ a vývoj na / mají klíč původní.
+  const DEVICE_STORAGE = deviceStorageKey(root.location && root.location.pathname);
   const DATA_AAD = 'odmeny/data/v1';
   // Verze tvaru dat, kterou server žádá u zápisu (stará otevřená stránka nové údaje neumí).
   const CLIENT_VERSION = '3';
@@ -242,6 +245,11 @@
 
   /* ------------------------------------------------------------ zařízení */
 
+  function deviceStorageKey(pathname) {
+    const base = String(pathname || '/').replace(/[^/]*$/, '') || '/';
+    return base === '/' || base === '/odmeny/' ? 'odmeny.device.v1' : `odmeny.device.v1:${base}`;
+  }
+
   function readDevice() {
     try {
       const value = JSON.parse(root.localStorage.getItem(DEVICE_STORAGE) || 'null');
@@ -428,7 +436,7 @@
   root.OdmVault = {
     available, api, ApiError, session,
     newAccessKey, parseAccessKey, normalizeKey, formatKey, qrText,
-    readDevice, forgetDevice, deviceLabel,
+    readDevice, forgetDevice, deviceLabel, deviceStorageKey,
     setup, loginWithKey, unlockWithPin, enrollDevice, createCard,
     loadData, saveData, loadVersion, backup, openBackup, lock, loadPrefs, savePrefs, me,
     newDek, sealData, openData, cardSecrets, toBase64, fromBase64,
