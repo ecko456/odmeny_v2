@@ -3,7 +3,7 @@
 /*
  * Výpočty v private/core.js proti původní aplikaci (hodnoceni-operatoru.html):
  * na datech, kde se opravy neprojeví, musí vyjít totéž. Pak testy samotných oprav.
- * node odmeny_v2/tests/test_core.js
+ * node tests/test_core.js
  */
 const assert = require('assert');
 const fs = require('fs');
@@ -11,7 +11,8 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
-const ORIGINAL = path.join(ROOT, '..', 'hodnoceni-operatoru.html');
+// Původní aplikace uživatele, jen pro porovnání výpočtů (na server se nekopíruje).
+const ORIGINAL = path.join(__dirname, 'hodnoceni-operatoru.html');
 
 /** Objekt, který snese jakékoli volání a čtení – zastoupí DOM původní aplikace. */
 function stub() {

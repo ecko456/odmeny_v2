@@ -1,37 +1,83 @@
-# Odměny: poznámky pro Clauda
+# Odměny verze 2: poznámky pro Clauda
 
-Hodnocení operátorů ve výrobě. Každý měsíc dostane člověk benefit:
+Claude Code si tenhle soubor načte sám na začátku každé session.
+
+Je to hodnocení operátorů ve výrobě. Každý měsíc dostane člověk benefit:
 
 - **tabáky**: počet;
 - **Kafe**: ano, nebo ne;
 - od verze 2.1 i **navýšení platu v %**.
 
 **Verze 2 běží na `/odmeny_v2/`, vedle ostré verze na `/odmeny/`** (viz „Ostrá verze a verze 2“).
-Má vlastní kód, data i přihlašování; s Trading Deskem sdílí jen server a repozitář.
-Dokumentace pro uživatele je v `odmeny_v2/README.md` (novinky verzí, instalace, kopie dat,
-zálohy, postupy testů).
+Dokumentace pro uživatele je v `README.md` (novinky verzí, instalace, kopie dat, zálohy,
+postupy testů). Po každé větší práci **aktualizuj sekci „Kde jsme skončili“**.
 
-Aplikace vychází z `../hodnoceni-operatoru.html`, původní jednosouborové aplikace uživatele.
+Aplikace vychází z původní jednosouborové aplikace uživatele, `tests/hodnoceni-operatoru.html`.
 Výpočty jsou převzaté, každá změna proti originálu je v kódu označená `Oprava:` a hlídá ji
 `tests/test_core.js`.
+
+## Tři oddělené projekty
+
+Do 1. 10. 2026 bylo všechno v jednom repozitáři `trading_desk`. Uživatel chtěl, ať se projekty
+nepletou, a teď má každý vlastní repozitář:
+
+| projekt | repozitář | adresa | kód na serveru | data |
+|---|---|---|---|---|
+| Trading Desk | `ecko456/trading_desk` | `/trading/` | `/var/www/trading-journal` | `/var/lib/trading-journal` |
+| Odměny ostré | `ecko456/odmeny` | `/odmeny/` | `/var/www/odmeny` | `/var/lib/odmeny` |
+| **Odměny verze 2 (tady)** | `ecko456/odmeny_v2` | `/odmeny_v2/` | `/var/www/odmeny_v2` | `/var/lib/odmeny_v2` |
+
+Klony na serveru jsou `/root/trading_desk`, `/root/odmeny` a `/root/odmeny_v2`. Všechny
+repozitáře jsou **veřejné**. Historie Odměn je převzatá z `trading_desk` a verze mají tagy
+`v1.0`, `v2.0` a `v2.1`. Hashe commitů jsou jiné než v `trading_desk`.
+
+## Kde jsme skončili
+
+Stav k 1. 10. 2026:
+
+- Odměny se oddělily do vlastních repozitářů. Kód verze 2 je stejný jako 2.1, jen běží
+  samostatně na `/odmeny_v2/` a umí si zkopírovat ostrá data.
+- Uživatel má verzi 2 nainstalovat s kopií dat a vyzkoušet ji:
+  `git clone https://github.com/ecko456/odmeny_v2.git /root/odmeny_v2 && sudo ODMENY_KOPIE=1 bash /root/odmeny_v2/deploy/install.sh`.
+- Další zadání k Odměnám se čeká.
+
+## Pravidla spolupráce
+
+- Komunikace **česky**, věcně. UI texty a komentáře v kódu jsou česky.
+- Uživatel nasazuje sám podle přesných příkazů. Na konci práce vždy napiš:
+  - co se změnilo a výsledek testů;
+  - přesný příkaz pro server, včetně větve, pokud změny nejsou v `main`:
+    `cd /root/odmeny_v2 && git pull origin <větev> && sudo bash /root/odmeny_v2/deploy/install.sh`;
+  - že je potřeba Ctrl+Shift+R.
+- **Nikdy se nepřipojuj na server uživatele.** Do repa nedávej IP ani adresu serveru, ani
+  žádná data. **Repozitář je veřejný.**
+- Aplikace běží jen za HTTPS (Apache). Data musí zůstat šifrovaná a přístupná jen po přihlášení.
+- Opatrně, ať nic nerozbiješ. **Nepushuj neotestovaný kód** a v prohlížeči ověř i vzhled
+  (screenshot). **Při aktualizaci se nesmí ztratit data.**
+- **Ostrou verzi `/odmeny/` neměň.** Je v repozitáři `odmeny` a sahá se na ni jen na
+  výslovný pokyn uživatele.
+- Do commitů, PR, kódu ani dokumentace nepiš identifikátor modelu. Patičku commitu
+  (Co-Authored-By, Claude-Session) ber z pokynů aktuální session.
+- Commit message česky: `Odměny: co se změnilo`, v těle proč a odrážky.
+- PR otevírej jen na výslovné přání uživatele.
 
 ## Ostrá verze a verze 2
 
 Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 9. 2026 platí:
 
 - **Ostrá verze `/odmeny/`**: `/var/www/odmeny`, `/var/lib/odmeny`, `odmeny.conf`.
-  - Nejspíš běží 1.0 (`ffe47d2`); ověř u uživatele, pokud na tom něco závisí.
+  - Nejspíš běží 1.0 (tag `v1.0`); ověř u uživatele, pokud na tom něco závisí.
     Kontrola na serveru: `grep -o "ODM_VERSION = '[^']*'" /var/www/odmeny/lib/odmeny.php`
     (1.0 nevypíše nic).
-  - Její kód je jen v historii gitu. Adresář `odmeny/` v aktuální větvi **není**, takže ji
-    nejde omylem přeinstalovat.
+  - Její kód je v repozitáři `ecko456/odmeny` (tady jako tag `v1.0`). Odsud ji nejde omylem
+    přeinstalovat.
   - **Nikdy na ni nesahej** bez výslovného pokynu uživatele.
-- **Verze 2 `/odmeny_v2/`** (repo `odmeny_v2/`): `/var/www/odmeny_v2`, `/var/lib/odmeny_v2`,
+- **Verze 2 `/odmeny_v2/`** (tento repozitář): `/var/www/odmeny_v2`, `/var/lib/odmeny_v2`,
   `odmeny_v2.conf`.
-  - Instalace `odmeny_v2/deploy/install.sh` ostré cesty nikdy nezapisuje. Hlídá to test
+  - Instalace `deploy/install.sh` ostré cesty nikdy nezapisuje. Hlídá to test
     `test_version_2_never_touches_live_install`.
   - Jediná zmínka o ostré verzi je `LIVE_DB`, zdroj kopie.
-- **Kopie ostrých dat**: `sudo ODMENY_KOPIE=1 bash odmeny_v2/deploy/install.sh`.
+- **Kopie ostrých dat**: `sudo ODMENY_KOPIE=1 bash /root/odmeny_v2/deploy/install.sh`.
   - Používá `bin/copy-db.php`: ostrou DB otevře jen pro čtení (`SQLITE_OPEN_READONLY`
     + `VACUUM INTO`) a běží jako **www-data**. Kdyby běžel jako root, vytvořil by rootovi
     patřící `-shm`/`-wal` a aplikace by přestala zapisovat.
@@ -53,10 +99,10 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 
 | verze | commit | obsah |
 |---|---|---|
-| 1.0 | `ffe47d2` | šifrovaný server, kartičky s QR, PIN zařízení, nové UI |
-| 2.0 | `a4e5c73` | osobní pohled pro každou kartičku, historie změn, matice dovedností, profil člověka |
-| 2.1 | `10f98b5` | navýšení platu, evidence práce s časem a ID, jen Kafe, PDF pravidel |
-| 2.1 na `/odmeny_v2/` | (tato větev) | **aktuální**: stejný kód, oddělený od ostré verze |
+| 1.0 | tag `v1.0` | šifrovaný server, kartičky s QR, PIN zařízení, nové UI (= ostrá verze) |
+| 2.0 | tag `v2.0` | osobní pohled pro každou kartičku, historie změn, matice dovedností, profil člověka |
+| 2.1 | tag `v2.1` | navýšení platu, evidence práce s časem a ID, jen Kafe, PDF pravidel |
+| 2.1 na `/odmeny_v2/` | `main` | **aktuální**: stejný kód, oddělený od ostré verze |
 
 Verze 2.1 přidala:
 
@@ -67,7 +113,6 @@ Verze 2.1 přidala:
 
 Otevřené body:
 
-- Uživatel má nainstalovat V2 s kopií dat a vyzkoušet ji.
 - Uživatel možná pošle **vzorek skutečného exportu evidence práce**. Pak ověř:
   - autodetekci sloupců (`prodColumns`, `PROD_WORDS`);
   - formát času a normy;
@@ -207,7 +252,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
    - `test_odmeny.py`;
    - e2e průchod novinek;
    - **test aktualizace z předchozí verze**.
-7. `odmeny_v2/README.md` (Co je nového).
+7. `README.md` (Co je nového).
 
 ## Výpočty (`private/core.js`)
 
@@ -272,16 +317,22 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 
 ## Testy a lokální běh
 
-```bash
-python3 -m unittest discover -s odmeny_v2/tests   # server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze
-node odmeny_v2/tests/test_core.js                 # proti původní aplikaci + opravy + 2.1
+Kontejner cloudové session má předinstalované PHP 8.4 CLI (sqlite3, mbstring), Node 22
+a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/install.sh`
+(jen v kontejneru, **nikdy ne na ostrém serveru**).
 
-# lokální server s čistými daty ($S = scratchpad)
-ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t odmeny_v2 odmeny_v2/dev-router.php &
+```bash
+python3 -m unittest discover -s tests   # 19 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze
+node tests/test_core.js                 # proti původní aplikaci + opravy + 2.1
+
+# lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
+ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state    # vytvoří setup-token.txt
-NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node odmeny_v2/tests/e2e_v21.js
+NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2e_v21.js
 ```
 
+- Playwright: `require('/opt/node22/lib/node_modules/playwright')`, Chromium
+  `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`. Příkaz `playwright install` nespouštěj.
 - Průchody v prohlížeči:
   - `e2e_browser.js`: celá aplikace;
   - `e2e_v2.js`: novinky 2.0;
@@ -289,15 +340,14 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node odmeny_v
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.
 - Snímky ukládají do `$S/oshots*`, prohlédni si je.
 - **Test „verze 2 vedle ostré“** běží na lokálním Apachi v kontejneru a maže lokální
-  `/var/lib/odmeny*`. Postup je v `odmeny_v2/README.md`:
-  1. 1.0 z `git archive ffe47d2 odmeny` na `/odmeny/`;
+  `/var/lib/odmeny*`. Postup je v `README.md`:
+  1. 1.0 z `git archive v1.0` na `/odmeny/`;
   2. `e2e_upgrade.js old` (data ve verzi 1.0);
   3. `e2e_vedle.js instalace`: kopie dat; ostrý kód, konfigurace i DB musí zůstat bajt po bajtu;
   4. `e2e_upgrade.js new` s `BASE` na `/odmeny_v2/` (data a novinky ve V2);
   5. `e2e_vedle.js oddeleni` (ostrá verze bez změn z V2, PINy zvlášť).
 
-  Naposledy prošlo celé 30. 9. 2026. Prošla i čistá V2 s `e2e_v21.js` na `/odmeny_v2/`
-  a opakovaná kopie se zálohou.
+  Naposledy prošlo celé 1. 10. 2026, už v samostatném repozitáři.
 - `e2e_upgrade21.js` je historický test aktualizace na místě 2.0 → 2.1 (`/odmeny/`).
 - Poučení z minula:
   - `test_core.js` běží v `vm` kontextu spolu s `core.js`. Stejné top-level jméno v testu
@@ -311,9 +361,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node odmeny_v
 ## Pojistka pro rozpracovanou verzi
 
 Uživatel stahuje větev kdykoli. Když pushuješ **rozpracované** Odměny, vytvoř
-`odmeny_v2/ROZPRACOVANO.md` s popisem stavu.
+`ROZPRACOVANO.md` s popisem stavu.
 
-- Dokud soubor existuje, `odmeny_v2/deploy/install.sh` instalaci odmítne a na serveru zůstane
+- Dokud soubor existuje, `deploy/install.sh` instalaci odmítne a na serveru zůstane
   stará verze. Přebije to jen `ODMENY_FORCE=1`.
 - Soubor smaž, až projdou všechny testy včetně prohlížeče a testu aktualizace.
 - Instalace před aktualizací zálohuje databázi do `/var/lib/odmeny_v2/backups/` (posledních 10).

@@ -1,0 +1,3 @@
+# Šifrovaná databáze a kód pro první spuštění z lokálního běhu do gitu nepatří.
+/data/
+__pycache__/

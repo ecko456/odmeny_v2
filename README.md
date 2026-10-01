@@ -4,14 +4,23 @@ Hodnocení operátorů (tabáky a Kafe) jako samostatná aplikace na serveru. **
 adrese `/odmeny_v2/`, vedle ostré verze na `/odmeny/`**, která zůstává beze změny. S Trading
 Deskem sdílí jen server: má vlastní adresář, vlastní data i vlastní přihlašování.
 
-Vychází z `hodnoceni-operatoru.html`. Výpočty jsou převzaté beze změny
-(`private/core.js`, opravy jsou v kódu označené „Oprava:“), rozhraní je nové.
+Vychází z původní aplikace `hodnoceni-operatoru.html` (pro porovnání výpočtů je v `tests/`).
+Výpočty jsou převzaté beze změny (`private/core.js`, opravy jsou v kódu označené „Oprava:“),
+rozhraní je nové.
+
+Tři oddělené projekty, každý ve vlastním repozitáři:
+
+| projekt | repozitář | adresa |
+|---|---|---|
+| Trading Desk | [`ecko456/trading_desk`](https://github.com/ecko456/trading_desk) | `/trading/` |
+| Odměny, ostrá verze 1.0 | [`ecko456/odmeny`](https://github.com/ecko456/odmeny) | `/odmeny/` |
+| **Odměny, verze 2 (tady)** | [`ecko456/odmeny_v2`](https://github.com/ecko456/odmeny_v2) | `/odmeny_v2/` |
 
 ## Verze 2 vedle ostré verze
 
 - **Ostrá verze `/odmeny/`** běží dál tak, jak je. Instalace verze 2 její kód
   (`/var/www/odmeny`), data (`/var/lib/odmeny`) ani konfiguraci Apache (`odmeny.conf`) nemění.
-  Její zdrojový kód je v historii gitu (verze 1.0 = commit `ffe47d2`), v aktuální větvi už není.
+  Její kód je v repozitáři `odmeny` (a tady v historii jako tag `v1.0`).
 - **Verze 2 `/odmeny_v2/`** má vlastní kód (`/var/www/odmeny_v2`), vlastní šifrovaná data
   (`/var/lib/odmeny_v2`), vlastní konfiguraci Apache (`odmeny_v2.conf`) a vlastní přihlášení.
   Zapamatované zařízení s PINem si každá verze drží zvlášť, takže si PINy nepřepisují.
@@ -107,9 +116,8 @@ Vychází z `hodnoceni-operatoru.html`. Výpočty jsou převzaté beze změny
 ## Instalace na server (Ubuntu + Apache)
 
 ```bash
-cd /root/trading_desk
-git pull origin claude/elegant-clarke-vl5n7d
-sudo ODMENY_KOPIE=1 bash odmeny_v2/deploy/install.sh    # verze 2 s kopií ostrých dat
+git clone https://github.com/ecko456/odmeny_v2.git /root/odmeny_v2
+sudo ODMENY_KOPIE=1 bash /root/odmeny_v2/deploy/install.sh    # verze 2 s kopií ostrých dat
 ```
 
 Pak otevři `https://<server>/odmeny_v2/` a přihlas se stejnou kartičkou jako do `/odmeny/`
@@ -129,10 +137,12 @@ data verze 2 se nejdřív zazálohují do `/var/lib/odmeny_v2/backups/` a pak je
 ### Aktualizace verze 2 (data zůstanou)
 
 ```bash
-cd /root/trading_desk
-git pull origin claude/elegant-clarke-vl5n7d
-sudo bash odmeny_v2/deploy/install.sh
+cd /root/odmeny_v2 && git pull
+sudo bash /root/odmeny_v2/deploy/install.sh
 ```
+
+Když je nová verze zatím jen ve vývojové větvi (napíše ti ji Claude), stáhni ji příkazem
+`git pull origin <větev>`.
 
 Skript pozná existující data, **nejdřív zazálohuje databázi** do `/var/lib/odmeny_v2/backups/`
 (drží posledních 10 záloh), pak vymění jen kód aplikace v `/var/www/odmeny_v2`. Data
@@ -152,8 +162,7 @@ sudo chown www-data:www-data /var/lib/odmeny_v2/odmeny.sqlite3
 - Aplikace: `/var/www/odmeny_v2`, šifrovaná data: `/var/lib/odmeny_v2` (SQLite).
 - Apache: `/etc/apache2/conf-available/odmeny_v2.conf` (z `deploy/apache-odmeny_v2.conf`).
 - Aplikace běží jen přes HTTPS (šifrování v prohlížeči bez něj nefunguje).
-- `odmeny/deploy/install.sh` (instalace ostré verze) v aktuální větvi není, ostrou verzi
-  tak nejde omylem přepsat.
+- Instalace ostré verze je jen v repozitáři `odmeny`, odsud ji nejde omylem přepsat.
 
 ## Zálohy a historie
 
@@ -179,12 +188,12 @@ sudo chown www-data:www-data /var/lib/odmeny_v2/odmeny.sqlite3
 ## Vývoj a testy
 
 ```bash
-# lokální server (bez HTTPS jen na 127.0.0.1)
-ODMENY_DATA_DIR=/tmp/odmeny php -S 127.0.0.1:8490 -t odmeny_v2 odmeny_v2/dev-router.php
+# lokální server (bez HTTPS jen na 127.0.0.1), z kořene repozitáře
+ODMENY_DATA_DIR=/tmp/odmeny php -S 127.0.0.1:8490 -t . dev-router.php
 
 # testy: server, šifrovaný tok, výpočty proti původní aplikaci, kopie ostrých dat
-python3 -m unittest discover -s odmeny_v2/tests
-node odmeny_v2/tests/test_core.js
+python3 -m unittest discover -s tests
+node tests/test_core.js
 ```
 
 Průchody v prohlížeči (Playwright) na čistých datech lokálního serveru, návod je
@@ -203,20 +212,20 @@ nezmění (kód, konfigurace i databáze bajt po bajtu), že kopie dat sedí, ž
 zkopírovanými daty umí všechny novinky a že si verze nepletou data ani PINy:
 
 ```bash
-rm -rf /tmp/v10 && mkdir /tmp/v10 && git archive ffe47d2 odmeny | tar -x -C /tmp/v10
+rm -rf /tmp/v10 && mkdir /tmp/v10 && git archive v1.0 | tar -x -C /tmp/v10
 sudo rm -rf /var/lib/odmeny /var/www/odmeny /var/lib/odmeny_v2 /var/www/odmeny_v2
-sudo bash /tmp/v10/odmeny/deploy/install.sh                     # ostrá verze 1.0 na /odmeny/
-BASE=http://127.0.0.1/odmeny/ node odmeny_v2/tests/e2e_upgrade.js old     # data ve verzi 1.0
-node odmeny_v2/tests/e2e_vedle.js instalace                     # verze 2 s kopií dat
-BASE=http://127.0.0.1/odmeny_v2/ node odmeny_v2/tests/e2e_upgrade.js new  # data a novinky ve verzi 2
-node odmeny_v2/tests/e2e_vedle.js oddeleni                      # ostrá verze beze změn, PINy zvlášť
+sudo bash /tmp/v10/deploy/install.sh                            # ostrá verze 1.0 na /odmeny/
+BASE=http://127.0.0.1/odmeny/ node tests/e2e_upgrade.js old     # data ve verzi 1.0
+node tests/e2e_vedle.js instalace                               # verze 2 s kopií dat
+BASE=http://127.0.0.1/odmeny_v2/ node tests/e2e_upgrade.js new  # data a novinky ve verzi 2
+node tests/e2e_vedle.js oddeleni                                # ostrá verze beze změn, PINy zvlášť
 ```
 
 Proměnné pro skripty: `PW` (cesta k Playwrightu), `S` (pracovní adresář pro snímky a klíč).
 `tests/e2e_upgrade21.js` je historický test aktualizace 2.0 → 2.1 na místě (`/odmeny/`)
-z doby před oddělením verze 2.
+z doby před oddělením verze 2. Verze jsou označené tagy `v1.0`, `v2.0` a `v2.1`.
 
-Rozpracovanou verzi jde zamknout souborem `odmeny_v2/ROZPRACOVANO.md`: dokud existuje,
+Rozpracovanou verzi jde zamknout souborem `ROZPRACOVANO.md`: dokud existuje,
 `deploy/install.sh` ji odmítne nainstalovat (přebije jen `ODMENY_FORCE=1`).
 
 Knihovny: QR kódy (qrcode-generator, MIT), čtení QR (jsQR, Apache 2.0), Excel

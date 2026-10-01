@@ -1,9 +1,9 @@
 // Data ze staré verze v nové verzi na skutečném Apachi: node e2e_upgrade.js old|new
 //   old = na ostré verzi 1.0 (/odmeny/): nastavení, import, zařazení, sankce, skrytý sloupec.
 //   new = ve verzi 2 (BASE=http://127.0.0.1/odmeny_v2/ po `sudo ODMENY_KOPIE=1 bash
-//         odmeny_v2/deploy/install.sh`): stejná data, převedené osobní nastavení, historie změn,
+//         deploy/install.sh`): stejná data, převedené osobní nastavení, historie změn,
 //         matice dovedností, profil, druhá kartička s vlastním nastavením.
-// Postup je popsaný v odmeny_v2/README.md (Vývoj a testy). Proměnné: PW (cesta k playwright),
+// Postup je popsaný v README.md (Vývoj a testy). Proměnné: PW (cesta k playwright),
 // S (pracovní adresář), BASE (výchozí http://127.0.0.1/odmeny/), TOKEN_FILE.
 const { chromium } = require(process.env.PW);
 const fs = require('fs');

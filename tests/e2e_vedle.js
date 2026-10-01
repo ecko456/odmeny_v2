@@ -3,9 +3,9 @@
 //               verze nezměnila: kód, konfigurace Apache ani databáze (bajt po bajtu);
 //   oddeleni  = ostrá verze po práci ve verzi 2 dál ukazuje svoje data, zapamatovaná zařízení
 //               s PINem si verze nepřepisují a každá má vlastní data.
-// Postup (jen lokální Apache v kontejneru, nikdy ne ostrý server) je v odmeny_v2/README.md.
+// Postup (jen lokální Apache v kontejneru, nikdy ne ostrý server) je v README.md.
 // Proměnné: PW (cesta k playwright), S (pracovní adresář), HOST (výchozí http://127.0.0.1),
-// INSTALL_CMD (výchozí "ODMENY_KOPIE=1 bash odmeny_v2/deploy/install.sh").
+// INSTALL_CMD (výchozí "ODMENY_KOPIE=1 bash deploy/install.sh" z kořene repozitáře).
 const { chromium } = require(process.env.PW);
 const { execSync, execFileSync } = require('child_process');
 const crypto = require('crypto');
@@ -105,7 +105,7 @@ const summary = page => page.evaluate(() => ({ people: Object.keys(S.employees).
   if (MODE === 'instalace') {
     const before = liveFiles();
     const liveBefore = dbInfo('/var/lib/odmeny/odmeny.sqlite3');
-    execSync(process.env.INSTALL_CMD || 'ODMENY_KOPIE=1 bash odmeny_v2/deploy/install.sh', { stdio: 'inherit' });
+    execSync(process.env.INSTALL_CMD || 'ODMENY_KOPIE=1 bash deploy/install.sh', { stdio: 'inherit' });
     const after = liveFiles();
     for (const key of Object.keys(before)) check(before[key] === after[key], `ostrá verze se instalací změnila: ${key}`);
     const liveAfter = dbInfo('/var/lib/odmeny/odmeny.sqlite3');

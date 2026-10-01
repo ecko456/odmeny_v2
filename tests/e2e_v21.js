@@ -1,9 +1,9 @@
 // Prohlížečový průchod novinkami verze 2.1: navýšení platu podle úrovně a splněných podmínek
 // (docházka, plnění normy, využití fondu), import evidence práce se stráveným časem a normou
 // (výběr sloupců), pozice jen s Kafe a pravidla do PDF. Spuštění stejně jako e2e_browser.js:
-//   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t odmeny_v2 odmeny_v2/dev-router.php &
+//   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
-//   NO_PROXY=127.0.0.1 PW=$(npm root -g)/playwright S=$S node odmeny_v2/tests/e2e_v21.js
+//   NO_PROXY=127.0.0.1 PW=$(npm root -g)/playwright S=$S node tests/e2e_v21.js
 const { chromium } = require(process.env.PW);
 const fs = require('fs');
 const path = require('path');

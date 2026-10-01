@@ -1,6 +1,6 @@
 """Odměny: server, šifrovaný tok v prohlížečovém kódu a výpočty.
 
-python3 -m unittest discover -s odmeny_v2/tests
+python3 -m unittest discover -s tests
 """
 
 from datetime import datetime, timedelta, timezone
@@ -421,19 +421,14 @@ class OdmenyStaticTests(unittest.TestCase):
             self.assertNotRegex(text, r'\son(click|load|error|change|input)="', path.name)
 
     def test_deploy_keeps_apps_apart(self):
-        root = APP.parent
-        desk = (root / "deploy" / "install.sh").read_text(encoding="utf-8")
-        for name in ("odmeny", "odmeny_v2"):
-            self.assertIn(f"--exclude '/{name}/'", desk)
-        self.assertIn('rm -rf "${TARGET_DIR}/odmeny" "${TARGET_DIR}/odmeny_v2"', desk)
-        self.assertIn("|odmeny|odmeny_v2)", (root / "router.php").read_text(encoding="utf-8"))
         install = (APP / "deploy" / "install.sh").read_text(encoding="utf-8")
-        # Poznámky pro vývoj (CLAUDE.md) se na server nekopírují.
-        self.assertIn("--exclude 'CLAUDE.md'", install)
+        # Testy (i s původní aplikací), poznámky pro vývoj a dokumentace se na server nekopírují.
+        for pattern in ("--exclude '/tests/'", "--exclude 'CLAUDE.md'", "--exclude '/README.md'", "--exclude '/deploy/'"):
+            self.assertIn(pattern, install)
         conf = (APP / "deploy" / "apache-odmeny_v2.conf").read_text(encoding="utf-8")
         self.assertIn("private", conf.split("DirectoryMatch")[1])
         self.assertIn("SetEnv ODMENY_DATA_DIR /var/lib/odmeny_v2\n", conf)
-        self.assertIn("/odmeny_v2/data/", (root / ".gitignore").read_text(encoding="utf-8"))
+        self.assertIn("/data/", (APP / ".gitignore").read_text(encoding="utf-8"))
 
     def test_version_2_never_touches_live_install(self):
         # Verze 2 má vlastní adresu, kód, data i konfiguraci Apache. Ostrá /odmeny/ se jen čte

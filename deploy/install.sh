@@ -2,14 +2,14 @@
 set -euo pipefail
 
 # Instalace i aktualizace Odměn verze 2 (Ubuntu + Apache):
-#   sudo bash odmeny_v2/deploy/install.sh
+#   sudo bash /root/odmeny_v2/deploy/install.sh
 # Verze 2 běží samostatně na adrese /odmeny_v2/, vedle ostré verze na /odmeny/. Má vlastní
 # kód (/var/www/odmeny_v2), vlastní šifrovaná data (/var/lib/odmeny_v2), vlastní konfiguraci
 # Apache i vlastní přihlášení. Ostré verze (/var/www/odmeny, /var/lib/odmeny, odmeny.conf) se
 # tahle instalace nikdy nedotkne.
 #
 # Kopie ostrých dat do verze 2, ať jde zkoušet na skutečných datech:
-#   sudo ODMENY_KOPIE=1 bash odmeny_v2/deploy/install.sh
+#   sudo ODMENY_KOPIE=1 bash /root/odmeny_v2/deploy/install.sh
 # Ostrá databáze se jen čte. Když už verze 2 nějaká data má, nejdřív se zazálohují do
 # /var/lib/odmeny_v2/backups a pak je nahradí čerstvá kopie.
 #
@@ -17,16 +17,16 @@ set -euo pipefail
 # /var/lib/odmeny_v2/backups (posledních 10 kopií).
 
 if [[ "${EUID}" -ne 0 ]]; then
-  echo "Spusť instalaci přes sudo: sudo bash odmeny_v2/deploy/install.sh"
+  echo "Spusť instalaci přes sudo: sudo bash /root/odmeny_v2/deploy/install.sh"
   exit 1
 fi
 
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Pojistka: rozpracovaná verze (existuje odmeny_v2/ROZPRACOVANO.md) se neinstaluje, dokud neprojde
+# Pojistka: rozpracovaná verze (existuje ROZPRACOVANO.md) se neinstaluje, dokud neprojde
 # testy. Běžící aplikace na serveru tak zůstane beze změny.
 if [[ -f "${SOURCE_DIR}/ROZPRACOVANO.md" && "${ODMENY_FORCE:-}" != "1" ]]; then
-  echo "Tahle verze Odměn je rozpracovaná a ještě není ověřená (viz odmeny_v2/ROZPRACOVANO.md)."
+  echo "Tahle verze Odměn je rozpracovaná a ještě není ověřená (viz ROZPRACOVANO.md)."
   echo "Instalaci jsem přerušil, na serveru se nic nezměnilo."
   exit 1
 fi
@@ -145,5 +145,5 @@ if [[ -n "${SETUP_CODE}" && "${SETUP_CODE}" != *"nastavená"* ]]; then
   echo
   echo "Kód znovu vypíše:"
   echo "  sudo runuser -u www-data -- env ODMENY_DATA_DIR=${DATA_DIR} php ${TARGET_DIR}/bin/setup-token.php"
-  echo "Nebo místo nové kartičky vezmi kopii ostrých dat: sudo ODMENY_KOPIE=1 bash odmeny_v2/deploy/install.sh"
+  echo "Nebo místo nové kartičky vezmi kopii ostrých dat: sudo ODMENY_KOPIE=1 bash /root/odmeny_v2/deploy/install.sh"
 fi
