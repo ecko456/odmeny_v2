@@ -28,8 +28,9 @@ nepletou, a teď má každý vlastní repozitář:
 | **Odměny verze 2 (tady)** | `ecko456/odmeny_v2` | `/odmeny_v2/` | `/var/www/odmeny_v2` | `/var/lib/odmeny_v2` |
 
 Klony na serveru jsou `/root/trading_desk`, `/root/odmeny` a `/root/odmeny_v2`. Všechny
-repozitáře jsou **veřejné**. Historie Odměn je převzatá z `trading_desk` a verze mají tagy
-`v1.0`, `v2.0` a `v2.1`. Hashe commitů jsou jiné než v `trading_desk`.
+repozitáře jsou **veřejné**. Historie Odměn je převzatá z `trading_desk`. Verze jsou commity (tagy proxy session
+nepushne): 1.0 = `db14339`, 2.0 = `9f26efa`, 2.1 = `019af97`. Hashe commitů jsou jiné
+než v `trading_desk`.
 
 ## Kde jsme skončili
 
@@ -66,10 +67,10 @@ Stav k 1. 10. 2026:
 Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 9. 2026 platí:
 
 - **Ostrá verze `/odmeny/`**: `/var/www/odmeny`, `/var/lib/odmeny`, `odmeny.conf`.
-  - Nejspíš běží 1.0 (tag `v1.0`); ověř u uživatele, pokud na tom něco závisí.
+  - Nejspíš běží 1.0 (`db14339`); ověř u uživatele, pokud na tom něco závisí.
     Kontrola na serveru: `grep -o "ODM_VERSION = '[^']*'" /var/www/odmeny/lib/odmeny.php`
     (1.0 nevypíše nic).
-  - Její kód je v repozitáři `ecko456/odmeny` (tady jako tag `v1.0`). Odsud ji nejde omylem
+  - Její kód je v repozitáři `ecko456/odmeny` (tady jako commit `db14339`). Odsud ji nejde omylem
     přeinstalovat.
   - **Nikdy na ni nesahej** bez výslovného pokynu uživatele.
 - **Verze 2 `/odmeny_v2/`** (tento repozitář): `/var/www/odmeny_v2`, `/var/lib/odmeny_v2`,
@@ -99,9 +100,9 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 
 | verze | commit | obsah |
 |---|---|---|
-| 1.0 | tag `v1.0` | šifrovaný server, kartičky s QR, PIN zařízení, nové UI (= ostrá verze) |
-| 2.0 | tag `v2.0` | osobní pohled pro každou kartičku, historie změn, matice dovedností, profil člověka |
-| 2.1 | tag `v2.1` | navýšení platu, evidence práce s časem a ID, jen Kafe, PDF pravidel |
+| 1.0 | `db14339` | šifrovaný server, kartičky s QR, PIN zařízení, nové UI (= ostrá verze) |
+| 2.0 | `9f26efa` | osobní pohled pro každou kartičku, historie změn, matice dovedností, profil člověka |
+| 2.1 | `019af97` | navýšení platu, evidence práce s časem a ID, jen Kafe, PDF pravidel |
 | 2.1 na `/odmeny_v2/` | `main` | **aktuální**: stejný kód, oddělený od ostré verze |
 
 Verze 2.1 přidala:
@@ -341,7 +342,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
 - Snímky ukládají do `$S/oshots*`, prohlédni si je.
 - **Test „verze 2 vedle ostré“** běží na lokálním Apachi v kontejneru a maže lokální
   `/var/lib/odmeny*`. Postup je v `README.md`:
-  1. 1.0 z `git archive v1.0` na `/odmeny/`;
+  1. 1.0 z `git archive db14339` na `/odmeny/`;
   2. `e2e_upgrade.js old` (data ve verzi 1.0);
   3. `e2e_vedle.js instalace`: kopie dat; ostrý kód, konfigurace i DB musí zůstat bajt po bajtu;
   4. `e2e_upgrade.js new` s `BASE` na `/odmeny_v2/` (data a novinky ve V2);

@@ -20,7 +20,7 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
 
 - **Ostrá verze `/odmeny/`** běží dál tak, jak je. Instalace verze 2 její kód
   (`/var/www/odmeny`), data (`/var/lib/odmeny`) ani konfiguraci Apache (`odmeny.conf`) nemění.
-  Její kód je v repozitáři `odmeny` (a tady v historii jako tag `v1.0`).
+  Její kód je v repozitáři `odmeny` (a tady v historii jako commit `db14339`).
 - **Verze 2 `/odmeny_v2/`** má vlastní kód (`/var/www/odmeny_v2`), vlastní šifrovaná data
   (`/var/lib/odmeny_v2`), vlastní konfiguraci Apache (`odmeny_v2.conf`) a vlastní přihlášení.
   Zapamatované zařízení s PINem si každá verze drží zvlášť, takže si PINy nepřepisují.
@@ -212,7 +212,7 @@ nezmění (kód, konfigurace i databáze bajt po bajtu), že kopie dat sedí, ž
 zkopírovanými daty umí všechny novinky a že si verze nepletou data ani PINy:
 
 ```bash
-rm -rf /tmp/v10 && mkdir /tmp/v10 && git archive v1.0 | tar -x -C /tmp/v10
+rm -rf /tmp/v10 && mkdir /tmp/v10 && git archive db14339 | tar -x -C /tmp/v10
 sudo rm -rf /var/lib/odmeny /var/www/odmeny /var/lib/odmeny_v2 /var/www/odmeny_v2
 sudo bash /tmp/v10/deploy/install.sh                            # ostrá verze 1.0 na /odmeny/
 BASE=http://127.0.0.1/odmeny/ node tests/e2e_upgrade.js old     # data ve verzi 1.0
@@ -223,7 +223,7 @@ node tests/e2e_vedle.js oddeleni                                # ostrá verze b
 
 Proměnné pro skripty: `PW` (cesta k Playwrightu), `S` (pracovní adresář pro snímky a klíč).
 `tests/e2e_upgrade21.js` je historický test aktualizace 2.0 → 2.1 na místě (`/odmeny/`)
-z doby před oddělením verze 2. Verze jsou označené tagy `v1.0`, `v2.0` a `v2.1`.
+z doby před oddělením verze 2. Verze: 1.0 = commit `db14339`, 2.0 = `9f26efa`, 2.1 = `019af97`.
 
 Rozpracovanou verzi jde zamknout souborem `ROZPRACOVANO.md`: dokud existuje,
 `deploy/install.sh` ji odmítne nainstalovat (přebije jen `ODMENY_FORCE=1`).
