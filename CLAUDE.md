@@ -40,6 +40,8 @@ Stav k 1. 10. 2026:
   samostatně na `/odmeny_v2/` a umí si zkopírovat ostrá data.
 - Uživatel má verzi 2 nainstalovat s kopií dat a vyzkoušet ji:
   `git clone https://github.com/ecko456/odmeny_v2.git /root/odmeny_v2 && sudo ODMENY_KOPIE=1 bash /root/odmeny_v2/deploy/install.sh`.
+- **Ostrá verze se už nebude aktualizovat** (rozhodnutí uživatele, 2. 10. 2026). Jen poběží
+  a až bude verze 2 hotová, přejde se na ni. Veškerý vývoj Odměn je tady.
 - Další zadání k Odměnám se čeká.
 
 ## Pravidla spolupráce
@@ -93,8 +95,15 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 - **Řetězce pro kryptografii (`odmeny/v1`, `odmeny/data/v1`, `odmeny/dek|…`, `odmeny/prefs/v1|…`)
   se nesmí měnit.** Kopie ostrých dat by se pak nedala rozšifrovat.
 - V UI je vidět „verze 2“ (titulek, zámek, boční panel).
-- Až se V2 osvědčí, bude potřeba domluvit převod: čerstvá kopie dat a přepnutí adresy,
-  nebo instalace V2 na `/odmeny/`. Zatím se nic takového nedělá.
+- **Přechod na verzi 2** (až bude hotová a uživatel ho odsouhlasí) bude potřeba naplánovat
+  a vyzkoušet na lokálním Apachi:
+  1. čerstvá kopie ostrých dat (`ODMENY_KOPIE=1`, starší data V2 jdou do zálohy);
+  2. kontrola dat ve V2 uživatelem;
+  3. přepnutí adresy: buď přesměrovat `/odmeny/` na `/odmeny_v2/`, nebo nainstalovat V2
+     na `/odmeny/`. Pozor na klíč zapamatovaného zařízení, ten závisí na cestě.
+
+  Ostrá data zůstanou jako záloha, dokud uživatel přechod nepotvrdí. Zatím se nic
+  takového nedělá.
 
 ## Verze a stav
 
