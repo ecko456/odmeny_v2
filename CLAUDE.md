@@ -82,7 +82,15 @@ Otevřené otázky (zeptáno 2. 10. 2026, čeká se na odpověď):
   Dnes je jen v šifrovaných Odměnách.
 - Popis každého modulu: co se eviduje, kdo s ním pracuje, vzorová data.
 - Co znamená třídění zakázek, odkud zakázky přijdou a kolik jich je.
-- Parametry serveru (CPU, RAM, disk, GPU) kvůli AI modelu.
+- ~~Parametry serveru~~ (zjištěno 2. 10. 2026):
+  - VPS s 1,9 GB RAM (volné asi 1,5 GB), **bez swapu a bez GPU** (virtio VGA);
+  - AMD EPYC, 45 GB volného disku; počet jader zatím neznámý (`nproc` chyběl ve výstupu).
+  - Závěr: **jazykový model na tomhle serveru ne.** Modely, které by se vešly (0,5–1,5 mld.
+    parametrů), česky skoro nerozumí. Bez swapu by navíc hrozilo, že systém při nedostatku
+    paměti shodí Apache, a s ním Odměny i Trading Desk.
+  - Doporučeno: třídění pravidly a „učícím se třídičem“ (malý statistický model naučený na
+    dříve roztříděných zakázkách, pár MB RAM, vše na serveru).
+  - Jazykový model až po navýšení RAM na 8–16 GB, pokud bude potřeba.
 - Který modul jako první.
 
 ## Pravidla spolupráce
