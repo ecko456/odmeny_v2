@@ -42,7 +42,48 @@ Stav k 1. 10. 2026:
   `git clone https://github.com/ecko456/odmeny_v2.git /root/odmeny_v2 && sudo ODMENY_KOPIE=1 bash /root/odmeny_v2/deploy/install.sh`.
 - **Ostrá verze se už nebude aktualizovat** (rozhodnutí uživatele, 2. 10. 2026). Jen poběží
   a až bude verze 2 hotová, přejde se na ni. Veškerý vývoj Odměn je tady.
-- Další zadání k Odměnám se čeká.
+- **Nové zadání:** víc modulů v jedné aplikaci (viz „Plán: víc modulů v jedné aplikaci“).
+  Čeká se na odpovědi na otevřené otázky.
+
+## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
+
+Uživatel chce z verze 2 udělat **jednu multifunkční aplikaci s moduly**, ať se nemusí
+tvořit další aplikace:
+
+1. **Odměny**: dnešní aplikace, **jediný šifrovaný modul** (zero-knowledge jako dnes).
+2. **Třídění zakázek**: s AI asistentem.
+3. **Výdej nářadí**.
+4. **Expedice na WPA**.
+5. **Příjem a zaskladnění**.
+
+Požadavky uživatele:
+
+- Po načtení stránky se ukáže **jen přihlášení**. **Admin vidí všechno.**
+- Admin si **vygeneruje odkazy do konkrétního modulu**: kdo přijde přes odkaz, vidí jen
+  ten modul.
+- **Šifrované jsou jen Odměny**, ostatní moduly bez šifrování (data na serveru).
+- Moduly nesmí nijak zasahovat do Odměn.
+- **AI nesmí posílat data třetí straně, vše jen na serveru.** Claude ani jiná cloudová AI proto
+  nepřipadá v úvahu. Řešení je lokální model s otevřenými váhami na serveru (llama.cpp nebo
+  Ollama, poslouchá jen na 127.0.0.1, PHP k němu pouští až po přihlášení). Pozor: model data
+  při zpracování vidí nešifrovaná, i když neopustí server. Pro jasná pravidla (termín, stroj,
+  oddělení) může být lepší třídit bez AI a AI použít jen na volný text.
+
+Navržený postup:
+
+1. Platforma: přihlášení, role admin, odkazy (přístupy) do modulů, oddělená úložiště
+   modulů. Testy musí ukázat, že Odměny zůstaly beze změny.
+2. Pak moduly po jednom, každý podle zadání a vzorových dat od uživatele.
+
+Otevřené otázky (zeptáno 2. 10. 2026, čeká se na odpověď):
+
+- Mají být odkazy do modulů pro stanoviště (tablet), nebo osobní (kdo co udělal)?
+- Smí být seznam lidí (jméno + osobní číslo) nešifrovaně na serveru pro ostatní moduly?
+  Dnes je jen v šifrovaných Odměnách.
+- Popis každého modulu: co se eviduje, kdo s ním pracuje, vzorová data.
+- Co znamená třídění zakázek, odkud zakázky přijdou a kolik jich je.
+- Parametry serveru (CPU, RAM, disk, GPU) kvůli AI modelu.
+- Který modul jako první.
 
 ## Pravidla spolupráce
 
