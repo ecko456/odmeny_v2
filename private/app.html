@@ -22,6 +22,7 @@
       <button type="button" data-view="sankce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg><span>Sankce</span></button>
       <button type="button" data-view="dochazka"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 13.5h2M14 13.5h2M8 17h2"/></svg><span>Docházka</span></button>
       <button type="button" data-view="vyroba"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5.5 20.5V11l5 3V11l5 3V6.5h3v14"/></svg><span>Výroba</span></button>
+      <button type="button" data-view="top5"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17"/><path d="M6.5 16.5v-9M11 16.5v-6M15.5 16.5v-3.5M20 16.5v-1.5"/><path d="m6.5 4 4 3.5 4.5 3 4.5 2"/></svg><span>Top 5</span><em class="nav-badge" id="navTop5" hidden></em></button>
       <button type="button" data-view="pozice"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M4 12h16M4 17h7"/><circle cx="17" cy="7" r="2"/><circle cx="14" cy="17" r="2"/></svg><span>Pozice</span></button>
       <button type="button" data-view="nastaveni"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Nastavení</span></button>
     </nav>
@@ -206,6 +207,23 @@
       <div id="prodMsg"></div>
       <div id="prodPair"></div>
       <div id="prodView"></div>
+    </section>
+
+    <!-- ============ TOP 5 NEJMÉNĚ EFEKTIVNÍCH ============ -->
+    <section class="view" id="view-top5" aria-labelledby="t5Title">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Průtok dílů</p>
+          <h1 id="t5Title">Top 5 nejméně efektivně</h1>
+          <p class="lede">Každý týden pět dílů s nejnižším plněním normy (norma ÷ strávený čas). Ke každému se vede případ: proč se to stalo, co s tím jde dělat, okamžitá opatření, opatření s procesním časem a dvě ověření účinnosti. Když se problém vrátí, otevře se znovu původní případ.</p>
+        </div>
+        <div class="page-actions noprint">
+          <button class="btn sec" type="button" id="t5Settings">Nastavení</button>
+          <button class="btn sec" type="button" id="t5SummaryPdf">Souhrn do PDF</button>
+        </div>
+      </header>
+      <div class="chips t5-tabs" id="t5Tabs"></div>
+      <div id="t5View"></div>
     </section>
 
     <!-- ============ POZICE ============ -->

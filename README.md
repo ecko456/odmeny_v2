@@ -55,6 +55,36 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   kartičky a nemáš zapamatované zařízení, k datům se už nedostane nikdo, ani správce
   serveru. Vytiskni si proto dvě kartičky a jednu ulož bokem.
 
+## Co je nového ve verzi 2.2
+
+- **Top 5 nejméně efektivně** (nová část v menu, pro auditora průtoku dílů a dodávek včas).
+  - **Týden** (pondělí až neděle): ruční zápis pěti dílů s nejhorším plněním normy. U každého
+    se zapíše EAN, název dílu, strávený čas a norma (v hodinách, nebo v minutách podle
+    Nastavení modulu, čas jde psát i jako 13:30). Plnění = norma ÷ strávený čas, neplnění =
+    100 % − plnění, ztráta = strávený čas nad normou; řádky se seřadí od nejhoršího. Název
+    dílu se doplní podle EAN, když už ho aplikace zná.
+  - **Případ** ke každému dílu: proč se to stalo (kategorie a popis), co s tím jde dělat,
+    co jde udělat hned (okamžitá opatření), co si vyžádá procesní čas (např. žádost
+    o pohledovost, přípravek s technologií) s odpovědnou osobou a termínem.
+  - **Ověření účinnosti**: 1. ověření 14 dní po dokončení všech opatření, 2. ověření 30 dní
+    po prvním (lhůty i cílové plnění jdou změnit, termín jde posunout s důvodem). U ověření
+    se zapíše strávený čas a norma za období, plnění se dopočítá. Neúčinné ověření uzavře kolo.
+  - **Žádné duplicitní řešení**: jeden díl = jeden případ. Když se díl vrátí do Top 5 nebo
+    ověření ukáže, že řešení nestačilo, otevře se v témž případu nové kolo s důvodem.
+    Předchozí kola zůstanou vidět („co se už zkoušelo“). Každá změna se zapíše do historie
+    případu i do historie změn aplikace (kdo a kdy).
+  - **Termíny**: opatření a ověření po termínu, do 7 dní a později; odznak v menu.
+  - **PDF pro auditora**: týdenní report (pořadí, ukazatele, řešení u každého dílu, termíny,
+    podpisy; vydaný report se uloží a jde znovu stáhnout, změna obsahu zvýší revizi),
+    souhrn všech případů (stavy, plnění před a po opatřeních, registr, úspěšnost ověření)
+    a PDF jednoho případu s kompletní historií.
+  - **Do budoucna z evidence práce**: když import evidence práce obsahuje sloupec EAN,
+    týden bez ručního zápisu ukáže výpočet z importu a jde ho jedním tlačítkem převzít
+    do zápisu.
+- **Oprava importu evidence práce**: ručně vybraný sloupec EAN se v dialogu sloupců nenačetl.
+- **Aktualizace bez ztráty dat:** všechna data z 2.1 zůstanou, Top 5 začne prázdný. Stránka
+  otevřená ještě ve verzi 2.1 už nesmí uložit (nová data by zahodila) a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.1
 
 - **Navýšení platu podle úrovně.** U každé úrovně pozice jde nastavit navýšení platu v %
@@ -204,7 +234,19 @@ v hlavičce každého skriptu:
 - `tests/e2e_v2.js`: novinky 2.0 (osobní nastavení dvou kartiček, historie změn
   s odznakem, matice, profil, export);
 - `tests/e2e_v21.js`: novinky 2.1 (seznam ID, evidence práce s ID, časem a normou a výběr
-  sloupců, navýšení platu, jen Kafe, PDF s pravidly, historie, mobil).
+  sloupců, navýšení platu, jen Kafe, PDF s pravidly, historie, mobil);
+- `tests/e2e_top5.js`: novinky 2.2 (ruční zápis Top 5 týdne, případ, opatření, ověření
+  s ručními hodnotami, nové kolo, termíny, vydaný report, souhrn a PDF případu, jednotka
+  času, předvyplnění z evidence práce s EAN, mobil, tmavý režim).
+
+**Aktualizace 2.1 → 2.2 na místě** na lokálním Apachi v kontejneru (stará stránka dostane
+426, sdílená data, výpočty a historie zůstanou, Top 5 se uloží nad převzatými daty):
+
+```bash
+rm -rf /tmp/v21 && mkdir /tmp/v21 && git archive e762813 | tar -x -C /tmp/v21
+sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v21/deploy/install.sh
+UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade22.js
+```
 
 **Verze 2 vedle ostré verze** na lokálním Apachi v kontejneru (maže lokální `/var/lib/odmeny*`
 a `/var/www/odmeny*`, **nikdy ne na ostrém serveru**). Ověří, že instalace ostrou verzi

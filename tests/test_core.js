@@ -256,7 +256,7 @@ test('historie změn: kdo co změnil, slučování a návrat hodnoty', () => {
   assert.ok(out.late.some(t => t === 'Ruční úprava Novák Martin (' + m + '): +3 → 0'), 'po 10 minutách se neslučuje');
   assert.strictEqual(out.hasCurrent, false, 'vybrané období je osobní');
   assert.ok(!out.settings.includes('hiddenCols') && !out.settings.includes('lockMinutes'));
-  assert.strictEqual(out.v, 3);
+  assert.strictEqual(out.v, 4);
   return null;
 });
 
@@ -297,7 +297,7 @@ test('sanitizeState: oddělení, zaučení, historie zařazení a změn', () => 
   assert.deepStrictEqual(o.issued['2026-09']['c|d'], { at: 1, tabaky: 2, kafe: false });
   assert.strictEqual(o.log.length, 1);
   assert.deepStrictEqual(o.log[0], { at: 1, by: 'x'.repeat(60), card: '', kind: 'data', text: '<img src=x>', key: 'a|b', m: 'adj:1', p: 'P', v0: '1', v1: '2' });
-  assert.strictEqual(o.v, 3);
+  assert.strictEqual(o.v, 4);
   return null;
 });
 
@@ -360,6 +360,7 @@ test('aktualizace 2.0 → 2.1: data zůstanou beze změny', () => {
   const out = JSON.parse(run(core, `
     /* stav, jak ho uložila verze 2.0: bez navýšení platu, „jen Kafe“, času a normy */
     const old = JSON.parse(JSON.stringify(sanitizeState(demoData())));
+    delete old.eff;
     old.positions.forEach(p => { delete p.onlyKafe; p.levels.forEach(l => { delete l.raise; delete l.minAtt; delete l.minNorm; delete l.minUse; }); });
     Object.values(old.production).forEach(pp => { delete pp.time; Object.values(pp.names).forEach(r => { delete r.spent; delete r.norm; delete r.nspent; }); });
     delete old.settings.prodCols;
@@ -375,7 +376,7 @@ test('aktualizace 2.0 → 2.1: data zůstanou beze změny', () => {
     const neu = sanitizeState(JSON.parse(JSON.stringify(old)));
     const strip = st => { const c = JSON.parse(JSON.stringify(st));
       c.positions.forEach(p => { delete p.onlyKafe; p.levels.forEach(l => { delete l.raise; delete l.minAtt; delete l.minNorm; delete l.minUse; }); });
-      delete c.settings.prodCols; delete c.v; return c; };
+      delete c.settings.prodCols; delete c.v; delete c.eff; return c; };
     const o2 = JSON.parse(JSON.stringify(old)); delete o2.v;
     /* porovnání bez ohledu na pořadí klíčů */
     const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
@@ -388,7 +389,7 @@ test('aktualizace 2.0 → 2.1: data zůstanou beze změny', () => {
   assert.ok(out.again, 'opakované načtení nic nemění');
   assert.ok(out.defaults, 'nové volby mají výchozí hodnoty: s tabáky, bez navýšení a podmínek');
   assert.strictEqual(out.time, false, 'stará evidence práce nemá strávený čas');
-  assert.strictEqual(out.v, 3);
+  assert.strictEqual(out.v, 4);
   assert.ok(out.rows.every(r => r[5] === 0), 'bez nastavení nikdo nedostane navýšení');
   return null;
 });
@@ -567,6 +568,261 @@ test('ID zaměstnanců v evidenci práce', () => {
   assert.ok(out.log.includes('Černý Jiří: ID v evidenci práce — → A7'), out.log.join(' | '));
   assert.strictEqual(out.clean.length, 40);
   assert.deepStrictEqual(out.keys, ['123', 'ab-1', '12']);
+  return null;
+});
+
+/* ================= verze 2.2: Top 5 nejméně efektivních položek ================= */
+
+/** Evidence práce se sloupci pro Top 5: zakázka, pracovník, datum, EAN, název, kusy, čas, norma. */
+const EFF_HEAD = ['Zakázka', 'Pracovník', 'Datum', 'EAN', 'Název položky', 'Kusy', 'Strávený čas (min)', 'Norma (min)'];
+function effRows() {
+  const rows = [];
+  const add = (who, day, ean, name, ks, spent, normMin) => rows.push(['Z' + rows.length, who, day, ean, name, ks, spent, normMin]);
+  /* T40/2026 (28. 9. – 4. 10.) přes dva měsíce a T41/2026 (5.–11. 10.) */
+  add('Petr Dvořák', '30.9.2026', 8591234567890, 'Držák levý', 10, 120, 60);
+  add('Jana Svobodová', '2.10.2026', 8591234567890, 'Držák levý', 6, 100, 40);
+  add('Petr Dvořák', '1.10.2026', 'A-77', 'Kryt', 20, 200, 190);
+  add('Petr Dvořák', '6.10.2026', 8591234567890, 'Držák levý', 8, 150, 60);
+  add('Jana Svobodová', '7.10.2026', '859 1234 567 890', 'Držák levý', 4, 90, 30);
+  add('Petr Dvořák', '6.10.2026', 'B-1', 'Hřídel', 5, 300, 240);
+  add('Martin Novák', '8.10.2026', 'C-9', 'Podložka', 50, 30, 10);
+  add('Martin Novák', '8.10.2026', 'D-4', 'Víko', 12, 240, 250);
+  add('Martin Novák', '9.10.2026', 'E-2', 'Pouzdro', 7, 200, 150);
+  add('Petr Dvořák', '9.10.2026', '', '', 3, 60, 60);
+  /* po opatřeních (dokončena 13. 10.) se držák zlepší */
+  add('Petr Dvořák', '19.10.2026', 8591234567890, 'Držák levý', 12, 100, 90);
+  add('Jana Svobodová', '22.10.2026', 8591234567890, 'Držák levý', 10, 80, 75);
+  add('Petr Dvořák', '10.11.2026', 8591234567890, 'Držák levý', 9, 120, 60);
+  return [['Export evidence práce'], EFF_HEAD, ...rows];
+}
+
+test('Top 5: EAN v evidenci práce, souhrny po dnech a pracovnících', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const aoa = ${JSON.stringify(effRows())};
+    const info = prodColumns(aoa);
+    const res = buildProduction(aoa, 'evidence.xlsx', info.guess);
+    const oct = res.buckets['2026-10'], sep = res.buckets['2026-09'];
+    const clean = cleanProdCols({ ...info.guess, heads: info.heads });
+    /* bez sloupce EAN se nic nezmění (soubory jako ve verzi 2.1) */
+    const old = buildProduction([['Pracovník', 'Datum', 'Kusy', 'Čas'], ['Petr Dvořák', '3.8.2026', 4, 30]], 'x.xlsx', { header: 0, name: 0, date: 1, ks: 2, spent: 3 });
+    /* podvržená data: položka s datem jiného měsíce, prototyp, nesmysly */
+    const bad = JSON.parse(JSON.stringify(oct));
+    bad.items['__proto__'] = { d: { '2026-10-05': [1, 1, 1, 1, 1] } };
+    bad.items['X'] = { name: 'x'.repeat(300), d: { '2026-09-05': [1, 1, 1, 1, 1], 'nesmysl': [1] }, w: {} };
+    bad.items['Y'] = { name: 'Y', d: { '2026-10-05': ['a', -5, 1e20, null] }, w: { 'petr dvorak': { '2026-10-05': [1, 2] } } };
+    S.production = { '2026-09': sep, '2026-10': bad };
+    const st = sanitizeState(JSON.parse(JSON.stringify(S)));
+    JSON.stringify({ guess: info.guess, used: res.used, oct: oct.items, sepKeys: Object.keys(sep.items), names: oct.names['petr dvorak'],
+      clean: [clean.item, clean.iname], oldItems: 'items' in old.buckets['2026-08'],
+      st: st.production['2026-10'].items, eff: st.eff, v: st.v })`));
+  assert.deepStrictEqual([out.guess.name, out.guess.date, out.guess.item, out.guess.iname, out.guess.ks, out.guess.spent, out.guess.norm], [1, 2, 3, 4, 5, 6, 7], 'EAN a název položky se poznají z hlavičky, „Zakázka“ ne');
+  assert.strictEqual(out.used, 13);
+  const d = out.oct['8591234567890'];
+  assert.strictEqual(d.name, 'Držák levý');
+  assert.deepStrictEqual(d.d['2026-10-06'], [8, 150, 60, 150, 1]);
+  assert.deepStrictEqual(d.d['2026-10-07'], [4, 90, 30, 90, 1], 'EAN s mezerami je stejná položka');
+  assert.deepStrictEqual(d.w['jana svobodova']['2026-10-07'], [90, 30, 90, 4]);
+  assert.deepStrictEqual(out.sepKeys.sort(), ['8591234567890'], 'řádky se rozdělí do měsíců podle data');
+  assert.ok(!('' in out.oct), 'řádek bez EAN do položek nepatří');
+  assert.strictEqual(out.names.count, 5, 'řádek bez EAN se v evidenci lidí počítá dál');
+  assert.deepStrictEqual(out.clean, [3, 4]);
+  assert.strictEqual(out.oldItems, false, 'soubor bez EAN nemá položky');
+  assert.deepStrictEqual(Object.keys(out.st).sort(), ['8591234567890', 'A-77', 'B-1', 'C-9', 'D-4', 'E-2', 'Y'].sort(), 'jiný měsíc a prototyp pryč');
+  assert.deepStrictEqual(out.st.Y.d['2026-10-05'], [0, 0, 1e9, 0, 0]);
+  assert.deepStrictEqual(out.st.Y.w['petr dvorak']['2026-10-05'], [1, 2, 0, 0]);
+  assert.deepStrictEqual(out.eff, { weeks: {}, cases: [], reports: [], settings: { min: 60, target: 85, d1: 14, d2: 30, unit: 'h' } });
+  assert.strictEqual(out.v, 4);
+  return null;
+});
+
+test('Top 5: týdny ISO a žebříček týdne', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const res = buildProduction(${JSON.stringify(effRows())}, 'evidence.xlsx', prodColumns(${JSON.stringify(effRows())}).guess);
+    Object.assign(S.production, res.buckets);
+    const w41 = weekRanking('2026-W41'), w40 = weekRanking('2026-W40'), hist = topHistory();
+    S.eff.settings.min = 210; _effCache = null;
+    const strict = weekRanking('2026-W41');
+    JSON.stringify({
+      w1: isoWeek('2026-10-07'), w53: isoWeek('2027-01-01').id, w1y: isoWeek('2026-12-31').id, bad: weekById('2025-W53'), ok53: weekById('2026-W53'),
+      ranges: [weekRange(weekById('2026-W41')), weekRange(weekById('2026-W40')), weekRange(weekById('2026-W53'))], names: [weekName('2026-W41'), weekLong('2026-W41')],
+      shift: [shiftWeek('2026-W53', 1), shiftWeek('2026-W01', -1)],
+      top41: w41.top.map(r => [r.ean, Math.round(r.eff * 10) / 10, Math.round(r.lost)]), tot41: Math.round(w41.tot.eff * 10) / 10, items41: w41.items, under41: w41.under, small41: w41.small,
+      top40: w40.top.map(r => [r.ean, Math.round(r.eff * 10) / 10]), weeks: effWeeks(), strict: strict.top.map(r => r.ean), hist,
+      trend: itemTrend('8591234567890', '2026-W43', 4), workers: itemWorkers('8591234567890', '2026-10-05', '2026-10-11').map(w => [w.name, Math.round(w.eff)]) })`));
+  assert.deepStrictEqual(out.w1, { id: '2026-W41', y: 2026, w: 41, from: '2026-10-05', to: '2026-10-11' });
+  assert.strictEqual(out.w53, '2026-W53', '1. 1. 2027 patří do 53. týdne roku 2026');
+  assert.strictEqual(out.w1y, '2026-W53');
+  assert.strictEqual(out.bad, null, '2025 má jen 52 týdnů');
+  assert.strictEqual(out.ok53.from, '2026-12-28');
+  assert.deepStrictEqual(out.ranges, ['5.–11. 10. 2026', '28. 9. – 4. 10. 2026', '28. 12. 2026 – 3. 1. 2027']);
+  assert.deepStrictEqual(out.names, ['T41/2026', 'Týden 41/2026 (5.–11. 10. 2026)']);
+  assert.deepStrictEqual(out.shift, ['2027-W01', '2025-W52']);
+  /* T41: držák 90/240 = 37,5 %, podložka 33 % ale jen 30 min (pod limitem 60 min), hřídel 80 %, pouzdro 75 %, víko nad normou */
+  assert.deepStrictEqual(out.top41, [['8591234567890', 37.5, 150], ['E-2', 75, 50], ['B-1', 80, 60]]);
+  assert.strictEqual(out.items41, 5);
+  assert.strictEqual(out.under41, 4);
+  assert.strictEqual(out.small41, 1, 'podložka je pod 60 min');
+  assert.strictEqual(out.tot41, 73.3, 'plnění týdne ze všech položek: 740 / 1010 min (řádek bez EAN se nepočítá)');
+  assert.deepStrictEqual(out.top40, [['8591234567890', 45.5], ['A-77', 95]], 'týden přes dva měsíce');
+  assert.deepStrictEqual(out.weeks, ['2026-W46', '2026-W43', '2026-W41', '2026-W40']);
+  assert.deepStrictEqual(out.strict, ['8591234567890', 'B-1'], 'vyšší limit: položky s méně než 210 min vypadnou');
+  assert.deepStrictEqual(out.hist['8591234567890'], ['2026-W40', '2026-W41', '2026-W43', '2026-W46'], 'v T43 je pod normou (91,7 %) taky');
+  assert.deepStrictEqual(out.trend.map(t => t.eff), [45.5, 37.5, null, 91.7]);
+  assert.deepStrictEqual(out.workers, [['Dvořák Petr', 40], ['Svobodová Jana', 33]]);
+  return null;
+});
+
+test('Top 5: případ, opatření, ověření po 14 a 30 dnech, nové kolo a historie', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const aoa = ${JSON.stringify(effRows())};
+    Object.assign(S.production, buildProduction(aoa, 'evidence.xlsx', prodColumns(aoa).guess).buckets);
+    const meta = (d, by = 'Vedoucí dílny') => ({ at: Date.UTC(2026, +d.slice(5, 7) - 1, +d.slice(8, 10), 9), by });
+    const before = sharedState(S);
+    const c = createCase('8591234567890', '2026-W41', meta('2026-10-12'));
+    const s0 = caseState(c, '2026-10-12');
+    const r = curRound(c);
+    r.cat = 'stroj'; r.cause = 'Chybí přípravek, díl se upíná ručně.'; r.options = 'Přípravek, úprava postupu.';
+    effNote(c, meta('2026-10-12'), 'Doplněna příčina', true);
+    r.actions.push({ id: 'a1', kind: 'now', text: 'Upínání ve svěráku s dorazem', owner: 'Mistr', due: '', done: '', note: '' });
+    r.actions.push({ id: 'a2', kind: 'process', text: 'Přípravek ve spolupráci s technologií', owner: 'Technologie', due: '2026-10-20', done: '', note: '' });
+    const s1 = caseState(c, '2026-10-21');
+    r.actions[0].done = '2026-10-12'; r.actions[1].done = '2026-10-13';
+    const s2 = caseState(c, '2026-10-14');
+    const live = measureItem(c.ean, verifyWindow(r, 0).from, '2026-10-27');
+    recordVerify(c, 0, '2026-10-27', 'ok', '', meta('2026-10-27'));
+    const s3 = caseState(c, '2026-10-28');
+    const dl = effDeadlines('2026-11-30');
+    recordVerify(c, 1, '2026-11-26', 'fail', 'Plnění zase spadlo.', meta('2026-11-26'));
+    const s4 = caseState(c, '2026-11-26');
+    reopenCase(c, 'Přípravek nestačí na druhou stranu dílu.', '2026-W46', meta('2026-11-27'));
+    const s5 = caseState(c, '2026-11-27');
+    const c2 = createCase('B-1', '2026-W41', meta('2026-10-12', 'Mistr noční'));
+    cancelCase(c2, 'Chyba v evidenci, norma opravena.', meta('2026-10-13'));
+    const after = sharedState(S);
+    const changes = describeChanges(before, after, { at: Date.now(), by: 'Vedoucí dílny', card: 'a'.repeat(16) }).entries.map(e => e.text);
+    const rep1 = issueWeekReport('2026-W41', meta('2026-10-12'));
+    const rep1b = issueWeekReport('2026-W41', meta('2026-10-12'));
+    curRound(c).cause = 'Nová příčina';
+    const rep2 = issueWeekReport('2026-W41', meta('2026-10-13'));
+    const again = sanitizeState(JSON.parse(JSON.stringify(sharedState(S))));
+    const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+    const evil = cleanEff({ cases: [{ id: 'x', no: '<b>', ean: 'E', rounds: [{}] }, { id: 'y', no: '2026-001', ean: '', rounds: [{}] },
+      { id: 'z', no: '2026-002', ean: 'E', rounds: [{ v: [{ done: '2026-10-01', result: 'fail' }, { done: '2026-10-30', result: 'ok' }], cat: 'hack', actions: [{ kind: 'x', done: 'zítra' }] }] }],
+      settings: { min: -5, target: 1e9, d1: 0, d2: 'x' } });
+    JSON.stringify({ no: c.no, no2: c2.no, base: c.base, states: [s0, s1, s2, s3, s4, s5].map(s => [s.k, s.due, s.late]),
+      v: curRound(c).v, round1: c.rounds[0].v.map(v => [v.result, v.eff, v.from, v.to, v.plan]), rounds: c.rounds.length, live,
+      reopenBase: c.rounds[1].base, of: caseOfItem('8591234567890').id === c.id, ofCancelled: caseOfItem('B-1'),
+      dl: dl.map(x => [x.date, x.kind, x.late]), log: c.log.map(e => e.t), changes, sum: effSummary('2026-11-27'), ba: caseBeforeAfter(c),
+      reps: [rep1.rev, rep1b === rep1, rep2.rev, S.eff.reports.length], repTop: rep2.data.top.map(t => [t.ean, t.case === c.id, t.times]),
+      repCase: rep2.data.cases.map(x => [x.no, 'log' in x]), same: JSON.stringify(canon(again.eff)) === JSON.stringify(canon(sharedState(S).eff)), evil })`));
+  assert.strictEqual(out.no, '2026-001');
+  assert.strictEqual(out.no2, '2026-002');
+  assert.deepStrictEqual([out.base.eff, out.base.nspent, out.base.norm, out.base.workers], [37.5, 240, 90, 2]);
+  assert.deepStrictEqual(out.states, [
+    ['new', '', false],
+    ['act', '2026-10-20', true],
+    ['v1', '2026-10-27', false],
+    ['v2', '2026-11-26', false],
+    ['fail', '', false],
+    ['new', '', false],
+  ], 'analýza → opatření (po termínu) → 1. ověření 14 dní po dokončení → 2. ověření 30 dní po prvním → neúčinné → nové kolo');
+  assert.deepStrictEqual(out.live, { eff: 91.7, nspent: 180, norm: 165, spent: 180, ks: 22, rows: 2, workers: 2 }, 'plnění po opatřeních 14.–27. 10.');
+  assert.deepStrictEqual(out.round1, [['ok', 91.7, '2026-10-14', '2026-10-27', '2026-10-27'], ['fail', 50, '2026-10-28', '2026-11-26', '2026-11-26']]);
+  assert.strictEqual(out.rounds, 2, 'původní kolo zůstává, problém se znovu otevře v témž případu');
+  assert.deepStrictEqual(out.v, []);
+  assert.strictEqual(out.reopenBase.eff, 50);
+  assert.ok(out.of, 'položka má pořád jeden případ');
+  assert.strictEqual(out.ofCancelled, null, 'zrušený případ položku neblokuje');
+  assert.deepStrictEqual(out.dl, [['2026-11-26', 'v2', true]]);
+  assert.deepStrictEqual(out.log, [
+    'Případ založen z Top 5 T41/2026, plnění 37,5 %',
+    'Doplněna příčina',
+    '1. ověření 27. 10. 2026: účinné (plnění 91,7 % za 14. 10.–27. 10. 2026)',
+    '2. ověření 26. 11. 2026: neúčinné (plnění 50 % za 28. 10.–26. 11. 2026). Plnění zase spadlo.',
+    'Znovu otevřeno, kolo 2 (T46/2026, plnění 50 %): Přípravek nestačí na druhou stranu dílu.',
+  ]);
+  assert.ok(out.changes.includes('P-2026-001 (8591234567890, Držák levý): Znovu otevřeno, kolo 2 (T46/2026, plnění 50 %): Přípravek nestačí na druhou stranu dílu.'), out.changes.join(' | '));
+  assert.ok(out.changes.includes('P-2026-002 (B-1, Hřídel): Případ zrušen: Chyba v evidenci, norma opravena.'), out.changes.join(' | '));
+  assert.strictEqual(out.changes.length, 7, 'každý záznam z historie případů jednou');
+  assert.deepStrictEqual([out.sum.total, out.sum.open, out.sum.verify, out.sum.fail, out.sum.ok, out.sum.zrus, out.sum.reopened, out.sum.verifs, out.sum.verifOk],
+    [2, 1, 0, 0, 0, 1, 1, 2, 1]);
+  assert.deepStrictEqual(out.ba, { before: 37.5, after: 50, afterDate: '2026-11-26' });
+  assert.deepStrictEqual(out.reps, [1, true, 2, 1], 'stejný obsah = stejná revize, změna = nová revize, report za týden je jeden');
+  assert.deepStrictEqual(out.repTop, [['8591234567890', true, 2], ['E-2', false, 1], ['B-1', false, 1]]);
+  assert.deepStrictEqual(out.repCase, [['2026-001', false]], 'report nese kopii případu bez historie');
+  assert.ok(out.same, 'případy a reporty přežijí uložení a načtení beze změny');
+  assert.deepStrictEqual(out.evil.cases.map(x => x.no), ['2026-002'], 'neplatné číslo nebo EAN pryč');
+  assert.deepStrictEqual(out.evil.cases[0].rounds[0].v.map(v => v.result), ['fail'], 'po neúčinném ověření další ověření nedává smysl');
+  assert.deepStrictEqual([out.evil.cases[0].rounds[0].cat, out.evil.cases[0].rounds[0].actions[0].kind, out.evil.cases[0].rounds[0].actions[0].done], ['', 'now', '']);
+  assert.deepStrictEqual(out.evil.settings, { min: 0, target: 200, d1: 1, d2: 30, unit: 'h' });
+  return null;
+});
+
+test('Top 5: ruční zápis týdne (EAN, díl, strávený čas, norma) má přednost před importem', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const aoa = ${JSON.stringify(effRows())};
+    Object.assign(S.production, buildProduction(aoa, 'evidence.xlsx', prodColumns(aoa).guess).buckets);
+    const before = sharedState(S);
+    S.eff.weeks['2026-W41'] = { at: 1, by: 'Vedoucí dílny', items: [
+      { id: 'e1', ean: '111', name: 'Držák', spent: 600, norm: 240 },
+      { id: 'e2', ean: '222', name: 'Kryt', spent: 300, norm: 270 },
+      { id: 'e3', ean: '', name: 'rozepsaný řádek', spent: 0, norm: 0 } ] };
+    _effCache = null;
+    const top = weekTop('2026-W41'), imp = weekTop('2026-W40');
+    const meta = { at: Date.UTC(2026, 9, 12, 9), by: 'Vedoucí dílny' };
+    const c = createCase('111', '2026-W41', meta);
+    curRound(c).actions.push({ id: 'a1', kind: 'now', text: 'Doraz', owner: '', due: '', done: '2026-10-13', note: '' });
+    recordVerify(c, 0, '2026-10-27', 'ok', '', meta, { spent: 300, norm: 285 });
+    const rep = weekReportData('2026-W41', '2026-10-12');
+    const changes = describeChanges(before, sharedState(S), meta).entries.map(e => e.text);
+    const evil = cleanEff({ weeks: { '2026-W41': { items: [1, 2, 3, 4, 5, 6, 7].map(i => ({ id: '<x>', ean: ' 12 34 ', name: 'n', spent: -5, norm: 'x' })) }, 'nesmysl': { items: [{ ean: 'A' }] } } });
+    S.eff.weeks = {}; _effCache = null;
+    const copied = importWeekToManual('2026-W41', meta);
+    JSON.stringify({ top: top.items.map(e => [e.ean, e.eff, e.lost]), src: [top.src, imp.src], weeks: (_effCache = null, effWeeks()).slice(0, 2),
+      base: c.base, name: c.name, v: curRound(c).v[0], rep: [rep.src, rep.items, rep.tot, rep.top.map(t => [t.ean, t.eff, t.case === c.id])],
+      changes, evil: [Object.keys(evil.weeks), evil.weeks['2026-W41'].items.length, evil.weeks['2026-W41'].items[0]],
+      copied, manual: S.eff.weeks['2026-W41'].items.map(e => [e.ean, e.spent, e.norm]) })`));
+  assert.deepStrictEqual(out.top, [['111', 40, 360], ['222', 90, 30]], 'od nejnižšího plnění, rozepsaný řádek se nepočítá');
+  assert.deepStrictEqual(out.src, ['manual', 'import'], 'ruční zápis vyhrává, týden bez něj se spočítá z evidence práce');
+  assert.deepStrictEqual(out.base, { eff: 40, nspent: 600, norm: 240, spent: 600, ks: 0, rows: 0, workers: 0 });
+  assert.strictEqual(out.name, 'Držák');
+  assert.deepStrictEqual([out.v.eff, out.v.nspent, out.v.norm, out.v.src], [95, 300, 285, 'manual'], 'ověření z ručně zapsaných hodnot');
+  assert.deepStrictEqual(out.rep, ['manual', null, { eff: 56.7, norm: 510, nspent: 900, lost: 390, ks: 0 }, [['111', 40, true], ['222', 90, false]]]);
+  assert.ok(out.changes.includes('Top 5 T41/2026: 111 Držák: 10 h, norma 4 h (plnění 40 %)'), out.changes.join(' | '));
+  assert.ok(!out.changes.some(t => t.includes('rozepsaný')), 'rozepsaný řádek bez EAN se do historie nepíše');
+  assert.deepStrictEqual(out.evil, [['2026-W41'], 5, { id: out.evil[2].id, ean: '1234', name: 'n', spent: 0, norm: 0 }], 'nejvýš 5 řádků, čísla a EAN vyčištěné');
+  assert.ok(/^e/.test(out.evil[2].id));
+  assert.strictEqual(out.copied, 3, 'převzetí výpočtu z evidence práce do ručního zápisu');
+  assert.deepStrictEqual(out.manual, [['8591234567890', 240, 90], ['E-2', 200, 150], ['B-1', 300, 240]]);
+  return null;
+});
+
+test('aktualizace 2.1 → 2.2: data zůstanou beze změny, Top 5 začne prázdný', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    const old = JSON.parse(JSON.stringify(sanitizeState(demoData())));
+    delete old.eff; old.v = 3;
+    old.settings.prodCols = { header: 0, name: 0, date: 1, ks: 2, spent: 3, norm: 4, unit: 'min', normPer: 'row', heads: ['Jméno', 'Datum', 'Ks', 'Čas', 'Norma'] };
+    const neu = sanitizeState(JSON.parse(JSON.stringify(old)));
+    const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+    const strip = st => { const c = JSON.parse(JSON.stringify(st)); delete c.eff; delete c.v; delete c.settings.prodCols.item; delete c.settings.prodCols.iname; return c; };
+    const o2 = JSON.parse(JSON.stringify(old)); delete o2.v;
+    JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(o2)), eff: neu.eff, cols: [neu.settings.prodCols.item, neu.settings.prodCols.iname], v: neu.v,
+      items: Object.values(neu.production).some(pp => 'items' in pp), weeks: (S = neu, effWeeks()) })`));
+  assert.ok(out.same, 'všechna data z verze 2.1 zůstanou beze změny');
+  assert.deepStrictEqual(out.eff.cases, []);
+  assert.deepStrictEqual(out.cols, [null, null], 'uložené sloupce importu bez EAN');
+  assert.strictEqual(out.v, 4);
+  assert.strictEqual(out.items, false, 'stará evidence práce položky nemá, Top 5 čeká na nový import s EAN');
+  assert.deepStrictEqual(out.weeks, []);
   return null;
 });
 

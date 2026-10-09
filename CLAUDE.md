@@ -34,6 +34,25 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 9. 10. 2026:
+
+- **Verze 2.2: modul Top 5 nejméně efektivně** (pohled `top5`, data `S.eff`). Uživatel
+  zapisuje Top 5 týdne **ručně** (EAN, název dílu, strávený čas, norma), import evidence
+  práce s EAN je jen předvyplnění „do budoucna“. Případy s koly, opatřeními a ověřením
+  14/30 dní, PDF týdenního reportu, souhrnu a případu pro auditora. Podrobnosti v části
+  „Top 5 nejméně efektivně“ níže.
+- Zadání uživatele k Top 5 (jeho slovy, zkráceně): týdenní report 5 položek s nejhorším
+  poměrem výkaz práce a norma, „na profi úrovni pro auditora, který se zaobírá průtokem dílu
+  a nedodáváním včas“; u každé proč se to stalo, co s tím jde dělat, co jde udělat hned, co si
+  zadá procesní čas (žádost o pohledovost, přípravek s technologií…), termíny ověření (14 dní
+  po dokončení úkonů, pak 30 dní od předchozí kontroly); soupis problémových EAN s kompletní
+  historií, „ať se neřeší duplicitně, jen se otevře znovu původní problém“; PDF týdenních
+  reportů a celkový souhrn. „Top 5 budu vkládat vždy manuálně … do budoucna z importu.“
+- **Další zadání (rozpracované): Kontroly.** Ke každému oddělení „Nutné úkony“ (body, co musí
+  operátor dělat). Na týden dopředu se vygeneruje namátková kontrola: 25 % zaměstnanců
+  z každého oddělení, rozložených postupně na různé dny. U každého pracovníka se u každého
+  bodu zapíše splněno / nesplněno a zavede se to do jeho karty.
+
 Stav k 1. 10. 2026:
 
 - Odměny se oddělily do vlastních repozitářů. Kód verze 2 je stejný jako 2.1, jen běží
@@ -161,7 +180,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 1.0 | `db14339` | šifrovaný server, kartičky s QR, PIN zařízení, nové UI (= ostrá verze) |
 | 2.0 | `9f26efa` | osobní pohled pro každou kartičku, historie změn, matice dovedností, profil člověka |
 | 2.1 | `019af97` | navýšení platu, evidence práce s časem a ID, jen Kafe, PDF pravidel |
-| 2.1 na `/odmeny_v2/` | `main` | **aktuální**: stejný kód, oddělený od ostré verze |
+| 2.1 na `/odmeny_v2/` | `e762813` | stejný kód, oddělený od ostré verze |
+| 2.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Top 5 nejméně efektivně, oprava sloupce EAN v importu |
 
 Verze 2.1 přidala:
 
@@ -289,7 +309,8 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `sanctions[]`, `sanReasons[]`;
   - `kafe{period: práh v hodinách}`;
   - `issued{period: {key: {at, tabaky, kafe, pos, lvl}}}`;
-  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data`);
+  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff`);
+  - `eff`: Top 5 nejméně efektivně (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
   - `current`, `demo`, `v`.
 - **Osobní nastavení** (`prefs`, pro každou kartičku zvlášť, `cleanPrefs` v `app.js`):
@@ -360,7 +381,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `vyroba`, `pozice`, `nastaveni`.
+  `vyroba`, `top5`, `pozice`, `nastaveni`.
 - Horní lišta:
   - hodiny = historie změn (`openLog`, odznak nových od posledního otevření);
   - stav ukládání.
@@ -373,6 +394,41 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - Barevné tokeny pro světlý i tmavý režim jsou v `static/lock.css` (`:root`,
   `prefers-color-scheme`) a `app.css` na ně navazuje přes `var(--…)`.
 - Barvy grafů v profilu jsou ověřené validátorem palety (skill dataviz).
+
+## Top 5 nejméně efektivně (verze 2.2)
+
+Data `S.eff` (`blankEff`, čištění `cleanEff` v `core.js`):
+
+- `weeks{YYYY-Www: {items[≤5]: {id, ean, name, spent, norm}, at, by}}`: ruční zápis týdne,
+  čas v **minutách** (jednotka h/min je jen zobrazení, `settings.unit`). Rozepsané řádky bez EAN
+  se drží. Týden = ISO týden pondělí až neděle (`isoWeek`, `weekById`, `shiftWeek`).
+- `cases[]`: `{id, no "RRRR-NNN", ean, name, at, by, week, base, cancelled, rounds[], log[]}`.
+  - Kolo: `{n, reason, week, base, cat, cause, options, actions[{id, kind now|process, text,
+    owner, due, done}], v[≤2], d1, d2, p1, p2, p1why, p2why}`.
+  - Ověření `v`: `{done, result ok|fail, note, from, to, plan, eff, nspent, norm, src manual|import}`.
+  - Termíny (`roundPlan`): 1. ověření = poslední splněné opatření + d1 (14), 2. = provedené
+    1. ověření + d2 (30); ruční posun `p1`/`p2` s důvodem. Stav `caseState`: new, act, v1, v2,
+    fail, ok, zrus.
+  - Jeden díl = jeden případ (`caseOfItem`); návrat dílu = `reopenCase` (nové kolo).
+  - `effNote` píše historii případu; `describeChanges` ji zrcadlí do `S.log` (kind `eff`).
+- `reports[]`: vydané týdenní reporty jako snímek (`issueWeekReport`, jedna položka na týden,
+  `rev` roste jen při změně obsahu).
+- `settings{min, target, d1, d2, unit}`; `min` platí jen pro výpočet z evidence práce.
+
+Výpočty: `weekEntries` (plnění = norma ÷ čas), `weekTop` (ruční zápis má přednost, jinak
+`weekRanking` z evidence práce s EAN), `topHistory`, `itemTrend`, `effDeadlines`,
+`effSummary`, `weekReportData`. Evidence práce s EAN ukládá `production[m].items{ean:
+{name, d{iso: [ks, čas, norma, čas s normou, řádků]}, w{pracovník: {iso: […]}}}}`.
+
+UI a PDF v `app.js` (sekce „Top 5“): `renderTop5`, `t5WeekHtml` (ruční tabulka, `t5EntryChange`,
+`t5EntryClick`), `t5CaseHtml`, `t5VerifyHtml` (ruční čas a norma za období), PDF
+`drawWeekReport`, `drawEffSummary`, `pdfKit` (měření bloků, „pokračování“, podpisy).
+
+Pozor:
+
+- `form.elements.item` je metoda kolekce, ne pole „item“; používej `namedItem`.
+- Překreslení tabulky po `change` se odkládá, dokud je stisknuté tlačítko myši (jinak by
+  klik na tlačítko v řádku zmizel).
 
 ## Testy a lokální běh
 
@@ -395,7 +451,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
 - Průchody v prohlížeči:
   - `e2e_browser.js`: celá aplikace;
   - `e2e_v2.js`: novinky 2.0;
-  - `e2e_v21.js`: novinky 2.1.
+  - `e2e_v21.js`: novinky 2.1;
+  - `e2e_top5.js`: Top 5 (2.2);
+  - `e2e_upgrade22.js`: aktualizace 2.1 → 2.2 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.
 - Snímky ukládají do `$S/oshots*`, prohlédni si je.
 - **Test „verze 2 vedle ostré“** běží na lokálním Apachi v kontejneru a maže lokální

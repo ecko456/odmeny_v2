@@ -15,6 +15,7 @@ const ui = {
   sanDraft: { key: '', period: '', reason: '', other: '', pct: 10, note: '' }, sanFilter: '',
   lastAoa: null, lastFile: '', locking: false,
   me: { cardId: '', label: '', device: '' }, profileKey: null, prevView: 'lide',
+  t5: { tab: 'week', week: null, caseId: null, filter: 'active', q: '' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -344,6 +345,7 @@ function renderAll() {
   renderSettings();
   renderMatrix();
   if (ui.view === 'profil') renderProfile();
+  if (ui.view === 'top5') renderTop5(); else renderTop5Badge();
   renderSaveState();
   renderLogBadge();
 }
@@ -354,6 +356,7 @@ function showView(name) {
   ui.view = name;
   if (name === 'profil') renderProfile();
   if (name === 'matice') renderMatrix();
+  if (name === 'top5') renderTop5();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
   window.scrollTo({ top: 0, behavior: 'instant' });
@@ -1229,7 +1232,7 @@ async function doImport(aoa, name, fy, fm, force = false) {
     if (!(await confirmBox('Přepsat docházku?', `Docházka za ${periodName(per)} už je nahraná. Nový soubor ji nahradí; zařazení, sankce, ruční úpravy a výdeje zůstanou.`, 'Přepsat'))) return;
   }
   if (S.demo) {
-    S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; S.log = [];
+    S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; S.log = []; S.eff = blankEff();
     dropDemoRaise(S.positions);
     store.note = { kind: 'import', text: `Nahrána první docházka za ${periodName(per)} (${Object.keys(per.rows).length} lidí, ${name}); ukázková data smazána` };
   }
@@ -1364,7 +1367,8 @@ function doProdImport(aoa, name, map) {
   save();
   const current = S.current && res.buckets[S.current];
   const time = map && map.spent != null;
-  showProdMsg(`<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data, kusů nebo času.` : ''} ${time ? `Strávený čas${map.norm != null ? ' a norma' : ''} načteny.` : 'Bez stráveného času, plnění normy a využití fondu se nespočítá.'} <button class="link" type="button" data-prodcols>Změnit sloupce</button></div>`
+  const items = new Set(ids.flatMap(i => Object.keys(res.buckets[i].items || {}))).size;
+  showProdMsg(`<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data, kusů nebo času.` : ''} ${time ? `Strávený čas${map.norm != null ? ' a norma' : ''} načteny.` : 'Bez stráveného času, plnění normy a využití fondu se nespočítá.'} ${map && map.item != null ? `Položky (EAN): ${items}, vyhodnocení je v části <button class="link" type="button" data-go="top5">Top 5</button>.` : ''} <button class="link" type="button" data-prodcols>Změnit sloupce</button></div>`
     + (!S.current ? '<div class="note w">Zatím není nahraná žádná docházka. Hodnocený měsíc se vybírá podle ní, takže se výroba zobrazí až po nahrání docházky.</div>'
       : (!current ? `<div class="note w">Vybrané období je ${esc(monthLabel(S.current))} a pro něj soubor data nemá. Období zůstává beze změny.</div>` : '')));
   renderAll();
@@ -1380,9 +1384,11 @@ async function chooseProdColumns(aoa, name, info) {
   const opts = (field, optional) => `${optional ? '<option value="">— není v souboru —</option>' : ''}${info.cols.map(c => `<option value="${c.i}"${start[field] === c.i ? ' selected' : ''}>${esc(`${c.letter}${c.head ? ` · ${c.head}` : ''}${c.sample ? ` (${c.sample})` : ''}`)}</option>`).join('')}`;
   const field = (f, label, optional, hint) => `<label class="field"><span>${esc(label)}${hint ? ` <small class="muted">${esc(hint)}</small>` : ''}</span><select name="${f}">${opts(f, optional)}</select></label>`;
   const read = form => {
-    const v = n => (form.elements[n].value === '' ? null : +form.elements[n].value);
+    // namedItem: form.elements.item je vestavěná metoda kolekce, ne pole se jménem „item“.
+    const v = n => { const el = form.elements.namedItem(n); return !el || el.value === '' ? null : +el.value; };
     return { header: info.header, name: v('name'), date: v('date'), ks: v('ks'), spent: v('spent'), norm: v('norm'),
-      unit: form.elements.unit.value === 'h' ? 'h' : 'min', normPer: form.elements.normPer.value === 'piece' ? 'piece' : 'row' };
+      unit: form.elements.unit.value === 'h' ? 'h' : 'min', normPer: form.elements.normPer.value === 'piece' ? 'piece' : 'row',
+      item: v('item'), iname: v('iname') };
   };
   const preview = form => {
     const map = read(form);
@@ -1393,10 +1399,12 @@ async function chooseProdColumns(aoa, name, info) {
     const spent = recs.reduce((x, r) => x + (r.spent || 0), 0);
     const normMin = recs.reduce((x, r) => x + (r.norm || 0), 0);
     const nspent = recs.reduce((x, r) => x + (r.nspent || 0), 0);
+    const items = new Set(Object.values(res.buckets).flatMap(b => Object.keys(b.items || {})));
     box.className = 'note i';
     box.textContent = `Použitelných řádků ${res.used} (${recs.length} jmen, ${Object.keys(res.buckets).map(monthLabel).join(', ')}).`
       + (map.spent != null ? ` Strávený čas celkem ${nf(spent / 60, 1)} h.` : '')
-      + (map.norm != null ? (nspent ? ` Plnění normy ${nf(normMin / nspent * 100, 1)} %.` : ' Norma: žádný řádek s časem i normou.') : '');
+      + (map.norm != null ? (nspent ? ` Plnění normy ${nf(normMin / nspent * 100, 1)} %.` : ' Norma: žádný řádek s časem i normou.') : '')
+      + (map.item != null ? ` Položek (EAN): ${items.size}.` : ' Bez sloupce EAN se Top 5 z evidence nepředvyplní.');
   };
   const result = await dialog({
     title: 'Sloupce evidence práce', ok: 'Načíst', wide: true,
@@ -1407,6 +1415,7 @@ async function chooseProdColumns(aoa, name, info) {
         <label class="field"><span>Čas je v</span><select name="unit"><option value="min"${start.unit !== 'h' ? ' selected' : ''}>minutách</option><option value="h"${start.unit === 'h' ? ' selected' : ''}>hodinách</option></select></label>
         ${field('norm', 'Norma', true, 'v minutách')}
         <label class="field"><span>Norma platí</span><select name="normPer"><option value="row"${start.normPer !== 'piece' ? ' selected' : ''}>za celý řádek</option><option value="piece"${start.normPer === 'piece' ? ' selected' : ''}>za 1 kus (× kusy)</option></select></label>
+        ${field('item', 'EAN / položka', true, 'pro Top 5')}${field('iname', 'Název položky', true)}
       </div>
       <p class="tiny muted">Čas ve tvaru 1:30 nebo v časovém formátu Excelu se pozná sám. Plnění normy = norma ÷ strávený čas (jen řádky, kde je obojí), využití fondu = strávený čas ÷ hodiny v práci podle docházky.</p>
       <div id="prodColsPreview" class="note i" role="status"></div>`,
@@ -2467,6 +2476,1396 @@ function bindExtraEvents() {
 }
 
 /* ==========================================================================
+   TOP 5 NEJMÉNĚ EFEKTIVNÍCH POLOŽEK (verze 2.2)
+   Týdenní žebříček z evidence práce, případy s řešením a ověřením účinnosti,
+   termíny a vydané reporty. Výpočty jsou v core.js (weekRanking, caseState…).
+   ========================================================================== */
+const T5_TABS = [['week', 'Týden'], ['cases', 'Případy'], ['deadlines', 'Termíny'], ['reports', 'Vydané reporty']];
+const T5_FILTERS = [
+  ['active', 'Rozpracované', s => ['new', 'act', 'v1', 'v2', 'fail'].includes(s.k)],
+  ['late', 'Po termínu', s => s.late],
+  ['verify', 'Ověřování', s => s.k === 'v1' || s.k === 'v2'],
+  ['ok', 'Uzavřené', s => s.k === 'ok'],
+  ['zrus', 'Zrušené', s => s.k === 'zrus'],
+  ['all', 'Vše', () => true],
+];
+const T5_KIND = { now: 'okamžité', process: 's procesním časem' };
+
+/** Dialog s víceřádkovým textem (důvody, poznámky); vrací text, nebo null při zrušení. */
+async function textBox(title, label, value = '', ok = 'Uložit', placeholder = '', max = 1000) {
+  const result = await dialog({
+    title, ok,
+    html: `<label class="field"><span>${esc(label)}</span><textarea name="value" rows="4" maxlength="${max}" placeholder="${esc(placeholder)}" required autofocus>${esc(value)}</textarea></label>`,
+  });
+  return result.value === 'ok' ? result.form.elements.value.value.trim() : null;
+}
+
+function effMeta() { return { at: Date.now(), by: ui.me.label || '' }; }
+const hrs = (min, d = 1) => `${nf((+min || 0) / 60, d)} h`;
+const effPct = v => (v == null ? '—' : `${nf(v, 1)} %`);
+function tsText(ts) { return `${dayText(todayIso(ts))}, ${new Date(ts).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}`; }
+function stateChip(s) { return `<span class="t5-state s-${s.k}${s.late ? ' late' : ''}">${esc(s.label)}${s.late ? ' · po termínu' : ''}</span>`; }
+function effTone(eff) { return eff == null ? '' : eff < 50 ? 'crit' : eff < effSet().target ? 'warn' : 'ok'; }
+function effBar(eff) {
+  if (eff == null) return '<span class="muted">—</span>';
+  return `<div class="t5-bar ${effTone(eff)}"><span class="track"><i data-w="${clamp(eff, 2, 100).toFixed(1)}"></i></span><b class="num">${nf(eff, 1)} %</b></div>`;
+}
+function liveText(a) { return String(a.text || '').trim(); }
+
+function renderTop5Badge() {
+  const badge = $('#navTop5');
+  if (!badge || !S) return;
+  const n = effDeadlines().filter(x => x.late).length;
+  badge.hidden = !n;
+  badge.textContent = String(n);
+  badge.title = n ? `${n} ${n === 1 ? 'termín' : n <= 4 ? 'termíny' : 'termínů'} po splatnosti` : '';
+}
+
+function renderTop5() {
+  const view = $('#t5View');
+  if (!view || !S) return;
+  renderTop5Badge();
+  const late = effDeadlines().filter(x => x.late).length;
+  const counts = { cases: S.eff.cases.filter(c => T5_FILTERS[0][2](caseState(c))).length, deadlines: effDeadlines(null, 14).length, reports: S.eff.reports.length };
+  $('#t5Tabs').innerHTML = T5_TABS.map(([k, t]) => {
+    const on = k === ui.t5.tab && !ui.t5.caseId;
+    const n = counts[k];
+    return `<button type="button" class="chip${on ? ' on' : ''}" data-t5tab="${k}" aria-pressed="${on}">${t}${n ? ` <em class="t5-count${k === 'deadlines' && late ? ' late' : ''}">${n}</em>` : ''}</button>`;
+  }).join('');
+  const c = ui.t5.caseId ? effCase(ui.t5.caseId) : null;
+  if (ui.t5.caseId && !c) ui.t5.caseId = null;
+  view.innerHTML = c ? t5CaseHtml(c)
+    : ui.t5.tab === 'cases' ? t5CasesHtml()
+      : ui.t5.tab === 'deadlines' ? t5DeadlinesHtml()
+        : ui.t5.tab === 'reports' ? t5ReportsHtml() : t5WeekHtml();
+  setWidths(view);
+}
+
+/* ---------- týden ---------- */
+function t5SolutionCell(r, weekId) {
+  const c = caseOfItem(r.ean);
+  if (!c) return `<button class="btn small" type="button" data-t5new="${esc(r.ean)}" data-week="${esc(weekId)}">Založit případ</button>`;
+  const s = caseState(c);
+  const open = `<button class="linkish" type="button" data-t5open="${esc(c.id)}">${esc(caseLabel(c))}</button>`;
+  if (s.k === 'ok') return `<div class="t5-sol">${open}${stateChip(s)}<button class="btn sec small" type="button" data-t5reopen="${esc(c.id)}" data-week="${esc(weekId)}">Znovu otevřít</button></div>`;
+  if (s.k === 'fail') return `<div class="t5-sol">${open}${stateChip(s)}<button class="btn sec small" type="button" data-t5reopen="${esc(c.id)}" data-week="${esc(weekId)}">Nové kolo</button></div>`;
+  return `<div class="t5-sol">${open}${stateChip(s)}</div>`;
+}
+
+/* Čas v jednotce zadávání (hodiny nebo minuty podle Nastavení modulu). */
+function effUnit() { return effSet().unit === 'min' ? 'min' : 'h'; }
+/* Hodnota do pole: bez oddělovače tisíců, desetinná čárka, nejvýš dvě desetinná místa. */
+function unitText(min) { const v = effUnit() === 'min' ? +min || 0 : (+min || 0) / 60; return String(Math.round(v * 100) / 100).replace('.', ','); }
+function parseUnit(v) { const m = toMinutes(String(v || '').trim(), effUnit(), false); return m == null ? null : Math.round(m * 100) / 100; }
+function unitLabel() { return effUnit() === 'min' ? 'min' : 'h'; }
+
+/* Výchozí týden: poslední se zápisem, jinak minulý týden (report se dělá za uplynulý týden). */
+function t5WeekId() {
+  if (!ui.t5.week || !weekById(ui.t5.week)) {
+    const cur = isoWeek(todayIso()).id;
+    const manual = Object.keys(S.eff.weeks).filter(id => S.eff.weeks[id].items.length).sort().reverse()[0];
+    ui.t5.week = manual || effWeeks()[0] || shiftWeek(cur, -1);
+  }
+  return ui.t5.week;
+}
+
+function t5KnownItems() {
+  const known = {};
+  Object.keys(S.production).sort().forEach(id => Object.entries(S.production[id].items || {}).forEach(([ean, it]) => { if (it.name || !known[ean]) known[ean] = it.name || ''; }));
+  Object.keys(S.eff.weeks).sort().forEach(id => S.eff.weeks[id].items.forEach(e => { if (e.ean && (e.name || !known[e.ean])) known[e.ean] = e.name || known[e.ean] || ''; }));
+  S.eff.cases.forEach(c => { if (!known[c.ean]) known[c.ean] = c.name || ''; });
+  return known;
+}
+
+/* Řádky ručního zápisu: platné podle plnění, rozepsané na konci. */
+function t5Rows(id) {
+  const wk = S.eff.weeks[id];
+  if (!wk) return [];
+  const valid = weekEntries(id).map(e => e.id);
+  return [...valid.map(eid => wk.items.find(e => e.id === eid)), ...wk.items.filter(e => !valid.includes(e.id))];
+}
+
+function t5WeekHtml() {
+  const id = t5WeekId();
+  const cur = isoWeek(todayIso()).id;
+  const weekList = effWeeks();
+  const options = [...new Set([...weekList, id, cur, shiftWeek(cur, -1)])].sort().reverse();
+  const hist = topHistory();
+  const rep = S.eff.reports.find(r => r.week === id);
+  const sum = effSummary();
+  const wt = weekTop(id);
+  const rows = t5Rows(id);
+  const manual = rows.length > 0;
+  const rk = !manual ? weekRanking(id) : null;
+  const top = wt.items;
+  const nspent = top.reduce((x, r) => x + r.nspent, 0);
+  const norm = top.reduce((x, r) => x + r.norm, 0);
+  const lost = top.reduce((x, r) => x + r.lost, 0);
+  const u = unitLabel();
+  const bar = `<div class="t5-weekbar">
+      <button class="icon-btn" type="button" data-t5wk="older" aria-label="Předchozí týden">${I.back}</button>
+      <select id="t5WeekSel" aria-label="Týden">${options.map(w => `<option value="${w}"${w === id ? ' selected' : ''}>${esc(`${weekName(w)} · ${weekRange(weekById(w))}${w === cur ? ' · tento týden' : ''}`)}</option>`).join('')}</select>
+      <button class="icon-btn t5-next" type="button" data-t5wk="newer" aria-label="Další týden" ${id >= cur ? 'disabled' : ''}>${I.back}</button>
+      <span class="spacer"></span>
+      ${rep ? `<span class="tag acc" title="Poslední vydaný report tohoto týdne">Vydáno ${esc(tsText(rep.at))} · revize ${rep.rev}</span>` : ''}
+      <button class="btn" type="button" data-t5pdf="week"${top.length ? '' : ' disabled'}>Report týdne do PDF</button>
+    </div>`;
+  const tiles = `<div class="stats">${[
+    statTile('Plnění Top 5', nspent ? effPct(norm / nspent * 100) : '—', nspent ? `norma ${hrs(norm)} z ${hrs(nspent)} práce` : 'zatím nic zapsáno'),
+    statTile('Ztráta Top 5', hrs(lost), 'strávený čas nad normou', lost ? 'crit' : ''),
+    statTile('Rozpracované případy', sum.open + sum.verify + sum.fail, `${sum.verify} v ověřování`),
+    statTile('Po termínu', sum.late, sum.late ? 'termíny k řešení' : 'vše v termínu', sum.late ? 'crit' : ''),
+  ].join('')}</div>`;
+  const solution = r => (r.ean && r.eff != null ? t5SolutionCell(r, id) : '<span class="muted small">doplň EAN a čas</span>');
+  let table;
+  if (manual) {
+    table = `<div class="table-card"><table class="stack t5-table t5-entry"><thead><tr><th class="rank">#</th><th>EAN</th><th>Název dílu</th><th class="r">Strávený čas (${u})</th><th class="r">Norma (${u})</th><th>Plnění</th><th class="r">Neplnění</th><th class="r">Ztráta</th><th class="r" title="Kolikrát byla položka v Top 5 (do tohoto týdne)">V Top 5</th><th class="r">Řešení</th><th></th></tr></thead><tbody>${rows.map(e => {
+      const m = e.ean && +e.spent > 0 ? { ...entryMetrics(e), lost: Math.max(0, e.spent - e.norm) } : null;
+      const rank = m ? weekEntries(id).findIndex(x => x.id === e.id) + 1 : '';
+      return `<tr data-ent="${esc(e.id)}">
+        <td class="rank num">${rank || ''}</td>
+        <td data-label="EAN"><input type="text" class="t5-in t5-ean" data-ef="ean" value="${esc(e.ean)}" list="t5EanList" maxlength="40" placeholder="EAN" aria-label="EAN" autocomplete="off"></td>
+        <td data-label="Název dílu"><input type="text" class="t5-in" data-ef="name" value="${esc(e.name)}" maxlength="120" placeholder="název dílu" aria-label="Název dílu"></td>
+        <td class="r" data-label="Strávený čas (${u})"><input type="text" class="t5-in num r" data-ef="spent" value="${e.spent ? esc(unitText(e.spent)) : ''}" inputmode="decimal" placeholder="0" aria-label="Strávený čas"></td>
+        <td class="r" data-label="Norma (${u})"><input type="text" class="t5-in num r" data-ef="norm" value="${e.norm ? esc(unitText(e.norm)) : ''}" inputmode="decimal" placeholder="0" aria-label="Norma"></td>
+        <td data-label="Plnění">${m ? effBar(m.eff) : '<span class="muted">—</span>'}</td>
+        <td class="r num" data-label="Neplnění">${m && m.eff < 100 ? `<b>${effPct(100 - m.eff)}</b>` : '<span class="muted">—</span>'}</td>
+        <td class="r num" data-label="Ztráta">${m ? hrs(m.lost) : '<span class="muted">—</span>'}</td>
+        <td class="r num" data-label="V Top 5">${m ? `${(hist[e.ean] || []).filter(w => w <= id).length}×` : ''}</td>
+        <td class="actions" data-label="Řešení">${m ? solution({ ...e, ...m }) : '<span class="muted small">doplň EAN a čas</span>'}</td>
+        <td class="actions"><button class="icon-btn" type="button" data-entdel aria-label="Smazat řádek">${I.x}</button></td></tr>`;
+    }).join('')}</tbody></table></div>
+    <div class="row gap t5-entry-tools">${rows.length < EFF_TOP ? '<button class="btn sec small" type="button" data-entadd>Přidat položku</button>' : ''}<span class="small muted">Nejvýš ${EFF_TOP} položek. Plnění = norma ÷ strávený čas, neplnění = 100 % − plnění, ztráta = strávený čas nad normou. Čas se zadává v ${u === 'h' ? 'hodinách (např. 13,5 nebo 13:30)' : 'minutách'}, jde přepnout v Nastavení.</span></div>`;
+  } else if (rk && rk.top.length) {
+    table = `<div class="note i"><b>Spočítáno z evidence práce</b> (položky pod normou s aspoň ${esc(hrs(effSet().min))} práce). Převezmi ho do zápisu a uprav, nebo zapiš týden ručně. <button class="btn small" type="button" data-entimport>Převzít do zápisu</button></div>
+    <div class="table-card"><table class="stack t5-table"><thead><tr><th class="rank">#</th><th>Položka</th><th>Plnění</th><th class="r">Neplnění</th><th class="r">Strávený čas</th><th class="r">Norma</th><th class="r">Ztráta</th><th class="r">V Top 5</th><th class="r">Řešení</th></tr></thead><tbody>${rk.top.map((r, i) => `<tr>
+      <td class="rank num">${i + 1}</td>
+      <td class="name" data-label="Položka"><div class="who"><b class="t5-ean">${esc(r.ean)}</b><span class="pos">${esc(r.name || 'bez názvu')}</span></div></td>
+      <td data-label="Plnění">${effBar(r.eff)}</td><td class="r num" data-label="Neplnění"><b>${effPct(100 - r.eff)}</b></td>
+      <td class="r num" data-label="Strávený čas">${hrs(r.nspent)}</td><td class="r num" data-label="Norma">${hrs(r.norm)}</td><td class="r num" data-label="Ztráta">${hrs(r.lost)}</td>
+      <td class="r num" data-label="V Top 5">${(hist[r.ean] || []).filter(w => w <= id).length}×</td><td class="actions" data-label="Řešení">${solution(r)}</td></tr>`).join('')}</tbody></table></div>`;
+  } else {
+    table = `<div class="card">${emptyState(`${esc(weekName(id))} zatím bez zápisu`, `Zapiš pět dílů s nejhorším plněním normy za týden ${esc(weekRange(weekById(id)))}: EAN, název dílu, strávený čas a normu. Plnění a neplnění se dopočítá.`, '<button class="btn" type="button" data-entadd>Přidat položku</button>')}</div>`;
+  }
+  const known = t5KnownItems();
+  return `${bar}${tiles}${table}<datalist id="t5EanList">${Object.entries(known).map(([e, n]) => `<option value="${esc(e)}">${esc(n)}</option>`).join('')}</datalist>
+    <p class="hint">Týden je pondělí až neděle. Ke každému dílu se zakládá případ s příčinou, opatřeními a ověřením účinnosti. Když se díl vrátí do Top 5, otevře se jeho původní případ znovu.</p>`;
+}
+
+/* Úpravy ručního zápisu týdne. Po dokončení úpravy se řádky přeřadí podle plnění a fokus zůstane
+   na stejném poli téhož řádku. */
+let t5PointerDown = false;
+function t5Rerender() {
+  if (t5PointerDown) { document.addEventListener('pointerup', () => setTimeout(t5Rerender, 0), { once: true }); return; }
+  setTimeout(() => {
+    const a = document.activeElement;
+    const row = a && a.closest ? a.closest('[data-ent]') : null;
+    const key = row && a.dataset.ef ? [row.dataset.ent, a.dataset.ef] : null;
+    renderTop5();
+    if (key) { const el = $(`[data-ent="${CSS.escape(key[0])}"] [data-ef="${key[1]}"]`); if (el) el.focus(); }
+  }, 0);
+}
+async function t5EntryClick(event) {
+  const t = event.target;
+  const id = ui.t5.week;
+  const meta = effMeta();
+  if (t.closest('[data-entadd]')) {
+    const wk = S.eff.weeks[id] || (S.eff.weeks[id] = { items: [], at: meta.at, by: meta.by });
+    if (wk.items.length >= EFF_TOP) { toast(`Top 5 má nejvýš ${EFF_TOP} položek.`, true); return true; }
+    const e = { id: uid('e'), ean: '', name: '', spent: 0, norm: 0 };
+    wk.items.push(e);
+    renderTop5();
+    const el = $(`[data-ent="${e.id}"] [data-ef="ean"]`);
+    if (el) el.focus();
+    return true;
+  }
+  const del = t.closest('[data-entdel]');
+  if (del) {
+    const wk = S.eff.weeks[id];
+    const e = wk && wk.items.find(x => x.id === del.closest('[data-ent]').dataset.ent);
+    if (!e) return true;
+    if ((e.ean || e.spent) && !(await confirmBox('Odebrat díl z Top 5?', `${e.ean || 'Řádek'}${e.name ? ` (${e.name})` : ''} zmizí ze zápisu ${weekName(id)}. Případ dílu zůstane.`, 'Odebrat', true))) return true;
+    wk.items = wk.items.filter(x => x !== e);
+    if (!wk.items.length) delete S.eff.weeks[id];
+    else { wk.at = meta.at; wk.by = meta.by; }
+    save(); renderTop5();
+    return true;
+  }
+  if (t.closest('[data-entimport]')) {
+    const n = importWeekToManual(id, meta);
+    save(); renderTop5();
+    toast(n ? `Převzato ${n} ${n === 1 ? 'díl' : n <= 4 ? 'díly' : 'dílů'} z evidence práce. Hodnoty jde upravit.` : 'V evidenci práce nic k převzetí.', !n);
+    return true;
+  }
+  return false;
+}
+
+function t5EntryChange(event) {
+  const t = event.target;
+  const row = t.closest('[data-ent]');
+  if (!row || !t.dataset.ef) return false;
+  const wk = S.eff.weeks[ui.t5.week];
+  const e = wk && wk.items.find(x => x.id === row.dataset.ent);
+  if (!e) return true;
+  const f = t.dataset.ef;
+  if (f === 'ean') {
+    e.ean = itemKey(t.value);
+    if (e.ean && !e.name) e.name = effItemName(e.ean) || t5KnownItems()[e.ean] || '';
+  } else if (f === 'name') e.name = t.value.trim().slice(0, 120);
+  else {
+    const v = parseUnit(t.value);
+    if (t.value.trim() && v == null) { toast(`Čas zapiš jako číslo (${unitLabel()}), třeba 13,5 nebo 13:30.`, true); t.value = e[f] ? unitText(e[f]) : ''; return true; }
+    e[f] = v == null ? 0 : Math.min(v, 1e7);
+  }
+  wk.at = Date.now();
+  wk.by = ui.me.label || '';
+  save();
+  t5Rerender();
+  return true;
+}
+
+/* ---------- případy ---------- */
+function t5CasesHtml() {
+  const filter = T5_FILTERS.find(f => f[0] === ui.t5.filter) || T5_FILTERS[0];
+  const q = norm(ui.t5.q);
+  const all = S.eff.cases.map(c => ({ c, s: caseState(c), ba: caseBeforeAfter(c) }));
+  const list = all.filter(x => filter[2](x.s) && (!q || norm(`${caseLabel(x.c)} ${x.c.ean} ${x.c.name}`).includes(q)))
+    .sort((a, b) => (a.s.late === b.s.late ? 0 : a.s.late ? -1 : 1) || (a.s.due || '9999') .localeCompare(b.s.due || '9999') || b.c.at - a.c.at);
+  const chips = T5_FILTERS.map(([k, t, fn]) => `<button type="button" class="chip${k === filter[0] ? ' on' : ''}" data-t5filter="${k}" aria-pressed="${k === filter[0]}">${t} <em class="t5-count">${all.filter(x => fn(x.s)).length}</em></button>`).join('');
+  return `<div class="toolbar t5-casebar"><div class="chips">${chips}</div><span class="spacer"></span>
+      <input type="search" id="t5Q" value="${esc(ui.t5.q)}" placeholder="Hledat EAN, název nebo případ…" aria-label="Hledat případ">
+      <button class="btn sec" type="button" data-t5manual>Nový případ</button></div>
+    ${list.length ? `<div class="table-card"><table class="stack t5-table"><thead><tr><th>Případ</th><th>Položka</th><th>Stav</th><th class="r">Kolo</th><th>Zjištěno</th><th>Další termín</th><th class="r" title="Plnění při zjištění → poslední ověření">Plnění před → po</th></tr></thead><tbody>${list.map(({ c, s, ba }) => `<tr class="t5-row" data-t5open="${esc(c.id)}" tabindex="0">
+        <td class="name" data-label="Případ"><b>${esc(caseLabel(c))}</b></td>
+        <td data-label="Položka"><div class="who"><b class="t5-ean">${esc(c.ean)}</b><span class="pos">${esc(c.name || 'bez názvu')}</span></div></td>
+        <td data-label="Stav">${stateChip(s)}</td>
+        <td class="r num" data-label="Kolo">${s.round}</td>
+        <td class="num" data-label="Zjištěno">${c.week ? esc(weekName(c.week)) : esc(dayText(todayIso(c.at)))}</td>
+        <td class="num" data-label="Další termín">${s.due ? esc(dayText(s.due)) : s.closed ? `<span class="muted">${esc(dayText(s.closed))}</span>` : '<span class="muted">—</span>'}</td>
+        <td class="r num" data-label="Plnění před → po">${effPct(ba.before)} → ${ba.after == null ? '<span class="muted">—</span>' : `<b>${effPct(ba.after)}</b>`}</td></tr>`).join('')}</tbody></table></div>`
+      : `<div class="card">${emptyState(S.eff.cases.length ? 'Nic neodpovídá' : 'Zatím žádný případ', S.eff.cases.length ? 'Zkus jiný filtr nebo hledání.' : 'Případ se zakládá z týdenního žebříčku (tlačítko Založit případ), nebo ručně tlačítkem Nový případ.')}</div>`}
+    <p class="hint">Jedna položka = jeden případ. Když se problém vrátí, otevře se v témž případu nové kolo a předchozí řešení zůstane v historii, ať se neopakuje.</p>`;
+}
+
+/* ---------- termíny ---------- */
+function t5DeadlinesHtml() {
+  const today = todayIso();
+  const all = effDeadlines(today);
+  if (!all.length) return `<div class="card">${emptyState('Žádné termíny', 'Termíny vzniknou u opatření s procesním časem a u ověření účinnosti (po dokončení opatření).')}</div>`;
+  const groups = [
+    ['Po termínu', x => x.late],
+    ['Do 7 dní', x => !x.late && x.date <= addDays(today, 7)],
+    ['Později', x => x.date > addDays(today, 7)],
+  ];
+  return groups.map(([title, fn]) => {
+    const items = all.filter(fn);
+    if (!items.length) return '';
+    return `<div class="t5-dl-group"><p class="eyebrow">${title} · ${items.length}</p><div class="table-card"><table class="stack"><thead><tr><th>Termín</th><th>Případ</th><th>Co</th><th>Odpovídá</th></tr></thead><tbody>${items.map(x => {
+      const c = effCase(x.case);
+      return `<tr class="t5-row" data-t5open="${esc(x.case)}" tabindex="0"><td class="num${x.late ? ' pen' : ''}" data-label="Termín"><b>${esc(dayText(x.date))}</b></td>
+        <td data-label="Případ"><b>${esc(caseLabel(c))}</b> <span class="muted small">${esc(c.ean)}${c.name ? ` · ${esc(c.name)}` : ''}</span></td>
+        <td data-label="Co">${x.kind === 'v1' || x.kind === 'v2' ? `<span class="t5-state s-${x.kind}">${esc(x.text)}</span>` : `${esc(x.text)} <span class="muted small">(${esc(T5_KIND[x.kind] || '')})</span>`}</td>
+        <td data-label="Odpovídá">${esc(x.owner || '—')}</td></tr>`;
+    }).join('')}</tbody></table></div></div>`;
+  }).join('');
+}
+
+/* ---------- vydané reporty ---------- */
+function t5ReportsHtml() {
+  const list = S.eff.reports.slice().sort((a, b) => (a.week < b.week ? 1 : -1));
+  if (!list.length) return `<div class="card">${emptyState('Zatím žádný vydaný report', 'Report vznikne tlačítkem „Report týdne do PDF“ v záložce Týden. Uloží se přesně tak, jak byl vydán, a jde kdykoli znovu stáhnout.')}</div>`;
+  return `<div class="table-card"><table class="stack"><thead><tr><th>Týden</th><th class="r">Revize</th><th>Vydáno</th><th>Kdo</th><th class="r">Položek</th><th class="r">PDF</th></tr></thead><tbody>${list.map(r => `<tr>
+      <td class="name" data-label="Týden"><b>${esc(weekName(r.week))}</b> <span class="muted small">${esc(weekRange(weekById(r.week)))}</span></td>
+      <td class="r num" data-label="Revize">${r.rev}</td><td class="num" data-label="Vydáno">${esc(tsText(r.at))}</td><td data-label="Kdo">${esc(r.by || '—')}</td>
+      <td class="r num" data-label="Položek">${r.data.top.length}</td>
+      <td class="actions" data-label="PDF"><button class="btn sec small" type="button" data-t5pdf="rep" data-week="${esc(r.week)}">Stáhnout PDF</button></td></tr>`).join('')}</tbody></table></div>
+    <p class="hint">Vydaný report je uložený snímek: stejné PDF jde stáhnout i později, když se mezitím případy posunuly. Nové vydání téhož týdne s jiným obsahem zvýší číslo revize.</p>`;
+}
+
+/* ---------- detail případu ---------- */
+function weekChart(c, weeks) {
+  const W = 340, H = 168, L = 34, R = 8, T = 16, B = 24;
+  const vals = weeks.map(w => w.eff);
+  if (!vals.some(v => v != null)) return `<figure class="chart c-acc"><figcaption><b>Plnění normy po týdnech</b><span>bez údajů</span></figcaption><div class="chart-empty">Položka se v posledních týdnech nevyráběla.</div></figure>`;
+  const target = effSet().target;
+  const top = Math.max(110, niceMax(Math.max(...vals.filter(v => v != null)) * 1.08));
+  const plotH = H - T - B;
+  const band = (W - L - R) / weeks.length;
+  const bw = Math.max(3, Math.min(22, band - 6));
+  const y = v => T + plotH - (Math.min(v, top) / top) * plotH;
+  const base = T + plotH;
+  const bars = weeks.map((w, i) => {
+    const v = w.eff;
+    const x = L + i * band + (band - bw) / 2;
+    let mark = '';
+    if (v != null && v > 0) {
+      const yy = y(v);
+      const r = Math.min(4, bw / 2, base - yy);
+      mark = `<path class="bar${v < target ? ' under' : ''}" d="M${x.toFixed(1)} ${base}V${(yy + r).toFixed(1)}Q${x.toFixed(1)} ${yy.toFixed(1)} ${(x + r).toFixed(1)} ${yy.toFixed(1)}H${(x + bw - r).toFixed(1)}Q${(x + bw).toFixed(1)} ${yy.toFixed(1)} ${(x + bw).toFixed(1)} ${(yy + r).toFixed(1)}V${base}Z"/>`;
+    }
+    const label = `<text class="xl" x="${(L + i * band + band / 2).toFixed(1)}" y="${H - 8}">${esc(`T${weekById(w.week).w}`)}</text>`;
+    const tip = `${weekName(w.week)} (${weekRange(weekById(w.week))}): ${v == null ? 'bez výroby' : `plnění ${nf(v, 1)} %, ${hrs(w.nspent)} práce`}`;
+    const hit = `<rect class="hit" x="${(L + i * band).toFixed(1)}" y="${T}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" data-tip="${esc(tip)}"/>`;
+    return mark + label + hit;
+  }).join('');
+  const lines = [[0, ''], [100, '100 %'], [target, `cíl ${target} %`]].filter(([v]) => v <= top).map(([v, t], i) => `<line class="${i === 2 ? 'ref t5-target' : i === 1 ? 'ref' : 'grid'}" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>${t ? `<text class="yl" x="${L - 6}" y="${(y(v) + 3.5).toFixed(1)}">${esc(i === 2 ? `${target}` : '100')}</text>` : ''}`).join('');
+  return `<figure class="chart c-acc t5-chart"><figcaption><b>Plnění normy po týdnech</b><span>čára 100 % = norma, čárkovaně cíl ${target} %</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Plnění normy po týdnech">${lines}${bars}</svg></figure>`;
+}
+
+function t5VerifyHtml(c, r, idx, editable) {
+  const plan = roundPlan(r);
+  const v = r.v[idx];
+  const title = idx ? '2. ověření' : '1. ověření';
+  const rule = idx ? `${r.d2} dní po 1. ověření` : `${r.d1} dní po dokončení opatření`;
+  if (v) {
+    const measured = v.eff == null ? `Bez hodnot za období ${esc(dayText(v.from, false))}–${esc(dayText(v.to))}.` : `Plnění <b>${nf(v.eff, 1)} %</b> (${hrs(v.nspent)} práce, norma ${hrs(v.norm)}) za ${esc(dayText(v.from, false))}–${esc(dayText(v.to))}${v.src === 'manual' ? ', zapsáno ručně' : v.src === 'import' ? ', z evidence práce' : ''}.`;
+    const lastOne = editable && idx === r.v.length - 1;
+    return `<div class="t5-vcard done ${v.result}"><div class="t5-vhead"><b>${title}</b><span class="t5-state s-${v.result === 'ok' ? 'ok' : 'fail'}">${v.result === 'ok' ? 'Účinné' : 'Neúčinné'}</span></div>
+      <p class="small">Provedeno <b>${esc(dayText(v.done))}</b>${v.plan ? ` (plán ${esc(dayText(v.plan))})` : ''} · ${esc(v.by || 'neznámá kartička')}</p>
+      <p class="small">${measured}</p>${v.note ? `<p class="small t5-quote">${esc(v.note)}</p>` : ''}
+      ${lastOne ? `<button class="link small" type="button" data-verundo="${idx}">Zrušit záznam ověření</button>` : ''}</div>`;
+  }
+  const win = verifyWindow(r, idx);
+  if (!win) {
+    return `<div class="t5-vcard wait"><div class="t5-vhead"><b>${title}</b><span class="muted small">${rule}</span></div>
+      <p class="small muted">${idx ? 'Naplánuje se po účinném 1. ověření.' : 'Naplánuje se, až budou splněná všechna opatření.'}</p></div>`;
+  }
+  const due = idx ? plan.p2 : plan.p1;
+  const why = idx ? r.p2why : r.p1why;
+  const today = todayIso();
+  const live = measureItem(c.ean, win.from, today < due ? today : due);
+  const target = effSet().target;
+  const tone = live && live.eff != null ? (live.eff >= target ? 's-ok' : 's-fail') : '';
+  return `<div class="t5-vcard plan${due < today ? ' late' : ''}"><div class="t5-vhead"><b>${title}</b><span class="t5-state s-v${idx + 1}${due < today ? ' late' : ''}">${due < today ? 'po termínu' : 'plánováno'}</span></div>
+    <p class="small">Termín <b>${esc(dayText(due))}</b> (${(idx ? r.p2 : r.p1) ? `posunuto${why ? `: ${esc(why)}` : ''}` : rule}).</p>
+    <p class="small">${live ? `Evidence práce od ${esc(dayText(win.from, false))}: plnění <b>${nf(live.eff, 1)} %</b> (${hrs(live.nspent)} práce, ${live.rows} ${live.rows === 1 ? 'záznam' : live.rows <= 4 ? 'záznamy' : 'záznamů'}) <span class="t5-state ${tone}">${live.eff >= target ? `splňuje cíl ${target} %` : `pod cílem ${target} %`}</span>` : `Období ověření začíná ${esc(dayText(win.from))}. Zapiš strávený čas a normu dílu za toto období, plnění se dopočítá.`}</p>
+    ${editable ? `<div class="t5-vform">
+      <label class="field"><span>Datum ověření</span><input type="date" data-verdate="${idx}" value="${esc(today)}" max="${esc(today)}"></label>
+      <label class="field"><span>Strávený čas (${unitLabel()})</span><input type="text" data-verspent="${idx}" inputmode="decimal" maxlength="12" placeholder="${live ? 'z evidence' : '0'}" autocomplete="off"></label>
+      <label class="field"><span>Norma (${unitLabel()})</span><input type="text" data-vernorm="${idx}" inputmode="decimal" maxlength="12" placeholder="${live ? 'z evidence' : '0'}" autocomplete="off"></label>
+      <p class="small t5-vlive" data-verlive="${idx}" aria-live="polite"></p>
+      <label class="field t5-vnote"><span>Poznámka</span><input type="text" data-vernote="${idx}" maxlength="1000" placeholder="co se ověřilo"></label>
+      <div class="row gap"><button class="btn small" type="button" data-ver="${idx}" data-res="ok">Účinné</button><button class="btn danger small" type="button" data-ver="${idx}" data-res="fail">Neúčinné</button><button class="btn ghost small" type="button" data-vershift="${idx}">Posunout termín</button></div>
+    </div>` : ''}</div>`;
+}
+
+/* Ručně zapsané hodnoty ověření v minutách: {spent, norm}, prázdné = z evidence práce. */
+function t5VerifyValues(idx) {
+  const a = (($(`[data-verspent="${idx}"]`) || {}).value || '').trim();
+  const b = (($(`[data-vernorm="${idx}"]`) || {}).value || '').trim();
+  if (!a && !b) return {};
+  const spent = parseUnit(a), norm = parseUnit(b);
+  if (!a || !b) return { error: 'Zapiš strávený čas i normu za období, nebo nech obě pole prázdná.' };
+  if (spent == null || norm == null) return { error: `Čas zapiš jako číslo (${unitLabel()}), třeba 13,5 nebo 13:30.` };
+  if (!(spent > 0)) return { error: 'Strávený čas musí být větší než nula.' };
+  return { spent, norm };
+}
+function t5VerifyLive(idx) {
+  const out = $(`[data-verlive="${idx}"]`);
+  if (!out) return;
+  const v = t5VerifyValues(idx);
+  if (!v.spent) { out.textContent = v.error && !/obě pole/.test(v.error) ? v.error : ''; out.className = 'small t5-vlive'; return; }
+  const m = entryMetrics(v);
+  const target = effSet().target;
+  out.innerHTML = `Plnění za období <b>${nf(m.eff, 1)} %</b> · ${m.eff >= target ? `<span class="t5-state s-ok">splňuje cíl ${target} %</span>` : `<span class="t5-state s-fail">pod cílem ${target} %</span>`}`;
+}
+
+function t5ActionsHtml(r, kind, editable) {
+  const list = r.actions.filter(a => a.kind === kind);
+  const head = kind === 'process'
+    ? '<div class="t5-act head"><span></span><span>Opatření</span><span>Odpovídá</span><span>Termín</span><span>Splněno</span><span></span></div>'
+    : '<div class="t5-act head now"><span></span><span>Opatření</span><span>Odpovídá</span><span>Splněno</span><span></span></div>';
+  const rows = list.map(a => editable ? `<div class="t5-act${kind === 'now' ? ' now' : ''}${a.done ? ' is-done' : ''}" data-act="${esc(a.id)}">
+      <label class="t5-check" title="Splněno"><input type="checkbox" data-actdone${a.done ? ' checked' : ''} aria-label="Splněno"><span></span></label>
+      <input type="text" data-actf="text" value="${esc(a.text)}" maxlength="1000" placeholder="${kind === 'process' ? 'např. žádost o změnu pohledovosti, přípravek s technologií' : 'např. upínání s dorazem, kontrola prvního kusu'}" aria-label="Opatření">
+      <input type="text" data-actf="owner" value="${esc(a.owner)}" maxlength="120" placeholder="kdo" aria-label="Odpovídá">
+      ${kind === 'process' ? `<input type="date" data-actf="due" value="${esc(a.due)}" aria-label="Termín">` : ''}
+      <input type="date" data-actf="done" value="${esc(a.done)}" aria-label="Splněno dne"${a.done ? '' : ' disabled'}>
+      <button class="icon-btn" type="button" data-actdel aria-label="Smazat opatření">${I.x}</button></div>`
+    : `<div class="t5-act ro${kind === 'now' ? ' now' : ''}${a.done ? ' is-done' : ''}"><span class="t5-tick">${a.done ? '✓' : '○'}</span><span>${esc(a.text || '—')}</span><span class="muted">${esc(a.owner || '—')}</span>${kind === 'process' ? `<span class="num">${esc(dayText(a.due) || '—')}</span>` : ''}<span class="num">${esc(dayText(a.done) || 'nesplněno')}</span><span></span></div>`).join('');
+  return `<div class="t5-acts">${list.length ? head + rows : `<p class="small muted">${editable ? 'Zatím žádné.' : 'Žádné.'}</p>`}</div>
+    ${editable ? `<button class="btn sec small" type="button" data-actadd="${kind}">Přidat opatření</button>` : ''}`;
+}
+
+function t5RoundHtml(c, r, editable) {
+  const cat = `<select data-rf="cat" aria-label="Kategorie příčiny"${editable ? '' : ' disabled'}><option value="">— kategorie příčiny —</option>${EFF_CATS.map(([k, t]) => `<option value="${k}"${r.cat === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  const text = (f, ph) => (editable
+    ? `<textarea data-rf="${f}" rows="3" maxlength="4000" placeholder="${esc(ph)}">${esc(r[f])}</textarea>`
+    : `<p class="t5-text">${r[f] ? esc(r[f]) : '<span class="muted">nevyplněno</span>'}</p>`);
+  return `<div class="t5-steps">
+    ${r.reason ? `<div class="note w"><b>Proč se otevřelo znovu:</b> ${esc(r.reason)}${r.base && r.base.eff != null ? ` <span class="muted">(${esc(weekName(r.week))}: plnění ${nf(r.base.eff, 1)} %)</span>` : ''}</div>` : ''}
+    <section class="t5-step"><h4><i>1</i>Proč se to stalo</h4>${cat}${text('cause', 'Příčina nízkého plnění: co se na položce děje, proč je strávený čas vyšší než norma.')}</section>
+    <section class="t5-step"><h4><i>2</i>Co s tím jde dělat</h4>${text('options', 'Možná řešení a jejich přínos pro průtok dílů.')}</section>
+    <section class="t5-step"><h4><i>3</i>Co jde udělat hned</h4><p class="tiny muted">Okamžitá opatření bez dalších schvalování.</p>${t5ActionsHtml(r, 'now', editable)}</section>
+    <section class="t5-step"><h4><i>4</i>Co si vyžádá procesní čas</h4><p class="tiny muted">Opatření, která potřebují čas na zpracování: žádost o změnu pohledovosti, přípravek s technologií, úprava normy…</p>${t5ActionsHtml(r, 'process', editable)}</section>
+    <section class="t5-step"><h4><i>5</i>Ověření účinnosti</h4><p class="tiny muted">1. ověření ${r.d1} dní po dokončení všech opatření, 2. ověření ${r.d2} dní po prvním. Plnění za období ověření se počítá ze stráveného času a normy dílu (ručně, nebo z evidence práce).</p>
+      <div class="t5-verify">${t5VerifyHtml(c, r, 0, editable)}${t5VerifyHtml(c, r, 1, editable)}</div></section>
+  </div>`;
+}
+
+function t5CaseHtml(c) {
+  const s = caseState(c);
+  const r = curRound(c);
+  const editable = !['ok', 'fail', 'zrus'].includes(s.k);
+  const ba = caseBeforeAfter(c);
+  const times = (topHistory()[c.ean] || []).length;
+  const lastWeek = effWeeks()[0] || c.week || isoWeek(todayIso()).id;
+  const trend = itemTrend(c.ean, lastWeek, 10);
+  const wk = weekById(r.week || c.week);
+  const workers = wk ? itemWorkers(c.ean, wk.from, wk.to) : [];
+  const base = r.base || c.base;
+  const banner = s.k === 'fail'
+    ? `<div class="note e"><b>Řešení nebylo účinné.</b> Otevři nové kolo a popiš, proč původní opatření nestačila. Předchozí kolo zůstane v historii. <button class="btn small" type="button" data-t5reopen="${esc(c.id)}" data-week="${esc(lastWeek)}">Otevřít nové kolo</button></div>`
+    : s.k === 'ok' ? `<div class="note i"><b>Uzavřeno jako účinné ${esc(dayText(s.closed))}.</b> Když se položka vrátí do Top 5, otevři znovu tento případ. <button class="btn sec small" type="button" data-t5reopen="${esc(c.id)}" data-week="${esc(lastWeek)}">Znovu otevřít</button></div>`
+      : s.k === 'zrus' ? `<div class="note w"><b>Případ je zrušený</b> (${esc(dayText(todayIso(c.cancelled.at)))}, ${esc(c.cancelled.by || '—')}): ${esc(c.cancelled.reason)} <button class="btn sec small" type="button" data-t5restore>Vrátit zrušení</button></div>` : '';
+  const prev = c.rounds.slice(0, -1).reverse();
+  return `<button class="btn ghost small back-btn t5-back" type="button" data-t5back>${I.back}${esc(T5_TABS.find(t => t[0] === ui.t5.tab)[1])}</button>
+  <div class="card t5-case-head"><div class="card-head">
+      <div><p class="eyebrow">Případ ${esc(caseLabel(c))} · kolo ${r.n}</p><h2>${esc(c.name || c.ean)}</h2>
+        <p class="small muted">EAN <b class="t5-ean">${esc(c.ean)}</b> · založeno ${esc(dayText(todayIso(c.at)))}${c.by ? ` (${esc(c.by)})` : ''} · ${c.week ? `zjištěno v ${esc(weekName(c.week))}` : 'založeno ručně'}</p></div>
+      <div class="row gap">${stateChip(s)}<button class="btn sec small" type="button" data-t5pdf="case">PDF případu</button>${s.k !== 'zrus' ? '<button class="btn ghost small" type="button" data-t5cancel>Zrušit případ</button>' : ''}</div>
+    </div>
+    <div class="t5-kpis">
+      <div><span>Plnění při zjištění</span><b class="num">${effPct(base ? base.eff : null)}</b></div>
+      <div><span>Strávený čas / norma</span><b class="num">${base ? `${hrs(base.nspent)} / ${hrs(base.norm)}` : '—'}</b></div>
+      <div><span>Ztráta</span><b class="num">${base ? hrs(Math.max(0, base.nspent - base.norm)) : '—'}</b></div>
+      <div><span>V Top 5</span><b class="num">${times}×</b></div>
+      <div><span>Po opatřeních</span><b class="num">${ba.after == null ? '—' : effPct(ba.after)}</b></div>
+    </div></div>
+  ${banner}
+  <div class="t5-detail">
+    <div class="stack">
+      <div class="card"><h3>Kolo ${r.n}${c.rounds.length > 1 ? ` z ${c.rounds.length}` : ''}${editable ? '' : ' <span class="muted small">(uzavřené, jen pro čtení)</span>'}</h3>${t5RoundHtml(c, r, editable)}</div>
+      ${prev.length ? `<div class="card"><h3>Předchozí kola</h3><p class="small muted">Co se už zkoušelo, ať se stejné řešení neopakuje.</p>${prev.map(p => `<details class="t5-prev"><summary><b>Kolo ${p.n}</b> · ${esc(dayText(todayIso(p.at)))} · ${p.v.some(v => v.result === 'fail') ? '<span class="t5-state s-fail">neúčinné</span>' : p.v[1] && p.v[1].result === 'ok' ? '<span class="t5-state s-ok">účinné</span>' : '<span class="t5-state">nedokončené</span>'}${p.cat ? ` · ${esc(effCatLabel(p.cat))}` : ''}</summary>${t5RoundHtml(c, p, false)}</details>`).join('')}</div>` : ''}
+    </div>
+    <div class="stack t5-side">
+      <div class="t5-chartwrap" id="t5Charts">${weekChart(c, trend)}<div class="chart-tip" id="t5Tip" hidden></div></div>
+      ${workers.length ? `<div class="card"><h3>Kdo na dílu pracoval</h3><p class="tiny muted">${esc(weekLong(wk.id))}, z evidence práce</p><table class="t5-mini"><tbody>${workers.map(w => `<tr><td>${esc(w.name)}</td><td class="r num">${hrs(w.nspent)}</td><td class="r num"><b>${effPct(w.eff)}</b></td></tr>`).join('')}</tbody></table><p class="tiny muted">Když je plnění nízké u všech, je příčina spíš v metodě, normě nebo přípravku; když jen u jednoho, spíš v zaučení.</p></div>` : ''}
+      <div class="card"><h3>Historie případu</h3><div class="t5-timeline">${c.log.slice().reverse().map(e => `<div class="t5-tl"><span class="num">${esc(tsText(e.at))}</span><p>${esc(e.t)}</p><small>${esc(e.by || 'neznámá kartička')}</small></div>`).join('') || '<p class="small muted">Zatím nic.</p>'}</div></div>
+    </div>
+  </div>`;
+}
+
+/* ---------- akce ---------- */
+function t5Open(id) {
+  ui.t5.caseId = id;
+  renderTop5();
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+async function t5NewCase(ean, weekId) {
+  const existing = caseOfItem(ean);
+  if (existing) { t5Open(existing.id); return; }
+  const c = createCase(ean, weekId, effMeta());
+  save();
+  toast(`Založen případ ${caseLabel(c)}.`);
+  t5Open(c.id);
+}
+
+async function t5Reopen(c, weekId) {
+  const s = caseState(c);
+  const now = weekTop(weekId).items.find(x => x.ean === c.ean);
+  const pre = s.k === 'ok' && now ? `Položka je v ${weekName(weekId)} znovu pod normou (plnění ${nf(now.eff, 1)} %), přestože případ byl ${dayText(s.closed)} uzavřen jako účinný.`
+    : s.k === 'fail' ? 'Ověření ukázalo, že opatření nestačila: ' : '';
+  const reason = await textBox(s.k === 'fail' ? 'Nové kolo případu' : 'Znovu otevřít případ', 'Proč původní řešení nestačilo', pre, 'Otevřít', 'důvod (povinný)');
+  if (reason == null) return;
+  if (!reason.trim()) { toast('Napiš, proč původní řešení nestačilo.', true); return; }
+  reopenCase(c, reason.trim(), now ? weekId : '', effMeta());
+  save();
+  toast(`${caseLabel(c)}: otevřeno kolo ${c.rounds.length}.`);
+  t5Open(c.id);
+}
+
+async function t5ManualCase() {
+  const known = t5KnownItems();
+  const result = await dialog({
+    title: 'Nový případ', ok: 'Založit',
+    html: `<p class="small muted">Případ se obvykle zakládá z týdenního Top 5. Ručně se hodí pro díl, který dělá problém mimo Top 5.</p>
+      <label class="field"><span>EAN nebo kód položky</span><input name="value" list="t5Eans" maxlength="40" required autocomplete="off"></label>
+      <datalist id="t5Eans">${Object.entries(known).map(([e, n]) => `<option value="${esc(e)}">${esc(n)}</option>`).join('')}</datalist>`,
+    validate: form => (itemKey(form.elements.value.value) ? null : 'Zadej EAN nebo kód položky.'),
+  });
+  if (result.value !== 'ok') return;
+  const ean = itemKey(result.form.elements.value.value);
+  const week = effWeeks().find(w => { const m = weekMetrics(ean, w); return m && m.nspent > 0; }) || '';
+  if (!(ean in known) && !(await confirmBox('Neznámý díl', `EAN ${ean} není v žádném zápisu Top 5 ani v evidenci práce. Založit případ i tak?`, 'Založit'))) return;
+  await t5NewCase(ean, week);
+}
+
+async function t5Settings() {
+  const st = effSet();
+  const result = await dialog({
+    title: 'Nastavení Top 5', ok: 'Uložit',
+    html: `<div class="form-grid">
+        <label class="field"><span>Čas v zápisu Top 5 a v ověření</span><select name="unit"><option value="h"${st.unit !== 'min' ? ' selected' : ''}>v hodinách</option><option value="min"${st.unit === 'min' ? ' selected' : ''}>v minutách</option></select></label>
+        <label class="field"><span>Výpočet z evidence práce: min. práce dílu za týden (h)</span><input type="number" name="min" value="${n2(st.min / 60)}" min="0" max="100" step="0.25"></label>
+        <label class="field"><span>Cílové plnění pro ověření (%)</span><input type="number" name="target" value="${st.target}" min="1" max="200" step="1"></label>
+        <label class="field"><span>1. ověření po dokončení opatření (dní)</span><input type="number" name="d1" value="${st.d1}" min="1" max="365" step="1"></label>
+        <label class="field"><span>2. ověření po prvním (dní)</span><input type="number" name="d2" value="${st.d2}" min="1" max="365" step="1"></label>
+      </div>
+      <p class="tiny muted">Jednotka mění jen zadávání a zobrazení v tabulce, uložené hodnoty zůstanou. Limit práce platí jen pro předvyplnění z evidence práce: vyřadí díly, na kterých se v týdnu dělalo jen chvíli. Lhůty ověření platí pro nově založené případy a kola; rozpracované si nechávají své.</p>`,
+  });
+  if (result.value !== 'ok') return;
+  const f = result.form.elements;
+  const val = (v, d, lo, hi) => { const n = Number(v); return Number.isFinite(n) ? clamp(n, lo, hi) : d; };
+  S.eff.settings = { unit: f.unit.value === 'min' ? 'min' : 'h', min: Math.round(val(f.min.value, st.min / 60, 0, 100) * 60), target: Math.round(val(f.target.value, st.target, 1, 200)), d1: Math.round(val(f.d1.value, st.d1, 1, 365)), d2: Math.round(val(f.d2.value, st.d2, 1, 365)) };
+  save();
+  renderTop5();
+  toast('Nastavení Top 5 uloženo.');
+}
+
+/* Úpravy v detailu případu: text se ukládá průběžně, do historie jde po dokončení úpravy. */
+function t5CaseInput(event) {
+  const c = ui.t5.caseId && effCase(ui.t5.caseId);
+  if (!c) return;
+  const r = curRound(c);
+  const t = event.target;
+  if (t.dataset.rf === 'cause' || t.dataset.rf === 'options') { r[t.dataset.rf] = t.value.slice(0, 4000); save(); return; }
+  const row = t.closest('[data-act]');
+  if (row && (t.dataset.actf === 'text' || t.dataset.actf === 'owner')) {
+    const a = r.actions.find(x => x.id === row.dataset.act);
+    if (a) { a[t.dataset.actf] = t.value.slice(0, t.dataset.actf === 'text' ? 1000 : 120); save(); }
+  }
+}
+
+function t5CaseChange(event) {
+  const c = ui.t5.caseId && effCase(ui.t5.caseId);
+  if (!c) return;
+  const r = curRound(c);
+  const t = event.target;
+  const meta = effMeta();
+  if (t.dataset.rf === 'cat') { r.cat = t.value; effNote(c, meta, `Kategorie příčiny: ${effCatLabel(r.cat) || 'nevybráno'}`, true); save(); renderTop5(); return; }
+  if (t.dataset.rf === 'cause') { effNote(c, meta, `Příčina: ${r.cause.trim() || '(smazáno)'}`.slice(0, 500), true); save(); return; }
+  if (t.dataset.rf === 'options') { effNote(c, meta, `Co s tím jde dělat: ${r.options.trim() || '(smazáno)'}`.slice(0, 500), true); save(); return; }
+  const row = t.closest('[data-act]');
+  if (!row) return;
+  const a = r.actions.find(x => x.id === row.dataset.act);
+  if (!a) return;
+  const label = `${a.kind === 'now' ? 'Okamžité opatření' : 'Opatření s procesním časem'} „${liveText(a) || '…'}“`;
+  if (t.dataset.actf === 'text') { if (liveText(a)) effNote(c, meta, `${label}${a.owner ? `, odpovídá ${a.owner}` : ''}`, true); save(); renderTop5(); return; }
+  if (t.dataset.actf === 'owner') { effNote(c, meta, `${label}: odpovídá ${a.owner || '—'}`, true); save(); return; }
+  if (t.dataset.actf === 'due') { a.due = ISO_DAY.test(t.value) ? t.value : ''; effNote(c, meta, `${label}: termín ${dayText(a.due) || 'bez termínu'}`, true); save(); renderTop5(); return; }
+  if (t.dataset.actf === 'done') {
+    a.done = ISO_DAY.test(t.value) ? t.value : '';
+    effNote(c, meta, a.done ? `${label}: splněno ${dayText(a.done)}` : `${label}: vráceno jako nesplněné`, true);
+    save(); renderTop5(); return;
+  }
+  if ('actdone' in t.dataset) {
+    if (t.checked && !liveText(a)) { t.checked = false; toast('Nejdřív napiš, co se udělalo.', true); return; }
+    a.done = t.checked ? todayIso() : '';
+    effNote(c, meta, a.done ? `${label}: splněno ${dayText(a.done)}` : `${label}: vráceno jako nesplněné`);
+    save(); renderTop5();
+  }
+}
+
+async function t5CaseClick(event) {
+  const t = event.target;
+  const c = ui.t5.caseId && effCase(ui.t5.caseId);
+  if (!c) return false;
+  const r = curRound(c);
+  const meta = effMeta();
+  if (t.closest('[data-t5back]')) { ui.t5.caseId = null; renderTop5(); return true; }
+  const add = t.closest('[data-actadd]');
+  if (add) {
+    const a = { id: uid('a'), kind: add.dataset.actadd === 'process' ? 'process' : 'now', text: '', owner: '', due: '', done: '', note: '' };
+    r.actions.push(a);
+    save(); renderTop5();
+    const input = $(`[data-act="${a.id}"] [data-actf="text"]`);
+    if (input) input.focus();
+    return true;
+  }
+  const del = t.closest('[data-actdel]');
+  if (del) {
+    const row = del.closest('[data-act]');
+    const a = r.actions.find(x => x.id === row.dataset.act);
+    if (!a) return true;
+    if (liveText(a) && !(await confirmBox('Smazat opatření?', `„${liveText(a)}“ zmizí z kola ${r.n}. V historii případu zůstane záznam.`, 'Smazat', true))) return true;
+    r.actions = r.actions.filter(x => x !== a);
+    if (liveText(a)) effNote(c, meta, `Odebráno opatření „${liveText(a)}“`);
+    save(); renderTop5();
+    return true;
+  }
+  const ver = t.closest('[data-ver]');
+  if (ver) {
+    const idx = +ver.dataset.ver;
+    const date = ($(`[data-verdate="${idx}"]`) || {}).value || '';
+    const note = (($(`[data-vernote="${idx}"]`) || {}).value || '').trim();
+    if (!ISO_DAY.test(date)) { toast('Vyber datum ověření.', true); return true; }
+    if (date > todayIso()) { toast('Ověření nemůže být v budoucnosti.', true); return true; }
+    const win = verifyWindow(r, idx, date);
+    const man = t5VerifyValues(idx);
+    if (man.error) { toast(man.error, true); return true; }
+    const m = man.spent ? entryMetrics(man) : win && measureItem(c.ean, win.from, date);
+    if (win && date < win.from && !man.spent && !(await confirmBox('Ověření hned po opatřeních?', `Plnění se měří až od ${dayText(win.from)}, takže k ověření ${dayText(date)} nejsou žádná data. Zapsat i tak?`, 'Zapsat'))) return true;
+    if (win && date >= win.from && !m && !(await confirmBox('Ověření bez hodnot', 'Bez stráveného času a normy za období nejde účinnost doložit čísly. Zapsat ověření jen s poznámkou?', 'Zapsat'))) return true;
+    const target = effSet().target;
+    if (ver.dataset.res === 'ok' && m && m.eff != null && m.eff < target && !(await confirmBox('Plnění je pod cílem', `Plnění za období je ${nf(m.eff, 1)} %, cíl je ${target} %. Zapsat ověření přesto jako účinné?`, 'Zapsat účinné'))) return true;
+    if (ver.dataset.res === 'fail' && !(await confirmBox('Neúčinné ověření', `Kolo ${r.n} se tím uzavře jako neúčinné. Pak otevřeš nové kolo a popíšeš, proč řešení nestačilo.`, 'Zapsat neúčinné', true))) return true;
+    try { recordVerify(c, idx, date, ver.dataset.res, note, meta, man.spent ? man : null); } catch (error) { toast(error.message, true); return true; }
+    save(); renderTop5();
+    toast(ver.dataset.res === 'ok' ? (idx ? `${caseLabel(c)} uzavřen jako účinný.` : `1. ověření zapsáno, 2. ověření je ${dayText(roundPlan(r).p2)}.`) : `${caseLabel(c)}: neúčinné, otevři nové kolo.`);
+    return true;
+  }
+  const undo = t.closest('[data-verundo]');
+  if (undo) {
+    const idx = +undo.dataset.verundo;
+    if (!(await confirmBox('Zrušit záznam ověření?', 'Záznam zmizí z kola a ověření bude znovu naplánované. V historii případu zůstane, že byl zrušen.', 'Zrušit záznam', true))) return true;
+    undoVerify(c, idx, meta);
+    save(); renderTop5();
+    return true;
+  }
+  const shift = t.closest('[data-vershift]');
+  if (shift) {
+    const idx = +shift.dataset.vershift;
+    const plan = roundPlan(r);
+    const result = await dialog({
+      title: `Posunout ${idx ? '2.' : '1.'} ověření`, ok: 'Posunout',
+      html: `<label class="field"><span>Nový termín</span><input type="date" name="date" value="${esc(idx ? plan.p2 : plan.p1)}" required></label>
+        <label class="field"><span>Důvod</span><input name="value" maxlength="300" required placeholder="např. položka se ve výrobě objeví až v listopadu"></label>`,
+      validate: form => (!ISO_DAY.test(form.elements.date.value) ? 'Vyber datum.' : !form.elements.value.value.trim() ? 'Napiš důvod posunu.' : null),
+    });
+    if (result.value !== 'ok') return true;
+    const date = result.form.elements.date.value;
+    const why = result.form.elements.value.value.trim();
+    if (idx) { r.p2 = date; r.p2why = why; } else { r.p1 = date; r.p1why = why; }
+    effNote(c, meta, `Termín ${idx ? '2.' : '1.'} ověření posunut na ${dayText(date)}: ${why}`);
+    save(); renderTop5();
+    return true;
+  }
+  if (t.closest('[data-t5cancel]')) {
+    const reason = await textBox('Zrušit případ', 'Důvod zrušení', '', 'Zrušit případ', 'např. chyba v evidenci, duplicitní případ', 500);
+    if (reason == null) return true;
+    if (!reason.trim()) { toast('Napiš důvod zrušení.', true); return true; }
+    cancelCase(c, reason.trim(), meta);
+    save(); renderTop5();
+    return true;
+  }
+  if (t.closest('[data-t5restore]')) { restoreCase(c, meta); save(); renderTop5(); return true; }
+  return false;
+}
+
+function bindTop5Events() {
+  $('#t5Tabs').addEventListener('click', event => {
+    const b = event.target.closest('[data-t5tab]');
+    if (!b) return;
+    ui.t5.tab = b.dataset.t5tab;
+    ui.t5.caseId = null;
+    renderTop5();
+  });
+  $('#t5Settings').onclick = t5Settings;
+  $('#t5SummaryPdf').onclick = () => exportEffSummaryPdf();
+  const view = $('#t5View');
+  view.addEventListener('pointerdown', () => { t5PointerDown = true; });
+  document.addEventListener('pointerup', () => { t5PointerDown = false; }, true);
+  view.addEventListener('click', async event => {
+    const t = event.target;
+    const pdf = t.closest('[data-t5pdf]');
+    if (pdf) {
+      if (pdf.dataset.t5pdf === 'week') exportWeekPdf(ui.t5.week, pdf);
+      else if (pdf.dataset.t5pdf === 'rep') exportIssuedPdf(pdf.dataset.week, pdf);
+      else if (pdf.dataset.t5pdf === 'case') exportEffSummaryPdf(ui.t5.caseId, pdf);
+      return;
+    }
+    if (await t5CaseClick(event)) return;
+    if (await t5EntryClick(event)) return;
+    const wk = t.closest('[data-t5wk]');
+    if (wk) {
+      const next = shiftWeek(ui.t5.week, wk.dataset.t5wk === 'older' ? -1 : 1);
+      if (next <= isoWeek(todayIso()).id) { ui.t5.week = next; renderTop5(); }
+      return;
+    }
+    const nw = t.closest('[data-t5new]');
+    if (nw) { t5NewCase(nw.dataset.t5new, nw.dataset.week); return; }
+    const ro = t.closest('[data-t5reopen]');
+    if (ro) { const c = effCase(ro.dataset.t5reopen); if (c) t5Reopen(c, ro.dataset.week); return; }
+    const filter = t.closest('[data-t5filter]');
+    if (filter) { ui.t5.filter = filter.dataset.t5filter; renderTop5(); return; }
+    if (t.closest('[data-t5manual]')) { t5ManualCase(); return; }
+    const open = t.closest('[data-t5open]');
+    if (open && !t.closest('button:not([data-t5open]), a, input, select, textarea')) t5Open(open.dataset.t5open);
+  });
+  view.addEventListener('keydown', event => {
+    if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('tr[data-t5open]')) { event.preventDefault(); t5Open(event.target.dataset.t5open); }
+  });
+  view.addEventListener('change', event => {
+    if (event.target.id === 't5WeekSel') { ui.t5.week = event.target.value; renderTop5(); return; }
+    if (t5EntryChange(event)) return;
+    t5CaseChange(event);
+  });
+  view.addEventListener('input', event => {
+    if (event.target.id === 't5Q') {
+      ui.t5.q = event.target.value;
+      const pos = event.target.selectionStart;
+      renderTop5();
+      const q = $('#t5Q');
+      if (q) { q.focus(); q.setSelectionRange(pos, pos); }
+      return;
+    }
+    const vi = event.target.dataset.verspent || event.target.dataset.vernorm;
+    if (vi != null) { t5VerifyLive(vi); return; }
+    t5CaseInput(event);
+  });
+  // Tooltip grafu (myš i klávesnice), stejně jako v profilu.
+  const showTip = hit => {
+    const tip = $('#t5Tip');
+    const wrap = $('#t5Charts');
+    if (!tip || !wrap) return;
+    tip.textContent = hit.dataset.tip;
+    tip.hidden = false;
+    const a = hit.getBoundingClientRect();
+    const b = wrap.getBoundingClientRect();
+    tip.style.left = `${clamp(a.left - b.left + a.width / 2 - tip.offsetWidth / 2, 0, Math.max(0, b.width - tip.offsetWidth))}px`;
+    tip.style.top = `${Math.max(0, a.top - b.top - tip.offsetHeight - 6)}px`;
+    $$('.chart .hit.on', wrap).forEach(x => x.classList.remove('on'));
+    hit.classList.add('on');
+  };
+  const hideTip = () => {
+    const tip = $('#t5Tip');
+    if (tip) tip.hidden = true;
+    $$('#t5Charts .hit.on').forEach(x => x.classList.remove('on'));
+  };
+  view.addEventListener('pointerover', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
+  view.addEventListener('pointerout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
+  view.addEventListener('focusin', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
+  view.addEventListener('focusout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
+}
+
+/* ==========================================================================
+   TOP 5: PDF pro auditora (týdenní report, souhrn, jeden případ)
+   Vzniká v prohlížeči z dešifrovaných dat, server obsah nevidí.
+   ========================================================================== */
+async function newPdf() {
+  if (!window.jspdf) await OdmLock.loadScript(`app.php?f=jspdf.js&v=${document.body.dataset.privateVersion || '1'}`);
+  const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
+  const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  doc.addFileToVFS('Plex-Regular.ttf', regular);
+  doc.addFont('Plex-Regular.ttf', 'Plex', 'normal');
+  doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
+  doc.addFont('Plex-SemiBold.ttf', 'Plex', 'bold');
+  return doc;
+}
+
+/** Sada kreslicích funkcí nad jsPDF. k.dry = jen měří výšku (bez kreslení a bez zalomení stránky). */
+function pdfKit(doc) {
+  const k = { doc, W: 210, H: 297, M: 16, y: 16, dry: false, onPage: null };
+  k.CW = k.W - 2 * k.M;
+  k.BOTTOM = k.H - 20;
+  k.PAGE = k.BOTTOM - k.M;
+  const C = k.C = {
+    ink: [27, 31, 29], ink2: [85, 92, 88], ink3: [133, 139, 134], line: [222, 221, 212], line2: [198, 196, 184],
+    soft: [243, 242, 236], soft3: [232, 230, 221], acc: [14, 107, 93], accSoft: [220, 235, 230], white: [255, 255, 255],
+    good: [46, 125, 70], goodSoft: [223, 238, 227], warn: [156, 106, 18], warnSoft: [244, 234, 212],
+    crit: [176, 57, 43], critSoft: [246, 225, 221], wk: [106, 87, 166], wkSoft: [232, 227, 244],
+  };
+  k.TONE = { new: [C.warnSoft, C.warn], act: [C.accSoft, C.acc], v1: [C.wkSoft, C.wk], v2: [C.wkSoft, C.wk], ok: [C.goodSoft, C.good],
+    fail: [C.critSoft, C.crit], late: [C.critSoft, C.crit], zrus: [C.soft3, C.ink3], none: [C.warnSoft, C.warn], plain: [C.soft3, C.ink2] };
+  const mm = pt => pt * 0.3528;
+  k.mm = mm;
+  k.LH = (size, f = 1.32) => mm(size) * f;
+  k.font = (size, bold = false, color = C.ink) => { doc.setFont('Plex', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(...color); };
+  k.text = (s, x, top, size, o = {}) => { if (k.dry) return; k.font(size, o.bold, o.color || C.ink); doc.text(String(s), x, top + mm(size) * 0.92, { align: o.align || 'left', charSpace: o.space || 0 }); };
+  k.mid = (s, x, cy, size, o = {}) => { if (k.dry) return; k.font(size, o.bold, o.color || C.ink); doc.text(String(s), x, cy + mm(size) * 0.35, { align: o.align || 'left' }); };
+  k.split = (s, w, size, bold = false) => { k.font(size, bold); const t = String(s == null ? '' : s).replace(/\s+\n/g, '\n'); return t ? doc.splitTextToSize(t, w) : ['']; };
+  k.width = (s, size, bold = false) => { k.font(size, bold); return doc.getTextWidth(String(s)); };
+  k.box = (color, x, top, w, h, r = 0) => {
+    if (k.dry || w <= 0 || h <= 0) return;
+    doc.setFillColor(...color);
+    if (r) doc.roundedRect(x, top, w, h, Math.min(r, w / 2, h / 2), Math.min(r, w / 2, h / 2), 'F');
+    else doc.rect(x, top, w, h, 'F');
+  };
+  k.hline = (at, color = C.line, lw = 0.2, x1 = k.M, x2 = k.M + k.CW, dash = null) => {
+    if (k.dry) return;
+    doc.setDrawColor(...color); doc.setLineWidth(lw);
+    if (dash) doc.setLineDashPattern(dash, 0);
+    doc.line(x1, at, x2, at);
+    if (dash) doc.setLineDashPattern([], 0);
+  };
+  /** Štítek stavu; vrací šířku. */
+  k.pill = (label, x, cy, tone, size = 7.4, align = 'left') => {
+    const [bg, fg] = k.TONE[tone] || k.TONE.plain;
+    const w = k.width(label, size, true) + 4.4;
+    const x0 = align === 'right' ? x - w : x;
+    k.box(bg, x0, cy - 2.3, w, 4.6, 2.3);
+    k.mid(label, x0 + 2.2, cy, size, { bold: true, color: fg });
+    return w;
+  };
+  /** Zaškrtávací políčko: splněno = zelené se značkou, po termínu = červený rámeček. */
+  k.check = (x, cy, done, late) => {
+    if (k.dry) return;
+    const s = 3.1;
+    if (done) {
+      doc.setFillColor(...C.good); doc.roundedRect(x, cy - s / 2, s, s, 0.6, 0.6, 'F');
+      doc.setDrawColor(...C.white); doc.setLineWidth(0.45);
+      doc.line(x + 0.7, cy + 0.05, x + 1.3, cy + 0.7); doc.line(x + 1.3, cy + 0.7, x + 2.45, cy - 0.75);
+    } else {
+      doc.setDrawColor(...(late ? C.crit : C.line2)); doc.setLineWidth(0.35);
+      doc.roundedRect(x, cy - s / 2, s, s, 0.6, 0.6, 'S');
+    }
+  };
+  k.dot = (x, cy, r, fill, stroke) => {
+    if (k.dry) return;
+    if (fill) doc.setFillColor(...fill);
+    if (stroke) { doc.setDrawColor(...stroke); doc.setLineWidth(0.45); }
+    doc.circle(x, cy, r, fill && stroke ? 'FD' : fill ? 'F' : 'S');
+  };
+  k.newPage = () => { doc.addPage(); k.y = k.M; if (k.onPage) k.onPage(); };
+  k.need = h => { if (k.dry) return false; if (k.y + h > k.BOTTOM) { k.newPage(); return true; } return false; };
+  k.measure = fn => { const y = k.y; const was = k.dry; k.dry = true; k.y = 0; fn(); const h = k.y; k.y = y; k.dry = was; return h; };
+  /** Blok se nerozdělí, když se vejde na stránku; jinak začne na nové, pokud zbývá málo místa. */
+  k.keep = (fn, min = 40) => {
+    const h = k.measure(fn);
+    if (k.y + h > k.BOTTOM && (h <= k.PAGE || k.BOTTOM - k.y < min)) k.newPage();
+    fn();
+  };
+  /** Odstavec s řádkovým zalomením přes stránky. */
+  k.para = (s, x, w, size, o = {}) => {
+    const lines = k.split(s, w, size, o.bold);
+    const lh = k.LH(size, o.lh || 1.38);
+    lines.forEach(line => { k.need(lh); k.text(line, x, k.y, size, o); k.y += lh; });
+  };
+  k.header = ({ eyebrow, right, title, sub, meta }) => {
+    k.text(eyebrow, k.M, k.y, 7.5, { bold: true, color: C.acc, space: 0.35 });
+    if (right) k.text(right, k.M + k.CW, k.y, 8.5, { color: C.ink2, align: 'right' });
+    k.y += 7.5;
+    k.split(title, k.CW, 20, true).forEach(line => { k.text(line, k.M, k.y, 20, { bold: true }); k.y += mm(20) * 1.2; });
+    k.y += 1;
+    if (sub) { k.text(sub, k.M, k.y, 11.5, { bold: true, color: C.ink2 }); k.y += mm(11.5) * 1.5; }
+    if (meta) { k.para(meta, k.M, k.CW * 0.85, 9, { color: C.ink2 }); }
+    k.y += 2.5;
+    if (!k.dry) { doc.setDrawColor(...C.acc); doc.setLineWidth(0.7); doc.line(k.M, k.y, k.M + 28, k.y); }
+    k.y += 7;
+  };
+  k.tiles = list => {
+    const gap = 4, n = list.length, tw = (k.CW - gap * (n - 1)) / n, th = 20;
+    list.forEach(([label, value, note, tone], i) => {
+      const x = k.M + i * (tw + gap);
+      k.box(C.soft, x, k.y, tw, th, 2.4);
+      if (tone) k.box(tone === 'crit' ? C.crit : tone === 'good' ? C.good : C.acc, x, k.y + 3, 0.9, th - 6);
+      k.text(label, x + 4, k.y + 3.2, 7.8, { color: C.ink2 });
+      k.text(value, x + 4, k.y + 7.4, 15, { bold: true, color: tone === 'crit' ? C.crit : C.ink });
+      if (note) k.text(k.split(note, tw - 7, 7)[0], x + 4, k.y + 14.4, 7, { color: C.ink3 });
+    });
+    k.y += th + 7;
+  };
+  k.heading = (t, size = 12.5) => { k.text(t, k.M, k.y, size, { bold: true }); k.y += mm(size) * 1.25 + 2.4; };
+  k.signoff = () => {
+    const sw = (k.CW - 12) / 3;
+    ['Zpracovatel', 'Datum', 'Podpis'].forEach((label, i) => {
+      const x = k.M + i * (sw + 6);
+      k.hline(k.y + 10, C.line2, 0.3, x, x + sw);
+      k.text(label, x, k.y + 11.6, 8, { color: C.ink3 });
+    });
+    k.y += 22;
+  };
+  k.footer = left => {
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i += 1) {
+      doc.setPage(i);
+      doc.setDrawColor(...C.line); doc.setLineWidth(0.2); doc.line(k.M, k.H - 13.5, k.M + k.CW, k.H - 13.5);
+      k.font(7.5, false, C.ink3);
+      doc.text(left, k.M, k.H - 11.5 + mm(7.5) * 0.92);
+      doc.text(`Strana ${i} / ${pages}`, k.M + k.CW, k.H - 11.5 + mm(7.5) * 0.92, { align: 'right' });
+    }
+  };
+  return k;
+}
+
+const pdfH = min => `${nf((+min || 0) / 60, 1)} h`;
+const pdfPct = v => (v == null ? '—' : `${nf(v, 1)} %`);
+function lidiW(n) { return n === 1 ? 'pracovník' : n >= 2 && n <= 4 ? 'pracovníci' : 'pracovníků'; }
+
+/* ---------- společné části: pole, opatření, ověření, kolo ---------- */
+const PDF_LX = 42; // šířka sloupce popisků
+
+function pdfLabel(k, label) { k.text(label, k.M, k.y + 0.4, 7.8, { bold: true, color: k.C.ink2 }); }
+
+function pdfField(k, label, text, o = {}) {
+  const lines = k.split(text, k.CW - PDF_LX, 9, o.bold);
+  const lh = k.LH(9, 1.36);
+  k.need(lh + 1);
+  pdfLabel(k, label);
+  lines.forEach((line, i) => { if (i) k.need(lh); k.text(line, k.M + PDF_LX, k.y, 9, { color: o.color || k.C.ink, bold: o.bold }); k.y += lh; });
+  k.y += 2.2;
+}
+
+function pdfActions(k, label, actions, kind, today) {
+  const X = k.M + PDF_LX;
+  const W = k.CW - PDF_LX;
+  const cols = kind === 'process' ? [5, W - 5 - 30 - 21 - 25, 30, 21, 25] : [5, W - 5 - 30 - 25, 30, 25];
+  const lh = k.LH(8.8, 1.32);
+  if (!actions.length) { pdfField(k, label, 'žádná', { color: k.C.ink3 }); return; }
+  k.need(lh * 2 + 5);
+  pdfLabel(k, label);
+  const heads = kind === 'process' ? ['', 'Opatření', 'Odpovídá', 'Termín', 'Stav'] : ['', 'Opatření', 'Odpovídá', 'Stav'];
+  let x = X;
+  heads.forEach((t, i) => { if (t) k.text(t, x, k.y, 6.8, { bold: true, color: k.C.ink3 }); x += cols[i]; });
+  k.y += 3.8;
+  actions.forEach(a => {
+    const late = !a.done && a.due && a.due < today;
+    const tl = k.split(a.text, cols[1] - 2, 8.8);
+    const ol = k.split(a.owner || '—', cols[2] - 2, 8.2);
+    const h = Math.max(tl.length, ol.length) * lh + 1.8;
+    k.need(h);
+    k.check(X + 0.4, k.y + lh / 2 - 0.15, !!a.done, late);
+    tl.forEach((line, i) => k.text(line, X + cols[0], k.y + i * lh, 8.8));
+    let xx = X + cols[0] + cols[1];
+    ol.forEach((line, i) => k.text(line, xx, k.y + i * lh, 8.2, { color: k.C.ink2 }));
+    xx += cols[2];
+    if (kind === 'process') { k.text(a.due ? dayText(a.due) : '—', xx, k.y, 8.2, { color: late ? k.C.crit : k.C.ink2, bold: !!late }); xx += cols[3]; }
+    k.text(a.done ? `splněno ${dayText(a.done)}` : late ? 'po termínu' : 'otevřené', xx, k.y, 8.2, { color: a.done ? k.C.good : late ? k.C.crit : k.C.ink3, bold: !a.done && !!late });
+    k.y += h;
+  });
+  k.y += 1.4;
+}
+
+function pdfVerify(k, r, today) {
+  const p = roundPlan(r);
+  const lh = k.LH(8.8, 1.34);
+  const rows = [0, 1].map(idx => {
+    const v = r.v[idx];
+    const rule = idx ? `${r.d2} dní po 1. ověření` : `${r.d1} dní po dokončení opatření`;
+    if (v) {
+      const measured = v.eff == null ? `bez hodnot za ${dayText(v.from, false)}–${dayText(v.to)}` : `plnění ${nf(v.eff, 1)} % (strávený čas ${pdfH(v.nspent)}, norma ${pdfH(v.norm)}) za ${dayText(v.from, false)}–${dayText(v.to)}${v.src === 'manual' ? ', zapsáno ručně' : v.src === 'import' ? ', z evidence práce' : ''}`;
+      return { tone: v.result === 'ok' ? 'ok' : 'fail', tag: v.result === 'ok' ? 'účinné' : 'neúčinné', text: `${idx + 1}. ověření ${dayText(v.done)}${v.plan && v.plan !== v.done ? ` (plán ${dayText(v.plan)})` : ''}: ${measured}${v.note ? `. ${v.note}` : ''}${v.by ? ` · ${v.by}` : ''}` };
+    }
+    const due = idx ? p.p2 : p.p1;
+    const why = idx ? r.p2why : r.p1why;
+    if (due) return { tone: due < today ? 'late' : idx ? 'v2' : 'v1', tag: due < today ? 'po termínu' : 'plánováno', text: `${idx + 1}. ověření ${dayText(due)} (${(idx ? r.p2 : r.p1) ? `posunuto${why ? `: ${why}` : ''}` : rule})` };
+    return { tone: 'plain', tag: 'čeká', text: `${idx + 1}. ověření se naplánuje ${idx ? 'po účinném 1. ověření' : 'po dokončení všech opatření'} (${rule})` };
+  });
+  k.need(lh * 2 + 4);
+  pdfLabel(k, 'Ověření účinnosti');
+  rows.forEach(row => {
+    const tw = k.width(row.tag, 7.2, true) + 4.4;
+    const lines = k.split(row.text, k.CW - PDF_LX - tw - 3, 8.8);
+    k.need(lines.length * lh + 1.4);
+    k.pill(row.tag, k.M + PDF_LX, k.y + lh / 2 - 0.1, row.tone, 7.2);
+    lines.forEach((line, i) => k.text(line, k.M + PDF_LX + tw + 3, k.y + i * lh, 8.8));
+    k.y += lines.length * lh + 1.4;
+  });
+  k.y += 1.6;
+}
+
+function pdfRound(k, c, r, today) {
+  const acts = liveActions(r);
+  if (r.reason) pdfField(k, 'Proč znovu', r.reason, { color: k.C.warn });
+  pdfField(k, 'Proč se to stalo', `${r.cat ? `${effCatLabel(r.cat)}: ` : ''}${r.cause || 'nevyplněno'}`, { color: r.cause ? k.C.ink : k.C.ink3 });
+  pdfField(k, 'Co s tím jde dělat', r.options || 'nevyplněno', { color: r.options ? k.C.ink : k.C.ink3 });
+  pdfActions(k, 'Co jde udělat hned', acts.filter(a => a.kind === 'now'), 'now', today);
+  pdfActions(k, 'Procesní čas', acts.filter(a => a.kind === 'process'), 'process', today);
+  pdfVerify(k, r, today);
+}
+
+/** Stručné shrnutí uzavřeného kola (do týdenního reportu). */
+function roundBrief(r) {
+  const acts = liveActions(r);
+  const v = r.v.map((x, i) => `${i + 1}. ověření ${dayText(x.done)} ${x.result === 'ok' ? 'účinné' : 'neúčinné'}${x.eff != null ? ` (${nf(x.eff, 1)} %)` : ''}`);
+  return `Kolo ${r.n} (od ${dayText(todayIso(r.at))}): ${r.cat ? `${effCatLabel(r.cat)}: ` : ''}${(r.cause || 'příčina nevyplněna').trim().replace(/[.\s]+$/, '')}. Opatření: ${acts.length ? acts.map(a => a.text).join('; ') : 'žádná'}. ${v.length ? `${v.join(', ')}.` : 'Bez ověření.'}`;
+}
+
+function pdfBand(k, left, right, tone, h = 10.5) {
+  k.box(k.C.soft, k.M, k.y, k.CW, h);
+  k.box(k.C.acc, k.M, k.y, 1.3, h);
+  const rw = right ? k.width(right, 7.4, true) + 4.4 : 0;
+  const lines = k.split(left, k.CW - rw - 12, 11, true).slice(0, 2);
+  lines.forEach((line, i) => k.mid(line, k.M + 5, k.y + h / 2 + (i - (lines.length - 1) / 2) * k.LH(11, 1.15), 11, { bold: true }));
+  if (right) k.pill(right, k.M + k.CW - 3.5, k.y + h / 2, tone, 7.4, 'right');
+  k.y += h + 3;
+}
+
+/* ---------- týdenní report ---------- */
+function drawWeekReport(doc, rep) {
+  const k = pdfKit(doc);
+  const d = rep.data;
+  const today = todayIso(rep.at);
+  const w = weekById(rep.week);
+  const cases = new Map(d.cases.map(c => [c.id, c]));
+  const sum = d.summary || {};
+  k.header({ eyebrow: 'ODMĚNY · PRŮTOK DÍLŮ', right: `Týdenní report · revize ${rep.rev}`,
+    title: 'Top 5 nejméně efektivně', sub: weekLong(rep.week),
+    meta: `Vydáno ${tsText(rep.at)}${rep.by ? ` · ${rep.by}` : ''}. ${d.src === 'import'
+      ? `Hodnoty z evidence práce (jen řádky s časem i normou), díly pod 100 % s aspoň ${nf(d.settings.min / 60, 2)} h práce v týdnu; pod normou ${d.under} z ${d.items} dílů.`
+      : 'Strávený čas a norma dílu za týden podle zápisu vedoucího.'} Plnění = norma ÷ strávený čas, neplnění = 100 % − plnění, ztráta = strávený čas nad normou. Pořadí od nejnižšího plnění.` });
+  const worst = d.top[0];
+  k.tiles([
+    ['Plnění Top 5', pdfPct(d.tot.eff), `norma ${pdfH(d.tot.norm)} z ${pdfH(d.tot.nspent)} práce`],
+    ['Nejhorší plnění', worst ? pdfPct(worst.eff) : '—', worst ? `EAN ${worst.ean}` : 'nic zapsáno', worst && worst.eff < 50 ? 'crit' : ''],
+    ['Ztráta Top 5', pdfH(d.tot.lost), 'strávený čas nad normou', d.tot.lost ? 'crit' : ''],
+    ['Rozpracované případy', String((sum.open || 0) + (sum.verify || 0) + (sum.fail || 0)), sum.late ? `${sum.late} po termínu` : 'nic po termínu', sum.late ? 'crit' : ''],
+  ]);
+
+  // Pořadí týdne
+  k.heading('Pořadí týdne');
+  const cols = [[7, '#', 'r'], [47, 'Díl'], [31, 'Plnění normy'], [15, 'Neplnění', 'r'], [17, 'Strávený čas', 'r'], [14, 'Norma', 'r'], [14, 'Ztráta', 'r'], [12, 'V Top 5', 'r'], [21, 'Případ']];
+  const head = () => {
+    let x = k.M;
+    cols.forEach(([cw, t, al]) => { k.text(t, al === 'r' ? x + cw - 1.5 : x, k.y, 7.2, { bold: true, color: k.C.ink2, align: al === 'r' ? 'right' : 'left' }); x += cw; });
+    k.y += 4.6;
+    k.hline(k.y, k.C.line2, 0.3);
+  };
+  head();
+  if (!d.top.length) { k.y += 2; k.text(`V ${weekName(rep.week)} není zapsaný žádný díl pod normou.`, k.M, k.y, 9, { color: k.C.ink2 }); k.y += 8; }
+  d.top.forEach(t => {
+    const c = t.case ? cases.get(t.case) : null;
+    const nm = k.split(t.name || 'bez názvu', cols[1][0] - 2, 7.8);
+    const h = Math.max(9.6, 5.4 + nm.length * k.LH(7.8, 1.2));
+    k.need(h);
+    const top = k.y;
+    let x = k.M;
+    k.text(t.rank, x + cols[0][0] - 1.5, top + 2.2, 9, { bold: true, color: k.C.ink3, align: 'right' }); x += cols[0][0];
+    k.text(t.ean, x, top + 2, 9, { bold: true });
+    nm.forEach((line, i) => k.text(line, x, top + 5.6 + i * k.LH(7.8, 1.2), 7.8, { color: k.C.ink2 })); x += cols[1][0];
+    const tone = effTone(t.eff);
+    const bw = 15;
+    k.box(k.C.soft3, x, top + 3.4, bw, 2.2, 1.1);
+    k.box(tone === 'crit' ? k.C.crit : tone === 'warn' ? k.C.warn : k.C.good, x, top + 3.4, Math.max(1, bw * Math.min(100, t.eff || 0) / 100), 2.2, 1.1);
+    k.text(pdfPct(t.eff), x + bw + 2, top + 2.2, 8.8, { bold: true }); x += cols[2][0];
+    [[t.eff != null && t.eff < 100 ? pdfPct(100 - t.eff) : '—', 1], [pdfH(t.nspent)], [pdfH(t.norm)], [pdfH(t.lost), 2], [`${t.times}×`]].forEach(([v, b], i) => {
+      const cw = cols[3 + i][0];
+      k.text(v, x + cw - 1.5, top + 2.2, 8.6, { align: 'right', bold: !!b, color: b === 2 ? k.C.crit : k.C.ink }); x += cw;
+    });
+    if (c) {
+      const s = caseState(c, today);
+      k.text(caseLabel(c), x, top + 1.6, 8.4, { bold: true });
+      k.pill(s.k === 'zrus' ? 'zrušeno' : s.label.split(',')[0].replace('Čeká na ', ''), x, top + 7.2, s.late ? 'late' : s.k, 6.4);
+    } else k.pill('bez řešení', x, top + 4.4, 'none', 6.6);
+    k.y = top + h;
+    k.hline(k.y);
+  });
+  k.y += 4;
+
+  // Termíny
+  if (d.deadlines.length) {
+    k.keep(() => {
+      k.heading('Termíny v příštích třech týdnech', 11);
+      d.deadlines.slice(0, 14).forEach(x => {
+        const lines = k.split(`${x.text}${x.owner ? ` · ${x.owner}` : ''}`, k.CW - 62, 8.6);
+        const h = lines.length * k.LH(8.6, 1.3) + 1.6;
+        k.need(h);
+        k.text(dayText(x.date), k.M, k.y, 8.6, { bold: true, color: x.late ? k.C.crit : k.C.ink });
+        k.text(`P-${x.no}`, k.M + 24, k.y, 8.6, { bold: true, color: k.C.ink2 });
+        lines.forEach((line, i) => k.text(line, k.M + 46, k.y + i * k.LH(8.6, 1.3), 8.6));
+        if (x.late) k.pill('po termínu', k.M + k.CW, k.y + 1.6, 'late', 6.4, 'right');
+        k.y += h;
+      });
+      k.y += 3;
+    }, 30);
+  }
+  k.need(26);
+  k.signoff();
+
+  // Řešení po položkách
+  d.top.forEach(t => {
+    const c = t.case ? cases.get(t.case) : null;
+    const draw = () => {
+      const s = c ? caseState(c, today) : null;
+      pdfBand(k, `${t.rank} · ${t.ean} · ${t.name || 'bez názvu'}`, c ? (s.k === 'zrus' ? 'zrušeno' : s.label) : 'bez řešení', c ? (s.late ? 'late' : s.k) : 'none');
+      const metr = `Plnění ${pdfPct(t.eff)} · neplnění ${t.eff != null && t.eff < 100 ? pdfPct(100 - t.eff) : '—'} · čas ${pdfH(t.nspent)} · norma ${pdfH(t.norm)} · ztráta ${pdfH(t.lost)}${d.src === 'import' ? ` · ${nf(t.ks, 0)} ks · ${t.workers} ${lidiW(t.workers)}${t.wmin != null ? ` (plnění ${t.wmin}–${t.wmax} %)` : ''}` : ''} · v Top 5 ${t.times}×`;
+      const TW = 50;
+      const startY = k.y;
+      k.para(metr, k.M, k.CW - TW - 6, 8.6, { color: k.C.ink2 });
+      // trend posledních týdnů (malé sloupce)
+      if (!k.dry) {
+        const vals = t.trend;
+        const bw = TW / vals.length;
+        const base = startY + 9;
+        vals.forEach((v, i) => {
+          const x = k.M + k.CW - TW + i * bw;
+          if (v != null) {
+            const h = Math.max(0.6, Math.min(v, 120) / 120 * 8);
+            k.box(i === vals.length - 1 ? k.C.acc : k.C.line2, x + 1, base - h, bw - 2, h, 0.5);
+          } else k.box(k.C.soft3, x + 1, base - 0.4, bw - 2, 0.4);
+          k.text(v == null ? '—' : `${Math.round(v)}`, x + bw / 2, base + 0.6, 6.2, { color: i === vals.length - 1 ? k.C.ink : k.C.ink3, align: 'center' });
+        });
+        k.hline(base - 8 * 100 / 120, k.C.ink3, 0.15, k.M + k.CW - TW, k.M + k.CW, [0.6, 0.6]);
+        k.text('plnění v posledních týdnech (%)', k.M + k.CW - TW, startY - 0.4, 6.2, { color: k.C.ink3 });
+      }
+      k.y = Math.max(k.y, startY + 13) + 1.5;
+      if (!c) {
+        k.box(k.C.warnSoft, k.M, k.y, k.CW, 9, 2);
+        k.mid('Řešení zatím není založené. Do příštího reportu doplnit příčinu, opatření a termíny.', k.M + 4, k.y + 4.5, 8.8, { color: k.C.warn, bold: true });
+        k.y += 13;
+        return;
+      }
+      const r = curRound(c);
+      k.text(`Případ ${caseLabel(c)} · kolo ${r.n}${c.rounds.length > 1 ? ` (znovu otevřeno ${dayText(todayIso(r.at))})` : ''} · založen ${dayText(todayIso(c.at))}${c.by ? `, ${c.by}` : ''}`, k.M, k.y, 8.4, { bold: true, color: k.C.ink2 });
+      k.y += 5.5;
+      pdfRound(k, c, r, today);
+      const prev = c.rounds.slice(0, -1);
+      if (prev.length) {
+        const texts = prev.map(p => roundBrief(p) + (c.rounds[p.n] && c.rounds[p.n].reason ? ` Důvod nového kola: ${c.rounds[p.n].reason}` : ''));
+        const lines = texts.map(tx => k.split(tx, k.CW - 8, 8.2));
+        const h = lines.reduce((a, l) => a + l.length * k.LH(8.2, 1.32) + 1.6, 0) + 9;
+        k.need(Math.min(h, 60));
+        const top = k.y;
+        if (h < k.BOTTOM - k.y) k.box(k.C.soft, k.M, top, k.CW, h, 2);
+        k.text('PŘEDCHOZÍ ŘEŠENÍ (CO SE UŽ ZKOUŠELO)', k.M + 4, k.y + 3, 6.8, { bold: true, color: k.C.ink3, space: 0.2 });
+        k.y += 7.5;
+        lines.forEach(ls => { ls.forEach(line => { k.need(k.LH(8.2, 1.32)); k.text(line, k.M + 4, k.y, 8.2, { color: k.C.ink2 }); k.y += k.LH(8.2, 1.32); }); k.y += 1.6; });
+        k.y += 2;
+      }
+      k.y += 4;
+    };
+    // Zalomení před blokem není pokračování; popisek „pokračování“ až uvnitř bloku.
+    const h = k.measure(draw);
+    if (k.y + h > k.BOTTOM && (h <= k.PAGE || k.BOTTOM - k.y < 60)) k.newPage();
+    k.onPage = () => { k.text(`${t.rank} · ${t.ean} · pokračování`, k.M, k.y, 8, { bold: true, color: k.C.ink3 }); k.y += 6; };
+    draw();
+    k.onPage = null;
+  });
+  k.footer(`Odměny · Top 5 nejméně efektivně · ${weekName(rep.week)} (${weekRange(w)}) · revize ${rep.rev}`);
+}
+
+/* ---------- souhrn všech případů ---------- */
+function pdfDumbbell(k, rows, target) {
+  const X0 = k.M + 50, X1 = k.M + k.CW - 30, max = 120;
+  const x = v => X0 + (Math.min(Math.max(v, 0), max) / max) * (X1 - X0);
+  const RH = 6.2;
+  const axis = () => {
+    [0, 50, 100].forEach(v => k.text(`${v} %`, x(v), k.y, 6.8, { color: k.C.ink3, align: 'center' }));
+    k.y += 3.6;
+  };
+  axis();
+  const top = k.y;
+  rows.forEach(r => {
+    k.need(RH);
+    const cy = k.y + RH / 2;
+    k.text(k.split(r.label, X0 - k.M - 3, 7.8)[0], k.M, cy - k.mm(7.8) * 0.5, 7.8, { color: k.C.ink2 });
+    k.hline(cy, k.C.line, 0.15, X0, X1);
+    if (r.before != null && r.after != null) k.hline(cy, r.after >= target ? k.C.good : k.C.crit, 0.7, x(Math.min(r.before, r.after)), x(Math.max(r.before, r.after)));
+    if (r.before != null) k.dot(x(r.before), cy, 1.2, k.C.white, k.C.ink3);
+    if (r.after != null) k.dot(x(r.after), cy, 1.3, r.after >= target ? k.C.good : k.C.crit, null);
+    k.text(`${r.before == null ? '—' : nf(r.before, 0)} → ${r.after == null ? '—' : nf(r.after, 0)} %`, k.M + k.CW, cy - k.mm(8) * 0.5, 8, { bold: true, align: 'right' });
+    k.y += RH;
+  });
+  // referenční čáry (100 % a cíl) přes celou výšku grafu
+  const bottom = k.y;
+  if (!k.dry && bottom > top) {
+    [[100, k.C.ink3, null], [target, k.C.ink3, [0.8, 0.8]]].forEach(([v, col, dash]) => {
+      doc_line(k, x(v), top, x(v), bottom, col, dash);
+    });
+  }
+  k.y += 2;
+  // legenda
+  k.dot(k.M + 1.2, k.y + 1.5, 1.2, k.C.white, k.C.ink3);
+  k.text('při zjištění', k.M + 3.6, k.y, 7.4, { color: k.C.ink2 });
+  k.dot(k.M + 25, k.y + 1.5, 1.3, k.C.good, null);
+  k.text(`po opatřeních (poslední ověření), cíl ${target} % splněn`, k.M + 27.4, k.y, 7.4, { color: k.C.ink2 });
+  k.dot(k.M + 96, k.y + 1.5, 1.3, k.C.crit, null);
+  k.text('pod cílem', k.M + 98.4, k.y, 7.4, { color: k.C.ink2 });
+  k.text(`svisle: 100 % (norma), čárkovaně cíl ${target} %`, k.M + k.CW, k.y, 7.4, { color: k.C.ink3, align: 'right' });
+  k.y += 7;
+}
+function doc_line(k, x1, y1, x2, y2, color, dash) {
+  if (k.dry) return;
+  const doc = k.doc;
+  doc.setDrawColor(...color); doc.setLineWidth(0.2);
+  if (dash) doc.setLineDashPattern(dash, 0);
+  doc.line(x1, y1, x2, y2);
+  if (dash) doc.setLineDashPattern([], 0);
+}
+
+function pdfCaseDetail(k, c, today) {
+  const s = caseState(c, today);
+  const ba = caseBeforeAfter(c);
+  const base = c.base;
+  k.need(40);
+  k.onPage = () => { k.text(`${caseLabel(c)} · ${c.ean} · pokračování`, k.M, k.y, 8, { bold: true, color: k.C.ink3 }); k.y += 6; };
+  pdfBand(k, `${caseLabel(c)} · ${c.ean} · ${c.name || 'bez názvu'}`, s.k === 'zrus' ? 'zrušeno' : s.label, s.late ? 'late' : s.k);
+  k.para(`Založeno ${dayText(todayIso(c.at))}${c.by ? ` (${c.by})` : ''} · ${c.week ? `zjištěno v ${weekName(c.week)}` : 'založeno ručně'} · plnění při zjištění ${pdfPct(base ? base.eff : null)}${base ? ` (strávený čas ${pdfH(base.nspent)}, norma ${pdfH(base.norm)})` : ''} · po opatřeních ${pdfPct(ba.after)} · kol ${c.rounds.length}${c.cancelled ? ` · zrušeno ${dayText(todayIso(c.cancelled.at))}: ${c.cancelled.reason}` : ''}`, k.M, k.CW, 8.6, { color: k.C.ink2 });
+  k.y += 2.5;
+  c.rounds.forEach(r => {
+    k.need(18);
+    k.text(`Kolo ${r.n} · otevřeno ${dayText(todayIso(r.at))}${r.by ? ` (${r.by})` : ''}${r.week ? ` · ${weekName(r.week)}${r.base && r.base.eff != null ? `, plnění ${nf(r.base.eff, 1)} %` : ''}` : ''}`, k.M, k.y, 9, { bold: true, color: k.C.acc });
+    k.y += 5.5;
+    pdfRound(k, c, r, today);
+  });
+  if (c.log && c.log.length) {
+    k.need(14);
+    k.text('Historie případu', k.M, k.y, 9, { bold: true, color: k.C.acc });
+    k.y += 5.5;
+    c.log.forEach(e => {
+      const lines = k.split(e.t, k.CW - 30 - 32, 8);
+      const h = lines.length * k.LH(8, 1.3) + 1.2;
+      k.need(h);
+      k.text(tsText(e.at), k.M, k.y, 7.6, { color: k.C.ink3 });
+      lines.forEach((line, i) => k.text(line, k.M + 30, k.y + i * k.LH(8, 1.3), 8));
+      k.text(k.split(e.by || '—', 30, 7.6)[0], k.M + k.CW, k.y, 7.6, { color: k.C.ink3, align: 'right' });
+      k.y += h;
+    });
+  }
+  k.y += 6;
+  k.onPage = null;
+}
+
+function drawEffSummary(doc, single) {
+  const k = pdfKit(doc);
+  const now = Date.now();
+  const today = todayIso(now);
+  const set = effSet();
+  if (single) {
+    k.header({ eyebrow: 'ODMĚNY · PRŮTOK DÍLŮ', right: `Stav k ${tsText(now)}`, title: `Případ ${caseLabel(single)}`, sub: `${single.ean}${single.name ? ` · ${single.name}` : ''}`,
+      meta: 'Kompletní záznam případu: všechna kola řešení, opatření, ověření účinnosti a historie změn s tím, kdo a kdy je udělal.' });
+    k.need(26);
+    k.signoff();
+    pdfCaseDetail(k, single, today);
+    k.footer(`Odměny · Top 5 nejméně efektivně · případ ${caseLabel(single)} · stav k ${dayText(today)}`);
+    return;
+  }
+  const sum = effSummary(today);
+  const cases = S.eff.cases.slice().sort((a, b) => (a.no < b.no ? -1 : 1));
+  const first = cases.length ? todayIso(Math.min(...cases.map(c => c.at))) : today;
+  k.header({ eyebrow: 'ODMĚNY · PRŮTOK DÍLŮ', right: `Stav k ${tsText(now)}`, title: 'Souhrn problémových dílů', sub: `Top 5 nejméně efektivně · ${dayText(first)} – ${dayText(today)}`,
+    meta: `Všechny případy z týdenních Top 5: co se řešilo, kdy, jak dopadla ověření účinnosti (1. ověření ${set.d1} dní po dokončení opatření, 2. ověření ${set.d2} dní po prvním, cíl plnění ${set.target} %).` });
+  k.tiles([
+    ['Případů celkem', String(sum.total), `${sum.reopened} znovu otevřených`],
+    ['Rozpracované', String(sum.open + sum.verify + sum.fail), `${sum.verify} v ověřování`],
+    ['Uzavřeno účinně', String(sum.ok), sum.zrus ? `${sum.zrus} zrušených` : 'bez zrušených', sum.ok ? 'good' : ''],
+    ['Po termínu', String(sum.late), sum.late ? 'termíny k řešení' : 'vše v termínu', sum.late ? 'crit' : ''],
+  ]);
+  k.tiles([
+    ['Úspěšnost ověření', sum.verifs ? `${Math.round(sum.verifOk / sum.verifs * 100)} %` : '—', `${sum.verifOk} z ${sum.verifs} ověření účinných`],
+    ['Doba do uzavření', sum.leadAvg == null ? '—' : `${nf(sum.leadAvg, 0)} dní`, 'průměr u uzavřených účinně'],
+    ['Ztráta při zjištění', pdfH(sum.lost), 'čas nad normou při zjištění'],
+    ['Vydané reporty', String(S.eff.reports.length), S.eff.reports.length ? `poslední ${weekName(S.eff.reports[S.eff.reports.length - 1].week)}` : 'zatím žádný'],
+  ]);
+  // Stavy (pruh s legendou)
+  const order = [['new', 'Analýza'], ['act', 'Opatření'], ['v1', '1. ověření'], ['v2', '2. ověření'], ['fail', 'Neúčinné'], ['ok', 'Účinné'], ['zrus', 'Zrušené']];
+  const states = cases.map(c => caseState(c, today).k);
+  if (cases.length) {
+    k.heading('Stav případů', 11);
+    const counts = order.map(([key, label]) => [key, label, states.filter(x => x === key).length]).filter(x => x[2]);
+    let x = k.M;
+    const gap = 0.8, avail = k.CW - gap * (counts.length - 1);
+    counts.forEach(([key, , n]) => { const w = avail * n / cases.length; k.box(k.TONE[key][1], x, k.y, w, 5, 1); if (w > 8) k.mid(String(n), x + w / 2, k.y + 2.5, 7.4, { bold: true, color: k.C.white, align: 'center' }); x += w + gap; });
+    k.y += 8;
+    x = k.M;
+    counts.forEach(([key, label, n]) => { k.box(k.TONE[key][1], x, k.y + 0.4, 2.6, 2.6, 0.6); k.text(`${label} ${n}`, x + 3.8, k.y, 7.8, { color: k.C.ink2 }); x += k.width(`${label} ${n}`, 7.8) + 10; });
+    k.y += 8;
+    const rows = cases.map(c => ({ label: `${caseLabel(c)} · ${c.ean}`, ...caseBeforeAfter(c) })).filter(r => r.before != null || r.after != null);
+    if (rows.length) {
+      k.keep(() => { k.heading('Plnění normy před a po opatřeních', 11); pdfDumbbell(k, rows, set.target); }, 50);
+    }
+  } else {
+    k.text('Zatím nebyl založen žádný případ.', k.M, k.y, 9.5, { color: k.C.ink2 });
+    k.y += 10;
+  }
+  k.need(26);
+  k.signoff();
+
+  if (cases.length) {
+    // Registr
+    k.newPage();
+    k.heading('Registr případů');
+    const cols = [[22, 'Případ'], [38, 'Díl'], [15, 'Zjištěno'], [8, 'Kol', 'r'], [31, 'Příčina'], [14, 'Opatření', 'r'], [17, '1. ověření'], [17, '2. ověření'], [16, 'Před → po', 'r']];
+    const head = () => {
+      let x = k.M;
+      cols.forEach(([cw, t, al]) => { k.text(t, al === 'r' ? x + cw - 1.5 : x, k.y, 7, { bold: true, color: k.C.ink2, align: al === 'r' ? 'right' : 'left' }); x += cw; });
+      k.y += 4.4;
+      k.hline(k.y, k.C.line2, 0.3);
+      k.y += 0.6;
+    };
+    k.onPage = head;
+    head();
+    cases.forEach(c => {
+      const s = caseState(c, today);
+      const r = curRound(c);
+      const ba = caseBeforeAfter(c);
+      const acts = liveActions(r);
+      const vtext = i => {
+        const v = r.v[i];
+        if (v) return [v.result === 'ok' ? 'účinné' : 'neúčinné', dayText(v.done), v.result === 'ok' ? k.C.good : k.C.crit];
+        const p = roundPlan(r);
+        const due = i ? p.p2 : p.p1;
+        return due ? ['plán', dayText(due), due < today ? k.C.crit : k.C.ink2] : ['—', '', k.C.ink3];
+      };
+      const nm = k.split(c.name || 'bez názvu', cols[1][0] - 2, 7.4).slice(0, 2);
+      const cause = k.split(r.cat ? effCatLabel(r.cat) : (r.cause ? r.cause : 'nevyplněno'), cols[4][0] - 2, 7.4).slice(0, 3);
+      const h = Math.max(10, 4.6 + Math.max(nm.length, cause.length) * k.LH(7.4, 1.25));
+      k.need(h);
+      const top = k.y;
+      let x = k.M;
+      k.text(caseLabel(c), x, top + 1.2, 8.2, { bold: true });
+      k.pill(s.k === 'zrus' ? 'zrušeno' : s.label.split(',')[0].replace('Čeká na ', ''), x, top + 7, s.late ? 'late' : s.k, 6);
+      x += cols[0][0];
+      k.text(c.ean, x, top + 1.2, 8.2, { bold: true });
+      nm.forEach((line, i) => k.text(line, x, top + 4.8 + i * k.LH(7.4, 1.25), 7.4, { color: k.C.ink2 }));
+      x += cols[1][0];
+      k.text(c.week ? weekName(c.week) : dayText(todayIso(c.at), false), x, top + 1.2, 8); x += cols[2][0];
+      k.text(String(c.rounds.length), x + cols[3][0] - 1.5, top + 1.2, 8, { align: 'right', bold: c.rounds.length > 1, color: c.rounds.length > 1 ? k.C.warn : k.C.ink }); x += cols[3][0];
+      cause.forEach((line, i) => k.text(line, x, top + 1.2 + i * k.LH(7.4, 1.25), 7.4, { color: r.cat || r.cause ? k.C.ink : k.C.ink3 })); x += cols[4][0];
+      k.text(`${acts.filter(a => a.done).length}/${acts.length}`, x + cols[5][0] - 1.5, top + 1.2, 8, { align: 'right' }); x += cols[5][0];
+      [0, 1].forEach(i => { const [a, b, col] = vtext(i); k.text(a, x, top + 1.2, 7.6, { bold: true, color: col }); if (b) k.text(b, x, top + 4.8, 7.4, { color: k.C.ink2 }); x += cols[6 + i][0]; });
+      k.text(`${ba.before == null ? '—' : nf(ba.before, 0)} → ${ba.after == null ? '—' : nf(ba.after, 0)} %`, x + cols[8][0] - 1.5, top + 1.2, 7.8, { align: 'right', bold: true });
+      k.y = top + h;
+      k.hline(k.y);
+      k.y += 0.6;
+    });
+    k.onPage = null;
+    // Detail
+    k.newPage();
+    k.heading('Detail případů a kompletní historie');
+    cases.forEach(c => pdfCaseDetail(k, c, today));
+  }
+  k.footer(`Odměny · Top 5 nejméně efektivně · souhrn problémových dílů · stav k ${dayText(today)}`);
+}
+
+/* ---------- export ---------- */
+async function withPdf(button, fn) {
+  if (button) button.disabled = true;
+  try {
+    const doc = await newPdf();
+    return await fn(doc);
+  } catch (error) {
+    toast(`PDF se nepovedlo: ${error.message}`, true);
+    return null;
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function exportWeekPdf(id, button) {
+  if (!id || !weekRanking(id)) return;
+  const before = S.eff.reports.find(r => r.week === id);
+  const prevRev = before ? before.rev : 0;
+  const rep = issueWeekReport(id, effMeta());
+  if (rep.rev !== prevRev) save();
+  const ok = await withPdf(button, doc => {
+    doc.setProperties({ title: `Top 5 nejméně efektivně · ${weekName(id)}`, subject: weekLong(id), creator: 'Odměny' });
+    drawWeekReport(doc, rep);
+    const w = weekById(id);
+    downloadFile(`top5-tyden-${w.w}-${w.y}-revize-${rep.rev}.pdf`, doc.output('blob'), 'application/pdf');
+    return true;
+  });
+  if (ok) {
+    renderTop5();
+    toast(rep.rev !== prevRev ? `Report ${weekName(id)} vydán (revize ${rep.rev}) a stahuje se.` : `Report ${weekName(id)} se od revize ${rep.rev} nezměnil, stahuje se znovu.`);
+  }
+}
+
+async function exportIssuedPdf(week, button) {
+  const rep = S.eff.reports.find(r => r.week === week);
+  if (!rep) return;
+  await withPdf(button, doc => {
+    doc.setProperties({ title: `Top 5 nejméně efektivně · ${weekName(week)}`, subject: weekLong(week), creator: 'Odměny' });
+    drawWeekReport(doc, rep);
+    const w = weekById(week);
+    downloadFile(`top5-tyden-${w.w}-${w.y}-revize-${rep.rev}.pdf`, doc.output('blob'), 'application/pdf');
+  });
+}
+
+async function exportEffSummaryPdf(caseId, button) {
+  const single = caseId ? effCase(caseId) : null;
+  await withPdf(button || $('#t5SummaryPdf'), doc => {
+    doc.setProperties({ title: single ? `Případ ${caseLabel(single)}` : 'Souhrn problémových položek', subject: 'Top 5 nejméně efektivních položek', creator: 'Odměny' });
+    drawEffSummary(doc, single);
+    downloadFile(single ? `top5-pripad-${caseLabel(single)}.pdf` : `top5-souhrn-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
+    toast(single ? `PDF případu ${caseLabel(single)} se stahuje.` : 'Souhrn se stahuje.');
+  });
+}
+
+/* ==========================================================================
    START
    ========================================================================== */
 function bindEvents() {
@@ -2617,6 +4016,7 @@ function bindEvents() {
     else checkIdle();
   });
   bindExtraEvents();
+  bindTop5Events();
   window.addEventListener('beforeunload', event => {
     if (store.dirty || store.saving) { event.preventDefault(); event.returnValue = ''; }
   });
