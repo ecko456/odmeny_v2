@@ -55,6 +55,31 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   kartičky a nemáš zapamatované zařízení, k datům se už nedostane nikdo, ani správce
   serveru. Vytiskni si proto dvě kartičky a jednu ulož bokem.
 
+## Co je nového ve verzi 2.3
+
+- **Namátkové kontroly** (nová část Kontroly v menu).
+  - **Nutné úkony**: ke každému oddělení seznam bodů, co musí operátor dělat (přidat,
+    upravit, změnit pořadí, smazat). Oddělení je podle pozice (pole Oddělení u pozice, jinak
+    název pozice).
+  - **Plán na týden dopředu**: z každého oddělení se vybere 25 % lidí (zaokrouhleno nahoru,
+    aspoň jeden; podíl jde změnit v Nastavení) a rozloží se postupně do pracovních dnů bez
+    státních svátků, lidé z jednoho oddělení na různé dny. Výběr je náhodný, ale přednost mají
+    ti, kdo nejdéle nebyli kontrolovaní, takže se za čtyři týdny vystřídají všichni. Vyřazení
+    a lidé bez pozice se nekontrolují.
+  - **Zápis kontroly**: u každého bodu splněno / nesplněno a poznámka, datum a kdo
+    kontroloval. Když člověk chybí: „Neproběhlo“ s důvodem, nebo náhradník z téhož oddělení
+    na stejný den. Člověka jde přesunout na jiný den, přidat ručně nebo odebrat; přegenerování
+    nahradí jen neprovedené kontroly.
+  - **Karta člověka**: v Lidech i v Profilu je karta Namátkové kontroly (počet kontrol,
+    plnění bodů, nesplněné body s poznámkou, další naplánovaná kontrola).
+  - **Výsledky**: plnění po odděleních, nejčastěji nesplněné body a seznam kontrol za 4 týdny
+    až celou dobu; PDF výsledků a PDF plánu týdne s kontrolními listy k tisku (políčka
+    splněno / nesplněno a podpisy, zapsané kontroly s výsledkem).
+  - Odznak v menu ukazuje dnešní a nezapsané kontroly; vše jde do historie změn.
+- Historie změn má filtry Top 5 a Kontroly.
+- **Aktualizace bez ztráty dat:** všechna data z 2.2 zůstanou, Kontroly začnou prázdné.
+  Stránka otevřená ještě ve verzi 2.2 už nesmí uložit a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.2
 
 - **Top 5 nejméně efektivně** (nová část v menu, pro auditora průtoku dílů a dodávek včas).
@@ -237,16 +262,21 @@ v hlavičce každého skriptu:
   sloupců, navýšení platu, jen Kafe, PDF s pravidly, historie, mobil);
 - `tests/e2e_top5.js`: novinky 2.2 (ruční zápis Top 5 týdne, případ, opatření, ověření
   s ručními hodnotami, nové kolo, termíny, vydaný report, souhrn a PDF případu, jednotka
-  času, předvyplnění z evidence práce s EAN, mobil, tmavý režim).
+  času, předvyplnění z evidence práce s EAN, mobil, tmavý režim);
+- `tests/e2e_kontroly.js`: novinky 2.3 (nutné úkony, plán 25 % z oddělení, zápis kontroly,
+  neproběhlo, náhradník, přesun, ruční přidání, přegenerování, PDF plánu a výsledků, karta
+  člověka, výsledky, historie, nastavení, mobil, tmavý režim).
 
-**Aktualizace 2.1 → 2.2 na místě** na lokálním Apachi v kontejneru (stará stránka dostane
-426, sdílená data, výpočty a historie zůstanou, Top 5 se uloží nad převzatými daty):
+**Aktualizace na místě** na lokálním Apachi v kontejneru (stará stránka dostane 426, sdílená
+data, výpočty a historie zůstanou, novinky se uloží nad převzatými daty). 2.2 → 2.3:
 
 ```bash
-rm -rf /tmp/v21 && mkdir /tmp/v21 && git archive e762813 | tar -x -C /tmp/v21
-sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v21/deploy/install.sh
-UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade22.js
+rm -rf /tmp/v22 && mkdir /tmp/v22 && git archive 28d6bde | tar -x -C /tmp/v22
+sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v22/deploy/install.sh
+UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade23.js
 ```
+
+Stejně `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (výchozí verze `git archive e762813`).
 
 **Verze 2 vedle ostré verze** na lokálním Apachi v kontejneru (maže lokální `/var/lib/odmeny*`
 a `/var/www/odmeny*`, **nikdy ne na ostrém serveru**). Ověří, že instalace ostrou verzi

@@ -104,7 +104,7 @@ function save(){_prodIdx=null;_effCache=null;if(typeof onStateChange==="function
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),v:DATA_VERSION};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),v:DATA_VERSION};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -1023,10 +1023,10 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=4;
+const DATA_VERSION=5;
 const LOG_MAX=2000;
 const HIST_MAX=200;
-const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff"];
+const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
 function sanitizeState(input){
   const o=(input&&typeof input==="object"&&!Array.isArray(input))?input:{};
   const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
@@ -1178,6 +1178,8 @@ function sanitizeState(input){
   if(!out.current||!out.periods[out.current])out.current=Object.keys(out.periods).sort().reverse()[0]||null;
   /* Top 5 nejméně efektivních (verze 2.2): starší data ho nemají, začíná prázdný */
   out.eff=cleanEff(o.eff);
+  /* Kontroly (verze 2.3): starší data je nemají, začínají prázdné */
+  out.audit=cleanAudit(o.audit);
   out.v=DATA_VERSION;
   return out;
 }
@@ -1372,6 +1374,48 @@ function describeChanges(a,b,meta){
     const old=RA.get(r.week);
     if(!old||old.rev!==r.rev)add("eff","Top 5: vydán týdenní report "+weekName(r.week)+(r.rev>1?" (revize "+r.rev+")":""));
   });
+  /* Kontroly: nutné úkony oddělení, plány namátkových kontrol a zapsané výsledky */
+  const ua=a.audit||blankAudit(),ub=b.audit||blankAudit();
+  const UTA=ua.tasks||{},UTB=ub.tasks||{};
+  [...new Set([...Object.keys(UTA),...Object.keys(UTB)])].sort().forEach(d=>{
+    const la=new Map((UTA[d]||[]).map(t=>[t.id,t])),lb=new Map((UTB[d]||[]).map(t=>[t.id,t]));
+    lb.forEach((t,tid)=>{
+      const o=la.get(tid);
+      if(!o)add("audit","Nutné úkony – "+d+": přidán bod „"+t.text+"“",{m:"audt:"+d+":"+tid});
+      else if(o.text!==t.text)add("audit","Nutné úkony – "+d+": bod „"+o.text+"“ změněn na „"+t.text+"“",{m:"audt:"+d+":"+tid});
+    });
+    la.forEach((t,tid)=>{if(!lb.has(tid))add("audit","Nutné úkony – "+d+": odebrán bod „"+t.text+"“",{m:"audt:"+d+":"+tid});});
+    const oa=(UTA[d]||[]).filter(t=>lb.has(t.id)).map(t=>t.id).join(),ob=(UTB[d]||[]).filter(t=>la.has(t.id)).map(t=>t.id).join();
+    if(oa!==ob)add("audit","Nutné úkony – "+d+": změněno pořadí bodů",{m:"audo:"+d});
+  });
+  const UPA=ua.plans||{},UPB=ub.plans||{};
+  Object.keys(UPB).sort().forEach(w=>{
+    const pb=UPB[w],pa=UPA[w];
+    const wk=weekName(w);
+    if(!pa||pa.at!==pb.at){
+      const n=pb.items.filter(i=>i.state==="plan").length;
+      add("audit","Kontroly "+wk+": "+(pa?"plán přegenerován":"vygenerován plán")+", naplánováno "+n+" "+(n===1?"člověk":n>=2&&n<=4?"lidé":"lidí")
+        +" ("+pb.pct+" % z každého oddělení)",{m:"audp:"+w});
+    }
+    const ia=new Map((pa?pa.items:[]).map(i=>[i.id,i]));
+    pb.items.forEach(i=>{
+      const o=ia.get(i.id),who=i.name+" ("+i.dept+")";
+      if(!o){if(i.extra)add("audit","Kontroly "+wk+": přidán "+who+" na "+dayText(i.day),{m:"audi:"+i.id});
+        else if(i.sub)add("audit","Kontroly "+wk+": náhradník "+who+" na "+dayText(i.day),{m:"audi:"+i.id});}
+      else if(o.day!==i.day&&i.state==="plan")add("audit","Kontroly "+wk+": "+who+" přesunut na "+dayText(i.day),{m:"audd:"+i.id});
+      if(o?o.state===i.state&&same(o.results,i.results)&&o.done===i.done&&o.reason===i.reason:i.state==="plan")return;
+      if(i.state==="done"){
+        const sc=checkScore(i);
+        add("audit","Kontrola "+who+" "+dayText(i.done)+(i.checker?", kontroloval "+i.checker:"")+": splněno "+sc.ok+" z "+sc.n
+          +(sc.fail.length?" (nesplněno: "+sc.fail.map(r=>r.text).join("; ")+")":""),{m:"audr:"+i.id,key:i.key});
+      }else if(i.state==="skip")add("audit","Kontrola "+who+" "+dayText(i.day)+": neproběhla"+(i.reason?" – "+i.reason:""),{m:"audr:"+i.id,key:i.key});
+      else add("audit","Kontrola "+who+": zrušen zápis",{m:"audr:"+i.id,key:i.key});
+    });
+    if(pa&&pa.at===pb.at)ia.forEach((o,iid)=>{if(!pb.items.some(i=>i.id===iid))add("audit","Kontroly "+wk+": odebrán "+o.name+" ("+o.dept+")",{m:"audi:"+iid});});
+  });
+  Object.keys(UPA).forEach(w=>{if(!UPB[w])add("audit","Kontroly "+weekName(w)+": plán smazán",{m:"audp:"+w});});
+  const uka=(ua.settings||{}).pct,ukb=(ub.settings||{}).pct;
+  if(uka!=null&&ukb!=null&&uka!==ukb)add("settings","",{m:"audset:pct",p:"Kontroly – podíl lidí z oddělení: ",v0:uka+" %",v1:ukb+" %"});
   return {entries,hist};
 }
 
@@ -2076,6 +2120,246 @@ function cleanEff(input){
   return {weeks,cases,reports:reports.sort((a,b)=>a.week<b.week?-1:1).slice(-400),
     settings:{min:int(st.min,EFF_DEFAULTS.min,0,6000),target:int(st.target,EFF_DEFAULTS.target,1,200),
       d1:int(st.d1,EFF_DEFAULTS.d1,1,365),d2:int(st.d2,EFF_DEFAULTS.d2,1,365),unit:st.unit==="min"?"min":"h"}};
+}
+
+/* ================= verze 2.3: Kontroly (nutné úkony oddělení, namátkové kontroly) =================
+   Ke každému oddělení se vede seznam nutných úkonů (body, které musí operátor dělat).
+   Na týden dopředu se vygeneruje namátková kontrola: z každého oddělení se vybere 25 %
+   zaměstnanců (zaokrouhleno nahoru, aspoň jeden) a rozloží se postupně na pracovní dny.
+   Výběr je náhodný, ale přednost mají ti, kdo nejdéle nebyli kontrolovaní, takže se za
+   čtyři týdny vystřídají všichni. U každého člověka se u každého bodu zapíše splněno nebo
+   nesplněno; výsledek se ukáže v jeho kartě (Lidé, Profil). */
+const AUD_DEFAULTS={pct:25};
+const AUD_STATES={plan:"Naplánováno",done:"Provedeno",skip:"Neproběhlo"};
+function blankAudit(){return {tasks:{},plans:{},settings:{...AUD_DEFAULTS}};}
+function audSet(){return {...AUD_DEFAULTS,...((S&&S.audit&&S.audit.settings)||{})};}
+/* Oddělení člověka podle jeho pozice; bez pozice do kontrol nepatří. */
+function empDept(e){const p=e&&e.positionId?posIn(S,e.positionId):null;return p?deptOf(p):"";}
+function audName(e){return e?(e.last+" "+e.first).trim():"";}
+/* Lidé oddělení, kteří se kontrolují: nevyřazení, s pozicí v oddělení. */
+function audPeople(dept){
+  return Object.values(S.employees).filter(e=>!e.excluded&&empDept(e)===dept)
+    .sort((a,b)=>norm(audName(a)).localeCompare(norm(audName(b)),"cs"));
+}
+/* Oddělení, která mají aspoň jednoho kontrolovaného člověka, v pořadí pozic. */
+function audDepts(){return departments().filter(d=>audPeople(d).length);}
+function audTasks(dept){return ((S.audit&&S.audit.tasks)||{})[dept]||[];}
+function audCount(n,pct){return n?Math.max(1,Math.ceil(n*(pct==null?audSet().pct:pct)/100)):0;}
+/* Pracovní dny týdne (bez víkendu a státních svátků). */
+function audDays(weekId){
+  const w=weekById(weekId);
+  if(!w)return [];
+  const out=[];
+  for(let i=0;i<7;i++){const iso=addDays(w.from,i),[y,m,d]=iso.split("-").map(Number);if(mkDay(y,m,d).work)out.push(iso);}
+  return out;
+}
+function audPlan(weekId){return (S.audit&&S.audit.plans&&S.audit.plans[weekId])||null;}
+function audItem(weekId,id){const p=audPlan(weekId);return p?p.items.find(x=>x.id===id)||null:null;}
+/* Poslední provedená kontrola každého člověka (datum), pro spravedlivé střídání. */
+function audLast(){
+  const m={};
+  Object.values((S.audit&&S.audit.plans)||{}).forEach(p=>p.items.forEach(it=>{
+    const d=it.state==="done"?it.done:it.state==="plan"?it.day:"";
+    if(d&&(!m[it.key]||d>m[it.key]))m[it.key]=d;
+  }));
+  return m;
+}
+/* Den s nejmenším počtem lidí z oddělení, pak nejmenším počtem celkem; shodu rozhodne náhoda. */
+function audPickDay(days,items,dept,rnd){
+  const order={};days.forEach(d=>{order[d]=rnd();});
+  const dl=d=>items.filter(i=>i.dept===dept&&i.day===d&&i.state!=="skip").length;
+  const tl=d=>items.filter(i=>i.day===d&&i.state!=="skip").length;
+  return days.slice().sort((a,b)=>dl(a)-dl(b)||tl(a)-tl(b)||order[a]-order[b])[0];
+}
+/* Vygeneruje (nebo přegeneruje) plán týdne. Provedené a neproběhlé kontroly zůstanou,
+   nahradí se jen naplánované. rnd = zdroj náhody (testy ho dodají pevný). */
+function generatePlan(weekId,meta,rnd){
+  rnd=rnd||Math.random;
+  const days=audDays(weekId);
+  if(!days.length)throw new Error("Týden nemá žádný pracovní den.");
+  /* v běžícím týdnu jen dny od dneška (do minulých dnů nemá smysl plánovat) */
+  const today=todayIso((meta&&meta.at)||Date.now()),free=days.filter(d=>d>=today);
+  if(!free.length)throw new Error("Týden už nemá žádný zbývající pracovní den.");
+  const old=audPlan(weekId);
+  const items=old?old.items.filter(i=>i.state!=="plan"):[];
+  const inPlan=new Set(items.map(i=>i.key));
+  const last=audLast(),pct=audSet().pct;
+  audDepts().forEach(dept=>{
+    const people=audPeople(dept);
+    const need=Math.max(0,audCount(people.length,pct)-items.filter(i=>i.dept===dept&&i.state==="done").length);
+    const pool=people.filter(e=>!inPlan.has(e.key)).map(e=>({e,r:rnd(),last:last[e.key]||""}))
+      .sort((a,b)=>(a.last<b.last?-1:a.last>b.last?1:a.r-b.r)).slice(0,need);
+    pool.forEach(({e})=>{
+      items.push({id:uid("k"),key:e.key,name:audName(e),dept,day:audPickDay(free,items,dept,rnd),state:"plan",
+        done:"",checker:"",results:[],note:"",reason:"",extra:false,at:0,by:""});
+      inPlan.add(e.key);
+    });
+  });
+  S.audit.plans[weekId]={at:(meta&&meta.at)||Date.now(),by:String((meta&&meta.by)||"").slice(0,60),pct,days,
+    items:items.sort((a,b)=>(a.day<b.day?-1:a.day>b.day?1:0)||norm(a.dept).localeCompare(norm(b.dept),"cs")||norm(a.name).localeCompare(norm(b.name),"cs"))};
+  return S.audit.plans[weekId];
+}
+/* Zápis kontroly: answers = {idBodu: true|false}, notes = {idBodu: text}. Body se uloží
+   i s textem (pozdější změna nutných úkonů zápis nezmění). */
+function recordCheck(weekId,itemId,data,meta){
+  const it=audItem(weekId,itemId);
+  if(!it)throw new Error("Kontrola v plánu není.");
+  const tasks=audTasks(it.dept);
+  if(!tasks.length)throw new Error("Oddělení "+it.dept+" nemá nutné úkony.");
+  const ans=data.answers||{},notes=data.notes||{};
+  const missing=tasks.filter(t=>typeof ans[t.id]!=="boolean");
+  if(missing.length)throw new Error("U každého bodu vyber splněno, nebo nesplněno ("+missing.length+" chybí).");
+  if(!ISO_DAY.test(String(data.date||"")))throw new Error("Vyber datum kontroly.");
+  it.state="done";it.done=data.date;it.checker=String(data.checker||"").trim().slice(0,60);
+  it.results=tasks.map(t=>({t:t.id,text:t.text,ok:ans[t.id],note:String(notes[t.id]||"").trim().slice(0,300)}));
+  it.note=String(data.note||"").trim().slice(0,1000);it.reason="";
+  it.at=(meta&&meta.at)||Date.now();it.by=String((meta&&meta.by)||"").slice(0,60);
+  const e=S.employees[it.key];if(e)it.name=audName(e);
+  return it;
+}
+function skipCheck(weekId,itemId,reason,meta){
+  const it=audItem(weekId,itemId);
+  if(!it)return null;
+  it.state="skip";it.reason=String(reason||"").trim().slice(0,300);it.done="";it.results=[];
+  it.at=(meta&&meta.at)||Date.now();it.by=String((meta&&meta.by)||"").slice(0,60);
+  return it;
+}
+function undoCheck(weekId,itemId){
+  const it=audItem(weekId,itemId);
+  if(!it)return null;
+  it.state="plan";it.done="";it.checker="";it.results=[];it.note="";it.reason="";it.at=0;it.by="";
+  return it;
+}
+/* Náhradník za člověka, u kterého kontrola neproběhla: jiný z téhož oddělení, který v plánu
+   týdne není (přednost má ten, kdo nejdéle nebyl kontrolovaný). Den zůstane stejný. */
+function substituteCheck(weekId,itemId,reason,meta,rnd){
+  rnd=rnd||Math.random;
+  const p=audPlan(weekId),it=audItem(weekId,itemId);
+  if(!p||!it)return null;
+  const inPlan=new Set(p.items.map(i=>i.key)),last=audLast();
+  const cand=audPeople(it.dept).filter(e=>!inPlan.has(e.key)).map(e=>({e,r:rnd(),last:last[e.key]||""}))
+    .sort((a,b)=>(a.last<b.last?-1:a.last>b.last?1:a.r-b.r))[0];
+  if(!cand)return null;
+  if(it.state==="plan")skipCheck(weekId,itemId,reason||"náhradník",meta);
+  const sub={id:uid("k"),key:cand.e.key,name:audName(cand.e),dept:it.dept,day:it.day,state:"plan",done:"",checker:"",results:[],note:"",
+    reason:"",extra:false,sub:it.id,at:0,by:""};
+  p.items.splice(p.items.indexOf(it)+1,0,sub);
+  return sub;
+}
+function addToPlan(weekId,key,day,meta){
+  const e=S.employees[key],dept=empDept(e);
+  if(!e||!dept)throw new Error("Člověk nemá pozici, nejde ho zařadit do kontroly.");
+  const days=audDays(weekId);
+  if(!days.includes(day))throw new Error("Vyber pracovní den týdne.");
+  let p=audPlan(weekId);
+  if(!p)p=S.audit.plans[weekId]={at:(meta&&meta.at)||Date.now(),by:String((meta&&meta.by)||"").slice(0,60),pct:audSet().pct,days,items:[]};
+  if(p.items.some(i=>i.key===key&&i.state==="plan"))throw new Error(audName(e)+" už v plánu týdne je.");
+  const it={id:uid("k"),key,name:audName(e),dept,day,state:"plan",done:"",checker:"",results:[],note:"",reason:"",extra:true,at:0,by:""};
+  p.items.push(it);
+  p.items.sort((a,b)=>(a.day<b.day?-1:a.day>b.day?1:0));
+  return it;
+}
+function removeFromPlan(weekId,itemId){
+  const p=audPlan(weekId);
+  if(!p)return;
+  p.items=p.items.filter(i=>!(i.id===itemId&&i.state==="plan"));
+}
+/* Výsledek jedné kontroly: počet bodů, splněných, nesplněné body. */
+function checkScore(it){
+  const n=it.results.length,ok=it.results.filter(r=>r.ok).length;
+  return {n,ok,fail:it.results.filter(r=>!r.ok),pct:n?ok/n*100:null};
+}
+/* Provedené kontroly člověka od nejnovější (pro jeho kartu). */
+function personChecks(key,from,to){
+  const out=[];
+  Object.entries((S.audit&&S.audit.plans)||{}).forEach(([w,p])=>p.items.forEach(it=>{
+    if(it.key===key&&it.state==="done"&&(!from||it.done>=from)&&(!to||it.done<=to))out.push({...it,week:w,score:checkScore(it)});
+  }));
+  return out.sort((a,b)=>(a.done<b.done?1:a.done>b.done?-1:0));
+}
+function personAuditStats(key,from,to){
+  const list=personChecks(key,from,to);
+  const n=list.reduce((x,c)=>x+c.score.n,0),ok=list.reduce((x,c)=>x+c.score.ok,0);
+  return {checks:list.length,points:n,ok,pct:n?ok/n*100:null,clean:list.filter(c=>c.score.ok===c.score.n).length,last:list[0]||null};
+}
+/* Souhrn týdne: plán, provedeno, neproběhlo, nezapsáno po termínu, plnění bodů. */
+function planSummary(weekId,today){
+  today=today||todayIso();
+  const p=audPlan(weekId);
+  if(!p)return null;
+  const live=p.items.filter(i=>i.state!=="skip");
+  const done=p.items.filter(i=>i.state==="done");
+  const pts=done.reduce((x,i)=>x+i.results.length,0),ok=done.reduce((x,i)=>x+i.results.filter(r=>r.ok).length,0);
+  return {planned:live.length,done:done.length,skip:p.items.length-live.length,late:p.items.filter(i=>i.state==="plan"&&i.day<today).length,
+    today:p.items.filter(i=>i.state==="plan"&&i.day===today).length,points:pts,ok,pct:pts?ok/pts*100:null,clean:done.filter(i=>i.results.every(r=>r.ok)).length};
+}
+/* Kontroly po termínu (naplánované na den, který už minul, a nezapsané). */
+function auditLate(today){
+  today=today||todayIso();
+  let n=0;
+  Object.values((S.audit&&S.audit.plans)||{}).forEach(p=>p.items.forEach(i=>{if(i.state==="plan"&&i.day<today)n++;}));
+  return n;
+}
+/* Výsledky za období: po odděleních a nejčastěji nesplněné body. */
+function auditResults(from,to,dept){
+  const rows=[];
+  Object.entries((S.audit&&S.audit.plans)||{}).forEach(([w,p])=>p.items.forEach(it=>{
+    if(it.state==="done"&&(!from||it.done>=from)&&(!to||it.done<=to)&&(!dept||it.dept===dept))rows.push({...it,week:w,score:checkScore(it)});
+  }));
+  rows.sort((a,b)=>(a.done<b.done?1:a.done>b.done?-1:0));
+  const byDept={};
+  rows.forEach(r=>{
+    const d=byDept[r.dept]||(byDept[r.dept]={dept:r.dept,checks:0,points:0,ok:0,people:new Set(),clean:0});
+    d.checks++;d.points+=r.score.n;d.ok+=r.score.ok;d.people.add(r.key);if(r.score.ok===r.score.n)d.clean++;
+  });
+  const fails={};
+  rows.forEach(r=>r.results.forEach(x=>{
+    const k=r.dept+"|"+x.text;
+    const f=fails[k]||(fails[k]={dept:r.dept,text:x.text,n:0,fail:0});
+    f.n++;if(!x.ok)f.fail++;
+  }));
+  return {rows,depts:Object.values(byDept).map(d=>({...d,people:d.people.size,pct:d.points?d.ok/d.points*100:null})).sort((a,b)=>norm(a.dept).localeCompare(norm(b.dept),"cs")),
+    fails:Object.values(fails).filter(f=>f.fail).sort((a,b)=>b.fail/b.n-a.fail/a.n||b.fail-a.fail).slice(0,15)};
+}
+/* Seznamy nutných úkonů pro oddělení, která už nemají žádnou pozici (např. po přejmenování). */
+function auditOrphans(){
+  const d=new Set(departments());
+  return Object.keys((S.audit&&S.audit.tasks)||{}).filter(k=>!d.has(k)&&S.audit.tasks[k].length);
+}
+function cleanAudit(input){
+  const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const arr=v=>Array.isArray(v)?v:[];
+  const str=(v,max)=>String(v==null?"":v).slice(0,max);
+  const num=(v,d,lo,hi)=>{const n=Number(v);return Number.isFinite(n)?clamp(n,lo,hi):d;};
+  const day=v=>ISO_DAY.test(String(v))?String(v):"";
+  const key=(v,max)=>{const k=str(v,max).trim();return (k==="__proto__"||k==="constructor"||k==="prototype")?"":k;};
+  const id=(v,p)=>typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);
+  const o=obj(input),st=obj(o.settings);
+  const tasks={};
+  Object.entries(obj(o.tasks)).forEach(([d,list])=>{
+    const k=key(d,60);
+    if(!k)return;
+    const seen=new Set();
+    const l=arr(list).filter(t=>t&&typeof t==="object").slice(0,50).map(t=>({id:id(t.id,"t"),text:str(t.text,300).trim()}))
+      .filter(t=>t.text&&!seen.has(t.id)&&seen.add(t.id));
+    if(l.length)tasks[k]=l;
+  });
+  const plans={};
+  Object.entries(obj(o.plans)).filter(([w])=>WEEK_ID.test(w)).sort().slice(-260).forEach(([w,p])=>{
+    p=obj(p);
+    const seen=new Set();
+    const items=arr(p.items).filter(i=>i&&typeof i==="object").slice(0,3000).map(i=>{
+      const state=["plan","done","skip"].includes(i.state)?i.state:"plan";
+      return {id:id(i.id,"k"),key:key(i.key,120),name:str(i.name,120),dept:key(i.dept,60),day:day(i.day),state,
+        done:state==="done"?day(i.done):"",checker:str(i.checker,60),
+        results:state==="done"?arr(i.results).filter(r=>r&&typeof r==="object").slice(0,50).map(r=>({t:str(r.t,40),text:str(r.text,300),ok:r.ok===true,note:str(r.note,300)})):[],
+        note:str(i.note,1000),reason:str(i.reason,300),extra:!!i.extra,...(typeof i.sub==="string"&&SAFE_ID.test(i.sub)?{sub:i.sub}:{}),
+        at:num(i.at,0,0,1e15),by:str(i.by,60)};
+    }).filter(i=>i.key&&i.dept&&i.day&&!(i.state==="done"&&!i.done)&&!seen.has(i.id)&&seen.add(i.id));
+    plans[w]={at:num(p.at,0,0,1e15),by:str(p.by,60),pct:Math.round(num(p.pct,AUD_DEFAULTS.pct,1,100)),
+      days:arr(p.days).map(day).filter(Boolean).slice(0,7),items};
+  });
+  return {tasks,plans,settings:{pct:Math.round(num(st.pct,AUD_DEFAULTS.pct,5,100))}};
 }
 
 /* Oprava: CSV z Excelu bývá ve Windows-1250, z Google Tabulek a Macu v UTF-8.

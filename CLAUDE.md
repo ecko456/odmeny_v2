@@ -48,10 +48,15 @@ Stav k 9. 10. 2026:
   po dokončení úkonů, pak 30 dní od předchozí kontroly); soupis problémových EAN s kompletní
   historií, „ať se neřeší duplicitně, jen se otevře znovu původní problém“; PDF týdenních
   reportů a celkový souhrn. „Top 5 budu vkládat vždy manuálně … do budoucna z importu.“
-- **Další zadání (rozpracované): Kontroly.** Ke každému oddělení „Nutné úkony“ (body, co musí
-  operátor dělat). Na týden dopředu se vygeneruje namátková kontrola: 25 % zaměstnanců
-  z každého oddělení, rozložených postupně na různé dny. U každého pracovníka se u každého
-  bodu zapíše splněno / nesplněno a zavede se to do jeho karty.
+- **Verze 2.3: Kontroly** (pohled `kontroly`, data `S.audit`). Zadání uživatele: „ke každému
+  oddělení Nutné úkony, co musí operátor dělat v jednotlivých bodech. A vždy půjde vygenerovat
+  na týden dopředu namátková kontrola, vždy to vybere 25 % zaměstnanců z každého oddělení
+  a rozloží je to postupně na různé dny. U každého pracovníka se uvede u každého bodu, zda
+  bylo splněno, nebo ne, a zavede se to do systému do jeho karty.“ Podrobnosti v části
+  „Kontroly“ níže.
+- Obě verze (2.2 a 2.3) jsou na větvi `claude/elegant-clarke-vl5n7d`, do `main` zatím ne.
+- Od uživatele se čeká zpětná vazba na Top 5 a Kontroly (vzhled PDF, rozložení plánu,
+  texty bodů) a případně vzorek exportu evidence práce s EAN.
 
 Stav k 1. 10. 2026:
 
@@ -181,7 +186,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.0 | `9f26efa` | osobní pohled pro každou kartičku, historie změn, matice dovedností, profil člověka |
 | 2.1 | `019af97` | navýšení platu, evidence práce s časem a ID, jen Kafe, PDF pravidel |
 | 2.1 na `/odmeny_v2/` | `e762813` | stejný kód, oddělený od ostré verze |
-| 2.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Top 5 nejméně efektivně, oprava sloupce EAN v importu |
+| 2.2 | `28d6bde` | Top 5 nejméně efektivně, oprava sloupce EAN v importu |
+| 2.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Kontroly (nutné úkony, namátkové kontroly 25 % z oddělení) |
 
 Verze 2.1 přidala:
 
@@ -309,8 +315,9 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `sanctions[]`, `sanReasons[]`;
   - `kafe{period: práh v hodinách}`;
   - `issued{period: {key: {at, tabaky, kafe, pos, lvl}}}`;
-  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff`);
+  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit`);
   - `eff`: Top 5 nejméně efektivně (viz níže);
+  - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
   - `current`, `demo`, `v`.
 - **Osobní nastavení** (`prefs`, pro každou kartičku zvlášť, `cleanPrefs` v `app.js`):
@@ -381,7 +388,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `vyroba`, `top5`, `pozice`, `nastaveni`.
+  `vyroba`, `top5`, `kontroly`, `pozice`, `nastaveni`.
 - Horní lišta:
   - hodiny = historie změn (`openLog`, odznak nových od posledního otevření);
   - stav ukládání.
@@ -430,6 +437,30 @@ Pozor:
 - Překreslení tabulky po `change` se odkládá, dokud je stisknuté tlačítko myši (jinak by
   klik na tlačítko v řádku zmizel).
 
+## Kontroly (verze 2.3)
+
+Data `S.audit` (`blankAudit`, čištění `cleanAudit` v `core.js`):
+
+- `tasks{oddělení: [{id, text}]}`: nutné úkony. Klíč je název oddělení (`deptOf` pozice).
+  Po přejmenování oddělení zůstane seznam pod starým názvem; `auditOrphans` ho najde a UI
+  nabídne převod na jiné oddělení.
+- `plans{YYYY-Www: {at, by, pct, days[], items[]}}`: plán týdne. Položka:
+  `{id, key, name, dept, day, state plan|done|skip, done, checker, results[{t, text, ok, note}],
+  note, reason, extra, sub, at, by}`. Výsledek drží text bodu z doby kontroly.
+- `settings{pct}` (výchozí 25).
+
+Výpočty: `generatePlan` (z každého oddělení `audCount` = ceil(pct) lidí, přednost má nejdéle
+nekontrolovaný podle `audLast`, den podle `audPickDay`: nejméně lidí z oddělení, pak celkem,
+shodu rozhodne náhoda; jen pracovní dny bez svátků, v běžícím týdnu od dneška; přegenerování
+nechá `done` a `skip`), `recordCheck` (všechny body musí mít odpověď), `skipCheck`,
+`substituteCheck`, `addToPlan`, `removeFromPlan`, `undoCheck`, `personChecks`,
+`personAuditStats`, `planSummary`, `auditResults`, `auditLate`. `describeChanges` píše
+záznamy kind `audit` (u výsledku i `key` člověka).
+
+UI v `app.js` (sekce „KONTROLY“): `renderKontroly` (záložky plán, nutné úkony, výsledky),
+`ktCheckForm` (dialog s body), `ktPersonCard` (Lidé i Profil), PDF `drawAuditPlan`
+(rozpis a kontrolní listy) a `drawAuditResults`.
+
 ## Testy a lokální běh
 
 Kontejner cloudové session má předinstalované PHP 8.4 CLI (sqlite3, mbstring), Node 22
@@ -453,7 +484,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_v2.js`: novinky 2.0;
   - `e2e_v21.js`: novinky 2.1;
   - `e2e_top5.js`: Top 5 (2.2);
-  - `e2e_upgrade22.js`: aktualizace 2.1 → 2.2 na místě na lokálním Apachi (návod v hlavičce).
+  - `e2e_kontroly.js`: Kontroly (2.3);
+  - `e2e_upgrade22.js`, `e2e_upgrade23.js`: aktualizace 2.1 → 2.2 a 2.2 → 2.3 na místě na
+    lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.
 - Snímky ukládají do `$S/oshots*`, prohlédni si je.
 - **Test „verze 2 vedle ostré“** běží na lokálním Apachi v kontejneru a maže lokální

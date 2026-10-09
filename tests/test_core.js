@@ -256,7 +256,7 @@ test('historie změn: kdo co změnil, slučování a návrat hodnoty', () => {
   assert.ok(out.late.some(t => t === 'Ruční úprava Novák Martin (' + m + '): +3 → 0'), 'po 10 minutách se neslučuje');
   assert.strictEqual(out.hasCurrent, false, 'vybrané období je osobní');
   assert.ok(!out.settings.includes('hiddenCols') && !out.settings.includes('lockMinutes'));
-  assert.strictEqual(out.v, 4);
+  assert.strictEqual(out.v, 5);
   return null;
 });
 
@@ -297,7 +297,7 @@ test('sanitizeState: oddělení, zaučení, historie zařazení a změn', () => 
   assert.deepStrictEqual(o.issued['2026-09']['c|d'], { at: 1, tabaky: 2, kafe: false });
   assert.strictEqual(o.log.length, 1);
   assert.deepStrictEqual(o.log[0], { at: 1, by: 'x'.repeat(60), card: '', kind: 'data', text: '<img src=x>', key: 'a|b', m: 'adj:1', p: 'P', v0: '1', v1: '2' });
-  assert.strictEqual(o.v, 4);
+  assert.strictEqual(o.v, 5);
   return null;
 });
 
@@ -389,7 +389,7 @@ test('aktualizace 2.0 → 2.1: data zůstanou beze změny', () => {
   assert.ok(out.again, 'opakované načtení nic nemění');
   assert.ok(out.defaults, 'nové volby mají výchozí hodnoty: s tabáky, bez navýšení a podmínek');
   assert.strictEqual(out.time, false, 'stará evidence práce nemá strávený čas');
-  assert.strictEqual(out.v, 4);
+  assert.strictEqual(out.v, 5);
   assert.ok(out.rows.every(r => r[5] === 0), 'bez nastavení nikdo nedostane navýšení');
   return null;
 });
@@ -633,7 +633,7 @@ test('Top 5: EAN v evidenci práce, souhrny po dnech a pracovnících', () => {
   assert.deepStrictEqual(out.st.Y.d['2026-10-05'], [0, 0, 1e9, 0, 0]);
   assert.deepStrictEqual(out.st.Y.w['petr dvorak']['2026-10-05'], [1, 2, 0, 0]);
   assert.deepStrictEqual(out.eff, { weeks: {}, cases: [], reports: [], settings: { min: 60, target: 85, d1: 14, d2: 30, unit: 'h' } });
-  assert.strictEqual(out.v, 4);
+  assert.strictEqual(out.v, 5);
   return null;
 });
 
@@ -809,20 +809,135 @@ test('aktualizace 2.1 → 2.2: data zůstanou beze změny, Top 5 začne prázdn�
   const core = loadCore();
   const out = JSON.parse(run(core, `
     const old = JSON.parse(JSON.stringify(sanitizeState(demoData())));
-    delete old.eff; old.v = 3;
+    delete old.eff; delete old.audit; old.v = 3;
     old.settings.prodCols = { header: 0, name: 0, date: 1, ks: 2, spent: 3, norm: 4, unit: 'min', normPer: 'row', heads: ['Jméno', 'Datum', 'Ks', 'Čas', 'Norma'] };
     const neu = sanitizeState(JSON.parse(JSON.stringify(old)));
     const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
-    const strip = st => { const c = JSON.parse(JSON.stringify(st)); delete c.eff; delete c.v; delete c.settings.prodCols.item; delete c.settings.prodCols.iname; return c; };
+    const strip = st => { const c = JSON.parse(JSON.stringify(st)); delete c.eff; delete c.audit; delete c.v; delete c.settings.prodCols.item; delete c.settings.prodCols.iname; return c; };
     const o2 = JSON.parse(JSON.stringify(old)); delete o2.v;
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(o2)), eff: neu.eff, cols: [neu.settings.prodCols.item, neu.settings.prodCols.iname], v: neu.v,
       items: Object.values(neu.production).some(pp => 'items' in pp), weeks: (S = neu, effWeeks()) })`));
   assert.ok(out.same, 'všechna data z verze 2.1 zůstanou beze změny');
   assert.deepStrictEqual(out.eff.cases, []);
   assert.deepStrictEqual(out.cols, [null, null], 'uložené sloupce importu bez EAN');
-  assert.strictEqual(out.v, 4);
+  assert.strictEqual(out.v, 5);
   assert.strictEqual(out.items, false, 'stará evidence práce položky nemá, Top 5 čeká na nový import s EAN');
   assert.deepStrictEqual(out.weeks, []);
+  return null;
+});
+
+test('Kontroly: 25 % lidí z oddělení, rozložení do dnů bez svátku, střídání za čtyři týdny', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = blank();
+    const lvl = () => [1, 2, 3, 4].map(n => ({ name: 'L' + n, tabaky: n * 2, desc: '' }));
+    S.positions = [
+      { id: 'p_cnc', name: 'CNC', dept: 'Obrobna', max: null, levels: lvl(), penalty: [], bonus: [] },
+      { id: 'p_fre', name: 'Frézka', dept: 'Obrobna', max: null, levels: lvl(), penalty: [], bonus: [] },
+      { id: 'p_kon', name: 'Kontrola', dept: 'Kontrola kvality', max: null, levels: lvl(), penalty: [], bonus: [] },
+      { id: 'p_mon', name: 'Montáž', dept: '', max: null, levels: lvl(), penalty: [], bonus: [] },
+    ];
+    const add = (k, pos, extra) => { S.employees[k] = { key: k, last: 'Příjmení' + k, first: 'Jan', positionId: pos, level: 1, note: '', ...(extra || {}) }; };
+    for (let i = 0; i < 7; i++) add('c' + i, 'p_cnc');
+    for (let i = 0; i < 3; i++) add('f' + i, 'p_fre');
+    for (let i = 0; i < 4; i++) add('k' + i, 'p_kon');
+    for (let i = 0; i < 9; i++) add('m' + i, 'p_mon');
+    add('x', 'p_cnc', { excluded: true });
+    add('n', null);
+    S = sanitizeState(S);
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    const meta = d => ({ at: Date.UTC(2026, 9, d, 9), by: 'Vedoucí dílny' });
+    const before = sharedState(S);
+    S.audit.tasks['Obrobna'] = [{ id: 't1', text: 'Kontrola prvního kusu' }, { id: 't2', text: 'Úklid pracoviště' }, { id: 't3', text: 'Záznam do průvodky' }];
+    const days = audDays('2026-W44');
+    const plan = generatePlan('2026-W44', meta(23), rnd);
+    const per = {}; plan.items.forEach(i => { per[i.dept] = (per[i.dept] || 0) + 1; });
+    const load = {}; plan.items.forEach(i => { load[i.day] = (load[i.day] || 0) + 1; });
+    const obDays = plan.items.filter(i => i.dept === 'Obrobna').map(i => i.day);
+    const total = plan.items.length;
+    const ob = plan.items.find(i => i.dept === 'Obrobna');
+    let noAnswer = '', noTasks = '';
+    try { recordCheck('2026-W44', ob.id, { date: ob.day, answers: { t1: true, t2: false } }, meta(26)); } catch (e) { noAnswer = e.message; }
+    const mon = plan.items.find(i => i.dept === 'Montáž');
+    try { recordCheck('2026-W44', mon.id, { date: mon.day, answers: {} }, meta(26)); } catch (e) { noTasks = e.message; }
+    recordCheck('2026-W44', ob.id, { date: ob.day, checker: 'Mistr', answers: { t1: true, t2: false, t3: true }, notes: { t2: 'Pod strojem třísky' }, note: 'Jinak v pořádku.' }, meta(26));
+    S.audit.tasks['Obrobna'][0].text = 'Kontrola prvního kusu podle výkresu';
+    const sub = substituteCheck('2026-W44', mon.id, 'nemocný', meta(26), rnd);
+    const afterRecord = sharedState(S);
+    const changes = describeChanges(before, afterRecord, { at: Date.UTC(2026, 9, 26, 10), by: 'Vedoucí dílny' }).entries.map(e => e.text);
+    const sum = planSummary('2026-W44', '2026-10-29');
+    const stats = personAuditStats(ob.key);
+    const checks = personChecks(ob.key);
+    const regen = generatePlan('2026-W44', meta(27), rnd);
+    const live = d => regen.items.filter(i => i.dept === d && i.state !== 'skip').length;
+    const regenChanges = describeChanges(afterRecord, sharedState(S), { at: Date.UTC(2026, 9, 27, 10), by: 'Vedoucí dílny' }).entries.map(e => e.text);
+    // čtyři další týdny, vše provedeno: vystřídají se všichni
+    const seen = {};
+    ['2026-W45', '2026-W46', '2026-W47', '2026-W48'].forEach(w => {
+      generatePlan(w, meta(28), rnd).items.forEach(i => { i.state = 'done'; i.done = i.day; (seen[i.dept] || (seen[i.dept] = new Set())).add(i.key); });
+    });
+    const again = sanitizeState(JSON.parse(JSON.stringify(sharedState(S))));
+    const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+    const evil = cleanAudit({ tasks: { __proto__x: [], 'Obrobna': [{ id: 'a', text: '' }, { id: 'b', text: 'x'.repeat(400) }, { id: 'b', text: 'dup' }], '': [{ text: 'bez oddělení' }] },
+      plans: { 'zitra': { items: [] }, '2026-W50': { pct: 900, days: ['2026-12-07', 'pondělí'], items: [
+        { id: 'i1', key: 'c1', dept: 'Obrobna', day: '2026-12-07', state: 'done', done: '', results: [] },
+        { id: 'i2', key: 'c2', dept: 'Obrobna', day: '2026-12-08', state: 'hack', results: [{ ok: 'ano' }] },
+        { id: 'i3', key: '', dept: 'Obrobna', day: '2026-12-08' },
+        { id: 'i4', key: 'c3', dept: 'Obrobna', day: '2026-12-09', state: 'done', done: '2026-12-09', results: [{ t: 't1', text: 'A', ok: 'true' }, { t: 't2', text: 'B', ok: true }] } ] } },
+      settings: { pct: 0 } });
+    JSON.stringify({ days, per, load, obDays, total, excluded: plan.items.some(i => i.key === 'x' || i.key === 'n'),
+      noAnswer, noTasks, ob: [ob.state, ob.checker, ob.results.map(r => [r.text, r.ok, r.note])], sub: sub && [sub.dept, sub.day === mon.day, sub.key !== mon.key, mon.state, mon.reason],
+      changes, sum, stats: [stats.checks, stats.points, stats.ok, Math.round(stats.pct * 10) / 10], checks: checks.map(c => [c.done, c.score.ok, c.score.n]),
+      regen: [live('Obrobna'), live('Kontrola kvality'), live('Montáž'), regen.items.filter(i => i.state === 'done').length, regen.items.filter(i => i.state === 'skip').length,
+        regen.items.some(i => i.state === 'plan' && i.key === mon.key)], regenChanges,
+      seen: Object.fromEntries(Object.entries(seen).map(([d, s]) => [d, s.size])), same: JSON.stringify(canon(again.audit)) === JSON.stringify(canon(sharedState(S).audit)), evil })`));
+  assert.deepStrictEqual(out.days, ['2026-10-26', '2026-10-27', '2026-10-29', '2026-10-30'], '28. 10. je státní svátek');
+  assert.deepStrictEqual(out.per, { Obrobna: 3, 'Kontrola kvality': 1, 'Montáž': 3 }, '25 % zaokrouhleno nahoru: 10 → 3, 4 → 1, 9 → 3');
+  assert.strictEqual(out.total, 7);
+  assert.strictEqual(out.excluded, false, 'vyřazení a lidé bez pozice se nekontrolují');
+  assert.strictEqual(new Set(out.obDays).size, 3, 'lidé z jednoho oddělení jsou na různých dnech');
+  assert.deepStrictEqual(Object.values(out.load).sort(), [1, 2, 2, 2], 'dny jsou vytížené rovnoměrně');
+  assert.match(out.noAnswer, /U každého bodu vyber/);
+  assert.match(out.noTasks, /Montáž nemá nutné úkony/);
+  assert.deepStrictEqual(out.ob, ['done', 'Mistr', [['Kontrola prvního kusu', true, ''], ['Úklid pracoviště', false, 'Pod strojem třísky'], ['Záznam do průvodky', true, '']]],
+    'zápis drží text bodu z doby kontroly');
+  assert.deepStrictEqual(out.sub, ['Montáž', true, true, 'skip', 'nemocný'], 'náhradník z téhož oddělení na stejný den');
+  assert.ok(out.changes.includes('Nutné úkony – Obrobna: přidán bod „Kontrola prvního kusu podle výkresu“'), out.changes.join(' | '));
+  assert.ok(out.changes.includes('Kontroly T44/2026: vygenerován plán, naplánováno 6 lidí (25 % z každého oddělení)'), out.changes.join(' | '));
+  assert.ok(out.changes.some(t => /^Kontrola Příjmení[cf]\d Jan \(Obrobna\) 2[67]\. 10\. 2026, kontroloval Mistr: splněno 2 z 3 \(nesplněno: Úklid pracoviště\)$/.test(t)), out.changes.join(' | '));
+  assert.ok(out.changes.some(t => /^Kontrola Příjmením\d Jan \(Montáž\) .*: neproběhla – nemocný$/.test(t)), out.changes.join(' | '));
+  assert.ok(out.changes.some(t => /^Kontroly T44\/2026: náhradník Příjmením\d Jan \(Montáž\) na /.test(t)), out.changes.join(' | '));
+  assert.deepStrictEqual([out.sum.planned, out.sum.done, out.sum.skip, out.sum.points, out.sum.ok], [7, 1, 1, 3, 2]);
+  assert.deepStrictEqual(out.stats, [1, 3, 2, 66.7]);
+  assert.strictEqual(out.checks.length, 1);
+  assert.deepStrictEqual(out.regen, [3, 1, 3, 1, 1, false], 'přegenerování nechá provedené a neproběhlé, nemocného znovu nevybere');
+  assert.deepStrictEqual(out.regenChanges, ['Kontroly T44/2026: plán přegenerován, naplánováno 6 lidí (25 % z každého oddělení)'], 'provedené kontroly se znovu nezapíšou');
+  assert.deepStrictEqual(out.seen, { Obrobna: 10, 'Kontrola kvality': 4, 'Montáž': 9 }, 'za čtyři týdny se vystřídají všichni');
+  assert.ok(out.same, 'kontroly přežijí uložení a načtení beze změny');
+  assert.deepStrictEqual(Object.keys(out.evil.tasks), ['Obrobna'], 'prázdné oddělení pryč');
+  assert.deepStrictEqual(out.evil.tasks.Obrobna.map(t => [t.id, t.text.length]), [['b', 300]], 'prázdný bod a duplicitní id pryč, text zkrácen');
+  assert.deepStrictEqual(Object.keys(out.evil.plans), ['2026-W50']);
+  assert.deepStrictEqual(out.evil.plans['2026-W50'].items.map(i => [i.id, i.state, i.results.map(r => r.ok)]), [['i2', 'plan', []], ['i4', 'done', [false, true]]],
+    'provedená kontrola bez data a bez člověka pryč, neznámý stav = naplánováno, ok jen true');
+  assert.deepStrictEqual([out.evil.plans['2026-W50'].pct, out.evil.plans['2026-W50'].days, out.evil.settings.pct], [100, ['2026-12-07'], 5]);
+  return null;
+});
+
+test('aktualizace 2.2 → 2.3: data zůstanou beze změny, Kontroly začnou prázdné', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    const old = JSON.parse(JSON.stringify(sanitizeState(demoData())));
+    delete old.audit; old.v = 4;
+    old.eff.weeks['2026-W41'] = { items: [{ id: 'e1', ean: 'A-1', name: 'Díl', spent: 600, norm: 300 }], at: 1, by: 'x' };
+    const neu = sanitizeState(JSON.parse(JSON.stringify(old)));
+    const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+    const strip = st => { const c = JSON.parse(JSON.stringify(st)); delete c.audit; delete c.v; return c; };
+    const o2 = JSON.parse(JSON.stringify(old)); delete o2.v;
+    JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(o2)), audit: neu.audit, v: neu.v })`));
+  assert.ok(out.same, 'všechna data z verze 2.2 zůstanou beze změny');
+  assert.deepStrictEqual(out.audit, { tasks: {}, plans: {}, settings: { pct: 25 } });
+  assert.strictEqual(out.v, 5);
   return null;
 });
 
