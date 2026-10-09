@@ -34,7 +34,42 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
-Stav k 9. 10. 2026:
+Stav k 9. 10. 2026 (verze 2.4):
+
+- **Matice dovedností místo Pozic** (pohled `matice` se záložkami Matice, Skupiny a pravidla,
+  Směny a kapacita; starý `pozice` je jen alias). Zadání uživatele (zkráceně): vytvořit
+  skupiny s názvem, u každé „Přidat dovednost“ (název, popis, hodnoticí schéma 0–4 se
+  standardními texty Žádná až Odborná úroveň); u skupiny maximum tabáků za dovednosti, každá
+  úroveň 25 %, procento skupiny = průměr („dvě dovednosti, jedna na 4 = 50 %“); sankce za
+  absence nad limit a bonus za víkendy; prémie, když má všechny dovednosti aspoň na 3 a splní
+  body (absence do 3 dnů, aspoň 2 víkendy, norma 80 %, „dodržování řádné pracovní morálky“)
+  → např. +20 % mzdy, další stupeň Extra bonus a „4 měsíce v řadě → možnost 2. platové
+  třídy“; u každého směna Stálá ranní / Směnnost skupina 1 / skupina 2; report rozložení
+  a kapacit „vždy spojíš Skupinu 1 s ranní stálou a porovnáš proti Skupině 2 a pak naopak“,
+  upravitelný a k tisku. A: „současné pozice zůstanou u každého člověka v okně s tlačítkem
+  Převedeno do nové verze, smazat … ať se nám nevypaří data“.
+- Rozhodnutí 2.4 (uživateli řečeno v závěru práce):
+  - tabáky = `round(maxTab × procento)`, zaokrouhleno na celé (`skillTab`);
+  - nová skupina nemá strop (`max: null`): bonus za víkendy se přičte k dovednostem;
+    převedené pozice dostaly strop = nejvyšší úroveň (jako dřív);
+  - body vedoucího platí jako splněné, dokud je vedoucí u člověka a měsíce neoznačí;
+  - série měsíců v řadě se počítá ze snímku výdeje (`issued.tier`), jinak z výpočtu;
+  - převod: pozice → skupina s jednou dovedností (úrovně = původní úrovně), úroveň člověka
+    i zaučení → hodnocení, navýšení u úrovní → stupně prémie, `e.legacy` = okno s původním
+    zařazením. Původní pole (`levels`, `level`, `skills`) zůstávají uložená.
+- **Sankce (2.4)**: procento je posuvník 5–50 % po 5 % (`SAN_PCTS`). **Srážka ze mzdy**
+  (`wage: true`): benefity nekrátí; od 7 dní před koncem měsíce sankce je nahoře upozornění
+  (`#wageAlert`, `wagePending`) se seznamem a tlačítkem „Srážka zpracována“ (`done{at, by}`),
+  zmizí, až jsou zpracované všechny. Zadání: „týden před koncem měsíce vyskočí upozornění …
+  budu muset odkliknout Srážka zpracována a pokud to bude u všech, tak upozornění zmizí“.
+- **Top 5 PDF (2.4)**: souhrn a PDF případu ve dvou verzích, kompletní a osekaná (bez
+  historie případu, volba v dialogu, pamatuje se v `prefs.t5PdfShort`). Záhlaví „Top 5
+  nejméně efektivně“ bez prostrkání, bez řádku Zpracovatel/Datum/Podpis, bez slova Odměny,
+  „Stav k“ jen s datem.
+- Od uživatele se čeká zpětná vazba na Matici (texty, report kapacit), na srážku ze mzdy
+  (kdy přesně má upozornění přijít) a na Top 5 PDF.
+
+Stav k 9. 10. 2026 (verze 2.2 a 2.3):
 
 - **Verze 2.2: modul Top 5 nejméně efektivně** (pohled `top5`, data `S.eff`). Uživatel
   zapisuje Top 5 týdne **ručně** (EAN, název dílu, strávený čas, norma), import evidence
@@ -187,7 +222,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.1 | `019af97` | navýšení platu, evidence práce s časem a ID, jen Kafe, PDF pravidel |
 | 2.1 na `/odmeny_v2/` | `e762813` | stejný kód, oddělený od ostré verze |
 | 2.2 | `28d6bde` | Top 5 nejméně efektivně, oprava sloupce EAN v importu |
-| 2.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Kontroly (nutné úkony, namátkové kontroly 25 % z oddělení) |
+| 2.3 | `b7a6f7d` | Kontroly (nutné úkony, namátkové kontroly 25 % z oddělení) |
+| 2.4 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Matice dovedností (skupiny, dovednosti 0–4, směny a kapacita, prémie), srážka ze mzdy, Top 5 PDF ve dvou verzích |
 
 Verze 2.1 přidala:
 
@@ -220,21 +256,28 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
 
 ## Pojmy
 
-- **Úrovně 1–4** (Nováček, Pokročilý, Samostatný, Profík): každá úroveň pozice má tabáky,
-  popis, navýšení platu a podmínky (`minAtt`, `minNorm`, `minUse`; `null` = nehlídá se).
+- **Skupina** (od 2.4, v datech pořád `positions[]`): dovednosti `skillset[]` hodnocené 0–4,
+  `maxTab` = tabáky, když jsou všechny dovednosti na 4. Každá úroveň je 25 %, procento skupiny
+  je průměr dovedností, tabáky = `round(maxTab × procento)`. Stupně prémie `tiers[]`.
+- **Úrovně 1–4** (Nováček, Pokročilý, Samostatný, Profík) jsou tvar do verze 2.3: pozice bez
+  `skillset` se počítá postaru (`levelOf` větev `legacy`), dnes jen pro porovnání s původní
+  aplikací v testech. `sanitizeState` každou takovou pozici převede na skupinu.
+- **Směna**: `R` stálá ranní, `S1` a `S2` směnnost skupina 1 a 2 (`SHIFTS`).
 - **Fond** = pracovní dny × směna (výchozí 7,5 h). Kdo má „zkrácený pátek“, má v pátek
   `friShift` (6,5 h).
 - **Absence** = celý pracovní den bez hodin a bez omluveného kódu (výchozí omluvené kódy
   jsou `D,DOV,N,NEM,PN,L,P,OČR,ŠK,S,V,NV`; porovnávají se bez diakritiky).
 - **Víkendová směna** vyplní jeden den absence. Zbytek absence → **srážka** podle pravidel
   pozice (`penalty [{at,t}]`). Bez absence → zbylé víkendy dají **bonus** (`bonus`).
-- **Sankce**: důvod ze seznamu + 10/30/50 % z nároku. Procenta se sčítají, každá sankce stojí
-  aspoň 1 tabák, 100 % a víc = vše. Starší záznamy mají pevné `points`.
+- **Sankce**: důvod ze seznamu + 5–50 % (po 5 %) z nároku. Procenta se sčítají, každá sankce
+  stojí aspoň 1 tabák, 100 % a víc = vše. Starší záznamy mají pevné `points`. **Srážka ze
+  mzdy** (`wage`) se do nároku nepočítá, jen připomene zpracování ve mzdách.
 - **Ruční úprava** (`adjust`) platí jen pro jeden měsíc. Může jít nad strop pozice nejvýš
   o `adjOver`.
 - **Výdej** (`issued`): potvrzení, že byl benefit vydán. Ukládá snímek (tabáky, Kafe, pozice,
   úroveň); když se výsledek pak změní, UI to ukáže.
-- **Zaučení** (`skills`) na dalších pozicích je jen pro matici dovedností a tabáky nemění.
+- **Zaučení**: hodnocení dovedností jiných skupin (`rate`) je jen pro matici a kapacitu,
+  tabáky nemění. Staré `skills{posId: 1–4}` zůstává uložené (převedlo se do `rate`).
 - **Vyřazený** (`excluded`) zůstává v evidenci, ale nehodnotí se.
 
 ## Architektura: server nevidí data
@@ -299,12 +342,19 @@ Stránka otevřená ve staré verzi pak dostane 426 a nová pole nesmaže.
 
 Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 
-- `positions[]`: `{id, name, dept, max, onlyKafe, levels[4], penalty[], bonus[]}`
-  - `max: null` = strop je nejvyšší úroveň;
-  - úroveň: `{name, tabaky, desc, raise, minAtt, minNorm, minUse}`.
+- `positions[]` (skupiny): `{id, name, dept, max, onlyKafe, levels[4], skillset[], maxTab, tiers[], penalty[], bonus[]}`
+  - `max: null` = bez stropu (maximum + nejvyšší bonus, `posMaxAuto`);
+  - `skillset[]`: `{id, name, desc, scale}`; `scale` je 5 úrovní `{name, desc}`, `null` = `STD_SCALE`;
+  - `tiers[]`: `{id, name, minSkill 0–4, raise %, reward, maxAbs, minWknd, minAtt, minNorm, minUse, manual[{id, text}], streak{months, label}|null}`;
+    prázdná podmínka = `null` = nehlídá se;
+  - `levels[4]` (`{name, tabaky, desc, raise, minAtt, minNorm, minUse}`) je tvar z verze 2.3,
+    zůstává uložený kvůli převodu a starým datům.
 - `employees{key}`:
   - klíč je `norm(příjmení)|norm(jméno)`;
-  - hodnota: `{key, first, last, positionId, level, note, shortFri, excluded, wid, skills{posId: 1–4}, hist[{at, pos, lvl}]}`.
+  - hodnota: `{key, first, last, positionId, level, note, shortFri, excluded, wid, skills{posId: 1–4}, rate{skillId: 1–4}, shift, legacy, hist[{at, pos, lvl, pct}]}`;
+  - `rate`: hodnocení dovedností (0 se neukládá); `shift`: `R|S1|S2`;
+  - `legacy`: snímek zařazení z 2.3 `{at, pos, dept, level, levelName, levelDesc, tabaky, onlyKafe, raise, skills[{pos, level, levelName}]}`,
+    dokud ho vedoucí nesmaže; `hist.pct` = procento dovedností (na 0,1).
 - `periods{YYYY-MM}`: docházka, `{days[iso], rows{key: {first, last, h[], c[]}}, codes, file, at, headerRow}`.
 - `production{YYYY-MM}`: evidence práce.
   - `{names{normJméno: {name, total, count, days{iso: ks}, spent, norm, nspent}}, records, total, time, file, at}`.
@@ -312,9 +362,11 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - `prodMap{normJméno: key}`: ruční spárování.
 - Další klíče:
   - `adjust{period: {key: ±n}}`;
-  - `sanctions[]`, `sanReasons[]`;
+  - `sanctions[]` (`{id, key, period, name, pct, note, at, wage?, done?{at, by}}`), `sanReasons[]`;
   - `kafe{period: práh v hodinách}`;
-  - `issued{period: {key: {at, tabaky, kafe, pos, lvl}}}`;
+  - `issued{period: {key: {at, tabaky, kafe, pos, lvl, pct, tier, raise}}}` (snímek při výdeji);
+  - `marks{period: {key: {bodId: důvod}}}`: body prémie, které vedoucí označil jako nesplněné;
+  - `capReport{groups[], thr, hidden[], note}`: report Směny a kapacita;
   - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit`);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
@@ -322,7 +374,8 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `current`, `demo`, `v`.
 - **Osobní nastavení** (`prefs`, pro každou kartičku zvlášť, `cleanPrefs` v `app.js`):
   - `period, sort, pos, onlyImported, onlyOpen, hiddenCols, sanFilter`;
-  - `lockMinutes, logSeen, matrixDept, profileRange, profileFrom, profileTo`.
+  - `lockMinutes, logSeen, matrixDept` (vybraná skupina v matici), `matrixShift, mxTab`;
+  - `profileRange, profileFrom, profileTo, t5PdfShort`.
   - `sharedState()` proto ze sdílených dat vyhazuje `current`, `hiddenCols` a `lockMinutes`.
 
 ### Když přidáváš pole (jinak se data ztratí)
@@ -359,9 +412,18 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - docházka % = `cappedHours / fund`;
   - plnění normy % = `norm / nspent`;
   - využití % = `spent / (totalHours × 60)`, jen když evidence obsahuje čas.
-- `raiseOf(L, perf)`: jde od úrovně člověka dolů. Použije první úroveň, která má `raise > 0`
-  a splněné všechny vyplněné podmínky. `own` = podmínky vlastní úrovně, ať UI ukáže, co chybí.
-- `allRows()` / `activeRows()`: řádky přehledu (`evaluate` + výroba + `perf` + `raise`).
+- `levelOf(e)`: u skupiny `{pos, n (průměr zaokrouhlený), pct, base = skillTab, min, skills}`;
+  `e._pct` přepíše procento (profil počítá minulé měsíce z výdeje nebo z `hist`).
+- `tierOf(e, ev, perf, pid, withStreak)`: nejvyšší stupeň, jehož `tierChecks` jsou splněné
+  (dovednosti `minRate ≥ minSkill`, docházka nahraná, `absDays ≤ maxAbs`, `wkDays ≥ minWknd`,
+  ukazatele, body vedoucího `markOf`, ztráta nároku = nesplněno). `next` = další stupeň,
+  `streaks` z `tierStreak` (snímek výdeje, jinak výpočet za měsíc).
+- `raiseOf(L, perf)`: jen stará data (pozice s úrovněmi), přes `legacyTier`.
+- `capacity(groupIds, thr, hidden)`: počty lidí s úrovní ≥ práh po směnách a varianty
+  A (ráno R + S1, odpoledne S2) a B (ráno R + S2, odpoledne S1). `skillGrid` = matice.
+- `allRows()` / `activeRows()`: řádky přehledu (`evaluate` + výroba + `perf` + `tier`/`raise`).
+- Srážka ze mzdy: `evaluate` počítá nárok jen ze sankcí bez `wage`; `wageFrom(period)` =
+  poslední den měsíce − 7, `wagePending(today)`, `setWageDone(id, done, meta)`.
 
 ## Importy
 
@@ -388,7 +450,9 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `vyroba`, `top5`, `kontroly`, `pozice`, `nastaveni`.
+  `vyroba`, `top5`, `kontroly`, `nastaveni` (`showView('pozice')` otevře Matici, záložku
+  Skupiny a pravidla).
+- Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
   - hodiny = historie změn (`openLog`, odznak nových od posledního otevření);
   - stav ukládání.
@@ -401,6 +465,27 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - Barevné tokeny pro světlý i tmavý režim jsou v `static/lock.css` (`:root`,
   `prefers-color-scheme`) a `app.css` na ně navazuje přes `var(--…)`.
 - Barvy grafů v profilu jsou ověřené validátorem palety (skill dataviz).
+
+## Matice dovedností (verze 2.4)
+
+UI v `app.js`:
+
+- sekce „SKUPINY A PRAVIDLA“: `renderPositions`, `skillDialog` (název, popis, schéma),
+  `tierCardHtml`, `TIER_TEMPLATES` (Prémie a Extra bonus podle zadání), `bindGroupEditor`
+  (delegované události na `#posEditor`);
+- sekce matice: `renderMatrix` (záložky `ui.mxTab`), `renderMatrixGrid` (klik na buňku
+  zvýší úroveň o 1, po 4 je 0), `renderCapacity`, `capRisks`, `drawCapacity` (PDF),
+  `exportMatrix` (Excel z `matrixSheets`);
+- u člověka (`renderPersonDetail`): skupina, směna, `legacyCard` + `legacyCompare` (tabáky
+  dřív a teď), hodnocení `rateRows`, zaučení v dalších skupinách, prémie `tierHtml`
+  s „označit nesplněno“ (`data-mark`).
+
+Převod dat (v `sanitizeState`): pozice bez `skillset` → jedna dovednost `{name: název pozice,
+scale: [Žádná úroveň, …úrovně pozice]}`, `maxTab` = nejvyšší úroveň, `max` = nejvyšší úroveň
+(když byl `null`), `tiers` z úrovní s navýšením (`minSkill` = úroveň). U lidí `rate` z `level`
+a `skills`, `legacy` snímek, `hist.pct` a `issued.pct` = úroveň × 25. Převod běží při každém
+načtení, dokud se data neuloží; id dovedností (`s` + id pozice) a stupňů (`t<úroveň>` + id
+pozice) jsou odvozená, takže vyjde na každém zařízení stejně.
 
 ## Top 5 nejméně efektivně (verze 2.2)
 
@@ -469,7 +554,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 19 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze
-node tests/test_core.js                 # proti původní aplikaci + opravy + 2.1
+node tests/test_core.js                 # 30 testů: proti původní aplikaci + opravy + 2.1 až 2.4
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -485,8 +570,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_v21.js`: novinky 2.1;
   - `e2e_top5.js`: Top 5 (2.2);
   - `e2e_kontroly.js`: Kontroly (2.3);
-  - `e2e_upgrade22.js`, `e2e_upgrade23.js`: aktualizace 2.1 → 2.2 a 2.2 → 2.3 na místě na
-    lokálním Apachi (návod v hlavičce).
+  - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4);
+  - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
+    2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.
 - Snímky ukládají do `$S/oshots*`, prohlédni si je.
 - **Test „verze 2 vedle ostré“** běží na lokálním Apachi v kontejneru a maže lokální
@@ -507,6 +593,13 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - Hodnoty z ukázkových dat nesmí prosáknout do historie změn (`dropDemoRaise`).
   - Snímek „před“ v testu aktualizace ber z čerstvého přihlášení. Paměť stránky se liší
     od uloženého stavu (`hist`).
+  - `pkill -f "php -S 127.0.0.1:8490"` v příkazu, jehož text ten vzor obsahuje, zabije
+    i vlastní shell. Restart serveru dej do skriptu v `$S` a spouštěj ho samostatně.
+  - První změna po ukázce se do historie nezapíše (základ je ukázka); v testech počkej na
+    `saved()` a teprve pak dělej změnu, kterou čekáš v historii.
+  - Po dialogu „Přidat člověka“ počkej, až detail ukáže nové jméno; `#pPos` existuje i u
+    předchozího člověka.
+  - Ve 2.3 je `data-li` úrovně v editoru pozice od 0.
 
 ## Pojistka pro rozpracovanou verzi
 

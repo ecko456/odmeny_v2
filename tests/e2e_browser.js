@@ -70,7 +70,7 @@ async function watch(page, label) {
   await page.click('#ovBody tr[data-key] td.col-name');
   await page.waitForSelector('#ovBody tr.detail');
   await page.screenshot({ path: `${shots}/04-overview-detail.png`, fullPage: true });
-  for (const view of ['lide', 'matice', 'sankce', 'dochazka', 'vyroba', 'pozice', 'nastaveni']) {
+  for (const view of ['lide', 'matice', 'sankce', 'kontroly', 'dochazka', 'vyroba', 'top5', 'nastaveni']) {
     await page.click(`#nav [data-view="${view}"]`);
     await page.waitForTimeout(350);
     await page.screenshot({ path: `${shots}/05-${view}.png`, fullPage: true });
@@ -125,14 +125,19 @@ async function watch(page, label) {
   for (let i = 0; i < names; i += 1) {
     await page.locator('#lList .list-item').nth(i).click();
     await page.selectOption('#pPos', { index: 1 });
-    await page.locator('#lDetail .lvlopt').nth(i % 4).click();
+    // hodnocení první dovednosti skupiny 1–4 (každá úroveň je 25 %)
+    await page.locator('#lDetail .rate-seg').first().locator(`[data-lvl="${1 + (i % 4)}"]`).click();
   }
   await page.click('#nav [data-view="sankce"]');
   await page.selectOption('#sanWho', { index: 1 });
   await page.selectOption('#sanWhy', { index: 1 });
-  await page.click('.pctpick label:nth-child(2)');
+  // posuvník srážky: z výchozích 10 % o krok na 15 %
+  await page.focus('#sanPct');
+  await page.keyboard.press('ArrowRight');
+  if ((await page.textContent('#sanPctOut')).trim() !== '15 %') problems.push('posuvník srážky neukazuje 15 %');
   await page.click('#sanAdd');
   await page.waitForSelector('#sanList table');
+  if (!(await page.textContent('#sanList')).includes('−15 %')) problems.push('sankce 15 % v seznamu chybí');
   await page.click('#nav [data-view="prehled"]');
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${shots}/08-overview-real.png`, fullPage: true });
@@ -184,7 +189,7 @@ async function watch(page, label) {
   await m.locator('#ovBody tr[data-key]').first().click({ position: { x: 20, y: 12 } });
   await m.waitForSelector('#ovBody tr.detail');
   await m.screenshot({ path: `${shots}/12-m-detail.png`, fullPage: true });
-  for (const view of ['lide', 'matice', 'sankce', 'dochazka', 'pozice', 'nastaveni']) {
+  for (const view of ['lide', 'matice', 'sankce', 'dochazka', 'nastaveni']) {
     await m.click(`#nav [data-view="${view}"]`);
     await m.waitForTimeout(350);
     await m.screenshot({ path: `${shots}/13-m-${view}.png`, fullPage: true });

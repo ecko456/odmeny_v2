@@ -1,6 +1,7 @@
-// Prohlížečový průchod novinkami verze 2.1: navýšení platu podle úrovně a splněných podmínek
-// (docházka, plnění normy, využití fondu), import evidence práce se stráveným časem a normou
-// (výběr sloupců), pozice jen s Kafe a pravidla do PDF. Spuštění stejně jako e2e_browser.js:
+// Prohlížečový průchod novinkami verze 2.1: navýšení mzdy podle splněných podmínek (docházka,
+// plnění normy, využití fondu; od verze 2.4 jako stupně prémie ve skupině), import evidence práce
+// se stráveným časem a normou (výběr sloupců), skupina jen s Kafe a pravidla do PDF.
+// Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
 //   NO_PROXY=127.0.0.1 PW=$(npm root -g)/playwright S=$S node tests/e2e_v21.js
@@ -97,7 +98,10 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
     const [pos, lvl] = Object.entries(levels).find(([name]) => text.includes(name))[1];
     await item.click();
     await page.selectOption('#pPos', { index: pos });
-    await page.locator('#lDetail .lvlopt').nth(lvl - 1).click();
+    // všechny dovednosti skupiny na stejnou úroveň (úroveň × 25 %)
+    const segs = page.locator('#lDetail .rate-card .rate-seg');
+    await segs.first().waitFor();
+    for (let j = 0; j < await segs.count(); j += 1) await page.locator('#lDetail .rate-card .rate-seg').nth(j).locator(`[data-lvl="${lvl}"]`).click();
   }
   await saved(page);
 
@@ -143,20 +147,25 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
   const vyroba = await page.textContent('#prodView');
   check(/Plnění normy/.test(vyroba) && /Využití fondu/.test(vyroba), 'výroba bez plnění normy a využití');
 
-  // Navýšení platu u CNC: úroveň 2 +5 %, 3 +10 %, 4 +15 %; podmínky docházka 90, norma 95/100/110, využití 70/75/80.
-  await page.click('#nav [data-view="pozice"]');
+  // Navýšení mzdy u CNC jako stupně prémie: dovednosti aspoň 2 → +5 %, 3 → +10 %, 4 → +15 %;
+  // podmínky docházka 90, norma 95/100/110, využití 70/75/80 (absence, víkendy ani body vedoucího se nehlídají).
+  await page.click('#nav [data-view="matice"]');
+  await page.click('[data-mxtab="groups"]');
   await page.locator('#posList .list-item').first().click();
-  const conf = [[5, 90, 95, 70], [10, 90, 100, 75], [15, 90, 110, 80]];
-  for (const [i, [raise, att, norm, use]] of conf.entries()) {
-    const row = page.locator(`#posEditor [data-li="${i + 1}"]`);
-    await row.locator('[data-lraise]').fill(String(raise));
-    await row.locator('[data-lraise]').dispatchEvent('change');
-    for (const [f, v] of [['minAtt', att], ['minNorm', norm], ['minUse', use]]) {
-      const input = page.locator(`#posEditor [data-li="${i + 1}"] [data-lmin="${f}"]`);
-      await input.fill(String(v));
-      await input.dispatchEvent('change');
-    }
+  const conf = [[2, 5, 90, 95, 70], [3, 10, 90, 100, 75], [4, 15, 90, 110, 80]];
+  for (const [i, [minSkill, raise, att, norm, use]] of conf.entries()) {
+    await page.click('#posEditor [data-tieradd]');
+    await page.waitForFunction(n => document.querySelectorAll('#posEditor [data-tier]').length === n, i + 1);
+    const card = () => page.locator('#posEditor [data-tier]').nth(i);
+    const set = async (f, v) => { const input = card().locator(`[data-tf="${f}"]`); await input.fill(String(v)); await input.dispatchEvent('change'); };
+    await set('name', `Úroveň ${minSkill}`);
+    await card().locator('[data-tf="minSkill"]').selectOption(String(minSkill));
+    for (const [f, v] of [['raise', raise], ['maxAbs', ''], ['minWknd', ''], ['minAtt', att], ['minNorm', norm], ['minUse', use]]) await set(f, v);
+    while (await card().locator('[data-tpdel]').count()) await card().locator('[data-tpdel]').first().click();
+    if (await card().locator('[data-tstreak]').isChecked()) { await card().locator('[data-tstreak]').uncheck(); }
   }
+  const tiers = await page.evaluate(() => S.positions[0].tiers.map(t => [t.name, t.minSkill, t.raise, t.maxAbs, t.minWknd, t.minAtt, t.minNorm, t.minUse, t.manual.length, !!t.streak]));
+  check(JSON.stringify(tiers) === JSON.stringify(conf.map(([m, r, a, n, u]) => [`Úroveň ${m}`, m, r, null, null, a, n, u, 0, false])), `stupně prémie: ${JSON.stringify(tiers)}`);
   await page.locator('#posList .list-item').nth(1).click();
   await page.check('#posOnlyKafe');
   await saved(page);
@@ -168,13 +177,13 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
   check(bytes.slice(0, 5).toString() === '%PDF-' && bytes.length > 20000, `PDF: ${bytes.length} B`);
   check(bytes.includes('Identity-H'), 'PDF bez vloženého písma s diakritikou');
 
-  // Přehled: Šťastný (4, norma 112 %, využití 90 %) +15 %, Nováková (3, norma 90 %) spadne na +5 % z úrovně 2,
+  // Přehled: Šťastný (4, norma 112 %, využití 90 %) +15 %, Nováková (3, norma 97 %) spadne na +5 % ze stupně 2,
   // Dvořák (2, norma 100 %, využití 80 %) +5 %, Černá jen Kafe.
   await page.click('#nav [data-view="prehled"]');
   await page.waitForTimeout(300);
   const plat = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#ovBody tr[data-key]')].map(tr => [tr.dataset.key, (tr.querySelector('.col-raise') || {}).textContent || ''])));
   check(/\+15/.test(plat['stastny|jiri'] || ''), `Šťastný: ${plat['stastny|jiri']}`);
-  check(/\+5/.test(plat['novakova|eva'] || '') && /ú\. 2/.test(plat['novakova|eva'] || ''), `Nováková: ${plat['novakova|eva']}`);
+  check(/\+5/.test(plat['novakova|eva'] || '') && /Úroveň 2/.test(plat['novakova|eva'] || ''), `Nováková: ${plat['novakova|eva']}`);
   check(/\+5/.test(plat['dvorak|petr'] || ''), `Dvořák: ${plat['dvorak|petr']}`);
   const kafeRow = await page.textContent('#ovBody tr[data-key="cerna|lucie"]');
   check(/jen Kafe/.test(kafeRow), 'Černá: chybí „jen Kafe“');
@@ -182,14 +191,14 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
   await page.click('#ovBody tr[data-key="novakova|eva"] td.col-name');
   await page.waitForSelector('#ovBody tr.detail');
   const detail = await page.textContent('#ovBody tr.detail');
-  check(/Podmínky úrovně 3/.test(detail) && /plnění normy 97/.test(detail), `detail navýšení: ${detail.slice(0, 300)}`);
+  check(/Úroveň 3/.test(detail) && /plnění normy aspoň 100 %/.test(detail) && /97/.test(detail), `detail navýšení: ${detail.slice(0, 300)}`);
   await page.screenshot({ path: `${shots}/05-detail.png`, fullPage: true });
 
   // Historie změn zná navýšení a jen Kafe.
   await page.click('#logBtn');
   await page.waitForSelector('#logList .log-item');
   const log = await page.textContent('#logList');
-  check(/navýšení platu/.test(log) && /jen Kafe/.test(log), `historie nezná navýšení nebo jen Kafe: ${log.slice(0, 600)}`);
+  check(/stupeň prémie/.test(log) && /jen Kafe/.test(log), `historie nezná prémie nebo jen Kafe: ${log.slice(0, 600)}`);
   await page.click('#dlgCancel');
 
   // Soubor s jinou hlavičkou se zeptá znovu.
@@ -202,10 +211,13 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
 
   // Profil a mobil.
   await page.click('#nav [data-view="matice"]');
-  await page.locator('#matrixView [data-profile]').first().click();
+  await page.click('[data-mxtab="matrix"]');
+  await page.locator('#matrixView [data-mxperson]').first().click();
+  await page.waitForSelector('#view-lide.on');
+  await page.click('#lDetail [data-profile]');
   await page.waitForSelector('#view-profil.on');
   const profile = await page.textContent('#profileView');
-  check(/Navýšení platu/.test(profile), 'profil bez navýšení platu');
+  check(/Prémie/.test(profile), 'profil bez prémie');
   await page.screenshot({ path: `${shots}/06-profile.png`, fullPage: true });
   const m = await (await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark' })).newPage();
   await watch(m, 'mobil');
@@ -219,7 +231,8 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
   await m.waitForSelector('#view-prehled.on');
   await m.waitForTimeout(400);
   await m.screenshot({ path: `${shots}/07-m-overview.png`, fullPage: true });
-  await m.click('#nav [data-view="pozice"]');
+  await m.click('#nav [data-view="matice"]');
+  await m.click('[data-mxtab="groups"]');
   await m.locator('#posList .list-item').first().click();
   await m.waitForTimeout(300);
   await m.screenshot({ path: `${shots}/08-m-position.png`, fullPage: true });

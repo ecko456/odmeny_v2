@@ -55,6 +55,49 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   kartičky a nemáš zapamatované zařízení, k datům se už nedostane nikdo, ani správce
   serveru. Vytiskni si proto dvě kartičky a jednu ulož bokem.
 
+## Co je nového ve verzi 2.4
+
+- **Matice dovedností místo Pozic.** Část Pozice zmizela, všechno je v Matici dovedností
+  (záložky Matice, Skupiny a pravidla, Směny a kapacita).
+  - **Skupina** má název, oddělení, maximum tabáků za dovednosti, pravidla docházky a stupně
+    prémie. Tlačítkem **Přidat dovednost** se zadá název, popis a hodnoticí schéma 0–4
+    (standardní: Žádná, Základní, Střední, Pokročilá a Odborná úroveň; jde upravit).
+  - **Tabáky za dovednosti**: každá úroveň je 25 % (0 = 0 %, 4 = 100 %), procento skupiny je
+    průměr všech jejích dovedností (dvě dovednosti, jedna na 4 = 50 %). Tabáky = maximum
+    skupiny × procento, zaokrouhleno na celé.
+  - **Docházka** jako dřív: srážka za absenci nad limit (např. 3 dny −1, 4 dny −2, 5 dnů −3)
+    a bonus za víkendy (např. 2 víkendy +1, 4 víkendy +2). Kdo si absenci nadělá víkendem,
+    srážku nemá, ale bonus za ten víkend nedostane.
+  - **Prémie**: stupně s podmínkami za měsíc (všechny dovednosti skupiny aspoň na úrovni,
+    absence v pracovní dny nejvýš, víkendové směny aspoň, plnění normy, docházka, využití fondu
+    a body, které posuzuje vedoucí, např. pracovní morálka) a odměnou (navýšení mzdy v % nebo
+    jiná odměna). Platí nejvyšší splněný stupeň. Stupeň může dávat nárok po několika měsících
+    v řadě (např. 4 měsíce Extra bonusu = možnost 2. platové třídy). Body vedoucího platí jako
+    splněné, dokud je u člověka a měsíce neoznačí jako nesplněné.
+  - **Směna** u každého člověka: Stálá ranní, Směnnost – skupina 1, Směnnost – skupina 2.
+    Matice jde filtrovat podle skupiny a směny a ukazuje, kolik lidí na které směně zvládá
+    dovednost aspoň na úrovni 3.
+  - **Směny a kapacita**: upravitelný report (výběr skupin, práh úrovně, vyřazené dovednosti,
+    závěr) s porovnáním variant: ráno stálá ranní + skupina 1 proti odpoledni skupiny 2,
+    a naopak. Tisk i PDF.
+  - Hodnocení dovedností se zadává u člověka v Lidech nebo kliknutím přímo v matici. Excel
+    zařazení má list s hodnocením dovedností a jde zase načíst.
+- **Převod bez ztráty dat**: každá pozice se převedla na skupinu s jednou dovedností stejného
+  jména, jejíž úrovně 1–4 jsou původní úrovně pozice. Úroveň člověka = hodnocení té dovednosti,
+  maximum = tabáky nejvyšší úrovně, strop jako dřív a navýšení platu u úrovní = stupně prémie.
+  Tabáky, Kafe i navýšení proto vycházejí stejně. U každého člověka je navíc okno **Původní
+  zařazení z verze 2.3** (pozice, úroveň, tabáky, zaučení) s tlačítkem **Převedeno do nové
+  verze, smazat**; zmizí, až ho vedoucí smaže, a záznam zůstane v historii změn.
+- **Sankce**: procento srážky je posuvník 5–50 % po 5 %. Nová volba **Srážka ze mzdy**:
+  benefity (tabáky a Kafe) se nekrátí, ale týden před koncem měsíce sankce se objeví
+  upozornění se seznamem lidí. U každého se odklikne **Srážka zpracována**; když jsou
+  zpracované všechny, upozornění zmizí.
+- **Top 5 do PDF**: souhrn i PDF případu ve dvou verzích, kompletní a **osekaná** (bez
+  historie případu). Nahoře „Top 5 nejméně efektivně“, bez řádku pro zpracovatele, datum
+  a podpis, bez slova Odměny a u stavu jen datum.
+- **Aktualizace bez ztráty dat:** stránka otevřená ještě ve verzi 2.3 už nesmí uložit
+  a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.3
 
 - **Namátkové kontroly** (nová část Kontroly v menu).
@@ -265,18 +308,22 @@ v hlavičce každého skriptu:
   času, předvyplnění z evidence práce s EAN, mobil, tmavý režim);
 - `tests/e2e_kontroly.js`: novinky 2.3 (nutné úkony, plán 25 % z oddělení, zápis kontroly,
   neproběhlo, náhradník, přesun, ruční přidání, přegenerování, PDF plánu a výsledků, karta
-  člověka, výsledky, historie, nastavení, mobil, tmavý režim).
+  člověka, výsledky, historie, nastavení, mobil, tmavý režim);
+- `tests/e2e_matice.js`: novinky 2.4 (skupiny, dovednosti a schémata, hodnocení u člověka
+  i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
+  mzdy s upozorněním, mobil, tmavý režim).
 
 **Aktualizace na místě** na lokálním Apachi v kontejneru (stará stránka dostane 426, sdílená
-data, výpočty a historie zůstanou, novinky se uloží nad převzatými daty). 2.2 → 2.3:
+data, výpočty a historie zůstanou, novinky se uloží nad převzatými daty). 2.3 → 2.4:
 
 ```bash
-rm -rf /tmp/v22 && mkdir /tmp/v22 && git archive 28d6bde | tar -x -C /tmp/v22
-sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v22/deploy/install.sh
-UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade23.js
+rm -rf /tmp/v23 && mkdir /tmp/v23 && git archive b7a6f7d | tar -x -C /tmp/v23
+sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/install.sh
+UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-Stejně `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (výchozí verze `git archive e762813`).
+Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
+a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 
 **Verze 2 vedle ostré verze** na lokálním Apachi v kontejneru (maže lokální `/var/lib/odmeny*`
 a `/var/www/odmeny*`, **nikdy ne na ostrém serveru**). Ověří, že instalace ostrou verzi

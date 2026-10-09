@@ -65,6 +65,38 @@ async function download(page, selector, name) {
   await file.saveAs(target);
   return { name: file.suggestedFilename(), path: target };
 }
+/* Souhrn a PDF případu se ptají na verzi: kompletní, nebo osekaná (bez historie případu). */
+async function downloadVariant(page, selector, variant, name) {
+  await page.click(selector);
+  await page.waitForSelector('#dlg[open] .variant-pick');
+  await page.check(`#dlg [name="variant"][value="${variant}"]`);
+  const [file] = await Promise.all([page.waitForEvent('download'), page.click('#dlgOk')]);
+  const target = path.join(S, name);
+  await file.saveAs(target);
+  return { name: file.suggestedFilename(), path: target };
+}
+/* Text PDF přes pypdf (PyMuPDF jako záloha); bez nich se kontrola textu přeskočí. */
+function pdfText(file) {
+  const py = `import sys
+try:
+    import pypdf
+    print('\\n'.join(p.extract_text() or '' for p in pypdf.PdfReader(sys.argv[1]).pages))
+except ImportError:
+    import pymupdf
+    print('\\n'.join(p.get_text() for p in pymupdf.open(sys.argv[1])))`;
+  const r = require('child_process').spawnSync('python3', ['-c', py, file], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout : null;
+}
+function checkT5Pdf(file, label, { history }) {
+  const text = pdfText(file);
+  if (text == null) return;
+  const flat = text.replace(/\s+/g, ' ');
+  check(/Top 5 nejméně efektivně/.test(flat), `${label}: nahoře Top 5 nejméně efektivně`);
+  check(!/Odměny|ODMĚNY|PRŮTOK|P R Ů T O K/i.test(flat), `${label}: bez slova Odměny a Průtok dílů`);
+  check(!/Zpracovatel/.test(flat) && !/Podpis/.test(flat), `${label}: bez řádku Zpracovatel, datum a podpis`);
+  if (history != null) check(/Historie případu/.test(flat) === history, `${label}: historie případu ${history ? 'je' : 'není'} vidět`);
+  if (history != null) check(/Stav k \d{1,2}\. \d{1,2}\. \d{4}(?! \d)/.test(flat) && !/Stav k [^·]*\d{1,2}:\d{2}/.test(flat), `${label}: stav jen s datem`);
+}
 async function goWeek(page, k) {
   await page.click('#t5Tabs [data-t5tab="week"]');
   await page.selectOption('#t5WeekSel', await page.evaluate(d => isoWeek(d).id, iso(mon(k))));
@@ -255,6 +287,7 @@ async function markDone(page, id, date) {
   await goWeek(page, 4);
   const rep1 = await download(page, '[data-t5pdf="week"]', 'top5-tyden.pdf');
   check(/^top5-tyden-\d+-\d{4}-revize-1\.pdf$/.test(rep1.name), `název reportu: ${rep1.name}`);
+  checkT5Pdf(rep1.path, 'týdenní report', { history: null });
   await page.waitForSelector('.t5-weekbar .tag.acc');
   const rep2 = await download(page, '[data-t5pdf="week"]', 'top5-tyden-znovu.pdf');
   check(/revize-1\.pdf$/.test(rep2.name), 'beze změny zůstane revize 1');
@@ -262,10 +295,28 @@ async function markDone(page, id, date) {
   check((await page.$$('#t5View tbody tr')).length === 1, 'jeden vydaný report');
   await download(page, '#t5View [data-t5pdf="rep"]', 'top5-tyden-z-archivu.pdf');
   await page.screenshot({ path: `${shots}/08-reports.png`, fullPage: true });
-  await download(page, '#t5SummaryPdf', 'top5-souhrn.pdf');
+  const sumFull = await downloadVariant(page, '#t5SummaryPdf', 'full', 'top5-souhrn.pdf');
+  check(/^top5-souhrn-\d{4}-\d{2}-\d{2}\.pdf$/.test(sumFull.name), `název souhrnu: ${sumFull.name}`);
+  checkT5Pdf(sumFull.path, 'souhrn kompletní', { history: true });
+  await page.click('#t5SummaryPdf');
+  await page.waitForSelector('#dlg[open] .variant-pick');
+  await page.screenshot({ path: `${shots}/08b-pdf-variant.png` });
+  await page.click('#dlgCancel');
+  const sumShort = await downloadVariant(page, '#t5SummaryPdf', 'short', 'top5-souhrn-osekana.pdf');
+  check(/-osekana\.pdf$/.test(sumShort.name), `název osekaného souhrnu: ${sumShort.name}`);
+  checkT5Pdf(sumShort.path, 'souhrn osekaný', { history: false });
   await page.click('#t5Tabs [data-t5tab="cases"]');
   await page.click('#t5View tbody tr >> nth=0');
-  await download(page, '[data-t5pdf="case"]', 'top5-pripad.pdf');
+  // poslední volba se pamatuje: dialog nabídne osekanou verzi
+  await page.click('[data-t5pdf="case"]');
+  await page.waitForSelector('#dlg[open] .variant-pick');
+  check(await page.isChecked('#dlg [name="variant"][value="short"]'), 'pamatuje si poslední verzi PDF');
+  await page.click('#dlgCancel');
+  const caseFull = await downloadVariant(page, '[data-t5pdf="case"]', 'full', 'top5-pripad.pdf');
+  checkT5Pdf(caseFull.path, 'případ kompletní', { history: true });
+  const caseShort = await downloadVariant(page, '[data-t5pdf="case"]', 'short', 'top5-pripad-osekana.pdf');
+  check(/^top5-pripad-.+-osekana\.pdf$/.test(caseShort.name), `název osekaného případu: ${caseShort.name}`);
+  checkT5Pdf(caseShort.path, 'případ osekaný', { history: false });
   await page.click('[data-t5back]');
 
   // Nastavení: čas v minutách. Uložené hodnoty se nemění, jen zobrazení a zadávání.

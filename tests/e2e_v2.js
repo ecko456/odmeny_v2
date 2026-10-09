@@ -89,7 +89,7 @@ async function loginWithKey(page, key) {
   for (let i = 0; i < count; i += 1) {
     await page.locator('#lList .list-item').nth(i).click();
     await page.selectOption('#pPos', { index: 1 });
-    await page.locator('#lDetail .lvlopt').nth(i % 4).click();
+    await page.locator('#lDetail .rate-card .rate-seg').first().locator(`[data-lvl="${1 + (i % 4)}"]`).click();
   }
   await saved(page);
 
@@ -152,7 +152,9 @@ async function loginWithKey(page, key) {
   await page.locator('#matrixView .mx-btn').first().click();
   await saved(page);
   await page.screenshot({ path: `${shots}/03-matrix.png`, fullPage: true });
-  await page.locator('#matrixView [data-profile]').first().click();
+  await page.locator('#matrixView [data-mxperson]').first().click();
+  await page.waitForSelector('#view-lide.on');
+  await page.click('#lDetail [data-profile]');
   await page.waitForSelector('#view-profil.on');
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${shots}/04-profile.png`, fullPage: true });
@@ -175,7 +177,9 @@ async function loginWithKey(page, key) {
   await loginWithKey(m, keyB);
   await m.click('#nav [data-view="matice"]');
   await m.waitForSelector('#matrixView .matrix');
-  await m.locator('#matrixView [data-profile]').first().click();
+  await m.locator('#matrixView [data-mxperson]').first().click();
+  await m.waitForSelector('#view-lide.on');
+  await m.click('#lDetail [data-profile]');
   await m.waitForSelector('#view-profil.on');
   await m.waitForTimeout(400);
   await m.screenshot({ path: `${shots}/06-m-dark-profile.png`, fullPage: true });
