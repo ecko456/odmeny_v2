@@ -194,6 +194,27 @@ test('srážka ze mzdy: benefity nekrátí, upozornění týden před koncem mě
   return null;
 });
 
+test('přeformulování: jména lidí se před odesláním nahradí značkami a pak vrátí', () => {
+  const core = loadCore();
+  core.__emp = JSON.stringify({ a: { first: 'Petr', last: 'Dvořák' }, b: { first: 'Eva', last: 'Nováková' }, c: { first: 'Jana', last: 'Černá' }, d: { first: 'Al', last: 'Kos' } });
+  const run1 = text => { core.__t = text; return JSON.parse(run(core, 'JSON.stringify((() => { const m = maskNames(__t, JSON.parse(__emp)); return { text: m.text, map: m.map, back: unmaskNames(m.text, m.map) }; })())')); };
+  const a = run1('Petr Dvořák upíná díl ručně, Dvořákovi chybí přípravek; Janě to řekla Nováková.');
+  assert.strictEqual(a.text, '[osoba 1] [osoba 2] upíná díl ručně, [osoba 3] chybí přípravek; [osoba 4] to řekla [osoba 5].');
+  assert.deepStrictEqual(a.map.map(x => x[1]), ['Petr', 'Dvořák', 'Dvořákovi', 'Janě', 'Nováková']);
+  assert.strictEqual(a.back, 'Petr Dvořák upíná díl ručně, Dvořákovi chybí přípravek; Janě to řekla Nováková.');
+  const b = run1('černý povrch, Černá a Černé; díl EAN 8590001000011 a Al.');
+  assert.strictEqual(b.text, 'černý povrch, [osoba 1] a [osoba 2]; díl EAN 8590001000011 a Al.', 'malá písmena a krátká jména (pod 3 znaky) zůstanou');
+  const c = run1('[osoba 1] už v textu je, Petr ne.');
+  assert.strictEqual(c.text, '[osoba 1] už v textu je, [osoba 2] ne.', 'čísla značek za těmi, které už v textu jsou');
+  assert.strictEqual(c.back, '[osoba 1] už v textu je, Petr ne.');
+  const d = run1('Bez jmen.');
+  assert.deepStrictEqual([d.text, d.map], ['Bez jmen.', []]);
+  // Model mohl větu přestavět: značky se vrátí, kde jsou, i vícekrát.
+  core.__m = JSON.stringify([['[osoba 1]', 'Dvořákovi'], ['[osoba 10]', 'Kos']]);
+  assert.strictEqual(run(core, 'unmaskNames("Pracovníkovi [osoba 1] chybí přípravek, [osoba 1] i [osoba 10].", JSON.parse(__m))'), 'Pracovníkovi Dvořákovi chybí přípravek, Dvořákovi i Kos.');
+  return null;
+});
+
 test('sanitizeState zahodí podvržená data', () => {
   const core = loadCore();
   core.__evil = JSON.stringify({

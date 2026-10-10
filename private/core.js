@@ -2012,6 +2012,42 @@ function rulesDoc(){
     general,groups,std:STD_SCALE.map((l,i)=>({n:i,name:l.name,desc:l.desc})),reasons:(S.sanReasons||[]).slice()};
 }
 
+/* ---------------- přeformulování textu (verze 2.5) ----------------
+   Před odesláním textu k přeformulování (✦ u příčiny v Top 5) se jména lidí z evidence
+   nahradí značkami [osoba N], i ve skloňovaných tvarech (kmen jména + nejvýš 3 písmena
+   koncovky). Rozlišují se velká písmena, takže „černý povrch“ zůstane, „Černý“ ne.
+   Každý nalezený tvar má svou značku, po návratu se vrátí přesně původní tvar. */
+const AI_NAME_VOWEL=/[aáeéěiíoóuúůyý]$/i;
+function nameStems(employees){
+  const set=new Set();
+  Object.values(employees||{}).forEach(e=>[e&&e.first,e&&e.last].forEach(n=>{
+    String(n||"").split(/[\s-]+/).forEach(w=>{
+      w=w.replace(/[^\p{L}]/gu,"");
+      if(w.length<3)return;
+      set.add(w.length>=4&&AI_NAME_VOWEL.test(w)?w.slice(0,-1):w);   // Jana → Jan(ě, ou), Nováková → Novákov(é)
+    });
+  }));
+  return [...set].sort((a,b)=>b.length-a.length);
+}
+function maskNames(text,employees){
+  const src=String(text==null?"":text),stems=nameStems(employees),map=[];
+  if(!stems.length)return {text:src,map};
+  const rx=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+  const re=new RegExp("(^|[^\\p{L}\\p{N}])((?:"+stems.map(rx).join("|")+")\\p{L}{0,3})(?=[^\\p{L}\\p{N}]|$)","gu");
+  const byForm=new Map();
+  /* čísla značek až za těmi, které v textu už jsou, ať se při návratu nic nepoplete */
+  const start=Math.max(0,...[...src.matchAll(/\[osoba (\d+)\]/g)].map(m=>+m[1]));
+  const mark=form=>{if(!byForm.has(form)){const ph="[osoba "+(start+byForm.size+1)+"]";byForm.set(form,ph);map.push([ph,form]);}return byForm.get(form);};
+  /* dvakrát: sousední jména („Petr Dvořák“) sdílejí oddělovač, který první průchod spotřebuje */
+  const out=src.replace(re,(m,pre,form)=>pre+mark(form)).replace(re,(m,pre,form)=>pre+mark(form));
+  return {text:out,map};
+}
+function unmaskNames(text,map){
+  let out=String(text==null?"":text);
+  (map||[]).slice().sort((a,b)=>b[0].length-a[0].length).forEach(([ph,form])=>{out=out.split(ph).join(form);});
+  return out;
+}
+
 /* ================= verze 2.2: Top 5 nejméně efektivních položek =================
    Z evidence práce (EAN, strávený čas, norma) se po týdnech (ISO, pondělí až neděle) spočítá
    plnění normy každé položky. Pět nejhorších pod 100 % jde do týdenního žebříčku. Ke každé

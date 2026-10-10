@@ -8,6 +8,7 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 import base64
 import http.client
+import http.server
 import json
 import os
 import re
@@ -17,6 +18,7 @@ import socket
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import unittest
 import urllib.error
@@ -39,11 +41,11 @@ def b64(size):
 
 
 class Server:
-    def __init__(self, data=None):
+    def __init__(self, data=None, env_extra=None):
         self.data = Path(data) if data else Path(tempfile.mkdtemp(prefix="odmeny-"))
         self.port = free_port()
         self.base = f"http://127.0.0.1:{self.port}"
-        env = dict(os.environ, ODMENY_DATA_DIR=str(self.data), NO_PROXY="*")
+        env = dict(os.environ, ODMENY_DATA_DIR=str(self.data), NO_PROXY="*", **(env_extra or {}))
         self.process = subprocess.Popen(
             [PHP, "-S", f"127.0.0.1:{self.port}", "dev-router.php"],
             cwd=APP, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -282,7 +284,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.4")
+        self.assertEqual(result["version"], "2.5")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -421,6 +423,148 @@ class OdmenyBrowserCodeTests(unittest.TestCase):
         self.assertIn("core ok", result.stdout)
 
 
+class FakeAnthropic:
+    """Náhradní API Anthropicu na 127.0.0.1: zaznamená požadavky a odpoví podle `mode`."""
+
+    def __init__(self):
+        self.requests = []
+        self.mode = "ok"
+        owner = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
+                owner.requests.append({"path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}, "body": body})
+                if owner.mode == "auth":
+                    return self.reply(401, {"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
+                if owner.mode == "overloaded":
+                    return self.reply(529, {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}})
+                text = body["messages"][0]["content"]
+                content = [] if owner.mode == "refusal" else [{"type": "text", "text": json.dumps({"text": "Upraveno: " + text}, ensure_ascii=False)}]
+                self.reply(200, {"id": "msg_test", "type": "message", "role": "assistant", "model": body.get("model"),
+                                 "content": content, "stop_reason": "refusal" if owner.mode == "refusal" else "end_turn",
+                                 "stop_sequence": None, "usage": {"input_tokens": 12, "output_tokens": 9}})
+
+            def reply(self, status, payload):
+                data = json.dumps(payload).encode()
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, *args):
+                pass
+
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def stop(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+
+@unittest.skipIf(PHP is None, "PHP není nainstalované")
+class OdmenyAiTests(unittest.TestCase):
+    """Přeformulování textu (Top 5, ✦): jen přihlášený, jen text, nic se neukládá, limity."""
+
+    KEY = "sk-ant-test-0123456789abcdef"
+
+    def setUp(self):
+        self.api_mock = FakeAnthropic()
+        self.server = Server(env_extra={"ODMENY_AI_BASE_URL": self.api_mock.url})
+        self.client = Client(self.server)
+
+    def tearDown(self):
+        self.server.stop()
+        self.api_mock.stop()
+
+    def enable(self):
+        key = self.server.data / "anthropic-api-key"
+        key.write_text(self.KEY + "\n")
+        key.chmod(0o600)
+
+    def test_needs_session_and_key(self):
+        status, _ = self.client.api("POST", "ai_rewrite", {"text": "Díl se upíná ručně."})
+        self.assertIn(status, (401, 403))
+        self.client.setup()
+        self.assertIs(self.client.api("GET", "me")[1]["ai"], False)
+        status, result = self.client.api("POST", "ai_rewrite", {"text": "Díl se upíná ručně."})
+        self.assertEqual(status, 503, result)
+        self.enable()
+        self.assertIs(self.client.api("GET", "me")[1]["ai"], True)
+        self.assertEqual(self.api_mock.requests, [], "bez klíče se nic neodeslalo")
+
+    def test_sends_only_the_text_and_stores_nothing(self):
+        card = self.client.setup()
+        self.enable()
+        secret = "Díl  se upíná\r\nručně bez dorazu, [osoba 1] dorovnává každý kus. ŽLUŤOUČKÝ-7741"
+        status, result = self.client.api("POST", "ai_rewrite", {"text": "  " + secret + "\x07 "})
+        self.assertEqual(status, 200, result)
+        sent = secret.replace("\r\n", "\n")
+        self.assertEqual(result["text"], "Upraveno: " + sent)
+        self.assertEqual(len(self.api_mock.requests), 1)
+        req = self.api_mock.requests[0]
+        self.assertTrue(req["path"].startswith("/v1/messages"))
+        self.assertEqual(req["headers"]["x-api-key"], self.KEY)
+        self.assertEqual(req["headers"]["anthropic-beta"], "server-side-fallback-2026-07-01")
+        body = req["body"]
+        self.assertEqual(body["model"], "claude-sonnet-5-5")
+        self.assertEqual(body["messages"], [{"role": "user", "content": sent}], "jen text pole, nic dalšího")
+        self.assertEqual(set(body), {"model", "max_tokens", "system", "messages", "output_config", "fallbacks"})
+        self.assertEqual(body["fallbacks"], "default")
+        self.assertEqual(body["output_config"]["effort"], "low")
+        self.assertNotIn("ŽLUŤOUČKÝ", body["system"])
+        # Text se nikam neuloží: v databázi je jen počet volání.
+        for path in self.server.data.iterdir():
+            if path.is_file():
+                self.assertNotIn("ŽLUŤOUČKÝ".encode(), path.read_bytes(), path.name)
+        db = sqlite3.connect(self.server.data / "odmeny.sqlite3")
+        rows = db.execute("SELECT card_id, chars FROM ai_calls").fetchall()
+        db.close()
+        self.assertEqual(rows, [(card["id"], len(sent))])
+        # Cizí stránka ani stará cesta bez hlavičky aplikace nic neodešle.
+        self.assertEqual(self.client.api("POST", "ai_rewrite", {"text": "Ahoj světe"}, {"Sec-Fetch-Site": "cross-site"})[0], 403)
+        self.assertEqual(self.client.api("POST", "ai_rewrite", {"text": "Ahoj světe"}, {"X-Odmeny": ""})[0], 403)
+        self.assertEqual(len(self.api_mock.requests), 1)
+
+    def test_validation_and_limits(self):
+        card = self.client.setup()
+        self.enable()
+        for body, code in (({"text": ""}, 422), ({"text": "ab"}, 422), ({"text": 5}, 422), ({}, 422), ({"text": "x" * 2001}, 413)):
+            self.assertEqual(self.client.api("POST", "ai_rewrite", body)[0], code, body)
+        self.assertEqual(self.api_mock.requests, [])
+        db = sqlite3.connect(self.server.data / "odmeny.sqlite3")
+        db.execute("CREATE TABLE IF NOT EXISTS ai_calls (id INTEGER PRIMARY KEY, card_id TEXT NOT NULL, chars INTEGER NOT NULL, created_at TEXT NOT NULL)")
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        db.executemany("INSERT INTO ai_calls (card_id, chars, created_at) VALUES (?, 10, ?)", [(card["id"], now)] * 30)
+        db.commit()
+        db.close()
+        status, result = self.client.api("POST", "ai_rewrite", {"text": "Díl se upíná ručně."})
+        self.assertEqual(status, 429, result)
+        self.assertIn("30", result["error"])
+        self.assertEqual(self.api_mock.requests, [])
+
+    def test_errors_are_explained_without_the_text(self):
+        self.client.setup()
+        self.enable()
+        for mode, code, words in (("auth", 502, "Klíč k API nefunguje"), ("refusal", 422, "odmítl"), ("overloaded", 502, "nedostupná")):
+            self.api_mock.mode = mode
+            status, result = self.client.api("POST", "ai_rewrite", {"text": "Tajný díl XY-99 se upíná ručně."})
+            self.assertEqual(status, code, (mode, result))
+            self.assertIn(words, result["error"])
+            self.assertNotIn("XY-99", json.dumps(result, ensure_ascii=False))
+
+    def test_library_and_key_not_on_web(self):
+        self.client.setup()
+        self.enable()
+        for path in ("/lib/ai.php", "/lib/vendor/autoload.php", "/lib/composer.json", "/lib/vendor/anthropic-ai/sdk/composer.json", "/bin/ai-key.php", "/data/anthropic-api-key"):
+            status, _, body = self.client.request("GET", path)
+            self.assertIn(status, (403, 404), path)
+            self.assertNotIn(self.KEY.encode(), body)
+
+
 class OdmenyStaticTests(unittest.TestCase):
     def test_no_inline_styles_or_handlers(self):
         # Přísná CSP by inline styly a handlery zablokovala; aplikace je nesmí potřebovat.
@@ -438,6 +582,10 @@ class OdmenyStaticTests(unittest.TestCase):
         self.assertIn("private", conf.split("DirectoryMatch")[1])
         self.assertIn("SetEnv ODMENY_DATA_DIR /var/lib/odmeny_v2\n", conf)
         self.assertIn("/data/", (APP / ".gitignore").read_text(encoding="utf-8"))
+        # Přeformulování textu: HTTP klient pro SDK a knihovny přibalené v lib/ (na web nejdou).
+        self.assertIn("php-curl", install)
+        self.assertIn("lib", conf.split("DirectoryMatch")[1])
+        self.assertTrue((APP / "lib" / "vendor" / "autoload.php").is_file())
 
     def test_version_2_never_touches_live_install(self):
         # Verze 2 má vlastní adresu, kód, data i konfiguraci Apache. Ostrá /odmeny/ se jen čte

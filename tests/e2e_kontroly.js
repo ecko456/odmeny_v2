@@ -219,21 +219,31 @@ async function openMenu(page, id) {
   const pdf2 = await download(page, '[data-ktpdfres]', 'kontroly-vysledky.pdf');
   check(pdf2.pdf, 'PDF výsledků');
 
-  // Tento týden: nezapsané kontroly z minulých dnů svítí v menu.
+  // Tento týden: nezapsané kontroly z minulých dnů svítí v menu. O víkendu už v týdnu
+  // nezbývá pracovní den: plán nevznikne a aplikace to řekne.
   await page.click('#ktTabs [data-kttab="plan"]');
   const cur = await page.evaluate(() => isoWeek(todayIso()).id);
   await page.selectOption('#ktWeekSel', cur);
+  const freeDays = await page.evaluate(() => audDays(isoWeek(todayIso()).id).filter(d => d >= todayIso()).length);
   await page.click('[data-ktgen]');
-  await page.waitForSelector('.kt-days');
-  const lateExpected = await page.evaluate(() => audPlan(ktWeekId()).items.filter(i => i.day < todayIso()).length + audPlan(ktWeekId()).items.filter(i => i.day === todayIso()).length);
-  const badge = await page.evaluate(() => { const b = document.querySelector('#navKt'); return b.hidden ? 0 : +b.textContent; });
-  check(badge === lateExpected, `odznak v menu: ${badge}, čekáno ${lateExpected}`);
+  if (freeDays) {
+    await page.waitForSelector('.kt-days');
+    const lateExpected = await page.evaluate(() => audPlan(ktWeekId()).items.filter(i => i.day < todayIso()).length + audPlan(ktWeekId()).items.filter(i => i.day === todayIso()).length);
+    const badge = await page.evaluate(() => { const b = document.querySelector('#navKt'); return b.hidden ? 0 : +b.textContent; });
+    check(badge === lateExpected, `odznak v menu: ${badge}, čekáno ${lateExpected}`);
+  } else {
+    await page.waitForSelector('#toast.on');
+    check(/nemá žádný zbývající pracovní den/.test(await page.textContent('#toast')), 'o víkendu hláška, že v týdnu nezbývá pracovní den');
+    check(!(await page.$('.kt-days')), 'o víkendu plán tohoto týdne nevznikne');
+  }
   await page.screenshot({ path: `${shots}/08-this-week.png`, fullPage: true });
 
   // Nastavení: 50 %.
   await page.click('#ktSettings');
   await page.fill('#dlg [name="pct"]', '50');
   await page.click('#dlgOk');
+  // Dialog se zavře až v další úloze prohlížeče: nejdřív počkat na změnu, pak na uložení.
+  await page.waitForFunction(() => S.audit.settings.pct === 50);
   await saved(page);
 
   // Uložená data a historie změn.
@@ -243,10 +253,13 @@ async function openMenu(page, id) {
       done: Object.values(st.audit.plans).flatMap(p => p.items).filter(i => i.state === 'done').map(i => i.results.map(r => r.ok)),
       log: st.log.filter(e => e.kind === 'audit').map(e => e.text) };
   });
-  check(stored.tasks.Obrobna === 3 && stored.tasks['Kontrola kvality'] === 2 && stored.tasks['Montáž'] === 2 && stored.plans === 2 && stored.pct === 50, `uložená data: ${JSON.stringify({ ...stored, log: null })}`);
+  check(stored.tasks.Obrobna === 3 && stored.tasks['Kontrola kvality'] === 2 && stored.tasks['Montáž'] === 2 && stored.plans === (freeDays ? 2 : 1) && stored.pct === 50, `uložená data: ${JSON.stringify({ ...stored, log: null })}`);
   check(JSON.stringify(stored.done) === JSON.stringify([[true, false, true]]), `uložená kontrola: ${JSON.stringify(stored.done)}`);
   check(stored.log.some(t => /^Nutné úkony – Obrobna: přidán bod „Kontrola prvního kusu podle výkresu“$/.test(t))
-    && stored.log.some(t => /^Kontroly T\d+\/\d{4}: vygenerován plán, naplánováno 7 lidí \(25 % z každého oddělení\)$/.test(t))
+    // Generování a přegenerování stejného týdne do 10 minut se v historii sloučí do jednoho
+    // záznamu; „vygenerován“ tak zůstane jen u plánu tohoto týdne (o víkendu nevznikne).
+    && stored.log.some(t => (freeDays ? /^Kontroly T\d+\/\d{4}: vygenerován plán, naplánováno 7 lidí \(25 % z každého oddělení\)$/
+      : /^Kontroly T\d+\/\d{4}: plán přegenerován, naplánováno \d+ lidí \(25 % z každého oddělení\)$/).test(t))
     && stored.log.some(t => /^Kontrola .* \(Obrobna\) .*: splněno 2 z 3 \(nesplněno: Úklid pracoviště na konci směny\)$/.test(t))
     && stored.log.some(t => /neproběhla – dovolená$/.test(t)), `historie změn: ${stored.log.join(' | ')}`);
 

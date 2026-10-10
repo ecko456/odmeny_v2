@@ -5,7 +5,9 @@ declare(strict_types=1);
  * Odměny – server.
  *
  * Server nikdy nevidí data ani přístupový klíč. Prohlížeč data šifruje
- * (AES-GCM, klíč DEK) a sem posílá jen zašifrovaný blok. DEK je zabalený
+ * (AES-GCM, klíč DEK) a sem posílá jen zašifrovaný blok. Jedinou výjimkou je
+ * text, který vedoucí sám pošle k přeformulování (lib/ai.php): ten server
+ * jen předá dál a neukládá. DEK je zabalený
  * klíčem odvozeným z QR kartičky, takže bez kartičky ho nikdo neotevře:
  * ani správce serveru, ani ten, kdo by ukradl disk nebo zálohu.
  *
@@ -16,7 +18,7 @@ declare(strict_types=1);
 
 // Verze aplikace. Klient posílá verzi svého tvaru dat v hlavičce X-Odmeny-Client;
 // stránka otevřená ještě před aktualizací už nesmí uložit data ve starém tvaru.
-const ODM_VERSION = '2.4';
+const ODM_VERSION = '2.5';
 const ODM_MIN_CLIENT = 6;
 const ODM_SESSION_COOKIE = 'odmeny_session';
 const ODM_SESSION_HOURS = 12;

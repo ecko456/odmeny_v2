@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/lib/odmeny.php';
+require __DIR__ . '/lib/ai.php';
 
 odm_security_headers();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -117,6 +118,7 @@ try {
             'card_id' => $session['card_id'], 'card_label' => $card['label'] ?? '', 'card_created' => $card['created_at'] ?? null,
             'device_id' => $session['device_id'], 'device_label' => $device['label'] ?? null,
             'version' => ODM_VERSION,
+            'ai' => odm_ai_available(),
         ]);
     }
 
@@ -162,6 +164,20 @@ try {
             throw $error;
         }
         odm_json(['rev' => $rev, 'saved_at' => odm_now()]);
+    }
+
+    /* Přeformulování textu (Top 5, ✦): jen text jednoho pole, nic se neukládá. */
+    if ($action === 'ai_rewrite' && $method === 'POST') {
+        $text = odm_ai_clean_text(odm_input(ODM_MAX_SMALL_JSON_BYTES)['text'] ?? null);
+        if (!odm_ai_available()) {
+            odm_fail('Přeformulování není na serveru zapnuté.', 503);
+        }
+        odm_ai_throttle($session['card_id'], mb_strlen($text, 'UTF-8'));
+        try {
+            odm_json(['text' => odm_ai_rewrite($text)]);
+        } catch (RuntimeException $error) {
+            odm_fail($error->getMessage(), $error->getCode() >= 400 && $error->getCode() < 600 ? $error->getCode() : 502);
+        }
     }
 
     if ($action === 'versions' && $method === 'GET') {

@@ -106,6 +106,7 @@ const I = {
   tab: '<svg class="icon tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8.5c0-2 1.6-3.5 3.5-3.5h5C16.4 5 18 6.5 18 8.5V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19z"/><path d="M6 10h12M10 14.5c1.3-1 2.7-1 4 0"/></svg>',
   kafe: '<svg class="icon kafe-ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 9.5h12v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z"/><path d="M16.5 11h1.5a2.5 2.5 0 0 1 0 5h-1.8M8 3.5c-.8 1 .8 2 0 3M12 3.5c-.8 1 .8 2 0 3"/></svg>',
   check: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  sparkle: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M11 3.5 12.9 9 18.5 11 12.9 13 11 18.5 9.1 13 3.5 11 9.1 9z"/><path d="M18.5 14.5l.8 2.1 2.2.8-2.2.8-.8 2.3-.8-2.3-2.2-.8 2.2-.8z"/><path d="M18 2.5l.6 1.5 1.4.6-1.4.6-.6 1.5-.6-1.5-1.4-.6 1.4-.6z"/></svg>',
   back: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>',
   arrow: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   x: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
@@ -3360,8 +3361,11 @@ function t5ActionsHtml(r, kind, editable) {
 
 function t5RoundHtml(c, r, editable) {
   const cat = `<select data-rf="cat" aria-label="Kategorie příčiny"${editable ? '' : ' disabled'}><option value="">— kategorie příčiny —</option>${EFF_CATS.map(([k, t]) => `<option value="${k}"${r.cat === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  /* ✦ u příčiny: přeformulování do profesionálního znění, jen když je na serveru zapnuté */
+  const ai = f => (f === 'cause' && editable && ui.me && ui.me.ai
+    ? `<div class="t5-ai-row"><button class="btn ghost small t5-ai" type="button" data-t5ai="${f}" title="Zkontrolovat a přeformulovat do profesionálního znění (Claude Sonnet 5.5). Odešle se jen text tohoto pole, jména lidí se nahradí značkami.">${I.sparkle}<span>Přeformulovat</span></button></div>` : '');
   const text = (f, ph) => (editable
-    ? `<textarea data-rf="${f}" rows="3" maxlength="4000" placeholder="${esc(ph)}">${esc(r[f])}</textarea>`
+    ? `<textarea data-rf="${f}" rows="3" maxlength="4000" placeholder="${esc(ph)}">${esc(r[f])}</textarea>${ai(f)}`
     : `<p class="t5-text">${r[f] ? esc(r[f]) : '<span class="muted">nevyplněno</span>'}</p>`);
   return `<div class="t5-steps">
     ${r.reason ? `<div class="note w"><b>Proč se otevřelo znovu:</b> ${esc(r.reason)}${r.base && r.base.eff != null ? ` <span class="muted">(${esc(weekName(r.week))}: plnění ${nf(r.base.eff, 1)} %)</span>` : ''}</div>` : ''}
@@ -3483,6 +3487,59 @@ async function t5Settings() {
   save();
   renderTop5();
   toast('Nastavení Top 5 uloženo.');
+}
+
+/* ✦ Přeformulování příčiny: na server jde jen text pole s jmény nahrazenými značkami,
+   návrh se ukáže vedle původního textu a použije se, až ho vedoucí potvrdí. */
+async function t5Rewrite(button) {
+  const caseId = ui.t5.caseId;
+  const field = button.dataset.t5ai;
+  const area = $(`#t5View [data-rf="${CSS.escape(field)}"]`);
+  if (!caseId || !area) return;
+  const original = area.value.trim();
+  if (original.length < 3) { toast('Napiš nejdřív příčinu, pak ji jde přeformulovat.', true); area.focus(); return; }
+  if (original.length > 2000) { toast('Text je na přeformulování příliš dlouhý (nejvýš 2000 znaků).', true); return; }
+  const masked = maskNames(original, S.employees);
+  const label = button.innerHTML;
+  button.disabled = true;
+  button.classList.add('busy');
+  button.innerHTML = `${I.sparkle}<span>Přeformulovávám…</span>`;
+  let result = null;
+  try {
+    result = await Vault.api('ai_rewrite', { method: 'POST', body: { text: masked.text } });
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    const again = $(`#t5View [data-t5ai="${CSS.escape(field)}"]`) || button;
+    again.disabled = false;
+    again.classList.remove('busy');
+    again.innerHTML = label;
+  }
+  if (!result || typeof result.text !== 'string') return;
+  const proposal = unmaskNames(result.text, masked.map).slice(0, 4000);
+  const res = await dialog({
+    title: 'Návrh profesionálního znění', ok: 'Použít', cancel: 'Zahodit', wide: true,
+    html: `<div class="ai-compare"><div><p class="eyebrow">Původní text</p><div class="ai-orig">${esc(original)}</div></div>
+      <label class="field"><span>Návrh (můžeš ho ještě upravit)</span><textarea name="value" rows="6" maxlength="4000" autofocus>${esc(proposal)}</textarea></label></div>
+      <p class="tiny muted">Odeslán byl jen text tohoto pole${masked.map.length ? ` a jména lidí byla nahrazena značkami (${masked.map.length}×)` : ''}. Upravil ho Claude Sonnet 5.5 (Anthropic); zkontroluj, že návrh sedí.</p>`,
+    validate: form => (form.elements.namedItem('value').value.trim() ? null : 'Návrh je prázdný.'),
+  });
+  if (res.value !== 'ok') return;
+  const value = res.form.elements.namedItem('value').value.trim().slice(0, 4000);
+  const c = effCase(caseId);
+  if (!c) return;
+  const now = ui.t5.caseId === caseId ? $(`#t5View [data-rf="${CSS.escape(field)}"]`) : null;
+  if (now) {
+    // stejná cesta jako ruční psaní: uloží se a do historie případu jde nové znění
+    now.value = value;
+    now.dispatchEvent(new Event('input', { bubbles: true }));
+    now.dispatchEvent(new Event('change', { bubbles: true }));
+  } else {
+    curRound(c)[field] = value;
+    effNote(c, effMeta(), `Příčina: ${value}`.slice(0, 500), true);
+    save();
+  }
+  toast('Příčina přeformulována.');
 }
 
 /* Úpravy v detailu případu: text se ukládá průběžně, do historie jde po dokončení úpravy. */
@@ -3630,6 +3687,8 @@ function bindTop5Events() {
   document.addEventListener('pointerup', () => { t5PointerDown = false; }, true);
   view.addEventListener('click', async event => {
     const t = event.target;
+    const aiBtn = t.closest('[data-t5ai]');
+    if (aiBtn) { if (!aiBtn.disabled) t5Rewrite(aiBtn); return; }
     const pdf = t.closest('[data-t5pdf]');
     if (pdf) {
       if (pdf.dataset.t5pdf === 'week') exportWeekPdf(ui.t5.week, pdf);
@@ -5122,6 +5181,7 @@ window.OdmApp = {
       cardId: me?.card_id || Vault.session.cardId || '', label: me?.card_label || Vault.session.label || '',
       created: Date.parse(me?.card_created || '') || 0,
       device: me?.device_label || '', version: me?.version || '',
+      ai: me?.ai === true,   // přeformulování textu (✦) je na serveru zapnuté
     };
     store.rev = loaded.rev || 0;
     store.savedAt = loaded.savedAt || null;

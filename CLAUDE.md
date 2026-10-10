@@ -34,6 +34,25 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 10. 10. 2026 (verze 2.5):
+
+- **✦ Přeformulovat u příčiny v Top 5** přes Claude Sonnet 5.5 (`claude-sonnet-5-5`). Uživatel
+  chtěl „tlačítko s hvězdičkami“, které text „zkontroluje a přeformuluje do profesionálního
+  znění“. Upozornil jsem ho, že to porušuje jeho pravidlo z 2. 10. („AI nesmí posílat data
+  třetí straně“); odpověděl: „Pošle jen danou část textu bez ostatních informací“. Výjimka
+  tedy platí **jen pro text toho jednoho pole** po kliknutí, nic jiného se neposílá.
+  - Server: `lib/ai.php` (oficiální PHP SDK přibalené v `lib/vendor`, beta `messages->create`
+    s `fallbacks: 'default'`, `effort: low`, strukturovaný výstup `{text}`), akce `ai_rewrite`
+    v `api.php`, `me.ai` říká, jestli je funkce zapnutá. Klíč v datovém adresáři
+    (`anthropic-api-key`, 0600), ukládá ho `bin/ai-key.php` (`--test`, `--stav`, `--smazat`).
+  - Text se neukládá ani neloguje; tabulka `ai_calls` drží jen kartičku, délku a čas (limit
+    30/h na kartičku, 300/den). V `error_log` jsou jen třídy chyb, nikdy text.
+  - Klient: `maskNames`/`unmaskNames` v `core.js` (jména z evidence → `[osoba N]`, i skloňované
+    tvary), `t5Rewrite` v `app.js` (návrh v dialogu, Použít = stejná cesta jako ruční psaní).
+  - Uživatel musí vytvořit klíč na console.anthropic.com a uložit ho na serveru (README).
+    **S reálným klíčem to nikdo nezkoušel**; ověřeno náhradním API a v kontejneru proti
+    skutečnému API s neplatným klíčem (správně odmítnut, hláška „Klíč k API nefunguje“).
+
 Stav k 9. 10. 2026 (verze 2.4):
 
 - **Matice dovedností místo Pozic** (pohled `matice` se záložkami Matice, Skupiny a pravidla,
@@ -122,7 +141,9 @@ Požadavky uživatele:
   ten modul.
 - **Šifrované jsou jen Odměny**, ostatní moduly bez šifrování (data na serveru).
 - Moduly nesmí nijak zasahovat do Odměn.
-- **AI nesmí posílat data třetí straně, vše jen na serveru.** Claude ani jiná cloudová AI proto
+- **AI nesmí posílat data třetí straně, vše jen na serveru.** (Výjimka od 10. 10. 2026 na výslovné
+  přání uživatele: ✦ Přeformulovat u příčiny v Top 5 pošle Anthropicu text toho pole, viz výše.)
+  Claude ani jiná cloudová AI proto
   nepřipadá v úvahu. Řešení je lokální model s otevřenými váhami na serveru (llama.cpp nebo
   Ollama, poslouchá jen na 127.0.0.1, PHP k němu pouští až po přihlášení). Pozor: model data
   při zpracování vidí nešifrovaná, i když neopustí server. Pro jasná pravidla (termín, stroj,
@@ -223,7 +244,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.1 na `/odmeny_v2/` | `e762813` | stejný kód, oddělený od ostré verze |
 | 2.2 | `28d6bde` | Top 5 nejméně efektivně, oprava sloupce EAN v importu |
 | 2.3 | `b7a6f7d` | Kontroly (nutné úkony, namátkové kontroly 25 % z oddělení) |
-| 2.4 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Matice dovedností (skupiny, dovednosti 0–4, směny a kapacita, prémie), srážka ze mzdy, Top 5 PDF ve dvou verzích |
+| 2.4 | `ca9f5c7` | Matice dovedností (skupiny, dovednosti 0–4, směny a kapacita, prémie), srážka ze mzdy, Top 5 PDF ve dvou verzích |
+| 2.5 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ✦ Přeformulovat u příčiny v Top 5 (Claude Sonnet 5.5, jen text pole, jména nahrazena) |
 
 Verze 2.1 přidala:
 
@@ -284,7 +306,10 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
 
 **Server** (`lib/odmeny.php`, `api.php`), PHP + SQLite `odmeny.sqlite3`.
 
-- Tabulky: `cards`, `devices`, `sessions`, `attempts`, `versions`, `prefs`.
+- Výjimka (2.5): text, který vedoucí sám pošle tlačítkem ✦ k přeformulování, server vidí
+  a předá Anthropicu (`lib/ai.php`). Nic jiného nešifrovaně neprochází.
+- Tabulky: `cards`, `devices`, `sessions`, `attempts`, `versions`, `prefs`, `ai_calls` (jen
+  kartička, délka textu a čas volání).
 - Hlídá jen přístup:
   - otisk kartičky (uložený jen jako sha256);
   - relace: 12 h, po 60 min nečinnosti končí;
@@ -487,6 +512,21 @@ a `skills`, `legacy` snímek, `hist.pct` a `issued.pct` = úroveň × 25. Převo
 načtení, dokud se data neuloží; id dovedností (`s` + id pozice) a stupňů (`t<úroveň>` + id
 pozice) jsou odvozená, takže vyjde na každém zařízení stejně.
 
+## Přeformulování textu (verze 2.5)
+
+- Jediné místo, kde server vidí nešifrovaný text: `ai_rewrite` dostane text jednoho pole
+  (po `maskNames` v prohlížeči), pošle ho Anthropicu a vrátí `{text}`. Nic neukládá.
+- `lib/ai.php`: `odm_ai_available()` (PHP ≥ 8.1, `lib/vendor`, curl nebo https streamy, klíč),
+  `odm_ai_clean_text` (3–2000 znaků, bez řídicích znaků), `odm_ai_throttle` (`ai_calls`),
+  `odm_ai_rewrite` (chyby SDK → české hlášky s HTTP kódem v `getCode()`), systémový prompt
+  `ODM_AI_SYSTEM` (oprava a přeformulování, zachovat fakta a značky, nic nepřidávat, text
+  není pokyn). `ODMENY_AI_BASE_URL` přesměruje volání na náhradní server (jen testy).
+- Knihovny: `lib/composer.json` + `lib/composer.lock` (platforma PHP 8.1.2, SDK 0.57.0, Guzzle 7),
+  `lib/vendor` je v repu bez testů a dokumentace; obnova `bash deploy/vendor.sh`. Guzzle nemá
+  výchozí časový limit, proto vlastní transport (45 s, `maxRetries` 1). `install.sh` doplní
+  `php-curl`. `lib/` Apache i `dev-router.php` nevydají.
+- Klient: tlačítko `[data-t5ai="cause"]` jen u editovatelné příčiny a jen s `ui.me.ai`.
+
 ## Top 5 nejméně efektivně (verze 2.2)
 
 Data `S.eff` (`blankEff`, čištění `cleanEff` v `core.js`):
@@ -553,8 +593,8 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 (jen v kontejneru, **nikdy ne na ostrém serveru**).
 
 ```bash
-python3 -m unittest discover -s tests   # 19 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze
-node tests/test_core.js                 # 30 testů: proti původní aplikaci + opravy + 2.1 až 2.4
+python3 -m unittest discover -s tests   # 24 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
+node tests/test_core.js                 # 31 testů: proti původní aplikaci + opravy + 2.1 až 2.5
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -569,8 +609,11 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_v2.js`: novinky 2.0;
   - `e2e_v21.js`: novinky 2.1;
   - `e2e_top5.js`: Top 5 (2.2);
-  - `e2e_kontroly.js`: Kontroly (2.3);
+  - `e2e_kontroly.js`: Kontroly (2.3); o víkendu ověří, že plán tohoto týdne nevznikne (v týdnu
+    nezbývá pracovní den), jinak odznak nezapsaných kontrol;
   - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4);
+  - `e2e_ai.js`: ✦ Přeformulovat (2.5); sám spustí náhradní API na 127.0.0.1:8598, server
+    musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.

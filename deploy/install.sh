@@ -53,7 +53,8 @@ if [[ -f "${DB_FILE}" ]]; then
 fi
 
 apt-get update
-apt-get install -y apache2 php php-cli php-sqlite3 php-mbstring rsync
+# php-curl: HTTP klient pro přeformulování textu přes API Anthropicu (Top 5, ✦)
+apt-get install -y apache2 php php-cli php-sqlite3 php-mbstring php-curl rsync
 
 install -d -m 0750 -o root -g www-data "${TARGET_DIR}"
 install -d -m 0700 -o www-data -g www-data "${DATA_DIR}"
@@ -138,6 +139,13 @@ if [[ -n "${BACKUP_FILE}" ]]; then
   echo "Záloha databáze verze 2 před změnou: ${BACKUP_FILE}"
 fi
 echo "Šifrovaná data verze 2: ${DATA_DIR}. Ostrá verze /odmeny/ zůstala beze změny."
+# Přeformulování textu v Top 5 (✦): zapne se uložením klíče k API Anthropicu.
+AI_KEY_CMD="sudo runuser -u www-data -- env ODMENY_DATA_DIR=${DATA_DIR} php ${TARGET_DIR}/bin/ai-key.php"
+if [[ -f "${DATA_DIR}/anthropic-api-key" ]]; then
+  echo "Přeformulování textu (✦ v Top 5) má uložený klíč. Vyzkoušíš ho: ${AI_KEY_CMD} --test"
+else
+  echo "Přeformulování textu (✦ v Top 5) je vypnuté. Zapneš ho uložením klíče k API: ${AI_KEY_CMD}"
+fi
 if [[ -n "${SETUP_CODE}" && "${SETUP_CODE}" != *"nastavená"* ]]; then
   echo
   echo "První spuštění: otevři https://<adresa-serveru>/odmeny_v2/, zadej tento kód a vytvoř přístupovou kartičku:"

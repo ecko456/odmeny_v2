@@ -1,0 +1,17 @@
+{
+    "name": "odmeny/server",
+    "description": "Závislosti serveru Odměn: oficiální SDK Anthropicu (přeformulování textu v Top 5) a HTTP klient Guzzle. Přibalené v lib/vendor, server composer nepotřebuje.",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": ">=8.1",
+        "anthropic-ai/sdk": "0.57.0",
+        "guzzlehttp/guzzle": "^7.9"
+    },
+    "config": {
+        "platform": { "php": "8.1.2" },
+        "allow-plugins": { "php-http/discovery": false },
+        "preferred-install": "dist",
+        "sort-packages": true
+    }
+}

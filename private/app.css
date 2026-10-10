@@ -1011,3 +1011,15 @@ input[type="date"]:disabled { opacity: .55; }
 .wage-cell { margin-top: 6px; font-size: 12.5px; white-space: nowrap; }
 .wage-cell .btn { white-space: nowrap; }
 @media (max-width: 640px) { .wage-item { flex-direction: column; align-items: stretch; } }
+
+/* Top 5: přeformulování příčiny (✦, verze 2.5) */
+.t5-ai-row { display: flex; justify-content: flex-end; margin-top: 6px; }
+.t5-ai { gap: 6px; color: var(--acc); }
+.t5-ai .icon { width: 16px; height: 16px; }
+.t5-ai.busy { opacity: .75; cursor: progress; }
+.t5-ai.busy .icon { animation: ai-pulse 1s ease-in-out infinite; }
+@keyframes ai-pulse { 50% { transform: scale(.8); opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .t5-ai.busy .icon { animation: none; } }
+.ai-compare { display: grid; gap: 12px; }
+.ai-compare .eyebrow { margin: 0 0 4px; }
+.ai-orig { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink-2); font-size: 14px; white-space: pre-wrap; max-height: 180px; overflow: auto; }

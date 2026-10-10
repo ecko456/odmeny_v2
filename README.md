@@ -54,6 +54,37 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   se i zařízení, která se přes ni zapamatovala. Pozor: když ztratíš všechny
   kartičky a nemáš zapamatované zařízení, k datům se už nedostane nikdo, ani správce
   serveru. Vytiskni si proto dvě kartičky a jednu ulož bokem.
+- **Přeformulování textu (✦) je jediná výjimka**: když u příčiny v Top 5 klikneš na
+  „Přeformulovat“, odejde text toho jednoho pole přes server do API Anthropicu (Claude
+  Sonnet 5.5). Jména lidí z evidence prohlížeč předtím nahradí značkami `[osoba 1]`.
+  Server text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli
+  limitu. Bez klíče k API je funkce vypnutá a tlačítko se neukáže.
+
+## Co je nového ve verzi 2.5
+
+- **Přeformulování příčiny v Top 5.** U pole „Proč se to stalo“ je tlačítko
+  **✦ Přeformulovat**. Claude Sonnet 5.5 zkontroluje pravopis a přepíše text do věcné,
+  profesionální češtiny pro auditora; fakta, čísla, EAN a názvy nechá, nic nepřidá.
+  - Odejde **jen text toho pole**, nic dalšího z aplikace. Jména lidí z evidence se
+    předtím nahradí značkami (i ve skloňovaných tvarech) a v návrhu se vrátí zpátky.
+  - Návrh se ukáže vedle původního textu; jde ho ještě upravit. **Použít** ho uloží
+    (a zapíše do historie případu), **Zahodit** nic nezmění.
+  - Limit 30 použití za hodinu na kartičku a 300 za den na celou aplikaci. Jedno
+    použití stojí zhruba desetník (Sonnet 5.5: 2 $ za milion tokenů vstupu, 10 $ výstupu).
+  - Funkce je vypnutá, dokud na server neuložíš klíč k API (viz níže).
+
+**Zapnutí:** klíč k API vytvoříš na console.anthropic.com (samostatný účet s předplaceným
+kreditem, předplatné Claude.ai API nezahrnuje). Na serveru ho ulož příkazem níže (klíč se
+při psaní nezobrazuje) a vyzkoušej:
+
+```bash
+sudo runuser -u www-data -- env ODMENY_DATA_DIR=/var/lib/odmeny_v2 php /var/www/odmeny_v2/bin/ai-key.php
+sudo runuser -u www-data -- env ODMENY_DATA_DIR=/var/lib/odmeny_v2 php /var/www/odmeny_v2/bin/ai-key.php --test
+```
+
+Vypnutí: stejný příkaz s `--smazat`, stav: `--stav`. Klíč leží v
+`/var/lib/odmeny_v2/anthropic-api-key` (práva jen pro www-data, z webu nedostupný). Po uložení
+klíče se stačí v aplikaci znovu přihlásit.
 
 ## Co je nového ve verzi 2.4
 
@@ -294,6 +325,9 @@ python3 -m unittest discover -s tests
 node tests/test_core.js
 ```
 
+Přibalené knihovny serveru (`lib/vendor`: oficiální SDK Anthropicu pro PHP a Guzzle) obnoví
+`bash deploy/vendor.sh` podle `lib/composer.lock`; `--update` vezme novější verze.
+
 Průchody v prohlížeči (Playwright) na čistých datech lokálního serveru, návod je
 v hlavičce každého skriptu:
 
@@ -311,7 +345,11 @@ v hlavičce každého skriptu:
   člověka, výsledky, historie, nastavení, mobil, tmavý režim);
 - `tests/e2e_matice.js`: novinky 2.4 (skupiny, dovednosti a schémata, hodnocení u člověka
   i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
-  mzdy s upozorněním, mobil, tmavý režim).
+  mzdy s upozorněním, mobil, tmavý režim);
+- `tests/e2e_ai.js`: novinka 2.5 (✦ Přeformulovat u příčiny s náhradním API Anthropicu:
+  tlačítko jen s klíčem, odchází jen text s jmény nahrazenými značkami, Zahodit, Použít,
+  historie případu, chyba služby, mobil, tmavý režim). Server musí běžet
+  s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`.
 
 **Aktualizace na místě** na lokálním Apachi v kontejneru (stará stránka dostane 426, sdílená
 data, výpočty a historie zůstanou, novinky se uloží nad převzatými daty). 2.3 → 2.4:
