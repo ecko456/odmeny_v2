@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 10. 10. 2026 (verze 2.8):
+
+- **Stálá odpolední směna** (uživatel: „přidej ještě do směn STÁLÁ ODPOLEDNÍ“). Klíč `O`
+  v `SHIFTS` (pořadí R, O, S1, S2), všechny seznamy směn berou `SHIFT_KEYS`. Kapacita:
+  `A.pm = O + S2`, `B.pm = O + S1`, `head.O`, `bySh.O`; dlaždice se stálou odpolední vždy.
+  Import zařazení pozná „odpolední“.
+- **Kapacita po týdnech.** Uživatel: „můžeš sloučit S1 třeba se stálou ranní a S2 se stálou
+  odpolední. Příští týden má Skupina 1 ranní a Skupina 2 odpolední a točí se klasicky po týdnu.“
+  `S.capReport.s1am` = ISO týden, kdy má skupina 1 ranní (výběr `#capS1` „Ranní tento týden
+  má“); `morningGroup`, `capWeekVar` (A = skupina 1 ranní). `capWeeks(rep)` dá tento a příští
+  týden (bez nastavení varianty A/B), tabulka i PDF mají za týden sloupce Ranní a Odpolední
+  (sloučené směny), `capRisks(cap, weeks)`. Uživatel ještě musí v reportu jednou nastavit,
+  kdo má tento týden ranní (podle něj příští týden T42/2026 skupina 1, tedy T41 skupina 2).
+- Data verze 9 (stará stránka by směnu `O` a `capReport.s1am` při čištění zahodila).
+
 Stav k 10. 10. 2026 (verze 2.7):
 
 - **Vedoucí pracovníci.** Uživatel: „možnost přidat mezi lidé vedoucí pracovníky a ty se nebudou
@@ -296,7 +311,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.5 | `f2fd3f2` | ✦ Přeformulovat u příčiny v Top 5 (Claude Sonnet 5.5, jen text pole, jména nahrazena) |
 | 2.6 | `9d8f98e` | ✦ Přeformulovat vše nebo vybrané části kroků 1–4, smazání zrušeného případu natrvalo (data verze 7) |
 | 2.6.1 | `485e678` | osekané PDF Top 5 neuvádí, že je osekané (ani v názvu souboru) |
-| 2.7 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: vedoucí pracovníci (mimo benefity, v matici jako vedoucí oddělení; data verze 8) |
+| 2.7 | `7554e68` | vedoucí pracovníci (mimo benefity, v matici jako vedoucí oddělení; data verze 8) |
+| 2.8 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: stálá odpolední směna, kapacita po týdnech se sloučenými směnami (data verze 9) |
 
 Verze 2.1 přidala:
 
@@ -405,7 +421,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `8` (od 2.7):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `9` (od 2.8):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -428,7 +444,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - `employees{key}`:
   - klíč je `norm(příjmení)|norm(jméno)`;
   - hodnota: `{key, first, last, positionId, level, note, shortFri, excluded, lead[], wid, skills{posId: 1–4}, rate{skillId: 1–4}, shift, legacy, hist[{at, pos, lvl, pct}]}`;
-  - `rate`: hodnocení dovedností (0 se neukládá); `shift`: `R|S1|S2`;
+  - `rate`: hodnocení dovedností (0 se neukládá); `shift`: `R|O|S1|S2` (O = stálá odpolední, 2.8);
   - `lead` (2.7): vedoucí pracovník, pole oddělení, která má na starosti (může být prázdné);
     kdo ho má, nehodnotí se a v matici je jen v pásu „Vedoucí oddělení“;
   - `legacy`: snímek zařazení z 2.3 `{at, pos, dept, level, levelName, levelDesc, tabaky, onlyKafe, raise, skills[{pos, level, levelName}]}`,
@@ -656,7 +672,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 35 testů: proti původní aplikaci + opravy + 2.1 až 2.7
+node tests/test_core.js                 # 37 testů: proti původní aplikaci + opravy + 2.1 až 2.8
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

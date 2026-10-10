@@ -61,6 +61,18 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.8
+
+- **Nová směna Stálá odpolední.** Vybírá se u člověka v Lidech stejně jako ostatní směny
+  (a jde i přes import zařazení, stačí napsat „stálá odpolední“).
+  - V Matici dovedností má vlastní oddíl za stálou ranní a jde podle ní filtrovat.
+- **Směny a kapacita po týdnech.** Skupiny 1 a 2 se střídají po týdnu. V reportu jednou
+  nastavíš, která skupina má **tento týden ranní**, a report pak místo variant A/B ukazuje
+  **tento a příští týden** se sloučenými směnami: ranní = stálá ranní + skupina, která má
+  ranní; odpolední = stálá odpolední + ta druhá. Stejně v PDF a v seznamu rizik
+  („odpoledne bez schopného člověka“). Bez nastavení se ukážou obě varianty jako dřív.
+- Stránka otevřená ještě ve verzi 2.7 po aktualizaci nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.7
 
 - **Vedoucí pracovníci v Lidech.** Při **Přidat člověka** jde zaškrtnout **Vedoucí
@@ -382,7 +394,7 @@ v hlavičce každého skriptu:
   člověka, výsledky, historie, nastavení, mobil, tmavý režim);
 - `tests/e2e_matice.js`: novinky 2.4 (skupiny, dovednosti a schémata, hodnocení u člověka
   i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
-  mzdy s upozorněním, mobil, tmavý režim);
+  mzdy s upozorněním, od 2.8 stálá odpolední směna, mobil, tmavý režim);
 - `tests/e2e_ai.js`: novinky 2.5 a 2.6 (✦ Přeformulovat s náhradním API Anthropicu:
   tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
   návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
@@ -400,7 +412,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.7'` jde stejný test pustit na aktualizaci 2.3 → 2.7 (data verze 5 → 8).
+S `EXPECT_VERSION='2\.8'` jde stejný test pustit na aktualizaci 2.3 → 2.8 (data verze 5 → 9).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

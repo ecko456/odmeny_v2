@@ -85,6 +85,7 @@ const overflow = page => page.evaluate(() => document.documentElement.scrollWidt
   await page.check('#lDetail #pLead');
   await page.waitForSelector('#lDetail [data-leaddept]');
   check(await page.isChecked(`#lDetail [data-leaddept="${d1}"]`), 'předvyplněné oddělení podle skupiny');
+  await saved(page);   // zapnutí se uloží zvlášť, ať ho historie změn zachytí
   await page.click('#nav [data-view="prehled"]');
   check(!(await page.$(`#ovBody tr[data-key="${info.worker}"]`)), 'vedoucí není v přehledu tabáků');
   await page.click('#nav [data-view="sankce"]');

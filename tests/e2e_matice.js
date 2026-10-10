@@ -2,7 +2,8 @@
 // i vlastním hodnoticím schématem, maximum tabáků, stupně prémie, hodnocení a směna u člověka,
 // matice (klik na buňku, filtr skupiny a směny), směny a kapacita (práh, vyřazená dovednost,
 // závěr, PDF), pravidla do PDF, Excel, bod vedoucího u prémie a sankce: posuvník 5–50 %
-// a srážka ze mzdy (upozornění, Srážka zpracována, zrušení). Na konci mobil a tmavý režim.
+// a srážka ze mzdy (upozornění, Srážka zpracována, zrušení), od 2.8 stálá odpolední směna.
+// Na konci mobil a tmavý režim.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
@@ -171,6 +172,42 @@ const editor = '#posEditor';
   check(await page.inputValue('#capThr') === '2' && /Zaučit skupinu 2/.test(await page.inputValue('#capNote')), 'report kapacit drží nastavení');
   await page.selectOption('#capThr', '3');
   await page.check(`#capView [data-capskill="${firstSkill}"]`);
+
+  // Stálá odpolední (2.8): u člověka, ve filtru a oddílu matice, v kapacitě vždy odpoledne.
+  await page.click('#nav [data-view="lide"]');
+  await page.click(`#lList [data-key="${adam.key}"]`);
+  await page.waitForSelector('#lDetail #pShift');
+  check(await page.$$eval('#pShift option', o => o.map(x => x.textContent).includes('Stálá odpolední')), 'v nabídce směn je Stálá odpolední');
+  await page.selectOption('#pShift', 'O');
+  await page.waitForFunction(k => S.employees[k].shift === 'O', adam.key);
+  await page.click('#nav [data-view="matice"]');
+  await page.click('[data-mxtab="matrix"]');
+  await page.selectOption('#matrixShift', 'O');
+  await page.waitForSelector(`[data-mxr="${adam.key}"]`);
+  check(/Stálá odpolední · 1 člověk/.test(await page.textContent('#matrixView .mx-sep')), `oddíl matice: ${await page.textContent('#matrixView .mx-sep')}`);
+  await page.selectOption('#matrixShift', '*');
+  await page.click('[data-mxtab="cap"]');
+  await page.waitForSelector('#capView .cap-table');
+  check(/Varianta A/.test(await page.textContent('#capView .cap-table thead')), 'bez nastaveného střídání report ukáže varianty');
+  // Skupiny se střídají po týdnu: tento týden má ranní skupina 2, příští týden skupina 1.
+  await page.selectOption('#capS1', 'S2');
+  await page.waitForFunction(() => S.capReport.s1am === shiftWeek(isoWeek(todayIso()).id, 1));
+  await page.waitForSelector('#capView .cap-table');
+  const capO = await page.evaluate(k => {
+    const tile = [...document.querySelectorAll('#capView .stat')].find(t => /Stálá odpolední/.test(t.textContent));
+    const r = capacity(S.capReport.groups, S.capReport.thr, S.capReport.hidden);
+    const g = r.groups.find(x => x.p.id === S.employees[k].positionId), s = g.skills[0];
+    const cw = isoWeek(todayIso()).id, head = document.querySelector('#capView .cap-table thead').textContent.replace(/\s+/g, ' ');
+    return { tile: tile ? tile.textContent.replace(/\s+/g, ' ') : '', sel: document.querySelector('#capS1').value,
+      th: head.includes(`Tento týden ${weekName(cw)}`) && head.includes(`Příští týden ${weekName(shiftWeek(cw, 1))}`) && /ranní skupina 2, odpolední skupina 1/.test(head),
+      pm: [s.A.pm, s.B.pm, s.by.O.n, s.by.S2.n, s.by.S1.n], note: /stálá odpolední vždy odpoledne/.test(document.querySelector('#capView .note.i').textContent) };
+  }, adam.key);
+  check(/Stálá odpolední\s*1/.test(capO.tile) && capO.th && capO.note && capO.sel === 'S2', `kapacita se stálou odpolední po týdnech: ${JSON.stringify(capO)}`);
+  check(capO.pm[0] === capO.pm[2] + capO.pm[3] && capO.pm[1] === capO.pm[2] + capO.pm[4], `stálá odpolední je odpoledne v obou variantách: ${capO.pm}`);
+  await page.screenshot({ path: `${shots}/04b-capacity-odpoledni.png`, fullPage: true });
+  const capPdfO = await download(page, '#capPdf', 'matice-kapacita-odpoledni.pdf');
+  const capTextO = pdfText(capPdfO.path);
+  if (capTextO != null) check(/Tento týden T\d+/.test(capTextO) && /T\d+ odpolední/.test(capTextO) && /stálá odpolední vždy odpoledne/.test(capTextO), `PDF kapacity po týdnech: ${capTextO.slice(0, 400)}`);
 
   // Pravidla do PDF.
   const rules = await download(page, '#btnRulesPdf', 'matice-pravidla.pdf');

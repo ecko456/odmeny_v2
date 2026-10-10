@@ -1054,3 +1054,8 @@ input[type="date"]:disabled { opacity: .55; }
 .mx-lead-dept { color: var(--ink-3); font-size: 12.5px; }
 .mx-lead-who { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere; }
 @media print { .mx-leads { border-color: #bbb; } }
+
+/* Kapacita směn po týdnech (2.8): skupiny 1 a 2 se střídají po týdnu */
+.cap-table th.cap-wk { text-align: center; border-left: 1px solid var(--line); }
+.cap-table th.cap-wk small { display: block; margin-top: 2px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-3); }
+.table-card .cap-table thead tr + tr th { border-radius: 0; padding-left: 10px; padding-right: 10px; }

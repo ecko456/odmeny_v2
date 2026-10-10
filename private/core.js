@@ -68,7 +68,8 @@ const STD_SCALE=[
   {name:"Pokročilá úroveň",desc:"Osoba dokáže samostatně pracovat na složitých úkolech a může pomáhat nebo vést ostatní."},
   {name:"Odborná úroveň",desc:"Osoba prokazuje hluboké odborné znalosti, poskytuje mentorství a podílí se na strategických rozhodnutích týkajících se této dovednosti."}];
 /* Směny lidí: stálá ranní a dvě skupiny, které se střídají (ranní / odpolední). */
-const SHIFTS=[["R","Stálá ranní"],["S1","Směnnost – skupina 1"],["S2","Směnnost – skupina 2"]];
+/* „O“ = stálá odpolední (verze 2.8): vždy odpoledne, v obou variantách střídání skupin 1 a 2 */
+const SHIFTS=[["R","Stálá ranní"],["O","Stálá odpolední"],["S1","Směnnost – skupina 1"],["S2","Směnnost – skupina 2"]];
 const SHIFT_KEYS=SHIFTS.map(x=>x[0]);
 function mkSkill(name,desc){return {id:uid("s"),name,desc:desc||"",scale:null};}   // scale null = standardní schéma
 /* Úroveň: tabáky, popis a navýšení platu (%) s podmínkami v % (null = podmínka se nehlídá). */
@@ -820,7 +821,7 @@ function legacyTier(x){return {pct:x.pct,lvl:x.lvl,tier:null,name:x.pct>0?"Úrov
 /* ---------- směny a kapacita (verze 2.4) ---------- */
 function shiftOf(e){return e&&SHIFT_KEYS.includes(e.shift)?e.shift:"";}
 function shiftName(k){const x=SHIFTS.find(y=>y[0]===k);return x?x[1]:"Bez směny";}
-function blankCapReport(){return {groups:[],thr:3,hidden:[],note:""};}
+function blankCapReport(){return {groups:[],thr:3,hidden:[],note:"",s1am:""};}
 /* Vedoucí pracovník (2.7): e.lead = oddělení, která má na starosti (může být prázdné).
    Nepočítá se do tabáků, Kafe, prémií, sankcí, kontrol ani kapacity; v matici je jen jako
    vedoucí svých oddělení. */
@@ -843,33 +844,45 @@ function skillGrid(groupId,shift){
   const rows=matrixPeople().filter(e=>(shift==null||shift==="*"||shiftOf(e)===shift)&&(!groupId||e.positionId===groupId||cols.some(c=>rateOf(e,c.s.id)>0)))
     .map(e=>{const pos=posOf(e);return {e,pos,shift:shiftOf(e),home:!groupId||e.positionId===groupId,pct:isGroup(pos)?skillPct(e,pos):null,cells:cols.map(c=>rateOf(e,c.s.id))};})
     .sort((x,y)=>so(x.shift)-so(y.shift)||(y.home-x.home)||((order.get(x.e.positionId)??999)-(order.get(y.e.positionId)??999))||norm(x.e.last+" "+x.e.first).localeCompare(norm(y.e.last+" "+y.e.first),"cs"));
-  const coverage=cols.map((c,j)=>{const by={};["R","S1","S2",""].forEach(k=>{by[k]={ready:0,trained:0};});
+  const coverage=cols.map((c,j)=>{const by={};[...SHIFT_KEYS,""].forEach(k=>{by[k]={ready:0,trained:0};});
     rows.forEach(r=>{const v=r.cells[j];if(v>=1)by[r.shift].trained++;if(v>=3)by[r.shift].ready++;});
     return {by,ready:rows.filter(r=>r.cells[j]>=3).length,trained:rows.filter(r=>r.cells[j]>=1).length};});
   return {groups,cols,rows,coverage};
 }
 /* Kapacita dovedností po směnách: kolik lidí dovednost zvládá aspoň na úrovni thr a součet úrovní.
-   Stálá ranní je vždy ráno, skupiny 1 a 2 se střídají: varianta A = ráno stálá ranní + skupina 1,
-   odpoledne skupina 2; varianta B = ráno stálá ranní + skupina 2, odpoledne skupina 1. */
+   Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají:
+   varianta A = ráno stálá ranní + skupina 1, odpoledne stálá odpolední + skupina 2;
+   varianta B = ráno stálá ranní + skupina 2, odpoledne stálá odpolední + skupina 1. */
 function capacity(groupIds,thr,hidden){
   thr=clamp(Math.round(+thr||3),1,4);
   const people=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e));
-  const head={R:0,S1:0,S2:0,"":0};people.forEach(e=>{head[shiftOf(e)]++;});
+  const head={R:0,O:0,S1:0,S2:0,"":0};people.forEach(e=>{head[shiftOf(e)]++;});
   const hide=new Set(hidden||[]);
   const groups=S.positions.filter(p=>isGroup(p)&&(!groupIds||!groupIds.length||groupIds.includes(p.id))).map(p=>{
     const skills=groupSkills(p).filter(s=>!hide.has(s.id)).map(s=>{
-      const by={};["R","S1","S2",""].forEach(k=>{by[k]={n:0,sum:0,any:0};});
+      const by={};[...SHIFT_KEYS,""].forEach(k=>{by[k]={n:0,sum:0,any:0};});
       people.forEach(e=>{const v=rateOf(e,s.id);if(!v)return;const b=by[shiftOf(e)];b.sum+=v;b.any++;if(v>=thr)b.n++;});
-      const A={am:by.R.n+by.S1.n,pm:by.S2.n},B={am:by.R.n+by.S2.n,pm:by.S1.n};
-      return {s,by,A,B,diff:by.S1.n-by.S2.n,weakest:Math.min(A.pm,B.pm),total:by.R.n+by.S1.n+by.S2.n+by[""].n};
+      const A={am:by.R.n+by.S1.n,pm:by.O.n+by.S2.n},B={am:by.R.n+by.S2.n,pm:by.O.n+by.S1.n};
+      return {s,by,A,B,diff:by.S1.n-by.S2.n,weakest:Math.min(A.pm,B.pm),total:by.R.n+by.O.n+by.S1.n+by.S2.n+by[""].n};
     });
     const members=people.filter(e=>e.positionId===p.id);
-    const bySh={};["R","S1","S2",""].forEach(k=>{const m=members.filter(e=>shiftOf(e)===k);
+    const bySh={};[...SHIFT_KEYS,""].forEach(k=>{const m=members.filter(e=>shiftOf(e)===k);
       bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null};});
     return {p,skills,members:members.length,bySh};
   }).filter(g=>g.skills.length);
   return {thr,head,groups};
 }
+
+/* Střídání skupin 1 a 2 po týdnu (2.8): ref = týden, kdy má skupina 1 ranní.
+   Vrací "S1" nebo "S2" (kdo má ranní v daném týdnu), bez ref "". */
+function morningGroup(weekId,ref){
+  const a=weekById(ref),b=weekById(weekId);
+  if(!a||!b)return "";
+  const d=Math.round((utcOf(b.from)-utcOf(a.from))/(7*DAY_MS));
+  return ((d%2)+2)%2===0?"S1":"S2";
+}
+/* Varianta kapacity pro týden: A = skupina 1 ranní, B = skupina 2 ranní. */
+function capWeekVar(weekId,ref){const g=morningGroup(weekId,ref);return g==="S1"?"A":g==="S2"?"B":"";}
 
 /* ---------- původní zařazení z verze 2.3 ----------
    Při převodu pozic na skupiny si každý člověk ponese snímek původní pozice, úrovně a zaučení.
@@ -1039,7 +1052,7 @@ function applyRoster(aoa,rateAoa){
     return p;};
   const readShift=v=>{const n=norm(v);if(!n)return "";
     const hit=SHIFTS.find(([k,label])=>norm(k)===n||norm(label)===n);if(hit)return hit[0];
-    if(n.includes("ranni"))return "R";if(/(skupina|sk\.?)\s*1|^1$/.test(n))return "S1";if(/(skupina|sk\.?)\s*2|^2$/.test(n))return "S2";return "";};
+    if(n.includes("ranni"))return "R";if(n.includes("odpoledni"))return "O";if(/(skupina|sk\.?)\s*1|^1$/.test(n))return "S1";if(/(skupina|sk\.?)\s*2|^2$/.test(n))return "S2";return "";};
   /* úroveň (stará pozice): číslo 1-4, nebo název úrovně (např. "Profík") */
   const readLevel=(pos,v,vName)=>{
     const t=norm(v);
@@ -1267,7 +1280,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=8;
+const DATA_VERSION=9;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
@@ -1503,10 +1516,12 @@ function sanitizeState(input){
     });
     if(Object.keys(per).length)out.marks[id]=per;
   });
-  /* report kapacit směn: vybrané skupiny, práh úrovně, skryté dovednosti a závěr */
+  /* report kapacit směn: vybrané skupiny, práh úrovně, skryté dovednosti, závěr a týden,
+     kdy má skupina 1 ranní (s1am, 2.8; skupiny se střídají po týdnu) */
   const cr=obj(o.capReport);
   out.capReport={groups:arr(cr.groups).filter(id=>posIds.has(id)).slice(0,100),thr:int(cr.thr,3,1,4),
-    hidden:arr(cr.hidden).filter(id=>skillIds.has(id)).slice(0,500),note:str(cr.note,4000)};
+    hidden:arr(cr.hidden).filter(id=>skillIds.has(id)).slice(0,500),note:str(cr.note,4000),
+    s1am:weekById(cr.s1am)?String(cr.s1am):""};
   out.v=DATA_VERSION;
   return out;
 }
@@ -1981,7 +1996,7 @@ function matrixSheets(){
     if(lead)rows.splice(1,0,[lead]);
     m.rows.forEach(r=>rows.push([r.e.last,r.e.first,r.shift?shiftName(r.shift):"",r.pos?r.pos.name:"",r.pct!=null?Math.round(r.pct):"",...r.cells]));
     rows.push([]);
-    ["R","S1","S2",""].forEach(k=>{if(m.rows.some(r=>r.shift===k))rows.push(["Úroveň 3–4: "+shiftName(k),"","","","",...m.coverage.map(c=>c.by[k].ready)]);});
+    [...SHIFT_KEYS,""].forEach(k=>{if(m.rows.some(r=>r.shift===k))rows.push(["Úroveň 3–4: "+shiftName(k),"","","","",...m.coverage.map(c=>c.by[k].ready)]);});
     rows.push(["Úroveň 3–4 celkem","","","","",...m.coverage.map(c=>c.ready)]);
     rows.push(["Hodnoceno 1–4 celkem","","","","",...m.coverage.map(c=>c.trained)]);
     rows.push([]);
