@@ -58,6 +58,7 @@ Stav k 10. 10. 2026 (verze 2.6):
     Historie změn (`S.log`) se nemaže (je to záznam, kdo co dělal).
   - `S.eff.nos{rok: číslo}`: nejvyšší smazané číslo, aby se číslo případu znovu nepoužilo.
     Nové pole ⇒ `DATA_VERSION`, `CLIENT_VERSION`, `ODM_MIN_CLIENT` = 7.
+- Top 5 PDF: osekaná verze už v PDF ani v názvu souboru neuvádí, že je osekaná (jde auditorovi).
 - Ověřeno: unit testy, serverové testy, všechny průchody v prohlížeči a aktualizace 2.3 → 2.6
   na lokálním Apachi (`EXPECT_VERSION='2\.6' … e2e_upgrade24.js`).
 
@@ -111,7 +112,9 @@ Stav k 9. 10. 2026 (verze 2.4):
 - **Top 5 PDF (2.4)**: souhrn a PDF případu ve dvou verzích, kompletní a osekaná (bez
   historie případu, volba v dialogu, pamatuje se v `prefs.t5PdfShort`). Záhlaví „Top 5
   nejméně efektivně“ bez prostrkání, bez řádku Zpracovatel/Datum/Podpis, bez slova Odměny,
-  „Stav k“ jen s datem.
+  „Stav k“ jen s datem. Od 2.6 osekaná verze o sobě nic neříká (ani v záhlaví, zápatí,
+  vlastnostech PDF, ani v názvu souboru). Uživatel: „Je to přímo pro auditora a nechceme
+  zveřejňovat extra detaily interní a když tam dáš ‚osekaná verze‘ tak to je špatný.“
 - Od uživatele se čeká zpětná vazba na Matici (texty, report kapacit), na srážku ze mzdy
   (kdy přesně má upozornění přijít) a na Top 5 PDF.
 
@@ -273,7 +276,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.3 | `b7a6f7d` | Kontroly (nutné úkony, namátkové kontroly 25 % z oddělení) |
 | 2.4 | `ca9f5c7` | Matice dovedností (skupiny, dovednosti 0–4, směny a kapacita, prémie), srážka ze mzdy, Top 5 PDF ve dvou verzích |
 | 2.5 | `f2fd3f2` | ✦ Přeformulovat u příčiny v Top 5 (Claude Sonnet 5.5, jen text pole, jména nahrazena) |
-| 2.6 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ✦ Přeformulovat vše nebo vybrané části kroků 1–4, smazání zrušeného případu natrvalo (data verze 7) |
+| 2.6 | `9d8f98e` | ✦ Přeformulovat vše nebo vybrané části kroků 1–4, smazání zrušeného případu natrvalo (data verze 7) |
+| 2.6.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: osekané PDF Top 5 neuvádí, že je osekané (ani v názvu souboru) |
 
 Verze 2.1 přidala:
 

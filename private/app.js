@@ -4345,20 +4345,20 @@ function pdfCaseDetail(k, c, today, short = false) {
   k.onPage = null;
 }
 
-/* short = osekaná verze: bez historie případu (kdo a kdy co změnil). */
+/* short = osekaná verze: bez historie případu (kdo a kdy co změnil). Jde auditorovi, proto
+   v PDF (ani v názvu souboru) nesmí být, že je osekaná: vypadá jako běžný záznam. */
 function drawEffSummary(doc, single, short = false) {
   const k = pdfKit(doc);
   const now = Date.now();
   const today = todayIso(now);
   const set = effSet();
-  const right = `${short ? 'Osekaná verze · ' : ''}Stav k ${dayText(today)}`;
-  const foot = short ? ' · osekaná verze' : '';
+  const right = `Stav k ${dayText(today)}`;
   if (single) {
     k.header({ eyebrow: T5_EYEBROW, plain: true, right, title: `Případ ${caseLabel(single)}`, sub: `${single.ean}${single.name ? ` · ${single.name}` : ''}`,
-      meta: short ? 'Záznam případu: všechna kola řešení, opatření a ověření účinnosti. Osekaná verze, bez historie změn.'
+      meta: short ? 'Záznam případu: všechna kola řešení, opatření a ověření účinnosti.'
         : 'Kompletní záznam případu: všechna kola řešení, opatření, ověření účinnosti a historie změn s tím, kdo a kdy je udělal.' });
     pdfCaseDetail(k, single, today, short);
-    k.footer(`Top 5 nejméně efektivně · případ ${caseLabel(single)}${foot} · stav k ${dayText(today)}`);
+    k.footer(`Top 5 nejméně efektivně · případ ${caseLabel(single)} · stav k ${dayText(today)}`);
     return;
   }
   const sum = effSummary(today);
@@ -4454,7 +4454,7 @@ function drawEffSummary(doc, single, short = false) {
     k.heading(short ? 'Detail případů' : 'Detail případů a kompletní historie');
     cases.forEach(c => pdfCaseDetail(k, c, today, short));
   }
-  k.footer(`Top 5 nejméně efektivně · souhrn problémových dílů${foot} · stav k ${dayText(today)}`);
+  k.footer(`Top 5 nejméně efektivně · souhrn problémových dílů · stav k ${dayText(today)}`);
 }
 
 /* ---------- export ---------- */
@@ -4507,7 +4507,7 @@ async function pickT5Variant(single) {
     title: single ? `PDF případu ${caseLabel(single)}` : 'Souhrn do PDF', ok: 'Stáhnout PDF',
     html: `<div class="variant-pick" role="radiogroup" aria-label="Verze PDF">
       <label><input type="radio" name="variant" value="full"${P.t5PdfShort ? '' : ' checked'}><span><b>Kompletní verze</b><small>Všechna kola řešení, opatření, ověření účinnosti a historie případu (kdo a kdy co změnil).</small></span></label>
-      <label><input type="radio" name="variant" value="short"${P.t5PdfShort ? ' checked' : ''}><span><b>Osekaná verze</b><small>Totéž bez historie případu.</small></span></label></div>`,
+      <label><input type="radio" name="variant" value="short"${P.t5PdfShort ? ' checked' : ''}><span><b>Osekaná verze</b><small>Totéž bez historie případu. V PDF ani v názvu souboru nebude, že je osekaná.</small></span></label></div>`,
   });
   if (value !== 'ok') return null;
   const short = form.elements.namedItem('variant').value === 'short';
@@ -4520,11 +4520,11 @@ async function exportEffSummaryPdf(caseId, button, variant) {
   const pick = variant || await pickT5Variant(single);
   if (!pick) return;
   const short = pick === 'short';
-  const tail = short ? '-osekana' : '';
   await withPdf(button || $('#t5SummaryPdf'), doc => {
-    doc.setProperties({ title: `${single ? `Případ ${caseLabel(single)}` : 'Souhrn problémových dílů'}${short ? ' (osekaná verze)' : ''}`, subject: 'Top 5 nejméně efektivně' });
+    // Název souboru ani vlastnosti PDF neprozradí, která verze to je (jde auditorovi).
+    doc.setProperties({ title: single ? `Případ ${caseLabel(single)}` : 'Souhrn problémových dílů', subject: 'Top 5 nejméně efektivně' });
     drawEffSummary(doc, single, short);
-    downloadFile(single ? `top5-pripad-${caseLabel(single)}${tail}.pdf` : `top5-souhrn-${todayIso()}${tail}.pdf`, doc.output('blob'), 'application/pdf');
+    downloadFile(single ? `top5-pripad-${caseLabel(single)}.pdf` : `top5-souhrn-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
     toast(`${single ? `PDF případu ${caseLabel(single)}` : 'Souhrn'}${short ? ' (osekaná verze)' : ''} se stahuje.`);
   });
 }

@@ -81,7 +81,9 @@ function pdfText(file) {
   const py = `import sys
 try:
     import pypdf
-    print('\\n'.join(p.extract_text() or '' for p in pypdf.PdfReader(sys.argv[1]).pages))
+    r = pypdf.PdfReader(sys.argv[1])
+    print('Název PDF: ' + str((r.metadata or {}).get('/Title', '')))
+    print('\\n'.join(p.extract_text() or '' for p in r.pages))
 except ImportError:
     import pymupdf
     print('\\n'.join(p.get_text() for p in pymupdf.open(sys.argv[1])))`;
@@ -95,6 +97,8 @@ function checkT5Pdf(file, label, { history }) {
   check(/Top 5 nejméně efektivně/.test(flat), `${label}: nahoře Top 5 nejméně efektivně`);
   check(!/Odměny|ODMĚNY|PRŮTOK|P R Ů T O K/i.test(flat), `${label}: bez slova Odměny a Průtok dílů`);
   check(!/Zpracovatel/.test(flat) && !/Podpis/.test(flat), `${label}: bez řádku Zpracovatel, datum a podpis`);
+  // jde auditorovi: v PDF ani v jeho vlastnostech nesmí být, že je osekané
+  check(!/osekan|bez historie/i.test(flat), `${label}: bez zmínky o osekané verzi`);
   if (history != null) check(/Historie případu/.test(flat) === history, `${label}: historie případu ${history ? 'je' : 'není'} vidět`);
   if (history != null) check(/Stav k \d{1,2}\. \d{1,2}\. \d{4}(?! \d)/.test(flat) && !/Stav k [^·]*\d{1,2}:\d{2}/.test(flat), `${label}: stav jen s datem`);
 }
@@ -304,7 +308,7 @@ async function markDone(page, id, date) {
   await page.screenshot({ path: `${shots}/08b-pdf-variant.png` });
   await page.click('#dlgCancel');
   const sumShort = await downloadVariant(page, '#t5SummaryPdf', 'short', 'top5-souhrn-osekana.pdf');
-  check(/-osekana\.pdf$/.test(sumShort.name), `název osekaného souhrnu: ${sumShort.name}`);
+  check(/^top5-souhrn-\d{4}-\d{2}-\d{2}\.pdf$/.test(sumShort.name), `název osekaného souhrnu neprozradí verzi: ${sumShort.name}`);
   checkT5Pdf(sumShort.path, 'souhrn osekaný', { history: false });
   await page.click('#t5Tabs [data-t5tab="cases"]');
   await page.click('#t5View tbody tr >> nth=0');
@@ -316,7 +320,7 @@ async function markDone(page, id, date) {
   const caseFull = await downloadVariant(page, '[data-t5pdf="case"]', 'full', 'top5-pripad.pdf');
   checkT5Pdf(caseFull.path, 'případ kompletní', { history: true });
   const caseShort = await downloadVariant(page, '[data-t5pdf="case"]', 'short', 'top5-pripad-osekana.pdf');
-  check(/^top5-pripad-.+-osekana\.pdf$/.test(caseShort.name), `název osekaného případu: ${caseShort.name}`);
+  check(/^top5-pripad-P-\d{4}-\d{3}\.pdf$/.test(caseShort.name), `název osekaného případu neprozradí verzi: ${caseShort.name}`);
   checkT5Pdf(caseShort.path, 'případ osekaný', { history: false });
   await page.click('[data-t5back]');
 

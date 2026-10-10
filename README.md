@@ -144,7 +144,8 @@ klíče se stačí v aplikaci znovu přihlásit.
   zpracované všechny, upozornění zmizí.
 - **Top 5 do PDF**: souhrn i PDF případu ve dvou verzích, kompletní a **osekaná** (bez
   historie případu). Nahoře „Top 5 nejméně efektivně“, bez řádku pro zpracovatele, datum
-  a podpis, bez slova Odměny a u stavu jen datum.
+  a podpis, bez slova Odměny a u stavu jen datum. Osekaná verze jde auditorovi, proto v PDF
+  ani v názvu souboru nestojí, že je osekaná (od 2.6).
 - **Aktualizace bez ztráty dat:** stránka otevřená ještě ve verzi 2.3 už nesmí uložit
   a vyzve k obnovení.
 
