@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 10. 10. 2026 (verze 2.11):
+
+- **Varianty prémie.** Uživatel: „přepracoval prémie, ať mohu přidat více variant a pro každou
+  variantu zaškrtat co vše musí plnit např.: Norma, bezproblémové kontroly, docházka, pracovní
+  morálka a zaškrtat jaké dovednosti musí mít a na jaké úrovni“.
+  - Data (verze 12): u varianty (`tiers[]`, v UI „varianta“, v kódu dál tier) přibylo
+    `skills[{id, lvl 1–4}]` (dovednosti skupin, i cizích; sanitize je zúží na existující
+    a `dropTierSkills` je smaže se skupinou nebo dovedností), `maxKt` (null = nehlídá se,
+    jinak nejvýš tolik kontrol s nálezem v měsíci, `ktOf(key, pid)` z `S.audit.plans`)
+    a `moral` (bod `MORAL_ID = 'moral'` v `S.marks`, jedno označení pro všechny varianty).
+  - Převod (jen data `v < 12`): bod vedoucího s textem „Dodržování řádné pracovní morálky“
+    (nebo „Pracovní morálka“, „Řádná pracovní morálka“) → `moral: true`, označení v `marks`
+    se přesunou na `moral` (při dvou označeních platí první důvod). Jiné body zůstanou.
+  - UI: `tierCardHtml` = zaškrtávací podmínky `[data-tc]` (`TIER_CONDS`: pole a výchozí
+    hodnota po zapnutí; prázdné pole vrátí výchozí, vypíná se jen zaškrtnutím), dovednosti
+    `[data-tsk]` + `[data-tsklvl]`, cizí skupiny v `<details class="tsk-other">`. Kopie
+    variant do ostatních skupin vlastní dovednosti skupiny nekopíruje.
+  - `tierChecks` nové kontroly `k: skill1 | kt`, morálka jako `k: manual, id: 'moral'`;
+    `tierConds` (PDF, Excel) a `tierText` (historie) je vypisují.
+
 Stav k 10. 10. 2026 (verze 2.10.1):
 
 - **Matice po odděleních.** Uživatel: „mi přijde jako nesmysl, aby skupiny byly v řadě za sebou.
@@ -364,7 +384,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.8 | `a3bc6cb` | stálá odpolední směna, kapacita po týdnech se sloučenými směnami (data verze 9) |
 | 2.9 | `d70331b` | plánovaná kapacita skupiny (ks/h na osobu), nemoc u lidí (data verze 10) |
 | 2.10 | `42f5539` | dovednosti vedoucích, společné pro všechny, úroveň 0–4 (data verze 11) |
-| 2.10.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: matice po odděleních pod sebou (jen vzhled, data beze změny) |
+| 2.10.1 | `ab18e3f` | matice po odděleních pod sebou (jen vzhled, data beze změny) |
+| 2.11 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: varianty prémie se zaškrtávanými podmínkami, vybrané dovednosti, kontroly, morálka (data verze 12) |
 
 Verze 2.1 přidala:
 
@@ -399,7 +420,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
 
 - **Skupina** (od 2.4, v datech pořád `positions[]`): dovednosti `skillset[]` hodnocené 0–4,
   `maxTab` = tabáky, když jsou všechny dovednosti na 4. Každá úroveň je 25 %, procento skupiny
-  je průměr dovedností, tabáky = `round(maxTab × procento)`. Stupně prémie `tiers[]`.
+  je průměr dovedností, tabáky = `round(maxTab × procento)`. Varianty prémie `tiers[]` (do 2.10 „stupně“).
 - **Úrovně 1–4** (Nováček, Pokročilý, Samostatný, Profík) jsou tvar do verze 2.3: pozice bez
   `skillset` se počítá postaru (`levelOf` větev `legacy`), dnes jen pro porovnání s původní
   aplikací v testech. `sanitizeState` každou takovou pozici převede na skupinu.
@@ -473,7 +494,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `11` (od 2.10):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `12` (od 2.11):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -489,7 +510,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - `positions[]` (skupiny): `{id, name, dept, max, onlyKafe, levels[4], skillset[], maxTab, tiers[], penalty[], bonus[], plan{v, unit ks|h}}` (`plan` od 2.9, jen když je zapnutá plánovaná kapacita)
   - `max: null` = bez stropu (maximum + nejvyšší bonus, `posMaxAuto`);
   - `skillset[]`: `{id, name, desc, scale}`; `scale` je 5 úrovní `{name, desc}`, `null` = `STD_SCALE`;
-  - `tiers[]`: `{id, name, minSkill 0–4, raise %, reward, maxAbs, minWknd, minAtt, minNorm, minUse, manual[{id, text}], streak{months, label}|null}`;
+  - `tiers[]` (varianty prémie): `{id, name, minSkill 0–4, skills[{id, lvl}], raise %, reward, maxAbs, minWknd, minAtt, minNorm, minUse, maxKt, moral, manual[{id, text}], streak{months, label}|null}` (`skills`, `maxKt`, `moral` od 2.11);
     prázdná podmínka = `null` = nehlídá se;
   - `levels[4]` (`{name, tabaky, desc, raise, minAtt, minNorm, minUse}`) je tvar z verze 2.3,
     zůstává uložený kvůli převodu a starým datům.
@@ -728,7 +749,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 40 testů: proti původní aplikaci + opravy + 2.1 až 2.10
+node tests/test_core.js                 # 42 testů: proti původní aplikaci + opravy + 2.1 až 2.11
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

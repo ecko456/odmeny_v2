@@ -147,8 +147,8 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
   const vyroba = await page.textContent('#prodView');
   check(/Plnění normy/.test(vyroba) && /Využití fondu/.test(vyroba), 'výroba bez plnění normy a využití');
 
-  // Navýšení mzdy u CNC jako stupně prémie: dovednosti aspoň 2 → +5 %, 3 → +10 %, 4 → +15 %;
-  // podmínky docházka 90, norma 95/100/110, využití 70/75/80 (absence, víkendy ani body vedoucího se nehlídají).
+  // Navýšení mzdy u CNC jako varianty prémie: dovednosti aspoň 2 → +5 %, 3 → +10 %, 4 → +15 %;
+  // podmínky docházka 90, norma 95/100/110, využití 70/75/80 (absence, víkendy, morálka, kontroly ani body vedoucího se nehlídají).
   await page.click('#nav [data-view="matice"]');
   await page.click('[data-mxtab="groups"]');
   await page.locator('#posList .list-item').first().click();
@@ -158,14 +158,17 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
     await page.waitForFunction(n => document.querySelectorAll('#posEditor [data-tier]').length === n, i + 1);
     const card = () => page.locator('#posEditor [data-tier]').nth(i);
     const set = async (f, v) => { const input = card().locator(`[data-tf="${f}"]`); await input.fill(String(v)); await input.dispatchEvent('change'); };
+    // podmínky varianty se zapínají a vypínají zaškrtnutím (2.11)
+    const cond = async (k, on) => { const box = card().locator(`[data-tc="${k}"]`); if (await box.isChecked() !== on) { if (on) await box.check(); else await box.uncheck(); } };
     await set('name', `Úroveň ${minSkill}`);
+    for (const [k, on] of [['all', true], ['abs', false], ['wknd', false], ['att', true], ['norm', true], ['use', true], ['moral', false], ['kt', false]]) await cond(k, on);
     await card().locator('[data-tf="minSkill"]').selectOption(String(minSkill));
-    for (const [f, v] of [['raise', raise], ['maxAbs', ''], ['minWknd', ''], ['minAtt', att], ['minNorm', norm], ['minUse', use]]) await set(f, v);
+    for (const [f, v] of [['raise', raise], ['minAtt', att], ['minNorm', norm], ['minUse', use]]) await set(f, v);
     while (await card().locator('[data-tpdel]').count()) await card().locator('[data-tpdel]').first().click();
     if (await card().locator('[data-tstreak]').isChecked()) { await card().locator('[data-tstreak]').uncheck(); }
   }
-  const tiers = await page.evaluate(() => S.positions[0].tiers.map(t => [t.name, t.minSkill, t.raise, t.maxAbs, t.minWknd, t.minAtt, t.minNorm, t.minUse, t.manual.length, !!t.streak]));
-  check(JSON.stringify(tiers) === JSON.stringify(conf.map(([m, r, a, n, u]) => [`Úroveň ${m}`, m, r, null, null, a, n, u, 0, false])), `stupně prémie: ${JSON.stringify(tiers)}`);
+  const tiers = await page.evaluate(() => S.positions[0].tiers.map(t => [t.name, t.minSkill, t.raise, t.maxAbs, t.minWknd, t.minAtt, t.minNorm, t.minUse, t.manual.length, !!t.streak, t.moral, t.maxKt]));
+  check(JSON.stringify(tiers) === JSON.stringify(conf.map(([m, r, a, n, u]) => [`Úroveň ${m}`, m, r, null, null, a, n, u, 0, false, false, null])), `varianty prémie: ${JSON.stringify(tiers)}`);
   await page.locator('#posList .list-item').nth(1).click();
   await page.check('#posOnlyKafe');
   await saved(page);
@@ -198,7 +201,7 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
   await page.click('#logBtn');
   await page.waitForSelector('#logList .log-item');
   const log = await page.textContent('#logList');
-  check(/stupeň prémie/.test(log) && /jen Kafe/.test(log), `historie nezná prémie nebo jen Kafe: ${log.slice(0, 600)}`);
+  check(/varianta prémie/.test(log) && /jen Kafe/.test(log), `historie nezná prémie nebo jen Kafe: ${log.slice(0, 600)}`);
   await page.click('#dlgCancel');
 
   // Soubor s jinou hlavičkou se zeptá znovu.

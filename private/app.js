@@ -453,7 +453,7 @@ function ovColumns() {
     { k: 'score', t: 'Tabáky', sort: true, cls: 'score', hint: 'Dovednosti ± docházka (nejvýš do stropu) − sankce ± ruční úprava',
       cell: r => (r.kafeOnly ? `<span class="onlykafe" title="${esc(`Skupina ${r.pos.name} nemá tabáky, hodnotí se jen Kafe`)}">jen Kafe</span>` : meter(r.max ? r.total / r.max : 0, `<b>${nf(r.total, 0)}</b> <small>/ ${nf(r.max, 0)}</small>`)),
       foot: rows => `<b class="num">${nf(SUMF(rows, r => r.total), 0)} ${tabW(SUMF(rows, r => r.total))}</b>` },
-    ...(S.positions.some(hasRaise) ? [{ k: 'raise', t: 'Prémie', sort: true, cls: 'r', hint: 'Nejvyšší splněný stupeň prémie skupiny za měsíc a navýšení mzdy',
+    ...(S.positions.some(hasRaise) ? [{ k: 'raise', t: 'Prémie', sort: true, cls: 'r', hint: 'Nejvyšší splněná varianta prémie skupiny za měsíc a navýšení mzdy',
       cell: r => raiseCell(r),
       foot: rows => { const n = rows.filter(r => r.tier.lvl > 0).length; return n ? `<span class="num" title="Lidí s prémií">${n}×</span>` : ''; } }] : []),
     { k: 'iss', t: 'Výdej', sort: true, cls: 'c', hint: 'Potvrzení, že byl benefit vydán',
@@ -883,7 +883,7 @@ function tierHtml(r, withMarks) {
   if (!r.pos || !(r.pos.tiers || []).length) return '<p class="small muted">Skupina nemá prémie. Nastavíš je v Matici dovedností → Skupiny a pravidla.</p>';
   const pid = S.current;
   const check = c => `<li class="${c.ok ? 'ok' : 'no'}"><span class="tick" aria-hidden="true">${c.ok ? '✓' : '✗'}</span><span>${esc(c.label)}</span><small>${esc(c.txt)}</small>${withMarks && c.k === 'manual' && pid ? `<button class="linkbtn" type="button" data-mark="${esc(c.id)}" data-key="${esc(r.e.key)}" data-on="${c.ok ? 1 : 0}">${c.ok ? 'označit nesplněno' : 'zase splněno'}</button>` : ''}</li>`;
-  return `<div class="tier-result">${x.lvl ? `<p class="tier-got"><span class="raise-ok">${esc(x.name)}</span>${x.pct ? ` · navýšení mzdy <b>+${nf(x.pct, 1)} %</b>` : ''}${x.reward ? ` · ${esc(x.reward)}` : ''}</p>` : '<p class="small muted">Žádný stupeň prémie za tento měsíc.</p>'}
+  return `<div class="tier-result">${x.lvl ? `<p class="tier-got"><span class="raise-ok">${esc(x.name)}</span>${x.pct ? ` · navýšení mzdy <b>+${nf(x.pct, 1)} %</b>` : ''}${x.reward ? ` · ${esc(x.reward)}` : ''}</p>` : '<p class="small muted">Žádná varianta prémie za tento měsíc.</p>'}
     ${x.list.map(it => `<details class="tier-detail"${it === x.next || (!x.next && it.lvl === x.lvl) ? ' open' : ''}><summary><b>${esc(it.t.name)}</b> ${it.ok ? '<span class="t5-state s-ok">splněno</span>' : '<span class="t5-state">nesplněno</span>'}</summary><ul class="tier-checks">${it.checks.map(check).join('') || '<li class="ok"><span>bez podmínek</span></li>'}</ul></details>`).join('')}
     ${(x.streaks || []).map(s => `<p class="small ${s.ok ? 'tier-streak-ok' : 'muted'}">${esc(s.name)}: ${s.have} z ${s.months} měsíců v řadě${s.ok ? ` · <b>${esc(s.label)}</b>` : ` (pro ${esc(s.label)})`}</p>`).join('')}
     ${pid ? '' : '<p class="small muted">Prémie se vyhodnocuje za vybrané období s docházkou.</p>'}</div>`;
@@ -1257,16 +1257,22 @@ function ruleCard(p, kind) {
   </div>`;
 }
 
-/* Předvyplněné stupně prémie podle zadání (dají se upravit). */
+/* Předvyplněné varianty prémie podle zadání (dají se upravit). */
 const TIER_TEMPLATES = [
-  { name: 'Prémie', minSkill: 3, raise: 20, reward: '', maxAbs: 3, minWknd: 2, minAtt: null, minNorm: 80, minUse: null, manual: ['Dodržování řádné pracovní morálky'], streak: null },
-  { name: 'Extra bonus', minSkill: 4, raise: 30, reward: '', maxAbs: 1, minWknd: 3, minAtt: null, minNorm: 90, minUse: null, manual: ['Dodržování řádné pracovní morálky'], streak: { months: 4, label: 'možnost získat 2. platovou třídu' } },
+  { name: 'Prémie', minSkill: 3, skills: [], raise: 20, reward: '', maxAbs: 3, minWknd: 2, minAtt: null, minNorm: 80, minUse: null, maxKt: null, moral: true, manual: [], streak: null },
+  { name: 'Extra bonus', minSkill: 4, skills: [], raise: 30, reward: '', maxAbs: 1, minWknd: 3, minAtt: null, minNorm: 90, minUse: null, maxKt: 0, moral: true, manual: [], streak: { months: 4, label: 'možnost získat 2. platovou třídu' } },
 ];
 function newTier(p) {
   const tpl = TIER_TEMPLATES[Math.min((p.tiers || []).length, TIER_TEMPLATES.length - 1)];
-  return { ...tpl, id: uid('t'), name: (p.tiers || []).length < TIER_TEMPLATES.length ? tpl.name : `Stupeň ${(p.tiers || []).length + 1}`,
-    manual: tpl.manual.map(text => ({ id: uid('m'), text })), streak: tpl.streak ? { ...tpl.streak } : null };
+  return { ...tpl, id: uid('t'), name: (p.tiers || []).length < TIER_TEMPLATES.length ? tpl.name : `Varianta ${(p.tiers || []).length + 1}`,
+    skills: [], manual: [], streak: tpl.streak ? { ...tpl.streak } : null };
 }
+/* Podmínky varianty, které se zapínají zaškrtnutím: pole a hodnota po zapnutí. */
+const TIER_CONDS = {
+  norm: ['minNorm', 80], kt: ['maxKt', 0], att: ['minAtt', 95], abs: ['maxAbs', 3],
+  wknd: ['minWknd', 2], use: ['minUse', 90], moral: ['moral', true], all: ['minSkill', 3],
+};
+function tierCondOn(t, key) { const f = TIER_CONDS[key][0]; return f === 'moral' ? !!t.moral : f === 'minSkill' ? +t.minSkill > 0 : t[f] != null; }
 
 function peopleCount(n) {
   return `${n} ${lidiN(n)}`;
@@ -1291,35 +1297,55 @@ function skillRowHtml(x, i, n) {
   </div>`;
 }
 
+/* Varianta prémie (2.11): co musí člověk za měsíc splnit (zaškrtnuté podmínky), vybrané
+   dovednosti s úrovní, další body vedoucího, odměna a nárok po několika měsících v řadě. */
 function tierCardHtml(p, t, i) {
-  const opt = (v, cur) => (v === cur ? ' selected' : '');
-  const num = (f, label, hi, step = 1, unit = '') => `<label class="field"><span>${label}</span><span class="pctbox"><input type="number" data-tf="${f}" value="${t[f] ?? ''}" min="0" max="${hi}" step="${step}" placeholder="nehlídá se">${unit ? `<i>${unit}</i>` : ''}</span></label>`;
+  const on = key => tierCondOn(t, key);
+  const num = (f, hi, step = 1, unit = '', label = '') => `<span class="pctbox tc-num"><input type="number" data-tf="${f}" value="${t[f] ?? ''}" min="0" max="${hi}" step="${step}" aria-label="${esc(label)}">${unit ? `<i>${unit}</i>` : ''}</span>`;
+  const lvlSel = (attr, cur, label) => `<select ${attr} aria-label="${esc(label)}">${[1, 2, 3, 4].map(l => `<option value="${l}"${l === cur ? ' selected' : ''}>${l} – ${esc(STD_SCALE[l].name)}</option>`).join('')}</select>`;
+  const cond = (key, title, hint, value) => `<div class="tc${on(key) ? ' on' : ''}">
+      <label class="tc-check"><input type="checkbox" data-tc="${key}"${on(key) ? ' checked' : ''}><span><b>${title}</b>${hint ? `<small>${hint}</small>` : ''}</span></label>
+      ${on(key) && value ? `<div class="tc-val">${value}</div>` : ''}</div>`;
+  const req = new Map((t.skills || []).map(r => [r.id, r.lvl]));
+  const skRow = (x, g) => `<div class="tsk${req.has(x.id) ? ' on' : ''}"><label class="tc-check"><input type="checkbox" data-tsk="${esc(x.id)}"${req.has(x.id) ? ' checked' : ''}><span><b>${esc(x.name)}</b>${g ? `<small>${esc(g.name || '(bez názvu)')}</small>` : ''}</span></label>
+      ${req.has(x.id) ? `<div class="tc-val"><span class="tc-pre">aspoň</span>${lvlSel(`data-tsklvl="${esc(x.id)}"`, req.get(x.id), `Úroveň: ${x.name}`)}</div>` : ''}</div>`;
+  const own = groupSkills(p);
+  const others = S.positions.filter(g => g !== p && isGroup(g) && groupSkills(g).length);
+  const otherOn = others.some(g => groupSkills(g).some(x => req.has(x.id)));
+  const nOn = Object.keys(TIER_CONDS).filter(on).length + req.size + (t.manual || []).length;
   return `<div class="tier-card" data-tier="${esc(t.id)}">
     <div class="tier-head"><span class="tier-n">${i + 1}</span>
-      <label class="field tier-name"><span>Název stupně</span><input type="text" data-tf="name" value="${esc(t.name)}" maxlength="60"></label>
+      <label class="field tier-name"><span>Název varianty</span><input type="text" data-tf="name" value="${esc(t.name)}" maxlength="60"></label>
       <div class="tier-tools">
         <button class="icon-btn" type="button" data-tierup aria-label="Posunout výš"${i ? '' : ' disabled'}>${I.back}</button>
         <button class="icon-btn sk-down" type="button" data-tierdown aria-label="Posunout níž"${i < p.tiers.length - 1 ? '' : ' disabled'}>${I.back}</button>
-        <button class="icon-btn" type="button" data-tierdel aria-label="Smazat stupeň">${I.x}</button>
+        <button class="icon-btn" type="button" data-tierdel aria-label="Smazat variantu">${I.x}</button>
       </div></div>
-    <p class="eyebrow">Podmínky za měsíc</p>
-    <div class="form-grid tier-grid">
-      <label class="field"><span>Všechny dovednosti skupiny aspoň na úrovni</span><select data-tf="minSkill">${[0, 1, 2, 3, 4].map(l => `<option value="${l}"${opt(l, +t.minSkill || 0)}>${l ? `${l} – ${esc(STD_SCALE[l].name)}` : 'nehlídá se'}</option>`).join('')}</select></label>
-      ${num('maxAbs', 'Absence v pracovní dny nejvýš (dní)', 31)}
-      ${num('minWknd', 'Víkendové směny aspoň', 31)}
-      ${num('minNorm', 'Plnění normy aspoň', 300, 0.5, '%')}
-      ${num('minAtt', 'Docházka aspoň', 100, 0.5, '%')}
-      ${num('minUse', 'Využití fondu aspoň', 100, 0.5, '%')}
+    <p class="eyebrow">Co musí za měsíc splnit <span class="tc-count">${nOn ? `${nOn} ${nOn === 1 ? 'podmínka' : nOn <= 4 ? 'podmínky' : 'podmínek'}` : 'bez podmínek'}</span></p>
+    <div class="tc-grid">
+      ${cond('norm', 'Plnění normy', 'z evidence práce', `<span class="tc-pre">aspoň</span>${num('minNorm', 300, 0.5, '%', 'Plnění normy aspoň')}`)}
+      ${cond('kt', 'Bezproblémové kontroly', 'namátkové kontroly v měsíci (bez kontroly = splněno)', `<span class="tc-pre">nálezů nejvýš</span>${num('maxKt', 31, 1, '', 'Kontrol s nálezem nejvýš')}`)}
+      ${cond('att', 'Docházka', 'odpracované hodiny z fondu', `<span class="tc-pre">aspoň</span>${num('minAtt', 100, 0.5, '%', 'Docházka aspoň')}`)}
+      ${cond('abs', 'Absence', 'celé pracovní dny bez docházky', `<span class="tc-pre">nejvýš</span>${num('maxAbs', 31, 1, 'dní', 'Absence nejvýš')}`)}
+      ${cond('wknd', 'Víkendové směny', 'odpracované víkendy a svátky', `<span class="tc-pre">aspoň</span>${num('minWknd', 31, 1, '', 'Víkendové směny aspoň')}`)}
+      ${cond('use', 'Využití fondu', 'čas na zakázkách z fondu', `<span class="tc-pre">aspoň</span>${num('minUse', 100, 0.5, '%', 'Využití fondu aspoň')}`)}
+      ${cond('moral', 'Pracovní morálka', 'posoudí vedoucí: platí, dokud u člověka a měsíce neoznačí nesplněno', '')}
+      ${cond('all', 'Všechny dovednosti skupiny', 'nejnižší hodnocení ve skupině', `<span class="tc-pre">aspoň</span>${lvlSel('data-tf="minSkill"', +t.minSkill || 3, 'Všechny dovednosti aspoň na úrovni')}`)}
     </div>
-    <div class="tier-manual"><p class="small"><b>Body, které posuzuje vedoucí</b> <span class="muted">(platí jako splněné, dokud je u člověka a měsíce neoznačíš jako nesplněné)</span></p>
+    <div class="tier-skills"><p class="small"><b>Vybrané dovednosti</b> <span class="muted">(zaškrtni, které musí mít, a na jaké úrovni)</span></p>
+      ${own.length ? `<div class="tc-grid">${own.map(x => skRow(x, null)).join('')}</div>` : '<p class="small muted">Skupina zatím nemá dovednosti.</p>'}
+      ${others.length ? `<details class="tsk-other"${otherOn ? ' open' : ''}><summary>Dovednosti z jiných skupin (zaučení)${otherOn ? ` · vybráno ${[...req.keys()].filter(id => !own.some(x => x.id === id)).length}` : ''}</summary>
+        ${others.map(g => `<p class="tsk-group">${esc(g.name || '(bez názvu)')}</p><div class="tc-grid">${groupSkills(g).map(x => skRow(x, null)).join('')}</div>`).join('')}</details>` : ''}
+    </div>
+    <div class="tier-manual"><p class="small"><b>Další body, které posuzuje vedoucí</b> <span class="muted">(platí jako splněné, dokud je u člověka a měsíce neoznačíš jako nesplněné)</span></p>
       ${(t.manual || []).map(m => `<div class="tier-point" data-tpoint="${esc(m.id)}"><input type="text" data-tptext value="${esc(m.text)}" maxlength="200" aria-label="Bod vedoucího"><button class="icon-btn" type="button" data-tpdel aria-label="Smazat bod">${I.x}</button></div>`).join('')}
       <button class="btn sec small" type="button" data-tpadd>Přidat bod</button></div>
     <p class="eyebrow">Odměna</p>
     <div class="form-grid tier-grid">
-      ${num('raise', 'Navýšení mzdy', 100, 0.5, '%')}
+      <label class="field"><span>Navýšení mzdy</span><span class="pctbox"><input type="number" data-tf="raise" value="${t.raise ?? ''}" min="0" max="100" step="0.5" placeholder="bez navýšení"><i>%</i></span></label>
       <label class="field"><span>Jiná odměna (nepovinné)</span><input type="text" data-tf="reward" value="${esc(t.reward || '')}" maxlength="200" placeholder="např. jednorázový bonus"></label>
     </div>
-    <label class="check tier-streak"><input type="checkbox" data-tstreak${t.streak ? ' checked' : ''}><span><b>Nárok po několika měsících v řadě</b><small>Kdo tento stupeň (nebo vyšší) splní tolik měsíců za sebou, uvidí u sebe nárok.</small></span></label>
+    <label class="check tier-streak"><input type="checkbox" data-tstreak${t.streak ? ' checked' : ''}><span><b>Nárok po několika měsících v řadě</b><small>Kdo tuto variantu (nebo vyšší) splní tolik měsíců za sebou, uvidí u sebe nárok.</small></span></label>
     ${t.streak ? `<div class="form-grid tier-grid"><label class="field"><span>Měsíců v řadě</span><input type="number" data-tsmonths value="${t.streak.months}" min="2" max="24" step="1"></label>
       <label class="field"><span>Na co vzniká nárok</span><input type="text" data-tslabel value="${esc(t.streak.label)}" maxlength="80"></label></div>` : ''}
   </div>`;
@@ -1365,9 +1391,9 @@ function renderPositions() {
     <div class="note i">Platí vždy nejvyšší splněný řádek. Absence je celý pracovní den bez docházky; kratší směna absence není (projeví se jen v hodinách u Kafe). Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence a víkend použitý na vyplnění se do bonusu nepočítá.${cutoffDays() ? ` Od ${cutoffDays()} dní absence neplatí nic, bez nároku na tabák i kafe (Nastavení).` : ' Hranici, od které člověk ztrácí nárok úplně, nastavíš v Nastavení.'}
       <div class="mt-s"><button class="btn sec small" type="button" id="posCopyRules">Použít srážky a bonusy u všech skupin</button></div></div>`}
     <div class="card" id="tierCard">
-      <div class="card-head"><div><h3>Prémie</h3><p class="small muted">Stupně od nejnižšího po nejvyšší. Za měsíc platí nejvyšší stupeň, jehož podmínky člověk splnil. Prázdná podmínka se nehlídá.</p></div>
-        <button class="btn small" type="button" data-tieradd>Přidat stupeň</button></div>
-      ${(p.tiers || []).length ? p.tiers.map((t, i) => tierCardHtml(p, t, i)).join('') : '<p class="small muted">Zatím bez prémie. První stupeň se předvyplní podle zadání (všechny dovednosti aspoň 3, absence nejvýš 3 dny, aspoň 2 víkendy, plnění normy 80 %, pracovní morálka, navýšení mzdy 20 %), druhý jako extra bonus.</p>'}
+      <div class="card-head"><div><h3>Varianty prémie</h3><p class="small muted">U každé varianty zaškrtni, co musí člověk za měsíc splnit, a vyber dovednosti s úrovní. Varianty jsou seřazené od nejnižší po nejvyšší; za měsíc platí nejvyšší varianta, kterou člověk splnil.</p></div>
+        <button class="btn small" type="button" data-tieradd>Přidat variantu</button></div>
+      ${(p.tiers || []).length ? p.tiers.map((t, i) => tierCardHtml(p, t, i)).join('') : '<p class="small muted">Zatím bez prémie. První varianta se předvyplní podle zadání (všechny dovednosti aspoň 3, absence nejvýš 3 dny, aspoň 2 víkendy, plnění normy 80 %, pracovní morálka, navýšení mzdy 20 %), druhá jako extra bonus.</p>'}
       ${(p.tiers || []).length ? '<div class="mt-s"><button class="btn sec small" type="button" id="posCopyTiers">Použít prémie u všech skupin</button></div>' : ''}
     </div>
   </div>`;
@@ -1443,14 +1469,27 @@ function bindGroupEditor() {
       const tier = p.tiers.find(x => x.id === card.dataset.tier);
       if (!tier) return;
       const f = t.dataset.tf;
+      // zapnutá podmínka zůstane zapnutá i s prázdným polem (vrátí se výchozí hodnota); vypíná se zaškrtnutím
+      const dflt = k => TIER_CONDS[Object.keys(TIER_CONDS).find(c => TIER_CONDS[c][0] === k)][1];
       if (f === 'name') tier.name = t.value.trim().slice(0, 60) || tier.name;
       else if (f === 'reward') tier.reward = t.value.trim().slice(0, 200);
       else if (f === 'minSkill') tier.minSkill = clamp(Math.round(+t.value || 0), 0, 4);
       else if (f === 'raise') tier.raise = pctVal(t.value, 100) || 0;
-      else if (f === 'minNorm') tier.minNorm = pctVal(t.value, 300);
-      else if (f === 'minAtt' || f === 'minUse') tier[f] = pctVal(t.value, 100);
-      else if (f === 'maxAbs' || f === 'minWknd') tier[f] = intVal(t.value, 31);
-      else if ('tptext' in t.dataset) {
+      else if (f === 'minNorm') tier.minNorm = pctVal(t.value, 300) ?? dflt(f);
+      else if (f === 'minAtt' || f === 'minUse') tier[f] = pctVal(t.value, 100) ?? dflt(f);
+      else if (f === 'maxAbs' || f === 'minWknd' || f === 'maxKt') tier[f] = intVal(t.value, 31) ?? dflt(f);
+      else if ('tc' in t.dataset) {
+        const [k, v] = TIER_CONDS[t.dataset.tc];
+        if (k === 'moral') tier.moral = t.checked;
+        else if (k === 'minSkill') tier.minSkill = t.checked ? v : 0;
+        else tier[k] = t.checked ? v : null;
+      } else if ('tsk' in t.dataset) {
+        tier.skills = (tier.skills || []).filter(r => r.id !== t.dataset.tsk);
+        if (t.checked) tier.skills.push({ id: t.dataset.tsk, lvl: 3 });
+      } else if ('tsklvl' in t.dataset) {
+        const r = (tier.skills || []).find(x => x.id === t.dataset.tsklvl);
+        if (r) r.lvl = clamp(Math.round(+t.value || 1), 1, 4);
+      } else if ('tptext' in t.dataset) {
         const pt = tier.manual.find(m => m.id === t.closest('[data-tpoint]').dataset.tpoint);
         if (pt) { const v = t.value.trim().slice(0, 200); if (v) pt.text = v; else tier.manual = tier.manual.filter(m => m !== pt); }
       } else if ('tstreak' in t.dataset) tier.streak = t.checked ? { months: 4, label: 'možnost získat 2. platovou třídu' } : null;
@@ -1474,6 +1513,7 @@ function bindGroupEditor() {
         if (e.rate) { ids.forEach(id => delete e.rate[id]); if (!Object.keys(e.rate).length) delete e.rate; }
       });
       S.positions = S.positions.filter(x => x.id !== p.id);
+      dropTierSkills(ids);
       ui.selPos = null; ui.posOpen = false;
       save(); renderAll(); toast('Skupina smazána.');
       return;
@@ -1498,6 +1538,7 @@ function bindGroupEditor() {
         if (!(await confirmBox('Smazat dovednost?', `Dovednost ${x.name} zmizí ze skupiny ${p.name}${rated ? ` a ${rated} lidí přijde o její hodnocení` : ''}. Procento a tabáky se přepočítají.`, 'Smazat', true))) return;
         p.skillset.splice(i, 1);
         Object.values(S.employees).forEach(e => { if (e.rate) { delete e.rate[x.id]; if (!Object.keys(e.rate).length) delete e.rate; } });
+        dropTierSkills(new Set([x.id]));
         refresh(); return;
       }
       return;
@@ -1519,8 +1560,10 @@ function bindGroupEditor() {
       refresh(); toast('Pravidla zkopírována do všech skupin.'); return;
     }
     if (t.closest('#posCopyTiers')) {
-      if (!(await confirmBox('Použít prémie u všech skupin?', `Stupně prémie všech ostatních skupin se nahradí kopií stupňů ze skupiny ${p.name}. Označení bodů vedoucího u lidí v ostatních skupinách přestanou platit.`, 'Přepsat'))) return;
-      S.positions.forEach(q => { if (q !== p && isGroup(q)) q.tiers = p.tiers.map(x => ({ ...JSON.parse(JSON.stringify(x)), id: uid('t'), manual: x.manual.map(m => ({ id: uid('m'), text: m.text })) })); });
+      if (!(await confirmBox('Použít prémie u všech skupin?', `Varianty prémie všech ostatních skupin se nahradí kopií variant ze skupiny ${p.name}. Vybrané dovednosti skupiny ${p.name} se nekopírují (každá skupina má svoje), dovednosti z jiných skupin ano. Označení dalších bodů vedoucího u lidí v ostatních skupinách přestanou platit (pracovní morálka zůstane).`, 'Přepsat'))) return;
+      const ownIds = new Set(groupSkills(p).map(x => x.id));
+      S.positions.forEach(q => { if (q !== p && isGroup(q)) q.tiers = p.tiers.map(x => ({ ...JSON.parse(JSON.stringify(x)), id: uid('t'),
+        skills: (x.skills || []).filter(r => !ownIds.has(r.id)).map(r => ({ ...r })), manual: x.manual.map(m => ({ id: uid('m'), text: m.text })) })); });
       refresh(); toast('Prémie zkopírovány do všech skupin.'); return;
     }
     if (t.closest('[data-tieradd]')) { p.tiers = p.tiers || []; p.tiers.push(newTier(p)); refresh(); return; }
@@ -1532,7 +1575,7 @@ function bindGroupEditor() {
       if (t.closest('[data-tierup]') && i > 0) { [p.tiers[i - 1], p.tiers[i]] = [p.tiers[i], p.tiers[i - 1]]; refresh(); return; }
       if (t.closest('[data-tierdown]') && i < p.tiers.length - 1) { [p.tiers[i + 1], p.tiers[i]] = [p.tiers[i], p.tiers[i + 1]]; refresh(); return; }
       if (t.closest('[data-tierdel]')) {
-        if (!(await confirmBox('Smazat stupeň prémie?', `Stupeň ${tier.name} zmizí ze skupiny ${p.name}.`, 'Smazat', true))) return;
+        if (!(await confirmBox('Smazat variantu prémie?', `Varianta ${tier.name} zmizí ze skupiny ${p.name}.`, 'Smazat', true))) return;
         p.tiers.splice(i, 1); refresh(); return;
       }
       if (t.closest('[data-tpadd]')) { tier.manual.push({ id: uid('m'), text: 'Nový bod' }); refresh(); const inp = $(`[data-tier="${CSS.escape(tier.id)}"] [data-tpoint]:last-of-type [data-tptext]`); if (inp) { inp.focus(); inp.select(); } return; }

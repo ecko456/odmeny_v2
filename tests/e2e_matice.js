@@ -100,12 +100,30 @@ const editor = '#posEditor';
   const grp = await page.evaluate(() => { const p = S.positions.find(x => x.name === 'Frézování'); return { id: p.id, maxTab: p.maxTab, skills: p.skillset.map(s => [s.name, s.desc, s.scale ? s.scale[1].name : null]) }; });
   check(grp.maxTab === 10, `maximum skupiny: ${grp.maxTab}`);
   check(JSON.stringify(grp.skills) === JSON.stringify([['Obsluha frézy', 'Upnutí, nástroje, start programu', null], ['Programování', '', 'Začátečník']]), `dovednosti: ${JSON.stringify(grp.skills)}`);
-  // Stupně prémie: předvyplněná Prémie a Extra bonus s nárokem po 4 měsících.
+  // Varianty prémie: předvyplněná Prémie a Extra bonus s nárokem po 4 měsících.
   await page.click(`${editor} [data-tieradd]`);
   await page.click(`${editor} [data-tieradd]`);
   await page.waitForFunction(() => document.querySelectorAll('#posEditor [data-tier]').length === 2);
-  const tiers = await page.evaluate(id => S.positions.find(x => x.id === id).tiers.map(t => [t.name, t.minSkill, t.raise, t.maxAbs, t.minWknd, t.minNorm, t.manual.map(m => m.text), t.streak && t.streak.months]), grp.id);
-  check(JSON.stringify(tiers) === JSON.stringify([['Prémie', 3, 20, 3, 2, 80, ['Dodržování řádné pracovní morálky'], null], ['Extra bonus', 4, 30, 1, 3, 90, ['Dodržování řádné pracovní morálky'], 4]]), `stupně: ${JSON.stringify(tiers)}`);
+  const tiers = await page.evaluate(id => S.positions.find(x => x.id === id).tiers.map(t => [t.name, t.minSkill, t.raise, t.maxAbs, t.minWknd, t.minNorm, t.moral, t.maxKt, t.manual.length, t.streak && t.streak.months]), grp.id);
+  check(JSON.stringify(tiers) === JSON.stringify([['Prémie', 3, 20, 3, 2, 80, true, null, 0, null], ['Extra bonus', 4, 30, 1, 3, 90, true, 0, 0, 4]]), `varianty: ${JSON.stringify(tiers)}`);
+  // Zaškrtávané podmínky (2.11): kontroly, vybraná dovednost s úrovní, dovednost z jiné skupiny, vypnutá absence.
+  const v1 = page.locator(`${editor} [data-tier]`).first();
+  check(!(await v1.locator('[data-tf="maxKt"]').count()) && await v1.locator('[data-tf="maxAbs"]').count() === 1, 'hodnota je vidět jen u zaškrtnuté podmínky');
+  await v1.locator('[data-tc="kt"]').check();
+  await page.waitForFunction(id => S.positions.find(x => x.id === id).tiers[0].maxKt === 0, grp.id);
+  await page.locator(`${editor} [data-tier]`).first().locator('[data-tc="abs"]').uncheck();
+  await page.waitForFunction(id => S.positions.find(x => x.id === id).tiers[0].maxAbs === null, grp.id);
+  const progId = await page.evaluate(id => S.positions.find(x => x.id === id).skillset[1].id, grp.id);
+  await page.locator(`${editor} [data-tier]`).first().locator(`[data-tsk="${progId}"]`).check();
+  await page.locator(`${editor} [data-tier]`).first().locator(`[data-tsklvl="${progId}"]`).selectOption('2');
+  const otherSkill = await page.evaluate(id => S.positions.find(x => isGroup(x) && x.id !== id && groupSkills(x).length).skillset[0].id, grp.id);
+  await page.locator(`${editor} [data-tier]`).first().locator('.tsk-other summary').click();
+  await page.locator(`${editor} [data-tier]`).first().locator(`[data-tsk="${otherSkill}"]`).check();
+  await page.waitForFunction(id => S.positions.find(x => x.id === id).tiers[0].skills.length === 2, grp.id);
+  const v1state = await page.evaluate(id => { const t = S.positions.find(x => x.id === id).tiers[0]; return [t.maxKt, t.maxAbs, t.skills]; }, grp.id);
+  check(JSON.stringify(v1state) === JSON.stringify([0, null, [{ id: progId, lvl: 2 }, { id: otherSkill, lvl: 3 }]]), `varianta 1: ${JSON.stringify(v1state)}`);
+  check(/Co musí za měsíc splnit\s*7 podmínek/i.test(await page.locator(`${editor} [data-tier]`).first().textContent()), 'počet zaškrtnutých podmínek u varianty');
+  await page.locator(`${editor} [data-tier]`).first().screenshot({ path: `${shots}/01b-variant.png` });
   const raise1 = page.locator(`${editor} [data-tier]`).first().locator('[data-tf="raise"]');
   await raise1.fill('15');
   await raise1.press('Tab');
@@ -305,7 +323,10 @@ const editor = '#posEditor';
   await page.click('#dlgOk');
   await page.waitForFunction(() => /nesplněno – opakované pozdní příchody/.test(document.querySelector('#lDetail').textContent));
   const marks = await page.evaluate(() => JSON.stringify(S.marks));
-  check(/opakované pozdní příchody/.test(marks), `body vedoucího: ${marks}`);
+  check(/"moral":"opakované pozdní příchody"/.test(marks), `body vedoucího: ${marks}`);
+  // pracovní morálka označená jednou platí pro obě varianty (2.11)
+  const moralTxt = await page.$$eval('#lDetail .tier-detail', ds => ds.map(d => [...d.querySelectorAll('li')].find(li => /pracovní morálky/.test(li.textContent))?.textContent || ''));
+  check(moralTxt.length === 2 && moralTxt.every(t => /nesplněno – opakované pozdní příchody/.test(t)), `morálka v obou variantách: ${JSON.stringify(moralTxt)}`);
   await page.screenshot({ path: `${shots}/05-premie-mark.png`, fullPage: true });
   await (await tier0()).locator('[data-mark][data-on="0"]').click();
   await page.waitForFunction(() => !/nesplněno – opakované/.test(document.querySelector('#lDetail').textContent));

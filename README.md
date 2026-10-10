@@ -61,6 +61,28 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.11
+
+- **Varianty prémie se zaškrtávanými podmínkami.** V Matici dovedností → Skupiny a pravidla
+  má každá skupina **varianty prémie** (dřív „stupně“). U každé varianty se zaškrtne, co musí
+  člověk za měsíc splnit, a u zaškrtnuté podmínky se nastaví hodnota:
+  - plnění normy aspoň X %;
+  - **bezproblémové kontroly**: provedené namátkové kontroly v měsíci nejvýš s X nálezy
+    (výchozí 0; bez kontroly v měsíci je podmínka splněná);
+  - docházka aspoň X %, absence nejvýš X dní, víkendové směny aspoň X, využití fondu aspoň X %;
+  - **pracovní morálka**: posoudí vedoucí. Platí, dokud ji u člověka a měsíce neoznačí jako
+    nesplněnou. Jedno označení platí pro všechny varianty;
+  - všechny dovednosti skupiny aspoň na úrovni X.
+- **Vybrané dovednosti s úrovní.** U varianty jdou zaškrtnout konkrétní dovednosti skupiny,
+  každá s vlastní úrovní 1–4. Pod nimi jsou i dovednosti z jiných skupin (zaučení).
+- Další body vedoucího (vlastní text) zůstávají, stejně jako odměna (navýšení mzdy, jiná
+  odměna) a nárok po několika měsících v řadě.
+- Platí nejvyšší varianta, kterou člověk za měsíc splnil, stejně jako dřív.
+- **Převod při aktualizaci:** bod vedoucího „Dodržování řádné pracovní morálky“ ze starších
+  stupňů se změní na zaškrtnutou pracovní morálku. Označení „nesplněno“ i s důvodem se
+  převede. Ostatní vlastní body zůstanou, jak jsou.
+- Stránka otevřená ještě ve verzi 2.10 po aktualizaci nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.10.1
 
 - **Matice dovedností po odděleních.** Na záložce Matice už nejsou všechny skupiny vedle sebe
@@ -441,7 +463,8 @@ v hlavičce každého skriptu:
 - `tests/e2e_matice.js`: novinky 2.4 (skupiny, dovednosti a schémata, hodnocení u člověka
   i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
   mzdy s upozorněním, od 2.8 stálá odpolední směna a kapacita po týdnech, od 2.9 plánovaná
-  kapacita a nemoc, od 2.10.1 oddělení pod sebou a filtr celého oddělení, mobil, tmavý režim);
+  kapacita a nemoc, od 2.10.1 oddělení pod sebou a filtr celého oddělení, od 2.11 varianty
+  prémie se zaškrtávanými podmínkami a vybranými dovednostmi, mobil, tmavý režim);
 - `tests/e2e_ai.js`: novinky 2.5 a 2.6 (✦ Přeformulovat s náhradním API Anthropicu:
   tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
   návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
@@ -461,7 +484,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.10'` jde stejný test pustit na aktualizaci 2.3 → 2.10.x (data verze 5 → 11).
+S `EXPECT_VERSION='2\.11'` jde stejný test pustit na aktualizaci 2.3 → 2.11 (data verze 5 → 12).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

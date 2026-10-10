@@ -762,6 +762,25 @@ function raiseText(x){return x&&x.pct>0?"+"+nf(x.pct,1)+" %":"—";}
    vedoucího platí jako splněný, dokud ho u člověka a měsíce neoznačí jako nesplněný. Platí
    nejvyšší stupeň, jehož podmínky člověk za měsíc splnil. Stupeň může mít sérii: kdo ho má
    N měsíců v řadě, má nárok (např. na 2. platovou třídu). */
+/* Varianty prémie (2.11): každá varianta má zaškrtnuté podmínky. K původním (všechny dovednosti
+   aspoň X, absence, víkendy, docházka, norma, využití fondu, body vedoucího) přibyly vybrané
+   dovednosti s úrovní (skills [{id, lvl}], i z jiných skupin), bezproblémové kontroly (maxKt =
+   nejvýš tolik provedených kontrol s nálezem v měsíci) a pracovní morálka (moral): jedno
+   označení u člověka a měsíce platí pro všechny varianty (bod MORAL_ID). */
+const MORAL_ID="moral",MORAL_TEXT="Dodržování řádné pracovní morálky";
+/* Kontroly člověka za měsíc pid: provedené a kolik z nich mělo nález (nesplněný bod). */
+function ktOf(key,pid){
+  const r={n:0,bad:0};
+  if(!PERIOD_ID.test(String(pid)))return r;
+  Object.values((S.audit&&S.audit.plans)||{}).forEach(p=>(p.items||[]).forEach(it=>{
+    if(it.key===key&&it.state==="done"&&String(it.done).slice(0,7)===pid){r.n++;if((it.results||[]).some(x=>!x.ok))r.bad++;}}));
+  return r;
+}
+/* Dovednost podle id ve stavu st (skupina a dovednost), jinak null. */
+function skillIn(st,id){for(const g of (st&&st.positions)||[])for(const x of groupSkills(g))if(x.id===id)return {p:g,x};return null;}
+/* Smazané dovednosti zmizí i z vybraných dovedností ve variantách prémie. */
+function dropTierSkills(ids){S.positions.forEach(q=>(q.tiers||[]).forEach(t=>{if(t.skills)t.skills=t.skills.filter(r=>!ids.has(r.id));}));}
+function ktLabel(n){return n?"kontroly: nejvýš "+n+" s nálezem":"bezproblémové kontroly (žádný nález)";}
 function markOf(pid,key,pointId){const b=S.marks&&S.marks[pid]&&S.marks[pid][key];return b&&b[pointId]!=null?b[pointId]:null;}
 /* note = důvod (i prázdný) → nesplněno; null → zase splněno */
 function setMark(pid,key,pointId,note){
@@ -775,12 +794,17 @@ function tierChecks(t,e,ev,perf,pid){
   const a=ev.att&&ev.att.found?ev.att:null,p=ev.pos,out=[];
   if(+t.minSkill>0){const n=groupSkills(p).length,m=minRate(e,p);
     out.push({k:"skill",label:"všechny dovednosti aspoň na úrovni "+t.minSkill,val:n?m:null,txt:n?"nejnižší úroveň "+m:"skupina nemá dovednosti",ok:n>0&&m>=+t.minSkill});}
+  (t.skills||[]).forEach(r=>{const f=skillIn(S,r.id);if(!f)return;const v=rateOf(e,r.id);
+    out.push({k:"skill1",id:r.id,label:f.x.name+(f.p!==p?" ("+(f.p.name||"jiná skupina")+")":"")+" aspoň na úrovni "+r.lvl,val:v,txt:"úroveň "+v,ok:v>=r.lvl});});
   if(t.maxAbs!=null||t.minWknd!=null)out.push({k:"att",label:"nahraná docházka za měsíc",val:null,txt:a?"ano":"chybí",ok:!!a});
   if(t.maxAbs!=null)out.push({k:"abs",label:"absence v pracovní dny nejvýš "+t.maxAbs,val:a?a.absDays:null,txt:a?a.absDays+" "+dnW(a.absDays):"—",ok:!!a&&a.absDays<=+t.maxAbs});
   if(t.minWknd!=null)out.push({k:"wknd",label:"víkendové směny aspoň "+t.minWknd,val:a?a.wkDays:null,txt:a?String(a.wkDays):"—",ok:!!a&&a.wkDays>=+t.minWknd});
   PERF_KEYS.forEach(([k,label,f])=>{if(t[f]!=null){const v=perf?perf[k]:null;
     out.push({k,label:label+" aspoň "+nf(+t[f],1)+" %",val:v,txt:v==null?"bez údaje":nf(v,1)+" %",ok:v!=null&&v>=+t[f]-1e-9});}});
-  (t.manual||[]).forEach(pt=>{const m=markOf(pid,e.key,pt.id);
+  if(t.maxKt!=null){const k=ktOf(e.key,pid);
+    out.push({k:"kt",label:ktLabel(+t.maxKt),val:k.bad,txt:k.n?k.n+" "+(k.n===1?"kontrola":k.n<=4?"kontroly":"kontrol")+", s nálezem "+k.bad:"v měsíci bez kontroly",ok:k.bad<=+t.maxKt});}
+  const pts=[...(t.moral?[{id:MORAL_ID,text:MORAL_TEXT}]:[]),...(t.manual||[])];
+  pts.forEach(pt=>{const m=markOf(pid,e.key,pt.id);
     out.push({k:"manual",id:pt.id,label:pt.text,val:null,txt:m==null?"splněno":"nesplněno"+(m?" – "+m:""),ok:m==null});});
   if(ev.lost)out.push({k:"lost",label:"bez ztráty nároku za absenci",val:null,txt:"bez nároku",ok:false});
   return out;
@@ -1000,7 +1024,7 @@ function exportRows(rows){
     {t:"Docházka %",v:r=>r.perf&&r.perf.att!=null?r.perf.att:""},
     {t:"Plnění normy %",v:r=>r.perf&&r.perf.norm!=null?r.perf.norm:""},
     {t:"Využití fondu %",v:r=>r.perf&&r.perf.use!=null?r.perf.use:""},
-    {t:"Prémie (stupeň)",v:r=>r.tier&&r.tier.lvl?r.tier.name:""},
+    {t:"Prémie (varianta)",v:r=>r.tier&&r.tier.lvl?r.tier.name:""},
     {t:"Navýšení mzdy %",v:r=>r.tier&&r.tier.pct?r.tier.pct:""},
     {t:"Odměna prémie",v:r=>r.tier&&r.tier.reward?r.tier.reward:""},
     {t:"Série měsíců",v:r=>r.tier&&r.tier.streaks?r.tier.streaks.filter(x=>x.have).map(x=>x.name+": "+x.have+"/"+x.months+(x.ok?" – "+x.label:"")).join("; "):""},
@@ -1042,9 +1066,12 @@ function rosterSheets(){
 function tierConds(t){
   const c=[];
   if(+t.minSkill>0)c.push("všechny dovednosti aspoň "+t.minSkill);
+  (t.skills||[]).forEach(r=>{const f=skillIn(S,r.id);if(f)c.push(f.x.name+" aspoň "+r.lvl);});
   if(t.maxAbs!=null)c.push("absence v pracovní dny nejvýš "+t.maxAbs);
   if(t.minWknd!=null)c.push("víkendové směny aspoň "+t.minWknd);
   PERF_KEYS.forEach(([,label,f])=>{if(t[f]!=null)c.push(label+" aspoň "+nf(+t[f],1)+" %");});
+  if(t.maxKt!=null)c.push(ktLabel(+t.maxKt));
+  if(t.moral)c.push(MORAL_TEXT);
   (t.manual||[]).forEach(m=>c.push(m.text));
   return c.length?c:["bez podmínek"];
 }
@@ -1207,15 +1234,15 @@ function rng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return
 const DEMO_RAISE=i=>({raise:5*i,minAtt:90,minNorm:[0,85,95,105][i],minUse:[0,70,75,80][i]});
 /* ukázkové stupně prémie (id začínají „tdemo“, po smazání ukázky zmizí) */
 const DEMO_TIERS=()=>[
-  {id:"tdemo1",name:"Prémie",minSkill:3,raise:20,reward:"",maxAbs:3,minWknd:2,minAtt:null,minNorm:80,minUse:null,
-    manual:[{id:"mdemo1",text:"Dodržování řádné pracovní morálky"}],streak:null},
-  {id:"tdemo2",name:"Extra bonus",minSkill:4,raise:30,reward:"",maxAbs:1,minWknd:3,minAtt:null,minNorm:95,minUse:null,
-    manual:[{id:"mdemo2",text:"Dodržování řádné pracovní morálky"}],streak:{months:4,label:"možnost získat 2. platovou třídu"}}];
+  {id:"tdemo1",name:"Prémie",minSkill:3,skills:[],raise:20,reward:"",maxAbs:3,minWknd:2,minAtt:null,minNorm:80,minUse:null,maxKt:null,moral:true,
+    manual:[],streak:null},
+  {id:"tdemo2",name:"Extra bonus",minSkill:4,skills:[],raise:30,reward:"",maxAbs:1,minWknd:3,minAtt:null,minNorm:95,minUse:null,maxKt:0,moral:true,
+    manual:[],streak:{months:4,label:"možnost získat 2. platovou třídu"}}];
 /* Po ukázce zůstávají pozice, ale ukázkové navýšení platu ne (vlastní úpravy ano). */
 function dropDemoRaise(positions){
   /* ukázkové stupně prémie zmizí, upravené během ukázky zůstanou */
   const sig=t=>JSON.stringify([t.name,+t.minSkill||0,+t.raise||0,t.reward||"",t.maxAbs,t.minWknd,t.minAtt,t.minNorm,t.minUse,
-    (t.manual||[]).map(m=>m.text),t.streak?[t.streak.months,t.streak.label]:null]);
+    (t.manual||[]).map(m=>m.text),t.streak?[t.streak.months,t.streak.label]:null,(t.skills||[]).length,t.maxKt??null,!!t.moral]);
   const demo=new Set(DEMO_TIERS().map(sig));
   (positions||[]).forEach(p=>{if(Array.isArray(p.tiers))p.tiers=p.tiers.filter(t=>!(String(t.id).startsWith("tdemo")&&demo.has(sig(t))));});
   (positions||[]).forEach(p=>p.levels.forEach((lv,i)=>{
@@ -1306,7 +1333,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=11;
+const DATA_VERSION=12;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
@@ -1343,9 +1370,12 @@ function sanitizeState(input){
   const scaleClean=sc=>Array.isArray(sc)&&sc.length===5?sc.map((x,i)=>{x=obj(x);return {name:str(x.name,60).trim()||STD_SCALE[i].name,desc:str(x.desc,500)};}):null;
   const optInt=(v,hi)=>v==null||v===""||!Number.isFinite(Number(v))?null:int(v,0,0,hi);
   const tierClean=(t,i)=>{t=obj(t);const st=obj(t.streak),seen=new Set();
-    return {id:sid(t.id,"t"),name:str(t.name,60).trim()||"Stupeň "+(i+1),minSkill:int(t.minSkill,0,0,4),
+    return {id:sid(t.id,"t"),name:str(t.name,60).trim()||"Varianta "+(i+1),minSkill:int(t.minSkill,0,0,4),
       raise:pctOpt(t.raise,100)||0,reward:str(t.reward,200),maxAbs:optInt(t.maxAbs,31),minWknd:optInt(t.minWknd,31),
       minAtt:pctOpt(t.minAtt,100),minNorm:pctOpt(t.minNorm,300),minUse:pctOpt(t.minUse,100),
+      maxKt:optInt(t.maxKt,31),moral:!!t.moral,
+      skills:arr(t.skills).filter(x=>x&&typeof x==="object"&&typeof x.id==="string"&&SAFE_ID.test(x.id)).slice(0,60)
+        .map(x=>({id:x.id,lvl:int(x.lvl,1,1,4)})).filter((x,j,l)=>l.findIndex(y=>y.id===x.id)===j),
       manual:arr(t.manual).filter(m=>m&&typeof m==="object").slice(0,10).map(m=>({id:sid(m.id,"m"),text:str(m.text,200).trim()}))
         .filter(m=>m.text&&!seen.has(m.id)&&seen.add(m.id)),
       streak:t.streak&&+st.months>=2?{months:int(st.months,4,2,24),label:str(st.label,80).trim()||"nárok"}:null};};
@@ -1379,6 +1409,20 @@ function sanitizeState(input){
     }
     return g;
   });
+  /* varianty prémie (2.11): vybrané dovednosti jen ty, které ve skupinách existují */
+  const grpSkillIds=new Set(out.positions.flatMap(p=>isGroup(p)?groupSkills(p).map(x=>x.id):[]));
+  out.positions.forEach(p=>(p.tiers||[]).forEach(t=>{t.skills=t.skills.filter(x=>grpSkillIds.has(x.id));}));
+  /* data před 2.11: bod vedoucího „pracovní morálka“ (text ze zadání) je teď podmínka moral;
+     označení nesplnění se převede na společný bod MORAL_ID */
+  const moralIds=new Set();
+  if(!(+o.v>=12)){
+    const texts=new Set(["dodrzovani radne pracovni moralky","pracovni moralka","radna pracovni moralka"]);
+    out.positions.forEach(p=>(p.tiers||[]).forEach(t=>{
+      const m=t.manual.filter(x=>texts.has(norm(x.text)));
+      if(!m.length)return;
+      t.moral=true;m.forEach(x=>moralIds.add(x.id));t.manual=t.manual.filter(x=>!m.includes(x));
+    }));
+  }
   /* dovednosti vedoucích (2.10): jeden seznam pro všechny, hodnotí se standardním schématem 0–4 */
   out.leadSkills=arr(o.leadSkills).filter(x=>x&&typeof x==="object").slice(0,60).map(x=>({id:sid(x.id,"l"),name:str(x.name,80).trim()||"Dovednost",desc:str(x.desc,1000)}))
     .filter(x=>!skillIds.has(x.id)&&skillIds.add(x.id));
@@ -1540,12 +1584,14 @@ function sanitizeState(input){
   out.audit=cleanAudit(o.audit);
   /* prémie: body vedoucího označené jako nesplněné {měsíc: {člověk: {bod: důvod}}} (verze 2.4) */
   const pointIds=new Set(out.positions.flatMap(p=>(p.tiers||[]).flatMap(t=>t.manual.map(m=>m.id))));
+  if(out.positions.some(p=>(p.tiers||[]).some(t=>t.moral)))pointIds.add(MORAL_ID);
   Object.entries(obj(o.marks)).forEach(([id,b])=>{
     if(!PERIOD_ID.test(id))return;
     const per={};
     Object.entries(obj(b)).slice(0,5000).forEach(([k,box])=>{
       const kk=key(k,200),x={};if(!kk)return;
-      Object.entries(obj(box)).forEach(([pt,note])=>{if(pointIds.has(pt))x[pt]=str(note,300);});
+      Object.entries(obj(box)).forEach(([pt,note])=>{const to=moralIds.has(pt)?MORAL_ID:pt;   // převod morálky: první důvod platí
+        if(pointIds.has(to)&&!(to in x))x[to]=str(note,300);});
       if(Object.keys(x).length)per[kk]=x;
     });
     if(Object.keys(per).length)out.marks[id]=per;
@@ -1715,8 +1761,12 @@ function describeChanges(a,b,meta){
 
   /* skupiny (do verze 2.3 pozice) */
   const PA=new Map((a.positions||[]).map(p=>[p.id,p])),PB=new Map((b.positions||[]).map(p=>[p.id,p]));
-  const tierText=t=>{const c=[];if(+t.minSkill>0)c.push("dovednosti ≥ "+t.minSkill);if(t.maxAbs!=null)c.push("absence ≤ "+t.maxAbs);
+  const tierText=t=>{const c=[];if(+t.minSkill>0)c.push("dovednosti ≥ "+t.minSkill);
+    (t.skills||[]).forEach(r=>{const f=skillIn(b,r.id);c.push((f?f.x.name:"dovednost")+" ≥ "+r.lvl);});
+    if(t.maxAbs!=null)c.push("absence ≤ "+t.maxAbs);
     if(t.minWknd!=null)c.push("víkendy ≥ "+t.minWknd);PERF_KEYS.forEach(([,label,f])=>{if(t[f]!=null)c.push(label+" ≥ "+nf(t[f],1)+" %");});
+    if(t.maxKt!=null)c.push(+t.maxKt?"kontroly s nálezem ≤ "+t.maxKt:"kontroly bez nálezu");
+    if(t.moral)c.push("pracovní morálka");
     (t.manual||[]).forEach(m=>c.push(m.text));
     return (c.join(", ")||"bez podmínek")+" → "+(+t.raise?"+"+nf(+t.raise,1)+" % mzdy":"")+(t.reward?(+t.raise?", ":"")+t.reward:"")+(t.streak?"; "+t.streak.months+" měsíců v řadě: "+t.streak.label:"");};
   PB.forEach((p,id)=>{
@@ -1740,10 +1790,10 @@ function describeChanges(a,b,meta){
       if(oa!==ob)add("position","Skupina "+nm+": změněno pořadí dovedností",{m:"sko:"+id});
       const TA=new Map((q.tiers||[]).map(t=>[t.id,t])),TB=new Map((p.tiers||[]).map(t=>[t.id,t]));
       TB.forEach((t,tid)=>{const o=TA.get(tid);
-        if(!o)add("position","Skupina "+nm+": nový stupeň prémie „"+t.name+"“ ("+tierText(t)+")",{m:"tier:"+tid});
-        else if(!same(o,t))add("position","Skupina "+nm+": stupeň prémie „"+t.name+"“ ("+tierText(t)+")",{m:"tier:"+tid});});
-      TA.forEach((t,tid)=>{if(!TB.has(tid))add("position","Skupina "+nm+": smazán stupeň prémie „"+t.name+"“",{m:"tier:"+tid});});
-      if((q.tiers||[]).filter(t=>TB.has(t.id)).map(t=>t.id).join()!==(p.tiers||[]).filter(t=>TA.has(t.id)).map(t=>t.id).join())add("position","Skupina "+nm+": změněno pořadí stupňů prémie",{m:"tiero:"+id});
+        if(!o)add("position","Skupina "+nm+": nová varianta prémie „"+t.name+"“ ("+tierText(t)+")",{m:"tier:"+tid});
+        else if(!same(o,t))add("position","Skupina "+nm+": varianta prémie „"+t.name+"“ ("+tierText(t)+")",{m:"tier:"+tid});});
+      TA.forEach((t,tid)=>{if(!TB.has(tid))add("position","Skupina "+nm+": smazána varianta prémie „"+t.name+"“",{m:"tier:"+tid});});
+      if((q.tiers||[]).filter(t=>TB.has(t.id)).map(t=>t.id).join()!==(p.tiers||[]).filter(t=>TA.has(t.id)).map(t=>t.id).join())add("position","Skupina "+nm+": změněno pořadí variant prémie",{m:"tiero:"+id});
     }
     const P0=isGroup(p)?"Skupina ":"Pozice ";
     if(!!q.onlyKafe!==!!p.onlyKafe)add("position",P0+nm+(p.onlyKafe?": jen Kafe, bez tabáků":": znovu s tabáky"),{m:"pkafe:"+id});
@@ -1761,7 +1811,7 @@ function describeChanges(a,b,meta){
   PA.forEach((q,id)=>{if(!PB.has(id))add("position",(isGroup(q)?"Smazána skupina: ":"Smazána pozice: ")+(q.name||"(bez názvu)"));});
 
   /* prémie: body vedoucího označené jako nesplněné */
-  const ptText=(st,ptId)=>{for(const g of st.positions||[])for(const t of g.tiers||[])for(const m of t.manual||[])if(m.id===ptId)return m.text;return "bod prémie";};
+  const ptText=(st,ptId)=>{if(ptId===MORAL_ID)return MORAL_TEXT;for(const g of st.positions||[])for(const t of g.tiers||[])for(const m of t.manual||[])if(m.id===ptId)return m.text;return "bod prémie";};
   const MA=a.marks||{},MB=b.marks||{};
   [...new Set([...Object.keys(MA),...Object.keys(MB)])].sort().forEach(id=>{
     const A=MA[id]||{},B=MB[id]||{};
@@ -1963,7 +2013,7 @@ function profileData(key,fromId,toId){
     let raise=isGroup(ev.pos)?tierOf({...e,positionId:snap.pos},ev,perf,id,false):legacyTier(raiseOf(ev.L,perf));
     /* stupeň prémie potvrzený při výdeji má přednost před výpočtem s dnešním hodnocením */
     if(iss&&iss.tier!=null){const t=isGroup(ev.pos)&&iss.tier?(ev.pos.tiers||[])[iss.tier-1]:null;
-      raise={...raise,lvl:iss.tier,pct:iss.raise!=null?iss.raise:(t?+t.raise||0:0),name:iss.tier?(t?t.name:"stupeň "+iss.tier):"",fromIssue:true};}
+      raise={...raise,lvl:iss.tier,pct:iss.raise!=null?iss.raise:(t?+t.raise||0:0),name:iss.tier?(t?t.name:"varianta "+iss.tier):"",fromIssue:true};}
     return {id,label:monthLabel(id),hasAtt:!!a,from:snap.from,perf,raise,tier:raise,kafeOnly:ev.kafeOnly,
       skillPct:ev.L.pct,
       posId:snap.pos,pos:ev.pos?ev.pos.name:(snap.pos?"(smazaná skupina)":""),lvl:ev.L.n,lvlName:ev.L.lv?ev.L.lv.name:"",base:ev.L.base,
@@ -2100,7 +2150,7 @@ function rulesDoc(){
     ["Kafe","Kafe dostane, kdo odpracuje aspoň fond hodin měsíce (pracovní dny × "+nf(st.shift)+" h"+(st.friShift&&st.friShift!==st.shift?"; kdo má zkrácený pátek, má v pátek plnou směnu "+nf(st.friShift)+" h":"")+"), pokud pro měsíc není nastaven jiný práh."],
   ];
   if(cut)general.push(["Bez nároku","Od "+cut+" "+dnW(cut)+" absence (po vyplnění víkendem) není nárok na tabáky, Kafe ani prémii."]);
-  general.push(["Prémie","Skupina může mít stupně prémie (např. Prémie a Extra bonus). Stupeň dostane, kdo za měsíc splní všechny jeho podmínky; platí nejvyšší splněný stupeň. Body, které posuzuje vedoucí (např. pracovní morálka), platí jako splněné, dokud je vedoucí u člověka a měsíce neoznačí jako nesplněné. Některé stupně dávají po několika měsících v řadě další nárok (např. 2. platovou třídu)."]);
+  general.push(["Prémie","Skupina může mít víc variant prémie (např. Prémie a Extra bonus). Každá varianta má zaškrtnuté podmínky: norma, docházka, absence, víkendové směny, bezproblémové kontroly, pracovní morálka, vybrané dovednosti na dané úrovni a další body vedoucího. Variantu dostane, kdo za měsíc splní všechny její podmínky; platí nejvyšší splněná varianta. Pracovní morálka a body, které posuzuje vedoucí, platí jako splněné, dokud je vedoucí u člověka a měsíce neoznačí jako nesplněné. Některé varianty dávají po několika měsících v řadě další nárok (např. 2. platovou třídu)."]);
   general.push(["Ukazatele","Docházka = odpracované hodiny ve všední dny (nejvýš celá směna) z fondu hodin měsíce. Plnění normy = normovaný čas ÷ skutečně strávený čas nad zakázkami podle evidence práce; kdo je rychlejší než norma, má přes 100 %. Využití fondu = čas strávený nad zakázkami ÷ hodiny v práci podle docházky."]);
   const groups=S.positions.filter(isGroup).map(p=>{
     const mt=Math.max(0,+p.maxTab||0);
