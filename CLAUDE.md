@@ -34,6 +34,20 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 10. 10. 2026 (verze 2.9):
+
+- **Plánovaná kapacita skupiny.** Uživatel: „ať jde u některých skupin zaškrtnout plánovaná
+  kapacita na osobu v počtu kusů … ukáže plánovanou kapacitu, kolik můžeme až zpracovat kusů na
+  ranní, kolik na odpolední, kolik za den a kolik za týden“ a „ať je možnost uvést kapacitu na
+  ks nebo hodiny“. Skupina `plan{v, unit: ks|h}` (h na 0,1), `groupPlan(p, v, days)` (ranní/
+  odpolední podle varianty A/B, den, týden), `workDays(week)` (Po–Pá bez svátků). UI: editor
+  skupiny (`#posPlan`, `#posPlanV` textové pole s čárkou, `#posPlanUnit`), `planHtml`/`planRows`
+  v reportu kapacit a v editoru, řádek v PDF kapacity.
+- **Nemoc.** Uživatel: „ať jde u lidí zaškrtnout NEMOC a dočasně ho to nebude počítat do
+  kapacit“. `e.sick` = datum, od kdy; `capacity()` a `groupPlan` nemocné vynechají (`cap.sick`,
+  dlaždice „Nemoc“), v seznamu lidí a v matici štítek „nemoc“. Do benefitů ani kontrol nezasahuje.
+- Data verze 10.
+
 Stav k 10. 10. 2026 (verze 2.8):
 
 - **Stálá odpolední směna** (uživatel: „přidej ještě do směn STÁLÁ ODPOLEDNÍ“). Klíč `O`
@@ -312,7 +326,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.6 | `9d8f98e` | ✦ Přeformulovat vše nebo vybrané části kroků 1–4, smazání zrušeného případu natrvalo (data verze 7) |
 | 2.6.1 | `485e678` | osekané PDF Top 5 neuvádí, že je osekané (ani v názvu souboru) |
 | 2.7 | `7554e68` | vedoucí pracovníci (mimo benefity, v matici jako vedoucí oddělení; data verze 8) |
-| 2.8 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: stálá odpolední směna, kapacita po týdnech se sloučenými směnami (data verze 9) |
+| 2.8 | `a3bc6cb` | stálá odpolední směna, kapacita po týdnech se sloučenými směnami (data verze 9) |
+| 2.9 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plánovaná kapacita skupiny (ks/h na osobu), nemoc u lidí (data verze 10) |
 
 Verze 2.1 přidala:
 
@@ -421,7 +436,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `9` (od 2.8):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `10` (od 2.9):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -434,7 +449,7 @@ Stránka otevřená ve staré verzi pak dostane 426 a nová pole nesmaže.
 
 Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 
-- `positions[]` (skupiny): `{id, name, dept, max, onlyKafe, levels[4], skillset[], maxTab, tiers[], penalty[], bonus[]}`
+- `positions[]` (skupiny): `{id, name, dept, max, onlyKafe, levels[4], skillset[], maxTab, tiers[], penalty[], bonus[], plan{v, unit ks|h}}` (`plan` od 2.9, jen když je zapnutá plánovaná kapacita)
   - `max: null` = bez stropu (maximum + nejvyšší bonus, `posMaxAuto`);
   - `skillset[]`: `{id, name, desc, scale}`; `scale` je 5 úrovní `{name, desc}`, `null` = `STD_SCALE`;
   - `tiers[]`: `{id, name, minSkill 0–4, raise %, reward, maxAbs, minWknd, minAtt, minNorm, minUse, manual[{id, text}], streak{months, label}|null}`;
@@ -445,6 +460,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - klíč je `norm(příjmení)|norm(jméno)`;
   - hodnota: `{key, first, last, positionId, level, note, shortFri, excluded, lead[], wid, skills{posId: 1–4}, rate{skillId: 1–4}, shift, legacy, hist[{at, pos, lvl, pct}]}`;
   - `rate`: hodnocení dovedností (0 se neukládá); `shift`: `R|O|S1|S2` (O = stálá odpolední, 2.8);
+  - `sick` (2.9): datum, od kdy je nemocný; dočasně mimo kapacity;
   - `lead` (2.7): vedoucí pracovník, pole oddělení, která má na starosti (může být prázdné);
     kdo ho má, nehodnotí se a v matici je jen v pásu „Vedoucí oddělení“;
   - `legacy`: snímek zařazení z 2.3 `{at, pos, dept, level, levelName, levelDesc, tabaky, onlyKafe, raise, skills[{pos, level, levelName}]}`,
@@ -672,7 +688,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 37 testů: proti původní aplikaci + opravy + 2.1 až 2.8
+node tests/test_core.js                 # 38 testů: proti původní aplikaci + opravy + 2.1 až 2.9
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

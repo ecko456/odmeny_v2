@@ -1059,3 +1059,15 @@ input[type="date"]:disabled { opacity: .55; }
 .cap-table th.cap-wk { text-align: center; border-left: 1px solid var(--line); }
 .cap-table th.cap-wk small { display: block; margin-top: 2px; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--ink-3); }
 .table-card .cap-table thead tr + tr th { border-radius: 0; padding-left: 10px; padding-right: 10px; }
+
+/* Plánovaná kapacita skupiny (2.9) */
+.plan-box { margin: 4px 0 12px; }
+.plan-box .field { max-width: 220px; }
+.plan-in-cap { margin: 0 0 12px; }
+.plan-in-cap .eyebrow { margin: 0 0 6px; }
+.plan-table th small, .plan-table td small { display: block; font-weight: 400; color: var(--ink-3); font-size: 12px; text-transform: none; letter-spacing: 0; }
+.plan-table td b { font-size: 15px; }
+.table-card.plan-wrap { overflow-x: auto; }
+.plan-table { min-width: 0; }
+.table-card .plan-table tbody th { background: transparent; color: var(--ink); font: 600 14px/1.3 var(--body); text-transform: none; letter-spacing: 0; text-align: left; }
+.plan-wrap + .tiny { margin-top: 6px; }

@@ -370,7 +370,7 @@ test('historie změn: kdo co změnil, slučování a návrat hodnoty', () => {
   assert.ok(out.late.some(t => t === 'Ruční úprava Novák Martin (' + m + '): +3 → 0'), 'po 10 minutách se neslučuje');
   assert.strictEqual(out.hasCurrent, false, 'vybrané období je osobní');
   assert.ok(!out.settings.includes('hiddenCols') && !out.settings.includes('lockMinutes'));
-  assert.strictEqual(out.v, 9);
+  assert.strictEqual(out.v, 10);
   return null;
 });
 
@@ -412,7 +412,7 @@ test('sanitizeState: oddělení, zaučení, historie zařazení a změn', () => 
   assert.deepStrictEqual(o.issued['2026-09']['c|d'], { at: 1, tabaky: 2, kafe: false });
   assert.strictEqual(o.log.length, 1);
   assert.deepStrictEqual(o.log[0], { at: 1, by: 'x'.repeat(60), card: '', kind: 'data', text: '<img src=x>', key: 'a|b', m: 'adj:1', p: 'P', v0: '1', v1: '2' });
-  assert.strictEqual(o.v, 9);
+  assert.strictEqual(o.v, 10);
   return null;
 });
 
@@ -546,7 +546,7 @@ test('aktualizace 2.0 → 2.1: data zůstanou beze změny', () => {
   assert.ok(out.again, 'opakované načtení nic nemění');
   assert.ok(out.defaults, 'nové volby mají výchozí hodnoty: s tabáky, bez navýšení a podmínek');
   assert.strictEqual(out.time, false, 'stará evidence práce nemá strávený čas');
-  assert.strictEqual(out.v, 9);
+  assert.strictEqual(out.v, 10);
   assert.ok(out.rows.every(r => r[5] === 0), 'bez nastavení nikdo nedostane navýšení');
   return null;
 });
@@ -779,7 +779,7 @@ test('aktualizace 2.3 → 2.4: pozice se převedou na skupiny, výpočty i data 
   assert.strictEqual(out.legacyText, 'CNC, úroveň 2 (Pokročilý); zaučení: Brusič 3 (Samostatný)');
   assert.deepStrictEqual(out.issued, { at: 7, tabaky: 6, kafe: true, pos: 'p_cnc', lvl: 4, pct: 100 });
   assert.deepStrictEqual(out.adjust, { 'novak|martin': 2 });
-  assert.strictEqual(out.v, 9);
+  assert.strictEqual(out.v, 10);
   assert.ok(out.log.some(t => t.startsWith('Novák Martin: původní zařazení z verze 2.3 převedeno do nové verze a smazáno (CNC, úroveň 2')), out.log.join(' | '));
   assert.strictEqual(out.pending, 7);
   return null;
@@ -958,7 +958,7 @@ test('Top 5: EAN v evidenci práce, souhrny po dnech a pracovnících', () => {
   assert.deepStrictEqual(out.st.Y.d['2026-10-05'], [0, 0, 1e9, 0, 0]);
   assert.deepStrictEqual(out.st.Y.w['petr dvorak']['2026-10-05'], [1, 2, 0, 0]);
   assert.deepStrictEqual(out.eff, { weeks: {}, cases: [], reports: [], settings: { min: 60, target: 85, d1: 14, d2: 30, unit: 'h' }, nos: {} });
-  assert.strictEqual(out.v, 9);
+  assert.strictEqual(out.v, 10);
   return null;
 });
 
@@ -1192,7 +1192,7 @@ test('aktualizace 2.1 → 2.2: data zůstanou beze změny, Top 5 začne prázdn�
   assert.ok(out.same, 'všechna data z verze 2.1 zůstanou beze změny');
   assert.deepStrictEqual(out.eff.cases, []);
   assert.deepStrictEqual(out.cols, [null, null], 'uložené sloupce importu bez EAN');
-  assert.strictEqual(out.v, 9);
+  assert.strictEqual(out.v, 10);
   assert.strictEqual(out.items, false, 'stará evidence práce položky nemá, Top 5 čeká na nový import s EAN');
   assert.deepStrictEqual(out.weeks, []);
   return null;
@@ -1309,7 +1309,7 @@ test('aktualizace 2.2 → 2.3: data zůstanou beze změny, Kontroly začnou prá
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(o2)), audit: neu.audit, v: neu.v })`));
   assert.ok(out.same, 'všechna data z verze 2.2 zůstanou beze změny');
   assert.deepStrictEqual(out.audit, { tasks: {}, plans: {}, settings: { pct: 25 } });
-  assert.strictEqual(out.v, 9);
+  assert.strictEqual(out.v, 10);
   return null;
 });
 
@@ -1326,7 +1326,7 @@ test('aktualizace 2.5 → 2.6: data zůstanou beze změny, přibude jen evidence
     const o2 = JSON.parse(JSON.stringify(old)); delete o2.v;
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(o2)), nos: neu.eff.nos, v: neu.v, cases: neu.eff.cases.map(x => x.no) })`));
   assert.ok(out.same, 'všechna data z verze 2.5 zůstanou beze změny');
-  assert.deepStrictEqual([out.nos, out.v, out.cases], [{}, 9, ['2026-001']]);
+  assert.deepStrictEqual([out.nos, out.v, out.cases], [{}, 10, ['2026-001']]);
   return null;
 });
 
@@ -1391,7 +1391,7 @@ test('aktualizace 2.6 → 2.7: data zůstanou beze změny, nikdo není vedoucí'
     const strip = st => { const x = JSON.parse(JSON.stringify(st)); delete x.v; return x; };
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(strip(old))), leads: Object.values(neu.employees).filter(isLead).length, v: neu.v })`));
   assert.ok(out.same, 'všechna data z verze 2.6 zůstanou beze změny');
-  assert.deepStrictEqual([out.leads, out.v], [0, 9]);
+  assert.deepStrictEqual([out.leads, out.v], [0, 10]);
   return null;
 });
 
@@ -1439,6 +1439,42 @@ test('střídání skupin po týdnu (2.8): kdo má ranní v kterém týdnu, i p�
   assert.deepStrictEqual(out.g, ['S2', 'S1', 'S2', 'S1', 'S2', 'S1'], 'T42 skupina 1 ranní, pak se střídá; 2026 má 53 týdnů');
   assert.deepStrictEqual(out.v, ['A', 'B', ''], 'A = skupina 1 ranní, B = skupina 2 ranní, bez nastavení nic');
   assert.deepStrictEqual([out.kept, out.bad, out.blank], ['2026-W42', '', '']);
+  return null;
+});
+
+test('plánovaná kapacita skupiny (2.9): ks nebo hodiny na osobu, ranní, odpolední, den, týden; nemoc se nepočítá', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState({ positions: [{ id: 'G', name: 'Lis', skillset: [{ id: 's1', name: 'A' }], plan: { v: 25, unit: 'ks' } },
+        { id: 'H', name: 'Lak', skillset: [], plan: { v: '7,5'.replace(',', '.'), unit: 'h' } }, { id: 'X', name: 'X', skillset: [], plan: { v: -3 } }],
+      employees: {
+        'a|a': { first: 'A', last: 'A', positionId: 'G', shift: 'R', rate: { s1: 4 } },
+        'b|b': { first: 'B', last: 'B', positionId: 'G', shift: 'S1', rate: { s1: 4 } },
+        'c|c': { first: 'C', last: 'C', positionId: 'G', shift: 'S1', rate: { s1: 4 } },
+        'd|d': { first: 'D', last: 'D', positionId: 'G', shift: 'S2', rate: { s1: 4 }, sick: '2026-10-09' },
+        'e|e': { first: 'E', last: 'E', positionId: 'G', shift: 'O', rate: { s1: 4 } },
+        'f|f': { first: 'F', last: 'F', positionId: 'G', rate: { s1: 4 } },
+        'g|g': { first: 'G', last: 'G', positionId: 'G', shift: 'S2', excluded: true },
+        'h|h': { first: 'H', last: 'H', positionId: 'H', shift: 'R' }, 'i|i': { first: 'I', last: 'I', positionId: 'H', shift: 'S2' } } });
+    const g = S.positions[0], h = S.positions[1];
+    const plans = JSON.parse(JSON.stringify(S.positions.map(p => p.plan || null)));
+    const A = groupPlan(g, 'A', 5), B = groupPlan(g, 'B', workDays('2026-W44')), hb = groupPlan(h, 'B', 5);
+    const cap = capacity(['G'], 3, []);
+    const before = sharedState(S);
+    g.plan.v = 30; delete S.employees['d|d'].sick; S.employees['c|c'].sick = '2026-10-10';
+    const log = describeChanges(before, sharedState(S), { at: 1, by: 'x', card: 'a'.repeat(16) }).entries.map(e => e.text);
+    JSON.stringify({ plans, A, B, hb, days: [workDays('2026-W44'), workDays('2026-W41'), workDays('2026-W52')],
+      none: groupPlan(S.positions[2], 'A', 5), capHead: cap.head, capSick: cap.sick, s1: cap.groups[0].skills[0].by.S2.n, log })`));
+  assert.deepStrictEqual(out.plans, [{ v: 25, unit: 'ks' }, { v: 7.5, unit: 'h' }, null], 'záporná hodnota = vypnuto');
+  assert.deepStrictEqual(out.A, { per: 25, unit: 'ks', amN: 3, pmN: 1, am: 75, pm: 25, day: 100, days: 5, week: 500, none: 1, sick: 1 },
+    'A: ranní stálá ranní + skupina 1 (3), odpolední stálá odpolední + skupina 2 (nemocný se nepočítá); bez směny a vyřazený mimo');
+  assert.deepStrictEqual([out.B.amN, out.B.pmN, out.B.am, out.B.pm, out.B.day, out.B.days, out.B.week], [1, 3, 25, 75, 100, 4, 400], 'B naopak; T44/2026 má svátek 28. 10.');
+  assert.deepStrictEqual([out.hb.am, out.hb.pm, out.hb.day, out.hb.week, out.hb.unit], [15, 0, 15, 75, 'h'], 'hodiny: 2 lidé ranní × 7,5 h');
+  assert.deepStrictEqual(out.days, [4, 5, 3], 'pracovní dny bez svátků (T52: 24.–26. 12.)');
+  assert.strictEqual(out.none, null);
+  assert.deepStrictEqual([out.capHead.S2, out.capSick, out.s1], [1, 1, 0], 'nemocný není ani v kapacitě dovedností (ve skupině 2 zbyl jen člověk ze skupiny Lak)');
+  assert.ok(out.log.includes('Skupina Lis, plánovaná kapacita: 25 ks na osobu za směnu → 30 ks na osobu za směnu'), out.log.join(' | '));
+  assert.ok(out.log.includes('D D: zpět po nemoci, zase v kapacitách') && out.log.includes('C C: nemoc, dočasně se nepočítá do kapacit'), out.log.join(' | '));
   return null;
 });
 

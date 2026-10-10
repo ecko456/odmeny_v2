@@ -855,7 +855,8 @@ function skillGrid(groupId,shift){
    varianta B = ráno stálá ranní + skupina 2, odpoledne stálá odpolední + skupina 1. */
 function capacity(groupIds,thr,hidden){
   thr=clamp(Math.round(+thr||3),1,4);
-  const people=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e));
+  const all=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e));
+  const people=all.filter(e=>!e.sick);   // nemocní se dočasně nepočítají (2.9)
   const head={R:0,O:0,S1:0,S2:0,"":0};people.forEach(e=>{head[shiftOf(e)]++;});
   const hide=new Set(hidden||[]);
   const groups=S.positions.filter(p=>isGroup(p)&&(!groupIds||!groupIds.length||groupIds.includes(p.id))).map(p=>{
@@ -870,7 +871,7 @@ function capacity(groupIds,thr,hidden){
       bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null};});
     return {p,skills,members:members.length,bySh};
   }).filter(g=>g.skills.length);
-  return {thr,head,groups};
+  return {thr,head,groups,sick:all.length-people.length};
 }
 
 /* Střídání skupin 1 a 2 po týdnu (2.8): ref = týden, kdy má skupina 1 ranní.
@@ -883,6 +884,26 @@ function morningGroup(weekId,ref){
 }
 /* Varianta kapacity pro týden: A = skupina 1 ranní, B = skupina 2 ranní. */
 function capWeekVar(weekId,ref){const g=morningGroup(weekId,ref);return g==="S1"?"A":g==="S2"?"B":"";}
+/* Pracovní dny týdne: pondělí až pátek bez státních svátků. */
+function workDays(weekId){
+  const w=weekById(weekId);if(!w)return 5;
+  let n=0;
+  for(let i=0;i<5;i++){const [y,m,d]=addDays(w.from,i).split("-").map(Number);if(!holidays(y)[m+"-"+d])n++;}
+  return n;
+}
+/* Plánovaná kapacita skupiny (2.9): na osobu za směnu (ks nebo h) × lidé skupiny na směně.
+   v = varianta A (skupina 1 ranní) / B (skupina 2 ranní); ranní = stálá ranní + skupina
+   s ranní, odpolední = stálá odpolední + druhá skupina; týden = den × pracovní dny.
+   Lidé bez směny, nemocní, vyřazení a vedoucí se nepočítají. Bez zapnuté kapacity null. */
+function groupPlan(p,v,days){
+  if(!p||!p.plan||!(+p.plan.v>0))return null;
+  const all=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&e.positionId===p.id);
+  const m=all.filter(e=>!e.sick);
+  const by=k=>m.filter(e=>shiftOf(e)===k).length;
+  const amN=by("R")+(v==="B"?by("S2"):by("S1")),pmN=by("O")+(v==="B"?by("S1"):by("S2"));
+  const per=+p.plan.v,d=days==null?5:days,r=x=>Math.round(x*10)/10;
+  return {per,unit:p.plan.unit==="h"?"h":"ks",amN,pmN,am:r(amN*per),pm:r(pmN*per),day:r((amN+pmN)*per),days:d,week:r((amN+pmN)*per*d),none:by(""),sick:all.length-m.length};
+}
 
 /* ---------- původní zařazení z verze 2.3 ----------
    Při převodu pozic na skupiny si každý člověk ponese snímek původní pozice, úrovně a zaučení.
@@ -1280,7 +1301,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=9;
+const DATA_VERSION=10;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
@@ -1332,6 +1353,9 @@ function sanitizeState(input){
         return {name:str(l.name==null?n:l.name,40),tabaky:int(l.tabaky,(i+1)*2,0,100),desc:str(l.desc,500),
           raise:pctOpt(l.raise,100)||0,minAtt:pctOpt(l.minAtt,100),minNorm:pctOpt(l.minNorm,300),minUse:pctOpt(l.minUse,100)};}),
       penalty:rules(p.penalty),bonus:rules(p.bonus)};
+    /* plánovaná kapacita (2.9): na osobu za směnu v kusech, nebo v hodinách; jen u skupin, kde je zapnutá */
+    const pl=obj(p.plan);
+    if(+pl.v>0)g.plan=pl.unit==="h"?{v:Math.round(num(pl.v,0,0.1,1000)*10)/10,unit:"h"}:{v:int(pl.v,1,1,100000),unit:"ks"};
     if(Array.isArray(p.skillset)){
       g.skillset=p.skillset.filter(x=>x&&typeof x==="object").slice(0,60).map(x=>({id:sid(x.id,"s"),name:str(x.name,80).trim()||"Dovednost",
         desc:str(x.desc,1000),scale:scaleClean(x.scale)})).filter(x=>!skillIds.has(x.id)&&skillIds.add(x.id));
@@ -1376,6 +1400,8 @@ function sanitizeState(input){
     Object.entries(skills).forEach(([id,n])=>{if(migrated.has(id))rate[migrated.get(id)]=n;});
     if(Object.keys(rate).length)emp.rate=rate;
     if(SHIFT_KEYS.includes(e.shift))emp.shift=e.shift;
+    /* nemoc (2.9): od kdy; dočasně se nepočítá do kapacit směn */
+    if(ISO_DAY.test(String(e.sick||"")))emp.sick=String(e.sick);
     /* původní zařazení z verze 2.3: snímek při převodu, dokud ho vedoucí nesmaže */
     const lg=obj(e.legacy);
     if(e.legacy&&typeof e.legacy==="object"){
@@ -1614,6 +1640,7 @@ function describeChanges(a,b,meta){
         isLead(x)&&isLead(y)?{key:k,m:"lead:"+k,p:n+": vedoucí oddělení ",v0:dl(x.lead),v1:dl(y.lead)}:{key:k});
     }
     if(!!x.shortFri!==!!y.shortFri)add("person",n+": zkrácený pátek "+(y.shortFri?"zapnut":"vypnut"),{key:k});
+    if(!!x.sick!==!!y.sick)add("person",n+(y.sick?": nemoc, dočasně se nepočítá do kapacit":": zpět po nemoci, zase v kapacitách"),{key:k});
     if((x.note||"")!==(y.note||""))add("person",n+": upravena poznámka",{key:k,m:"note:"+k});
     if((x.wid||"")!==(y.wid||""))widMoves.push([k,x.wid||"",y.wid||""]);
     const sx=x.skills||{},sy=y.skills||{};
@@ -1692,6 +1719,8 @@ function describeChanges(a,b,meta){
     if((q.max==null?null:+q.max)!==(p.max==null?null:+p.max))add("position","",{m:"pmax:"+id,p:G+" "+nm+", strop celkem: ",v0:capT(q.max),v1:capT(p.max)});
     if(isGroup(p)&&isGroup(q)){
       if((+q.maxTab||0)!==(+p.maxTab||0))add("position","",{m:"pmt:"+id,p:"Skupina "+nm+", maximum tabáků za dovednosti: ",v0:String(+q.maxTab||0),v1:String(+p.maxTab||0)});
+      const pt=x=>x&&x.plan?nf(x.plan.v,x.plan.unit==="h"?1:0)+(x.plan.unit==="h"?" h":" ks")+" na osobu za směnu":"vypnuto";
+      if(!same(q.plan||null,p.plan||null))add("position","",{m:"plan:"+id,p:"Skupina "+nm+", plánovaná kapacita: ",v0:pt(q),v1:pt(p)});
       const KA=new Map(groupSkills(q).map(x=>[x.id,x])),KB=new Map(groupSkills(p).map(x=>[x.id,x]));
       KB.forEach((x,sid)=>{const o=KA.get(sid);
         if(!o)add("position","Skupina "+nm+": nová dovednost „"+x.name+"“",{m:"sk:"+sid});

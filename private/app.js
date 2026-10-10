@@ -859,7 +859,7 @@ function renderPeople() {
     const L = ev.L;
     return `${sep}<button class="list-item${e.excluded ? ' out' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       ${L.pct != null || L.n ? `<span class="lvl l${L.n}" title="Průměrná úroveň dovedností">${L.n}</span>` : '<span class="lvl l0">?</span>'}
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}</span></span>
       ${e.excluded ? '<span class="tag">vyřazen</span>' : `<span class="num small list-val" title="Tabáky za vybraný měsíc">${nf(ev.total, 0)}</span>`}
     </button>`;
   }).join('') : emptyState('Nikdo tu není', 'Nahraj docházku, nebo přidej člověka ručně.');
@@ -1003,6 +1003,7 @@ function renderPersonDetail() {
         <label class="field"><span>ID v evidenci práce</span><input type="text" id="pWid" value="${esc(e.wid || '')}" placeholder="volitelné" maxlength="40" autocomplete="off"></label>
       </div>
       <label class="switch"><input type="checkbox" id="pFri"${e.shortFri ? ' checked' : ''}><span>Zkrácený pátek: ${nf(friShift())} h se počítá jako celá směna</span></label>
+      <label class="switch"><input type="checkbox" id="pSick"${e.sick ? ' checked' : ''}><span>Nemoc: dočasně se nepočítá do kapacit směn${e.sick ? ` (od ${esc(dayText(e.sick))})` : ''}</span></label>
       <label class="switch"><input type="checkbox" id="pLead"><span>Vedoucí pracovník: nepočítá se do benefitů, v Matici dovedností jen jako vedoucí oddělení</span></label>
     </div>
     ${legacyCard(e)}
@@ -1049,6 +1050,11 @@ function renderPersonDetail() {
     toast(`${e.last} ${e.first}${e.shortFri ? `: pátek ${nf(friShift())} h = celá směna.` : `: pátek zase ${nf(S.settings.shift)} h.`}`);
   };
   $('#pLead').onchange = event => setLead(e, event.target.checked);
+  $('#pSick').onchange = event => {
+    if (event.target.checked) e.sick = todayIso(); else delete e.sick;
+    save(); renderPeople(); renderMatrix();
+    toast(e.sick ? `${e.last} ${e.first}: nemoc, dočasně se nepočítá do kapacit směn.` : `${e.last} ${e.first} je zpátky v kapacitách.`);
+  };
   bindPersonDelete(e);
 }
 
@@ -1336,6 +1342,9 @@ function renderPositions() {
         <label class="field"><span>Strop celkem</span><input type="number" id="posMax" value="${p.max != null && p.max !== '' ? p.max : ''}" placeholder="bez stropu" min="0" max="500" step="1"${p.onlyKafe ? ' disabled' : ''}></label>
       </div>
       <label class="check onlykafe-check"><input type="checkbox" id="posOnlyKafe"${p.onlyKafe ? ' checked' : ''}><span><b>Jen Kafe, bez tabáků</b><small>Lidé ve skupině dostávají jen Kafe (a případně prémii). Tabáky, pravidla docházky a ruční úpravy se nepočítají.</small></span></label>
+      <label class="check opt-check plan-check"><input type="checkbox" id="posPlan"${p.plan ? ' checked' : ''}><span><b>Plánovaná kapacita</b><small>Kolik zvládne jeden člověk za směnu, v kusech nebo v hodinách. Ukáže se, kolik skupina zvládne na ranní, na odpolední, za den a za týden.</small></span></label>
+      ${p.plan ? `<div class="plan-box"><div class="row gap wrap"><label class="field plan-v"><span>Na osobu za směnu</span><input type="text" inputmode="decimal" id="posPlanV" value="${esc(String(p.plan.v).replace('.', ','))}" maxlength="8" autocomplete="off"></label>
+        <label class="field plan-u"><span>Jednotka</span><select id="posPlanUnit"><option value="ks"${p.plan.unit === 'h' ? '' : ' selected'}>kusy</option><option value="h"${p.plan.unit === 'h' ? ' selected' : ''}>hodiny</option></select></label></div>${planHtml(p)}</div>` : ''}
       ${p.onlyKafe ? '' : `<div class="tab-steps" aria-label="Tabáky podle úrovně dovedností">${[0, 1, 2, 3, 4].map(l => `<div><span>${l * 25} %</span><b>${Math.round(mt * l / 4 + 1e-9)}</b><small>${l === 4 ? 'vše na 4' : `průměr ${l}`}</small></div>`).join('')}</div>
       <p class="small muted">Každá úroveň dovednosti je 25 %. Procento skupiny je průměr všech jejích dovedností (dvě dovednosti, jedna na 4 a druhá na 0 = 50 %); tabáky = maximum × procento, zaokrouhleno. ${p.max != null && p.max !== '' ? `Strop ${p.max}: dovednosti a bonus za víkendy dohromady víc nedají.` : 'Bez stropu: bonus za víkendy se přičte navíc k dovednostem.'}</p>`}
       <p class="small muted">Ve skupině: ${peopleCount(counts[p.id] || 0)}. Oddělení seskupuje skupiny v kontrolách; když ho nevyplníš, skupina je oddělením sama pro sebe.</p>
@@ -1405,6 +1414,14 @@ function bindGroupEditor() {
     if (!p) return;
     if (t.id === 'posDept') { const before = deptOf(p); p.dept = String(t.value).trim().slice(0, 60); leadsFollowDept(before, deptOf(p)); refresh(); return; }
     if (t.id === 'posOnlyKafe') { p.onlyKafe = t.checked; refresh(); return; }
+    if (t.id === 'posPlan') { if (t.checked) p.plan = p.plan || { v: 25, unit: 'ks' }; else delete p.plan; refresh(); renderMatrix(); return; }
+    if (t.id === 'posPlanUnit' && p.plan) { p.plan.unit = t.value === 'h' ? 'h' : 'ks'; if (p.plan.unit === 'ks') p.plan.v = Math.max(1, Math.round(p.plan.v)); refresh(); return; }
+    if (t.id === 'posPlanV' && p.plan) {
+      const n = +String(t.value).trim().replace(',', '.');
+      if (n > 0) p.plan.v = p.plan.unit === 'h' ? Math.round(clamp(n, 0.1, 1000) * 10) / 10 : clamp(Math.round(n), 1, 100000);
+      else toast('Zadej kladné číslo, např. 25 nebo 7,5.', true);
+      refresh(); return;
+    }
     if (t.id === 'posMaxTab') { p.maxTab = clamp(Math.round(+t.value || 0), 0, 500); refresh(); return; }
     if (t.id === 'posMax') { const v = String(t.value).trim(); p.max = v === '' ? null : clamp(Math.round(+v || 0), 0, 500); refresh(); return; }
     const rule = t.closest('[data-ri]');
@@ -2511,7 +2528,7 @@ function renderMatrixGrid() {
     if (!rows.length) return;
     body += `<tr class="mx-sep"><td colspan="${n}">${esc(shiftName(k))} · ${peopleCount(rows.length)}</td></tr>`;
     body += rows.map(r => `<tr>
-      <th class="mx-name" scope="row"><button class="linkish" type="button" data-mxperson="${esc(r.e.key)}">${esc(r.e.last)} ${esc(r.e.first)}</button></th>
+      <th class="mx-name" scope="row"><button class="linkish" type="button" data-mxperson="${esc(r.e.key)}">${esc(r.e.last)} ${esc(r.e.first)}</button>${r.e.sick ? ' <span class="tag warn" title="Dočasně se nepočítá do kapacit směn">nemoc</span>' : ''}</th>
       <td class="mx-main">${r.pos ? esc(r.pos.name) : '<span class="muted">—</span>'}</td>
       <td class="mx-pct num">${r.pct != null ? `${nf(r.pct, 0)} %` : '<span class="muted">—</span>'}</td>
       ${r.cells.map((v, j) => cell(r, v, j)).join('')}</tr>`).join('');
@@ -2550,6 +2567,22 @@ function capWeeks(rep) {
   const cw = isoWeek(todayIso()).id;
   return [[cw, 'Tento týden'], [shiftWeek(cw, 1), 'Příští týden']].map(([id, label]) => ({ id, v: capWeekVar(id, rep.s1am), label: `${label} ${weekName(id)}`, short: weekName(id).replace(/\/\d{4}$/, '') }));
 }
+/* Plánovaná kapacita skupiny (2.9): tento a příští týden (nebo varianty A/B). */
+function planUnit(x, v) { return x.unit === 'h' ? `${nf(v, 1)} h` : `${nf(v, 0)} ks`; }
+function planRows(p) { return capWeeks(S.capReport || blankCapReport()).map(w => ({ w, x: groupPlan(p, w.v, w.id ? workDays(w.id) : 5) })).filter(r => r.x); }
+function workDaysW(n) { return n === 1 ? 'pracovní den' : n >= 2 && n <= 4 ? 'pracovní dny' : 'pracovních dní'; }
+function planHtml(p) {
+  const rows = planRows(p);
+  if (!rows.length) return '';
+  const x0 = rows[0].x;
+  const out = [x0.none ? `${peopleCount(x0.none)} bez směny` : '', x0.sick ? `${peopleCount(x0.sick)} v nemoci` : ''].filter(Boolean).join(', ');
+  return `<div class="table-card flat plan-wrap"><table class="plan-table"><thead><tr><th>${rows[0].w.id ? 'Týden' : 'Varianta'}</th><th class="r">Ranní</th><th class="r">Odpolední</th><th class="r">Za den</th><th class="r">Za týden</th></tr></thead><tbody>${rows.map(({ w, x }) => `<tr><th scope="row">${esc(w.label)}<small>ranní skupina ${w.v === 'A' ? 1 : 2}</small></th>
+      <td class="r num"><b>${planUnit(x, x.am)}</b><small>${peopleCount(x.amN)}</small></td>
+      <td class="r num"><b>${planUnit(x, x.pm)}</b><small>${peopleCount(x.pmN)}</small></td>
+      <td class="r num"><b>${planUnit(x, x.day)}</b></td>
+      <td class="r num"><b>${planUnit(x, x.week)}</b><small>${x.days} ${workDaysW(x.days)}</small></td></tr>`).join('')}</tbody></table></div>
+    <p class="tiny muted">${planUnit(x0, x0.per)} na osobu za směnu × lidé skupiny na směně. Ranní = stálá ranní + skupina, která má ranní; odpolední = stálá odpolední + druhá skupina; týden = den × pracovní dny bez svátků.${out ? ` Nepočítá se: ${esc(out)}.` : ''}${rows[0].w.id ? '' : ' Kdo má tento týden ranní, nastavíš v Matici dovedností → Směny a kapacita.'}</p>`;
+}
 function capCompo(v) { return v === 'A' ? 'ranní = stálá ranní + skupina 1, odpolední = stálá odpolední + skupina 2' : 'ranní = stálá ranní + skupina 2, odpolední = stálá odpolední + skupina 1'; }
 function capCell(n, risk) { return `<td class="r num${risk && !n ? ' cap-zero' : risk && n === 1 ? ' cap-one' : ''}">${n}</td>`; }
 function renderCapacity() {
@@ -2575,6 +2608,7 @@ function renderCapacity() {
     statTile('Směnnost – skupina 1', String(head.S1), 'střídá ranní a odpolední'),
     statTile('Směnnost – skupina 2', String(head.S2), 'střídá ranní a odpolední'),
     statTile('Bez směny', String(head['']), head[''] ? 'doplň směnu v části Lidé' : 'všichni mají směnu', head[''] ? 'warn' : ''),
+    ...(cap.sick ? [statTile('Nemoc', String(cap.sick), 'dočasně se nepočítají', 'warn')] : []),
   ].join('')}</div>`;
   if (!cap.groups.length) return void (box.innerHTML = `${controls}${tiles}<div class="card">${emptyState('Žádné dovednosti', 'Report kapacit potřebuje skupiny s dovednostmi a hodnocení lidí.')}</div>`);
   const weeks = capWeeks(rep);
@@ -2592,6 +2626,7 @@ function renderCapacity() {
     }).join('');
     const pct = k => (g.bySh[k].n ? `${nf(g.bySh[k].pct, 0)} % (${g.bySh[k].n})` : '—');
     return `<div class="card cap-group"><div class="card-head"><div><h3>${esc(g.p.name)}</h3><p class="small muted">Ve skupině: ${peopleCount(g.members)} · průměr dovedností podle směn: stálá ranní ${pct('R')}${g.bySh.O.n ? `, stálá odpolední ${pct('O')}` : ''}, skupina 1 ${pct('S1')}, skupina 2 ${pct('S2')}${g.bySh[''].n ? `, bez směny ${pct('')}` : ''}</p></div></div>
+      ${g.p.plan ? `<div class="plan-in-cap"><p class="eyebrow">Plánovaná kapacita · ${planUnit(g.p.plan, g.p.plan.v)} na osobu za směnu</p>${planHtml(g.p)}</div>` : ''}
       <div class="table-card flat cap-wrap"><table class="cap-table"><thead><tr class="cap-weeks"><th rowspan="2">Dovednost</th>${weeks.map(w => `<th colspan="2" class="cap-wk" title="${esc(capCompo(w.v))}">${esc(w.label)}<small>ranní skupina ${w.v === 'A' ? 1 : 2}, odpolední skupina ${w.v === 'A' ? 2 : 1}</small></th>`).join('')}${noShift ? '<th rowspan="2" class="r">Bez směny</th>' : ''}<th rowspan="2" class="r">Slabší skupina</th></tr>
         <tr>${weeks.map(() => '<th class="r">Ranní</th><th class="r">Odpolední</th>').join('')}</tr></thead>
       <tbody>${rows}</tbody></table></div></div>`;
@@ -2630,7 +2665,7 @@ function drawCapacity(doc) {
     meta: `Počty lidí, kteří dovednost zvládají. Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `${w.label}: ${capCompo(w.v)}.`).join(' ')}` });
   const noShift = cap.head[''] > 0;
   const hasO = cap.head.O > 0;
-  k.tiles([['Stálá ranní', String(cap.head.R), 'lidí'], ...(hasO ? [['Stálá odpolední', String(cap.head.O), 'lidí']] : []), ['Skupina 1', String(cap.head.S1), 'lidí'], ['Skupina 2', String(cap.head.S2), 'lidí'], ['Bez směny', String(cap.head['']), 'lidí', cap.head[''] ? 'crit' : '']]);
+  k.tiles([['Stálá ranní', String(cap.head.R), 'lidí'], ...(hasO ? [['Stálá odpolední', String(cap.head.O), 'lidí']] : []), ['Skupina 1', String(cap.head.S1), 'lidí'], ['Skupina 2', String(cap.head.S2), 'lidí'], ['Bez směny', String(cap.head['']), 'lidí', cap.head[''] ? 'crit' : ''], ...(cap.sick ? [['Nemoc', String(cap.sick), 'nepočítají se', 'crit']] : [])]);
   const cols = [[70 - (noShift ? 14 : 0), 'Dovednost'], ...weeks.flatMap(w => [[22, `${w.short} ranní`, 'r'], [24, `${w.short} odpolední`, 'r']]), ...(noShift ? [[14, 'Bez směny', 'r']] : []), [17, 'Slabší', 'r']];
   const head = () => { let x = k.M; cols.forEach(([w, t, al]) => { k.text(t, al === 'r' ? x + w - 1.5 : x, k.y, 7, { bold: true, color: k.C.ink2, align: al === 'r' ? 'right' : 'left' }); x += w; }); k.y += 4.4; k.hline(k.y, k.C.line2, 0.3); k.y += 1; };
   const risks = capRisks(cap, weeks).map(r => `${r.name} · ${r.parts.join(' · ')}`);
@@ -2640,6 +2675,13 @@ function drawCapacity(doc) {
       const pr = s => (g.bySh[s].n ? `${nf(g.bySh[s].pct, 0)} %` : '—');
       k.text(`Ve skupině: ${peopleCount(g.members)} · průměr dovedností: stálá ranní ${pr('R')}${g.bySh.O.n ? `, stálá odpolední ${pr('O')}` : ''}, skupina 1 ${pr('S1')}, skupina 2 ${pr('S2')}`, k.M, k.y - 1, 8, { color: k.C.ink2 });
       k.y += 5;
+      const plan = g.p.plan ? planRows(g.p) : [];
+      if (plan.length) {
+        const txt = `Plánovaná kapacita (${planUnit(g.p.plan, g.p.plan.v)} na osobu za směnu): ${plan.map(({ w, x }) => `${w.label} – ranní ${planUnit(x, x.am)} (${peopleCount(x.amN)}), odpolední ${planUnit(x, x.pm)} (${peopleCount(x.pmN)}), za den ${planUnit(x, x.day)}, za týden ${planUnit(x, x.week)} (${x.days} ${workDaysW(x.days)})`).join('; ')}.`;
+        const lines = k.split(txt, k.CW, 8.4);
+        lines.forEach(line => { k.text(line, k.M, k.y - 1, 8.4, { bold: false, color: k.C.ink }); k.y += k.LH(8.4, 1.3); });
+        k.y += 2;
+      }
       head();
       g.skills.forEach(r => {
         const nm = k.split(r.s.name, cols[0][0] - 2, 8.6);

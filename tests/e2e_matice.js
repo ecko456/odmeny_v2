@@ -2,7 +2,8 @@
 // i vlastním hodnoticím schématem, maximum tabáků, stupně prémie, hodnocení a směna u člověka,
 // matice (klik na buňku, filtr skupiny a směny), směny a kapacita (práh, vyřazená dovednost,
 // závěr, PDF), pravidla do PDF, Excel, bod vedoucího u prémie a sankce: posuvník 5–50 %
-// a srážka ze mzdy (upozornění, Srážka zpracována, zrušení), od 2.8 stálá odpolední směna.
+// a srážka ze mzdy (upozornění, Srážka zpracována, zrušení), od 2.8 stálá odpolední směna,
+// od 2.9 plánovaná kapacita skupiny (ks/h na osobu) a nemoc.
 // Na konci mobil a tmavý režim.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -208,6 +209,52 @@ const editor = '#posEditor';
   const capPdfO = await download(page, '#capPdf', 'matice-kapacita-odpoledni.pdf');
   const capTextO = pdfText(capPdfO.path);
   if (capTextO != null) check(/Tento týden T\d+/.test(capTextO) && /T\d+ odpolední/.test(capTextO) && /stálá odpolední vždy odpoledne/.test(capTextO), `PDF kapacity po týdnech: ${capTextO.slice(0, 400)}`);
+
+  // Plánovaná kapacita skupiny (2.9): kusy nebo hodiny na osobu za směnu; nemoc se nepočítá.
+  await page.click('[data-mxtab="groups"]');
+  await page.click(`#posList [data-selpos="${grp.id}"]`);
+  await page.waitForSelector('#posEditor #posPlan');
+  await page.check('#posEditor #posPlan');
+  await page.waitForSelector('#posEditor #posPlanV');
+  check(await page.inputValue('#posEditor #posPlanV') === '25', 'výchozí 25 ks na osobu');
+  await page.fill('#posEditor #posPlanV', '30');
+  await page.press('#posEditor #posPlanV', 'Tab');
+  await page.waitForFunction(id => S.positions.find(p => p.id === id).plan.v === 30, grp.id);
+  const planRow = await page.evaluate(() => [...document.querySelectorAll('#posEditor .plan-table tbody tr')].map(r => r.textContent.replace(/\s+/g, ' ').trim()));
+  const daysNow = await page.evaluate(() => workDays(isoWeek(todayIso()).id));
+  check(planRow.length === 2 && planRow[0].startsWith('Tento týden') && planRow[0].includes('0 ks') && planRow[0].includes('30 ks') && planRow[0].includes(`${30 * daysNow} ks`),
+    `plánovaná kapacita v editoru: ${JSON.stringify(planRow)}`);
+  await page.screenshot({ path: `${shots}/04c-plan-editor.png`, fullPage: true });
+  await page.selectOption('#posEditor #posPlanUnit', 'h');
+  await page.waitForFunction(id => S.positions.find(p => p.id === id).plan.unit === 'h', grp.id);
+  await page.fill('#posEditor #posPlanV', '7,5');
+  await page.press('#posEditor #posPlanV', 'Tab');
+  await page.waitForFunction(id => S.positions.find(p => p.id === id).plan.v === 7.5, grp.id);
+  check(/7,5 h/.test(await page.textContent('#posEditor .plan-table')), 'kapacita v hodinách');
+  await page.click('[data-mxtab="cap"]');
+  await page.waitForSelector('#capView .plan-in-cap');
+  check(/Plánovaná kapacita · 7,5 h na osobu za směnu/.test(await page.textContent('#capView .plan-in-cap')), 'plánovaná kapacita v reportu kapacit');
+  // Nemoc: Adam dočasně mimo kapacity.
+  await page.click('#nav [data-view="lide"]');
+  await page.click(`#lList [data-key="${adam.key}"]`);
+  await page.check('#lDetail #pSick');
+  await page.waitForFunction(k => !!S.employees[k].sick, adam.key);
+  check(/nemoc/.test(await page.textContent(`#lList [data-key="${adam.key}"]`)), 'v seznamu je vidět nemoc');
+  await page.click('#nav [data-view="matice"]');
+  await page.click('[data-mxtab="cap"]');
+  await page.waitForSelector('#capView .plan-in-cap');
+  const sickCap = await page.evaluate(id => ({ tile: [...document.querySelectorAll('#capView .stat')].some(t => /Nemoc\s*1/.test(t.textContent)),
+    plan: groupPlan(S.positions.find(p => p.id === id), 'A', 5) }), grp.id);
+  check(sickCap.tile && sickCap.plan.pmN === 0 && sickCap.plan.sick === 1, `nemocný mimo kapacity: ${JSON.stringify(sickCap)}`);
+  await page.screenshot({ path: `${shots}/04d-capacity-plan-sick.png`, fullPage: true });
+  const capPdfP = await download(page, '#capPdf', 'matice-kapacita-plan.pdf');
+  const capTextP = pdfText(capPdfP.path);
+  if (capTextP != null) check(/Plánovaná kapacita \(7,5 h na osobu za směnu\)/.test(capTextP) && /Nemoc/.test(capTextP), `PDF s plánovanou kapacitou: ${capTextP.slice(0, 500)}`);
+  await page.click('#nav [data-view="lide"]');
+  await page.click(`#lList [data-key="${adam.key}"]`);
+  await page.uncheck('#lDetail #pSick');
+  await page.waitForFunction(k => !S.employees[k].sick, adam.key);
+  await page.click('#nav [data-view="matice"]');
 
   // Pravidla do PDF.
   const rules = await download(page, '#btnRulesPdf', 'matice-pravidla.pdf');

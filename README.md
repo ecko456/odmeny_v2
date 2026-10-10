@@ -61,6 +61,20 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.9
+
+- **Plánovaná kapacita skupiny.** V Matici dovedností → Skupiny a pravidla jde u skupiny
+  zaškrtnout **Plánovaná kapacita** a zadat, kolik zvládne jeden člověk za směnu, v **kusech**
+  nebo v **hodinách** (např. 25 ks, nebo 7,5 h).
+  - Hned pod tím se ukáže, kolik skupina zvládne **na ranní, na odpolední, za den a za týden**,
+    pro tento a příští týden podle střídání skupin (ranní = stálá ranní + skupina s ranní,
+    odpolední = stálá odpolední + druhá skupina; týden = den × pracovní dny bez svátků).
+  - Totéž je u skupiny v reportu Směny a kapacita a v jeho PDF.
+- **Nemoc.** U člověka v Lidech jde zaškrtnout **Nemoc**: dočasně se nepočítá do kapacit
+  (dovednosti po směnách i plánovaná kapacita). V seznamu lidí a v matici je u něj
+  „nemoc“, v reportu kapacit dlaždice s počtem nemocných. Po odškrtnutí se zase počítá.
+- Stránka otevřená ještě ve verzi 2.8 po aktualizaci nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.8
 
 - **Nová směna Stálá odpolední.** Vybírá se u člověka v Lidech stejně jako ostatní směny
@@ -394,7 +408,8 @@ v hlavičce každého skriptu:
   člověka, výsledky, historie, nastavení, mobil, tmavý režim);
 - `tests/e2e_matice.js`: novinky 2.4 (skupiny, dovednosti a schémata, hodnocení u člověka
   i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
-  mzdy s upozorněním, od 2.8 stálá odpolední směna, mobil, tmavý režim);
+  mzdy s upozorněním, od 2.8 stálá odpolední směna a kapacita po týdnech, od 2.9 plánovaná
+  kapacita a nemoc, mobil, tmavý režim);
 - `tests/e2e_ai.js`: novinky 2.5 a 2.6 (✦ Přeformulovat s náhradním API Anthropicu:
   tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
   návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
@@ -412,7 +427,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.8'` jde stejný test pustit na aktualizaci 2.3 → 2.8 (data verze 5 → 9).
+S `EXPECT_VERSION='2\.9'` jde stejný test pustit na aktualizaci 2.3 → 2.9 (data verze 5 → 10).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 
