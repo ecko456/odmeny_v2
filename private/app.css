@@ -214,6 +214,7 @@ td.score { min-width: 150px; }
 .lvl.l2 { background: var(--acc-soft); border-color: var(--acc-line); color: var(--acc); }
 .lvl.l3 { background: var(--acc-line); color: var(--ink); }
 .lvl.l4 { background: var(--acc); color: var(--acc-ink); }
+.lvl.lead { background: var(--ink); color: var(--surface); font-family: var(--body); }
 .lvlcell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
 .lvlname { font-size: 13px; color: var(--ink-2); }
 .lvlcell b.num { font-weight: 600; }
@@ -1036,3 +1037,20 @@ input[type="date"]:disabled { opacity: .55; }
 .ai-row input[type="text"], .ai-row textarea { width: 100%; }
 .ai-part:has(.ai-use input:not(:checked)) .ai-row { opacity: .45; }
 .ai-orig { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink-2); font-size: 14px; white-space: pre-wrap; max-height: 180px; overflow: auto; }
+
+/* Vedoucí pracovníci (2.7): oddělení u člověka, pás nad maticí */
+.lead-title { margin: 16px 0 8px; font-size: 15px; }
+.lead-depts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.lead-dept { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); cursor: pointer; font-size: 14px; }
+.lead-dept input { width: 18px; height: 18px; margin: 0; accent-color: var(--acc); flex: none; }
+.lead-dept:has(input:checked) { border-color: var(--acc-line); background: var(--acc-soft); }
+.opt-check { margin: 4px 0 10px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.opt-check small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 12.5px; font-weight: 400; }
+.lead-pick { margin-top: 4px; }
+.mx-leads { margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.mx-leads .eyebrow { margin: 0 0 8px; }
+.mx-lead-list { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.mx-lead { display: grid; gap: 1px; min-width: 0; }
+.mx-lead-dept { color: var(--ink-3); font-size: 12.5px; }
+.mx-lead-who { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere; }
+@media print { .mx-leads { border-color: #bbb; } }

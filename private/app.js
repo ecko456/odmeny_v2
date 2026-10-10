@@ -398,7 +398,7 @@ function renderPeriodBits() {
   select.innerHTML = ids.length ? ids.map(id => `<option value="${esc(id)}"${id === S.current ? ' selected' : ''}>${esc(periodName(S.periods[id]))}</option>`).join('') : '<option value="">— žádné období —</option>';
   select.disabled = !ids.length;
   $('#btnDelPeriod').disabled = !p;
-  const unassigned = Object.values(S.employees).filter(e => !e.excluded && (!e.positionId || (posOf(e) && !isGroup(posOf(e)) && !e.level))).length;
+  const unassigned = Object.values(S.employees).filter(e => !e.excluded && !isLead(e) && (!e.positionId || (posOf(e) && !isGroup(posOf(e)) && !e.level))).length;
   const badge = $('#navPeople');
   badge.hidden = !unassigned;
   badge.textContent = String(unassigned);
@@ -839,15 +839,24 @@ function calStrip(a) {
    ========================================================================== */
 function renderPeople() {
   const q = norm($('#lSearch').value);
-  let list = Object.values(S.employees).sort((a, b) => (!!a.excluded - !!b.excluded) || norm(a.last).localeCompare(norm(b.last), 'cs'));
+  // pořadí: hodnocení lidé, vedoucí pracovníci (2.7), vyřazení ze seznamu
+  const rank = e => (isLead(e) ? 1 : e.excluded ? 2 : 0);
+  let list = Object.values(S.employees).sort((a, b) => (rank(a) - rank(b)) || norm(a.last).localeCompare(norm(b.last), 'cs'));
   if (q) list = list.filter(e => norm(`${e.last} ${e.first}`).includes(q));
   const p = curPeriod();
   if (list.length && (!ui.selPerson || !S.employees[ui.selPerson])) ui.selPerson = list[0].key;
-  let separator = false;
+  let section = 0;
   $('#lList').innerHTML = list.length ? list.map(e => {
+    const r = rank(e);
+    const sep = r > section ? (section = r, `<div class="listsep">${r === 1 ? 'Vedoucí pracovníci' : 'Vyřazení ze seznamu'}</div>`) : '';
+    if (r === 1) {
+      return `${sep}<button class="list-item lead-item" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
+      <span class="lvl lead" title="Vedoucí pracovník" aria-hidden="true">V</span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span>${e.lead.length ? esc(e.lead.join(', ')) : '<span class="warn-t">bez oddělení</span>'}</span></span>
+      <span class="tag">vedoucí</span></button>`;
+    }
     const ev = evaluate(e, p);
     const L = ev.L;
-    const sep = e.excluded && !separator ? (separator = true, '<div class="listsep">Vyřazení ze seznamu</div>') : '';
     return `${sep}<button class="list-item${e.excluded ? ' out' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       ${L.pct != null || L.n ? `<span class="lvl l${L.n}" title="Průměrná úroveň dovedností">${L.n}</span>` : '<span class="lvl l0">?</span>'}
       <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}</span></span>
@@ -907,10 +916,64 @@ function legacyCard(e) {
   </div>`;
 }
 
+/* Smazání člověka (běžného i vedoucího). */
+function bindPersonDelete(e) {
+  $('#pDel').onclick = async () => {
+    const count = S.sanctions.filter(s => s.key === e.key).length;
+    if (!(await confirmBox('Smazat člověka?', `${e.last} ${e.first} zmizí ze seznamu i se zařazením a úrovní.${count ? ` Smaže se i ${count} sankcí.` : ''} Docházka v nahraných souborech zůstane.`, 'Smazat', true))) return;
+    delete S.employees[e.key];
+    S.sanctions = S.sanctions.filter(s => s.key !== e.key);
+    Object.values(S.adjust).forEach(b => { delete b[e.key]; });
+    Object.values(S.issued || {}).forEach(b => { delete b[e.key]; });
+    ui.selPerson = null; ui.personOpen = false;
+    save(); renderAll(); toast('Smazáno.');
+  };
+}
+
+/* Zaškrtávání oddělení vedoucího: existující oddělení, k tomu ta, která už žádná skupina nemá. */
+function leadDeptsHtml(chosen, attr) {
+  const deps = departments();
+  const stale = (chosen || []).filter(d => !deps.includes(d));
+  if (!deps.length && !stale.length) return '<p class="small muted">Zatím žádné oddělení. Oddělení se nastavuje u skupin v Matici dovedností → Skupiny a pravidla.</p>';
+  return `<div class="lead-depts">${[...deps, ...stale].map(d => `<label class="lead-dept"><input type="checkbox" ${attr}="${esc(d)}"${(chosen || []).includes(d) ? ' checked' : ''}><span>${esc(d)}${stale.includes(d) ? ' <small class="muted">(oddělení už žádná skupina nemá)</small>' : ''}</span></label>`).join('')}</div>`;
+}
+
+function setLead(e, on) {
+  if (on) { e.lead = empDept(e) ? [empDept(e)] : []; delete e.excluded; } else delete e.lead;
+  save(); renderAll();
+  toast(on ? `${e.last} ${e.first} je vedoucí pracovník: nepočítá se do benefitů, v matici je jako vedoucí oddělení.` : `${e.last} ${e.first} už není vedoucí pracovník.`);
+}
+
+function renderLeadDetail(box, e) {
+  box.innerHTML = `<button class="btn ghost small back-btn" type="button" id="pBack">${I.back}Seznam lidí</button>
+    <div class="stack"><div class="card">
+      <div class="card-head">
+        <div><p class="eyebrow">Vedoucí pracovník</p><h2>${esc(e.last)} ${esc(e.first)}</h2></div>
+        <div class="row gap"><button class="btn ghost small" type="button" id="pDel" title="Smaže člověka ze seznamu">Smazat</button></div>
+      </div>
+      <div class="note i">Nepočítá se do tabáků, Kafe, prémií ani sankcí a není v přehledu, výrobě, kontrolách ani v kapacitě směn. V Matici dovedností je uvedený jako vedoucí zaškrtnutých oddělení.</div>
+      <h3 class="lead-title">Oddělení, která má na starosti</h3>
+      ${leadDeptsHtml(e.lead, 'data-leaddept')}
+      <div class="form-grid"><label class="field"><span>Poznámka</span><input type="text" id="pNote" value="${esc(e.note || '')}" placeholder="volitelné" maxlength="500"></label></div>
+      <label class="switch"><input type="checkbox" id="pLead" checked><span>Vedoucí pracovník (vypnutím se z něj stane běžně hodnocený člověk)</span></label>
+    </div></div>`;
+  $('#pBack').onclick = () => { ui.personOpen = false; renderPeople(); };
+  $('#pNote').oninput = event => { e.note = event.target.value; save(); };
+  $('#pLead').onchange = event => setLead(e, event.target.checked);
+  box.querySelectorAll('[data-leaddept]').forEach(input => {
+    input.onchange = () => {
+      e.lead = $$('[data-leaddept]', box).filter(x => x.checked).map(x => x.dataset.leaddept);
+      save(); renderPeople(); renderMatrix();
+    };
+  });
+  bindPersonDelete(e);
+}
+
 function renderPersonDetail() {
   const box = $('#lDetail');
   const e = ui.selPerson ? S.employees[ui.selPerson] : null;
   if (!e) { box.innerHTML = '<div class="card">' + emptyState('Vyber člověka', 'Klikni na jméno v seznamu.') + '</div>'; return; }
+  if (isLead(e)) { renderLeadDetail(box, e); return; }
   const p = curPeriod();
   const ev = evaluate(e, p);
   const a = ev.att;
@@ -940,6 +1003,7 @@ function renderPersonDetail() {
         <label class="field"><span>ID v evidenci práce</span><input type="text" id="pWid" value="${esc(e.wid || '')}" placeholder="volitelné" maxlength="40" autocomplete="off"></label>
       </div>
       <label class="switch"><input type="checkbox" id="pFri"${e.shortFri ? ' checked' : ''}><span>Zkrácený pátek: ${nf(friShift())} h se počítá jako celá směna</span></label>
+      <label class="switch"><input type="checkbox" id="pLead"><span>Vedoucí pracovník: nepočítá se do benefitů, v Matici dovedností jen jako vedoucí oddělení</span></label>
     </div>
     ${legacyCard(e)}
     <div class="card rate-card">
@@ -984,16 +1048,8 @@ function renderPersonDetail() {
     save(); renderAll();
     toast(`${e.last} ${e.first}${e.shortFri ? `: pátek ${nf(friShift())} h = celá směna.` : `: pátek zase ${nf(S.settings.shift)} h.`}`);
   };
-  $('#pDel').onclick = async () => {
-    const count = S.sanctions.filter(s => s.key === e.key).length;
-    if (!(await confirmBox('Smazat člověka?', `${e.last} ${e.first} zmizí ze seznamu i se zařazením a úrovní.${count ? ` Smaže se i ${count} sankcí.` : ''} Docházka v nahraných souborech zůstane.`, 'Smazat', true))) return;
-    delete S.employees[e.key];
-    S.sanctions = S.sanctions.filter(s => s.key !== e.key);
-    Object.values(S.adjust).forEach(b => { delete b[e.key]; });
-    Object.values(S.issued || {}).forEach(b => { delete b[e.key]; });
-    ui.selPerson = null; ui.personOpen = false;
-    save(); renderAll(); toast('Smazáno.');
-  };
+  $('#pLead').onchange = event => setLead(e, event.target.checked);
+  bindPersonDelete(e);
 }
 
 /* ==========================================================================
@@ -1013,7 +1069,7 @@ function sanPreview() {
 
 function renderSanctions() {
   const d = ui.sanDraft;
-  const people = Object.values(S.employees).filter(e => !e.excluded).sort((a, b) => norm(a.last).localeCompare(norm(b.last), 'cs'));
+  const people = Object.values(S.employees).filter(e => !e.excluded && !isLead(e)).sort((a, b) => norm(a.last).localeCompare(norm(b.last), 'cs'));
   if (!d.period) d.period = S.current || thisMonthId();
   const reasons = S.sanReasons || [];
   if (d.reason && d.reason !== '__other' && !reasons.includes(d.reason)) d.reason = '';
@@ -1259,7 +1315,7 @@ function tierCardHtml(p, t, i) {
 
 function renderPositions() {
   const counts = {};
-  Object.values(S.employees).forEach(e => { if (e.positionId) counts[e.positionId] = (counts[e.positionId] || 0) + 1; });
+  Object.values(S.employees).forEach(e => { if (e.positionId && !isLead(e)) counts[e.positionId] = (counts[e.positionId] || 0) + 1; });
   if (!ui.selPos || !S.positions.some(x => x.id === ui.selPos)) ui.selPos = S.positions[0] ? S.positions[0].id : null;
   const p = S.positions.find(x => x.id === ui.selPos);
   $('#posList').innerHTML = S.positions.length ? S.positions.map(x => `<button class="list-item wrap" type="button" data-selpos="${esc(x.id)}" aria-current="${x.id === ui.selPos}">
@@ -1335,7 +1391,9 @@ function bindGroupEditor() {
     const t = event.target;
     if (!p) return;
     if (t.id === 'posName') {
+      const before = deptOf(p);
       p.name = t.value;
+      leadsFollowDept(before, deptOf(p));   // oddělení bez názvu = název skupiny
       const label = $(`#posList [data-selpos="${CSS.escape(p.id)}"] b`);
       if (label) label.textContent = p.name || '(bez názvu)';
       save(); renderOverview(); renderPeople();
@@ -1345,7 +1403,7 @@ function bindGroupEditor() {
     const p = cur();
     const t = event.target;
     if (!p) return;
-    if (t.id === 'posDept') { p.dept = String(t.value).trim().slice(0, 60); refresh(); return; }
+    if (t.id === 'posDept') { const before = deptOf(p); p.dept = String(t.value).trim().slice(0, 60); leadsFollowDept(before, deptOf(p)); refresh(); return; }
     if (t.id === 'posOnlyKafe') { p.onlyKafe = t.checked; refresh(); return; }
     if (t.id === 'posMaxTab') { p.maxTab = clamp(Math.round(+t.value || 0), 0, 500); refresh(); return; }
     if (t.id === 'posMax') { const v = String(t.value).trim(); p.max = v === '' ? null : clamp(Math.round(+v || 0), 0, 500); refresh(); return; }
@@ -1575,7 +1633,7 @@ function renderProduction() {
     return;
   }
   const unmatched = prodUnmatched();
-  const people = Object.values(S.employees).filter(e => !e.excluded).sort((a, b) => norm(a.last).localeCompare(norm(b.last), 'cs'));
+  const people = Object.values(S.employees).filter(e => !e.excluded && !isLead(e)).sort((a, b) => norm(a.last).localeCompare(norm(b.last), 'cs'));
   const manual = Object.entries(S.prodMap).filter(([n, k]) => S.employees[k] && pp.names[n]);
   pair.innerHTML = (unmatched.length ? `<div class="card warn-card"><h3>Nespárováno · ${unmatched.length} ${jmenW(unmatched.length)} z evidence</h3><p class="small muted">Tahle jména nebo ID v evidenci práce nesedí na nikoho v hodnocení. Přiřaď je ručně (ID se uloží k člověku), nebo nahraj seznam ID v Nastavení. Volba platí i pro další měsíce.</p>
       <div class="pair-list">${unmatched.map(rec => `<div class="pair-row"><div><b>${esc(prodLabel(rec.name))}</b><div class="tiny muted num">${nf(rec.total, 0)} ks · ${rec.count} zápisů</div></div>
@@ -2414,6 +2472,17 @@ function renderMatrix() {
   else renderMatrixGrid();
 }
 
+/* Vedoucí oddělení nad maticí (2.7): jen když nějaký vedoucí pracovník je. */
+function mxLeadsHtml(groups) {
+  if (!leadPeople().length) return '';
+  const deps = [...new Set(groups.map(deptOf))];
+  if (!deps.length) return '';
+  return `<div class="mx-leads"><p class="eyebrow">Vedoucí oddělení</p><div class="mx-lead-list">${deps.map(d => {
+    const l = leadsOf(d);
+    return `<div class="mx-lead"><span class="mx-lead-dept">${esc(d)}</span><span class="mx-lead-who">${l.length ? l.map(e => `<button class="linkish" type="button" data-mxperson="${esc(e.key)}">${esc(e.last)} ${esc(e.first)}</button>`).join(', ') : '<span class="muted">bez vedoucího</span>'}</span></div>`;
+  }).join('')}</div></div>`;
+}
+
 function renderMatrixGrid() {
   const box = $('#matrixView');
   const groups = S.positions.filter(p => isGroup(p) && groupSkills(p).length);
@@ -2424,7 +2493,7 @@ function renderMatrixGrid() {
   $('#matrixLegend').innerHTML = `${STD_SCALE.map((l, i) => `<span>${iluo(i)} ${i} ${esc(l.name.replace(' úroveň', ''))}</span>`).join('')}<span>${iluo(3, true)} dovednost vlastní skupiny</span><span><i class="mx-risk-dot"></i> na směně nikdo na úrovni 3–4</span>`;
   const m = skillGrid(gid || null, shift);
   if (!m.cols.length || !m.rows.length) {
-    box.innerHTML = `<div class="card">${emptyState(m.cols.length ? 'Zatím nikdo' : 'Žádné dovednosti', m.cols.length ? 'Zařaď lidi do skupin v části Lidé (nebo změň filtr směny).' : 'Nejdřív založ skupiny a jejich dovednosti v záložce Skupiny a pravidla.', m.cols.length ? '' : '<button class="btn" type="button" data-mxtab="groups">Skupiny a pravidla</button>')}</div>`;
+    box.innerHTML = `${mxLeadsHtml(m.groups)}<div class="card">${emptyState(m.cols.length ? 'Zatím nikdo' : 'Žádné dovednosti', m.cols.length ? 'Zařaď lidi do skupin v části Lidé (nebo změň filtr směny).' : 'Nejdřív založ skupiny a jejich dovednosti v záložce Skupiny a pravidla.', m.cols.length ? '' : '<button class="btn" type="button" data-mxtab="groups">Skupiny a pravidla</button>')}</div>`;
     return;
   }
   const spans = [];
@@ -2448,7 +2517,7 @@ function renderMatrixGrid() {
       ${r.cells.map((v, j) => cell(r, v, j)).join('')}</tr>`).join('');
     body += `<tr class="mx-sub"><th colspan="3">Úroveň 3–4 · ${esc(shiftName(k))}</th>${m.coverage.map(c => `<td class="${c.by[k].ready ? '' : 'mx-risk'}">${c.by[k].ready}</td>`).join('')}</tr>`;
   });
-  box.innerHTML = `<div class="table-card matrix-card"><table class="matrix skills">
+  box.innerHTML = `${mxLeadsHtml(m.groups)}<div class="table-card matrix-card"><table class="matrix skills">
     <thead><tr class="mx-depts"><th colspan="3"></th>${spans.map(g => `<th colspan="${g.n}" class="mx-dept">${esc(g.p.name || '')}</th>`).join('')}</tr>
       <tr><th class="mx-name">Zaměstnanec</th><th class="mx-main">Skupina</th><th class="mx-pct">%</th>${m.cols.map(c => `<th class="mx-col" title="${esc(`${c.p.name}: ${c.s.name}${c.s.desc ? ` – ${c.s.desc}` : ''}`)}"><span>${esc(c.s.name)}</span></th>`).join('')}</tr></thead>
     <tbody>${body}</tbody>
@@ -4646,7 +4715,18 @@ function bindEvents() {
     renderPersonDetail(); renderPeople(); renderOverview();
   });
   $('#btnAddPerson').onclick = async () => {
-    const value = await promptBox('Přidat člověka', 'Jméno a příjmení', '', 'Přidat', 'Jan Novák');
+    const res = await dialog({
+      title: 'Přidat člověka', ok: 'Přidat',
+      html: `<label class="field"><span>Jméno a příjmení</span><input name="value" placeholder="Jan Novák" maxlength="100" required autofocus></label>
+        <label class="check opt-check"><input type="checkbox" name="lead"><span><b>Vedoucí pracovník</b><small>Nepočítá se do tabáků, Kafe, prémií ani sankcí. V Matici dovedností bude jako vedoucí zaškrtnutých oddělení.</small></span></label>
+        <div class="lead-pick" hidden><p class="small"><b>Oddělení, která má na starosti</b></p>${leadDeptsHtml([], 'data-newdept')}</div>`,
+      onOpen: dlg => { const box = $('[name="lead"]', dlg); box.addEventListener('change', () => { $('.lead-pick', dlg).hidden = !box.checked; }); },
+      validate: form => (form.elements.namedItem('value').value.trim() ? null : 'Napiš jméno a příjmení.'),
+    });
+    if (res.value !== 'ok') return;
+    const value = res.form.elements.namedItem('value').value.trim();
+    const asLead = res.form.elements.namedItem('lead').checked;
+    const leadDepts = $$('[data-newdept]', res.form).filter(x => x.checked).map(x => x.dataset.newdept);
     if (!value) return;
     const parts = value.trim().split(/\s+/);
     const first = parts.shift() || '';
@@ -4654,6 +4734,7 @@ function bindEvents() {
     const key = `${norm(last)}|${norm(first)}`;
     if (S.employees[key]) { toast('Takový už v seznamu je.'); ui.selPerson = key; ui.personOpen = true; renderPeople(); return; }
     S.employees[key] = { key, first: first.slice(0, 80), last: last.slice(0, 80), positionId: null, level: null, note: '' };
+    if (asLead) S.employees[key].lead = leadDepts;
     ui.selPerson = key; ui.personOpen = true;
     save(); renderPeople(); renderOverview(); renderPeriodBits();
   };
@@ -4901,7 +4982,7 @@ async function ktGenerate() {
 async function ktAddPerson() {
   const id = ktWeekId();
   const plan = audPlan(id);
-  const people = Object.values(S.employees).filter(e => !e.excluded && empDept(e)).sort((a, b) => norm(audName(a)).localeCompare(norm(audName(b)), 'cs'));
+  const people = Object.values(S.employees).filter(e => !e.excluded && !isLead(e) && empDept(e)).sort((a, b) => norm(audName(a)).localeCompare(norm(audName(b)), 'cs'));
   const result = await dialog({
     title: 'Přidat člověka do plánu', ok: 'Přidat',
     html: `<label class="field"><span>Zaměstnanec</span><select name="key" required><option value="">— vyber —</option>${people.map(e => `<option value="${esc(e.key)}">${esc(`${audName(e)} · ${empDept(e)}`)}</option>`).join('')}</select></label>

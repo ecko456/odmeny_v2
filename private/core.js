@@ -821,8 +821,20 @@ function legacyTier(x){return {pct:x.pct,lvl:x.lvl,tier:null,name:x.pct>0?"Úrov
 function shiftOf(e){return e&&SHIFT_KEYS.includes(e.shift)?e.shift:"";}
 function shiftName(k){const x=SHIFTS.find(y=>y[0]===k);return x?x[1]:"Bez směny";}
 function blankCapReport(){return {groups:[],thr:3,hidden:[],note:""};}
-/* Kdo se v matici ukazuje: nevyřazení se skupinou nebo s nějakým hodnocením. */
-function matrixPeople(){return Object.values(S.employees).filter(e=>!e.excluded&&(e.positionId||(e.rate&&Object.keys(e.rate).length)));}
+/* Vedoucí pracovník (2.7): e.lead = oddělení, která má na starosti (může být prázdné).
+   Nepočítá se do tabáků, Kafe, prémií, sankcí, kontrol ani kapacity; v matici je jen jako
+   vedoucí svých oddělení. */
+function isLead(e){return !!(e&&Array.isArray(e.lead));}
+function leadsOf(dept){return Object.values(S.employees).filter(e=>isLead(e)&&e.lead.includes(dept))
+  .sort((a,b)=>norm(a.last+" "+a.first).localeCompare(norm(b.last+" "+b.first),"cs"));}
+function leadPeople(){return Object.values(S.employees).filter(isLead).sort((a,b)=>norm(a.last+" "+a.first).localeCompare(norm(b.last+" "+b.first),"cs"));}
+/* Přejmenované oddělení: vedoucí ho mají dál zaškrtnuté, pokud staré jméno už žádná skupina nemá. */
+function leadsFollowDept(before,after){
+  if(!before||before===after||departments().includes(before))return;
+  Object.values(S.employees).forEach(e=>{if(isLead(e)&&e.lead.includes(before))e.lead=[...new Set(e.lead.map(d=>d===before?after:d))];});
+}
+/* Kdo se v matici ukazuje: nevyřazení (a ne vedoucí) se skupinou nebo s nějakým hodnocením. */
+function matrixPeople(){return Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&(e.positionId||(e.rate&&Object.keys(e.rate).length)));}
 /* Matice: lidé × dovednosti (všech skupin, nebo jedné). Řazení podle směny, skupiny a jména. */
 function skillGrid(groupId,shift){
   const groups=S.positions.filter(p=>isGroup(p)&&groupSkills(p).length&&(!groupId||p.id===groupId));
@@ -841,7 +853,7 @@ function skillGrid(groupId,shift){
    odpoledne skupina 2; varianta B = ráno stálá ranní + skupina 2, odpoledne skupina 1. */
 function capacity(groupIds,thr,hidden){
   thr=clamp(Math.round(+thr||3),1,4);
-  const people=Object.values(S.employees).filter(e=>!e.excluded);
+  const people=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e));
   const head={R:0,S1:0,S2:0,"":0};people.forEach(e=>{head[shiftOf(e)]++;});
   const hide=new Set(hidden||[]);
   const groups=S.positions.filter(p=>isGroup(p)&&(!groupIds||!groupIds.length||groupIds.includes(p.id))).map(p=>{
@@ -868,9 +880,10 @@ function legacyText(l){
   return main+(l.skills&&l.skills.length?"; zaučení: "+l.skills.map(x=>x.pos+" "+x.level+(x.levelName?" ("+x.levelName+")":"")).join(", "):"");
 }
 function legacyPending(){return Object.values(S.employees).filter(e=>e.legacy).length;}
-/* vyřazení ze seznamu: člověk zůstává v evidenci, ale nehodnotí se a nikde se nenabízí */
-function activeRows(){return allRows().filter(r=>!r.e.excluded);}
-function excludedPeople(){return Object.values(S.employees).filter(e=>e.excluded)
+/* vyřazení ze seznamu: člověk zůstává v evidenci, ale nehodnotí se a nikde se nenabízí;
+   vedoucí pracovník se nehodnotí taky (je jen v matici jako vedoucí oddělení) */
+function activeRows(){return allRows().filter(r=>!r.e.excluded&&!isLead(r.e));}
+function excludedPeople(){return Object.values(S.employees).filter(e=>e.excluded&&!isLead(e))
   .sort((a,b)=>norm(a.last).localeCompare(norm(b.last),"cs"));}
 
 function curPeriod(){return S.current?S.periods[S.current]:null;}
@@ -966,10 +979,10 @@ function exportRows(rows){
    Soubor jde editovat v Excelu a poslat zpátky - matchuje se na příjmení + jméno. */
 function rosterSheets(){
   const people=Object.values(S.employees).sort((a,b)=>norm(a.last).localeCompare(norm(b.last),"cs"));
-  const main=[["Příjmení","Jméno","Skupina","Směna","Dovednosti %","Tabáky za dovednosti","Zkrácený pátek","Vyřazen ze seznamu","Poznámka","Oddělení","ID v evidenci práce"]];
+  const main=[["Příjmení","Jméno","Skupina","Směna","Dovednosti %","Tabáky za dovednosti","Zkrácený pátek","Vyřazen ze seznamu","Poznámka","Oddělení","ID v evidenci práce","Vedoucí oddělení"]];
   people.forEach(e=>{const L=levelOf(e);
     main.push([e.last,e.first,L.pos?L.pos.name:"",shiftOf(e)?shiftName(shiftOf(e)):"",L.pct!=null?L.pct:"",L.pos&&L.pos.onlyKafe?"jen Kafe":L.pos?L.base:"",
-      e.shortFri?"ano":"",e.excluded?"ano":"",e.note||"",L.pos?deptOf(L.pos):"",e.wid||""]);});
+      e.shortFri?"ano":"",e.excluded?"ano":"",e.note||"",L.pos?deptOf(L.pos):"",e.wid||"",isLead(e)?(e.lead.join(", ")||"ano"):""]);});
   /* hodnocení: sloupec za každou dovednost „Skupina · Dovednost“, hodnoty 0–4 */
   const cols=S.positions.filter(isGroup).flatMap(p=>groupSkills(p).map(x=>({p,x})));
   const rates=[["Příjmení","Jméno",...cols.map(c=>(c.p.name||"?")+" · "+c.x.name)]];
@@ -1014,6 +1027,7 @@ function applyRoster(aoa,rateAoa){
       else if(c.startsWith("nazev uroven"))m.lvlName=i;
       else if(c.startsWith("zkraceny patek"))m.fri=i;
       else if(c.startsWith("vyrazen"))m.excl=i;
+      else if(c.startsWith("vedouci"))m.lead=i;
       else if(c.startsWith("poznamka"))m.note=i;
       else if(c.startsWith("id v evidenci")||c==="id")m.wid=i;});
     if(m.last!=null&&m.first!=null&&m.pos!=null){hr=r;map=m;break;}
@@ -1055,6 +1069,13 @@ function applyRoster(aoa,rateAoa){
     if(map.shift!=null){const sh=readShift(row[map.shift]);if(sh)e.shift=sh;else delete e.shift;}
     if(map.fri!=null)e.shortFri=yes(row[map.fri]);
     if(map.excl!=null)e.excluded=yes(row[map.excl]);
+    /* Vedoucí oddělení: prázdné = není vedoucí, „ano“ = vedoucí, jinak seznam oddělení (čárkou) */
+    if(map.lead!=null){
+      const v=String(row[map.lead]==null?"":row[map.lead]).trim();
+      if(!v)delete e.lead;
+      else{const deps=departments(),list=v.split(/[,;]/).map(x=>deps.find(d=>norm(d)===norm(x))).filter(Boolean);
+        e.lead=yes(v)?(isLead(e)?e.lead:[]):[...new Set(list)];delete e.excluded;}
+    }
     if(map.note!=null&&row[map.note]!=null)e.note=String(row[map.note]).trim();
     if(map.wid!=null&&row[map.wid]!=null&&String(row[map.wid]).trim())setWid(e.key,row[map.wid]);
     touched++;
@@ -1246,7 +1267,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=7;
+const DATA_VERSION=8;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
@@ -1326,6 +1347,8 @@ function sanitizeState(input){
       note:str(e.note,500)};
     if(e.shortFri)out.employees[k].shortFri=true;
     if(e.excluded)out.employees[k].excluded=true;
+    /* vedoucí pracovník (verze 2.7): oddělení, která má na starosti */
+    if(Array.isArray(e.lead))out.employees[k].lead=[...new Set(e.lead.map(d=>str(d,60).trim()).filter(Boolean))].slice(0,50);
     /* ID v evidenci práce (verze 2.1) */
     if(e.wid!=null&&String(e.wid).trim())out.employees[k].wid=str(String(e.wid).trim(),40);
     const emp=out.employees[k];
@@ -1570,6 +1593,11 @@ function describeChanges(a,b,meta){
     if(shiftOf(x)!==shiftOf(y))add("person","",{key:k,m:"shift:"+k,p:n+": směna ",v0:shiftName(shiftOf(x)),v1:shiftName(shiftOf(y))});
     if(x.legacy&&!y.legacy)add("person",n+": původní zařazení z verze 2.3 převedeno do nové verze a smazáno ("+legacyText(x.legacy)+")",{key:k});
     if(!!x.excluded!==!!y.excluded)add("person",n+(y.excluded?" vyřazen ze seznamu":" vrácen do seznamu"),{key:k});
+    if(isLead(x)!==isLead(y)||(isLead(y)&&!same(x.lead,y.lead))){
+      const dl=l=>l.length?l.join(", "):"bez oddělení";
+      add("person",!isLead(y)?n+" už není vedoucí pracovník":!isLead(x)?n+" je vedoucí pracovník ("+dl(y.lead)+")":"",
+        isLead(x)&&isLead(y)?{key:k,m:"lead:"+k,p:n+": vedoucí oddělení ",v0:dl(x.lead),v1:dl(y.lead)}:{key:k});
+    }
     if(!!x.shortFri!==!!y.shortFri)add("person",n+": zkrácený pátek "+(y.shortFri?"zapnut":"vypnut"),{key:k});
     if((x.note||"")!==(y.note||""))add("person",n+": upravena poznámka",{key:k,m:"note:"+k});
     if((x.wid||"")!==(y.wid||""))widMoves.push([k,x.wid||"",y.wid||""]);
@@ -1924,7 +1952,7 @@ function skillMatrix(dept){
   const cols=S.positions.filter(p=>!dept||deptOf(p)===dept);
   const ids=new Set(cols.map(p=>p.id));
   const order=new Map(S.positions.map((p,i)=>[p.id,i]));
-  const rows=Object.values(S.employees).filter(e=>!e.excluded&&((e.positionId&&ids.has(e.positionId))||cols.some(p=>skillOf(e,p.id)>0)))
+  const rows=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&((e.positionId&&ids.has(e.positionId))||cols.some(p=>skillOf(e,p.id)>0)))
     .map(e=>({e,home:!!(e.positionId&&ids.has(e.positionId)),pos:posOf(e),cells:cols.map(p=>({lvl:skillOf(e,p.id),main:e.positionId===p.id}))}))
     .sort((x,y)=>(y.home-x.home)||((order.get(x.e.positionId)??999)-(order.get(y.e.positionId)??999))||((y.e.level||0)-(x.e.level||0))||norm(x.e.last).localeCompare(norm(y.e.last),"cs"));
   const coverage=cols.map((p,i)=>{const c=[0,0,0,0,0];rows.forEach(r=>{c[r.cells[i].lvl]++;});return {counts:c,ready:c[3]+c[4],trained:c[1]+c[2]+c[3]+c[4]};});
@@ -1935,6 +1963,12 @@ function sheetName(name,used){
   let base=n,i=2;while(used.has(n.toLowerCase())){n=(base.slice(0,28)+" "+i++).slice(0,31);}
   used.add(n.toLowerCase());return n;
 }
+/* Řádek „Vedoucí oddělení“ pro Excel matice (jen když nějaký vedoucí je). */
+function leadLine(groups){
+  if(!leadPeople().length)return "";
+  const deps=[...new Set(groups.map(deptOf))];
+  return "Vedoucí oddělení: "+deps.map(d=>d+" – "+(leadsOf(d).map(e=>e.last+" "+e.first).join(", ")||"—")).join("; ");
+}
 /* Listy pro Excel: matice všech skupin, list za každou skupinu, popis dovedností a kapacita směn. */
 function matrixSheets(){
   const used=new Set(),sheets=[];
@@ -1943,6 +1977,8 @@ function matrixSheets(){
       ["","","","",...m.cols.map(c=>c.p.name)],
       ["Příjmení","Jméno","Směna","Skupina","Dovednosti %",...m.cols.map(c=>c.s.name)]];
     rows[1].splice(4,0,"");
+    const lead=leadLine(m.cols.map(c=>c.p));
+    if(lead)rows.splice(1,0,[lead]);
     m.rows.forEach(r=>rows.push([r.e.last,r.e.first,r.shift?shiftName(r.shift):"",r.pos?r.pos.name:"",r.pct!=null?Math.round(r.pct):"",...r.cells]));
     rows.push([]);
     ["R","S1","S2",""].forEach(k=>{if(m.rows.some(r=>r.shift===k))rows.push(["Úroveň 3–4: "+shiftName(k),"","","","",...m.coverage.map(c=>c.by[k].ready)]);});
@@ -2576,7 +2612,7 @@ function empDept(e){const p=e&&e.positionId?posIn(S,e.positionId):null;return p?
 function audName(e){return e?(e.last+" "+e.first).trim():"";}
 /* Lidé oddělení, kteří se kontrolují: nevyřazení, s pozicí v oddělení. */
 function audPeople(dept){
-  return Object.values(S.employees).filter(e=>!e.excluded&&empDept(e)===dept)
+  return Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&empDept(e)===dept)
     .sort((a,b)=>norm(audName(a)).localeCompare(norm(audName(b)),"cs"));
 }
 /* Oddělení, která mají aspoň jednoho kontrolovaného člověka, v pořadí pozic. */

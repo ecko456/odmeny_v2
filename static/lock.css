@@ -139,7 +139,7 @@ a { color: var(--acc); }
 
 .field { display: grid; gap: 6px; }
 .field > span { font-size: 13px; font-weight: 500; color: var(--ink-2); }
-input[type="text"], input[type="number"], input[type="search"], input[type="password"], input[type="month"], input[type="tel"], select, textarea {
+input[type="text"], input:not([type]), input[type="number"], input[type="search"], input[type="password"], input[type="month"], input[type="tel"], select, textarea {
   width: 100%; min-height: 42px; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--surface); color: var(--ink); font-size: 15px; transition: border-color .15s ease, box-shadow .15s ease;
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--acc); box-shadow: var(--focus); }
