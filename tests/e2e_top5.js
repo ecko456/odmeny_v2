@@ -1,7 +1,8 @@
 // Prohlížečový průchod modulem Top 5 nejméně efektivně (verze 2.2): ruční zápis týdne (EAN,
 // název dílu, strávený čas, norma), případ s příčinou, opatřeními a ověřením účinnosti s ručně
 // zapsanými hodnotami, nové kolo po neúčinném ověření, vydaný týdenní report, souhrn a PDF
-// případu, termíny, jednotka času, předvyplnění z evidence práce, mobil a tmavý režim.
+// případu, termíny, jednotka času, předvyplnění z evidence práce, mobil a tmavý režim,
+// definitivní smazání zrušeného případu (2.6).
 // Spuštění stejně jako e2e_browser.js (data se generují k dnešnímu dni):
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
@@ -387,6 +388,59 @@ async function markDone(page, id, date) {
   await page.click('#t5Tabs [data-t5tab="cases"]');
   await page.click('#t5View tbody tr >> nth=0');
   await page.screenshot({ path: `${shots}/13-dark-case.png`, fullPage: true });
+  await page.click('[data-t5back]');
+
+  // Definitivní smazání zrušeného případu (2.6): z detailu i ze seznamu Zrušené.
+  await page.emulateMedia({ colorScheme: 'light' });
+  const cancelIt = async (ean, reason) => {
+    await caseFromWeek(page, 6, ean);
+    check(!(await page.$('[data-t5delete]')), 'rozpracovaný případ nejde smazat natrvalo');
+    await page.click('[data-t5cancel]');
+    await page.waitForSelector('#dlg[open] [name="value"]');
+    await page.fill('#dlg [name="value"]', reason);
+    await page.click('#dlgOk');
+    await page.waitForSelector('.note [data-t5delete]');
+    await saved(page);   // zrušený případ je uložený, smazání pak zapíše historie změn
+  };
+  await cancelIt('8590001000097', 'Založeno omylem.');
+  const delA = await page.evaluate(() => ui.t5.caseId);
+  await page.click('.note [data-t5delete]');
+  await page.waitForSelector('#dlg[open]');
+  check(/zmizí ze seznamu případů, souhrnů, termínů, PDF i z vydaných týdenních reportů/.test(await page.textContent('#dlg')), 'potvrzení vysvětlí, co smazání udělá');
+  await page.screenshot({ path: `${shots}/14-delete-confirm.png` });
+  await page.click('#dlgCancel');
+  check(await page.evaluate(id => !!effCase(id), delA), 'Zrušit v potvrzení nic nesmaže');
+  await page.click('.note [data-t5delete]');
+  await page.click('#dlgOk');
+  await page.waitForFunction(id => !effCase(id) && !ui.t5.caseId, delA);
+  check(/je smazaný natrvalo/.test(await page.textContent('#toast')), 'hláška po smazání');
+  await cancelIt('8590001000080', 'Duplicitní případ.');
+  const delB = await page.evaluate(() => ui.t5.caseId);
+  check(await page.evaluate(id => effCase(id).no, delB) === `${new Date().getFullYear()}-004`, 'číslo smazaného případu se znovu nepoužije');
+  await page.click('[data-t5back]');
+  await page.click('#t5Tabs [data-t5tab="cases"]');
+  await page.click('[data-t5filter="zrus"]');
+  check((await page.$$('#t5View tbody tr')).length === 1 && (await page.$$('#t5View tbody [data-t5delete]')).length === 1, 'v Zrušených je jeden případ s tlačítkem Smazat natrvalo');
+  await page.screenshot({ path: `${shots}/15-cancelled-list.png`, fullPage: true });
+  await page.click('#t5View tbody [data-t5delete]');
+  await page.waitForSelector('#dlg[open]');
+  check(await page.evaluate(() => !ui.t5.caseId), 'tlačítko v řádku případ neotevře');
+  await page.click('#dlgOk');
+  await page.waitForFunction(id => !effCase(id), delB);
+  check(/Zatím žádný|Nic neodpovídá/.test(await page.textContent('#t5View')), 'Zrušené jsou prázdné');
+  check(await page.textContent('[data-t5filter="zrus"] .t5-count') === '0', 'počet zrušených je 0');
+  await saved(page);
+  const afterDel = await page.evaluate(async ids => {
+    const st = (await Vault.loadData()).state;
+    return { cases: st.eff.cases.length, gone: ids.every(id => !st.eff.cases.some(c => c.id === id) && !JSON.stringify(st.eff).includes(id)),
+      reasons: JSON.stringify(st.eff).includes('Založeno omylem') || JSON.stringify(st.eff).includes('Duplicitní případ'),
+      sum: effSummary().total, log: st.log.filter(e => e.kind === 'eff').map(e => e.text).filter(t => /smazán natrvalo/.test(t)) };
+  }, [delA, delB]);
+  check(afterDel.cases === 2 && afterDel.gone && !afterDel.reasons && afterDel.sum === 2, `po smazání: ${JSON.stringify(afterDel)}`);
+  check(afterDel.log.length === 2 && afterDel.log.every(t => /^P-\d{4}-00[34] \(85900010000(97|80), .*\): zrušený případ smazán natrvalo$/.test(t)), `historie změn po smazání: ${afterDel.log.join(' | ')}`);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.click('[data-t5filter="zrus"]');
+  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 1, 'mobil Zrušené: bez přetečení');
 
   await browser.close();
   if (problems.length) { console.log(problems.join('\n')); process.exit(1); }

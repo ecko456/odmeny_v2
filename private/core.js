@@ -1246,7 +1246,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=6;
+const DATA_VERSION=7;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
@@ -1716,6 +1716,8 @@ function describeChanges(a,b,meta){
     const head="P-"+c.no+" ("+c.ean+(c.name?", "+c.name:"")+"): ";
     c.log.filter(e=>!seen.has(e.at+"|"+e.t)).forEach(e=>add("eff",head+e.t,{m:"eff:"+c.id+":"+e.t.slice(0,80)}));
   });
+  const CB=new Set((fb.cases||[]).map(c=>c.id));
+  (fa.cases||[]).filter(c=>!CB.has(c.id)).forEach(c=>add("eff","P-"+c.no+" ("+c.ean+(c.name?", "+c.name:"")+"): zrušený případ smazán natrvalo",{m:"effdel:"+c.id}));
   const WA=fa.weeks||{},WB=fb.weeks||{};
   const entTxt=e=>e.ean+(e.name?" "+e.name:"")+": "+nf(e.spent/60,2)+" h, norma "+nf(e.norm/60,2)+" h"+(e.spent>0?" (plnění "+nf(e.norm/e.spent*100,1)+" %)":"");
   [...new Set([...Object.keys(WA),...Object.keys(WB)])].sort().forEach(id=>{
@@ -2029,18 +2031,23 @@ function nameStems(employees){
   }));
   return [...set].sort((a,b)=>b.length-a.length);
 }
-function maskNames(text,employees){
-  const src=String(text==null?"":text),stems=nameStems(employees),map=[];
-  if(!stems.length)return {text:src,map};
+/* Víc textů najednou (části případu): značky jsou společné, stejné jméno má všude stejnou. */
+function maskNamesMany(texts,employees){
+  const src=(texts||[]).map(t=>String(t==null?"":t)),stems=nameStems(employees),map=[];
+  if(!stems.length)return {texts:src,map};
   const rx=s=>s.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
   const re=new RegExp("(^|[^\\p{L}\\p{N}])((?:"+stems.map(rx).join("|")+")\\p{L}{0,3})(?=[^\\p{L}\\p{N}]|$)","gu");
   const byForm=new Map();
-  /* čísla značek až za těmi, které v textu už jsou, ať se při návratu nic nepoplete */
-  const start=Math.max(0,...[...src.matchAll(/\[osoba (\d+)\]/g)].map(m=>+m[1]));
+  /* čísla značek až za těmi, které v textech už jsou, ať se při návratu nic nepoplete */
+  const start=Math.max(0,...src.flatMap(t=>[...t.matchAll(/\[osoba (\d+)\]/g)].map(m=>+m[1])));
   const mark=form=>{if(!byForm.has(form)){const ph="[osoba "+(start+byForm.size+1)+"]";byForm.set(form,ph);map.push([ph,form]);}return byForm.get(form);};
   /* dvakrát: sousední jména („Petr Dvořák“) sdílejí oddělovač, který první průchod spotřebuje */
-  const out=src.replace(re,(m,pre,form)=>pre+mark(form)).replace(re,(m,pre,form)=>pre+mark(form));
-  return {text:out,map};
+  const out=src.map(t=>t.replace(re,(m,pre,form)=>pre+mark(form)).replace(re,(m,pre,form)=>pre+mark(form)));
+  return {texts:out,map};
+}
+function maskNames(text,employees){
+  const r=maskNamesMany([text],employees);
+  return {text:r.texts[0],map:r.map};
 }
 function unmaskNames(text,map){
   let out=String(text==null?"":text);
@@ -2065,7 +2072,7 @@ const EFF_STATES={new:"Analýza příčiny",act:"Opatření běží",v1:"Čeká 
 const WEEK_ID=/^\d{4}-W\d{2}$/;
 const CASE_NO=/^\d{4}-\d{3,5}$/;
 const DAY_MS=864e5;
-function blankEff(){return {weeks:{},cases:[],reports:[],settings:{...EFF_DEFAULTS}};}
+function blankEff(){return {weeks:{},cases:[],reports:[],settings:{...EFF_DEFAULTS},nos:{}};}
 function effSet(){return (S&&S.eff&&S.eff.settings)||{...EFF_DEFAULTS};}
 function effCatLabel(k){const c=EFF_CATS.find(x=>x[0]===k);return c?c[1]:"";}
 
@@ -2252,9 +2259,10 @@ function curRound(c){return c.rounds[c.rounds.length-1];}
 function caseOfItem(ean){
   return S.eff.cases.filter(c=>c.ean===ean&&!c.cancelled).sort((a,b)=>b.at-a.at)[0]||null;
 }
+/* Číslo smazaného případu se znovu nepoužije (S.eff.nos = nejvyšší smazané číslo za rok, 2.6). */
 function nextCaseNo(at){
   const y=new Date(at).getFullYear();
-  const n=S.eff.cases.reduce((m,c)=>c.no.startsWith(y+"-")?Math.max(m,+c.no.slice(5)||0):m,0)+1;
+  const n=S.eff.cases.reduce((m,c)=>c.no.startsWith(y+"-")?Math.max(m,+c.no.slice(5)||0):m,+((S.eff.nos||{})[y])||0)+1;
   return y+"-"+String(n).padStart(3,"0");
 }
 /* Záznam do historie případu. merge = opakovaná stejná úprava od téhož člověka do 10 minut
@@ -2309,6 +2317,24 @@ function cancelCase(c,reason,meta){
   effNote(c,meta,"Případ zrušen: "+reason);
 }
 function restoreCase(c,meta){c.cancelled=null;effNote(c,meta,"Zrušení případu vráceno");}
+/* Definitivní smazání (2.6), jen u zrušeného případu: zmizí ze seznamu, souhrnů a termínů
+   i z vydaných reportů (položka v žebříčku tam zůstane, jen bez odkazu na případ). Nikde se
+   už nepočítá; v historii změn zůstane jen záznam o smazání (describeChanges). */
+function deleteCase(id){
+  const c=effCase(id);
+  if(!c||!c.cancelled)return false;
+  S.eff.cases=S.eff.cases.filter(x=>x.id!==id);
+  const y=c.no.slice(0,4);
+  S.eff.nos=S.eff.nos||{};
+  S.eff.nos[y]=Math.max(+S.eff.nos[y]||0,+c.no.slice(5)||0);
+  (S.eff.reports||[]).forEach(r=>{
+    const d=r.data||{};
+    (d.top||[]).forEach(t=>{if(t.case===id)t.case="";});
+    if(Array.isArray(d.cases))d.cases=d.cases.filter(x=>x.id!==id);
+    if(Array.isArray(d.deadlines))d.deadlines=d.deadlines.filter(x=>x.case!==id);
+  });
+  return true;
+}
 /* Datum, kdy byla hotová všechna opatření kola (poslední splněné), jinak "". */
 /* Opatření bez textu (rozepsaný řádek) se nepočítají. */
 function liveActions(r){return r.actions.filter(a=>String(a.text||"").trim());}
@@ -2527,9 +2553,11 @@ function cleanEff(input){
       spent:Math.round(num(e.spent,0,0,1e7)*100)/100,norm:Math.round(num(e.norm,0,0,1e7)*100)/100}));
     if(items.length)weeks[id]={items,at:num(wk.at,0,0,1e15),by:str(wk.by,60)};
   });
+  const nos={};
+  Object.entries(obj(o.nos)).slice(0,200).forEach(([y,n])=>{if(/^\d{4}$/.test(y))nos[y]=int(n,0,0,999999);});
   return {weeks,cases,reports:reports.sort((a,b)=>a.week<b.week?-1:1).slice(-400),
     settings:{min:int(st.min,EFF_DEFAULTS.min,0,6000),target:int(st.target,EFF_DEFAULTS.target,1,200),
-      d1:int(st.d1,EFF_DEFAULTS.d1,1,365),d2:int(st.d2,EFF_DEFAULTS.d2,1,365),unit:st.unit==="min"?"min":"h"}};
+      d1:int(st.d1,EFF_DEFAULTS.d1,1,365),d2:int(st.d2,EFF_DEFAULTS.d2,1,365),unit:st.unit==="min"?"min":"h"},nos};
 }
 
 /* ================= verze 2.3: Kontroly (nutné úkony oddělení, namátkové kontroly) =================

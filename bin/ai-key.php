@@ -44,8 +44,14 @@ if ($command === '--stav') {
 
 if ($command === '--test') {
     try {
-        $say('Odesílám zkušební větu…');
-        $say('Výsledek: ' . odm_ai_rewrite('dil se upina rucne bez dorazu a kazdej kus se musi dorovnat, to trva'));
+        $say('Odesílám zkušební příčinu a opatření…');
+        $result = odm_ai_rewrite([
+            ['id' => 'cause', 'text' => 'dil se upina rucne bez dorazu a kazdej kus se musi dorovnat, to trva'],
+            ['id' => 'now-1', 'text' => 'udelat doraz na upinani'],
+        ]);
+        foreach ($result as $part) {
+            $say('Výsledek (' . $part['id'] . '): ' . $part['text']);
+        }
         exit(0);
     } catch (RuntimeException $error) {
         $say('Chyba: ' . $error->getMessage());

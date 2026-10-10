@@ -166,15 +166,18 @@ try {
         odm_json(['rev' => $rev, 'saved_at' => odm_now()]);
     }
 
-    /* Přeformulování textu (Top 5, ✦): jen text jednoho pole, nic se neukládá. */
+    /* Přeformulování textu (Top 5, ✦): jen texty vybraných částí, nic se neukládá. */
     if ($action === 'ai_rewrite' && $method === 'POST') {
-        $text = odm_ai_clean_text(odm_input(ODM_MAX_SMALL_JSON_BYTES)['text'] ?? null);
+        $input = odm_input(ODM_MAX_SMALL_JSON_BYTES);
+        $parts = odm_ai_clean_parts($input);
         if (!odm_ai_available()) {
             odm_fail('Přeformulování není na serveru zapnuté.', 503);
         }
-        odm_ai_throttle($session['card_id'], mb_strlen($text, 'UTF-8'));
+        odm_ai_throttle($session['card_id'], array_sum(array_map(static fn(array $part): int => mb_strlen($part['text'], 'UTF-8'), $parts)));
         try {
-            odm_json(['text' => odm_ai_rewrite($text)]);
+            $result = odm_ai_rewrite($parts);
+            // Stránka z verze 2.5 posílá jen {text} a čeká {text}.
+            odm_json(array_key_exists('parts', $input) ? ['parts' => $result] : ['text' => $result[0]['text']]);
         } catch (RuntimeException $error) {
             odm_fail($error->getMessage(), $error->getCode() >= 400 && $error->getCode() < 600 ? $error->getCode() : 502);
         }

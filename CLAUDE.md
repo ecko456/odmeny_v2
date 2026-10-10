@@ -34,6 +34,33 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 10. 10. 2026 (verze 2.6):
+
+- **✦ Přeformulovat vše, nebo vybrané části.** Uživatel: „vyplním veškeré kolonky a poté budu
+  mít tlačítko ‚Přeformulovat vše nebo přeformulovat určitou část‘ … Chci úpravy pro Proč se to
+  stalo, Co s tím jde dělat, Co jde udělat hned a Co si vyžádá procesní čas.“
+  - Jedno tlačítko `[data-t5ai]` v liště `.t5-ai-bar` mezi krokem 4 a 5 (místo tlačítka
+    u příčiny). Dialog „Co přeformulovat“ (Vše + 4 části, prázdné a delší než 2000 znaků nejdou
+    vybrat), pak dialog s návrhem po částech (`use-<část>`, `v-<id>`), „Použít vybrané“.
+  - Na server jde `{parts: [{id, text}]}`; id `cause`, `options`, `now-N`, `process-N`
+    (opatření každé zvlášť, jen text; odpovědná osoba ani termín ne). Název pole pro model
+    doplní server (`odm_ai_part_label`). Jedno volání pro všechny části, odpověď `{parts}`;
+    chybí-li část, 502. Starý tvar `{text}` (stránka 2.5) server pořád umí.
+  - Použití jde stejnou cestou jako ruční úprava (`effNote`), část změněná během čekání se
+    přeskočí (porovnává se s odeslaným originálem).
+- **Definitivní smazání zrušeného případu.** Uživatel: „udělej možnost definitivního smazání
+  pokud bude případ v sekci Zrušené. A tato položka se smaže a nikde nebude zohledňována“.
+  - `deleteCase(id)` v `core.js` (jen `cancelled`): pryč ze `S.eff.cases` a z vydaných
+    reportů (`top[].case` = "", `cases`, `deadlines`); položka v žebříčku zůstává.
+    `describeChanges` zapíše „zrušený případ smazán natrvalo“. Tlačítko `[data-t5delete]`
+    v detailu (u „Případ je zrušený“) a ve sloupci seznamu při filtru Zrušené.
+  - Výklad „položka“ = případ; data dílu z evidence práce a ručního zápisu týdne zůstávají.
+    Historie změn (`S.log`) se nemaže (je to záznam, kdo co dělal).
+  - `S.eff.nos{rok: číslo}`: nejvyšší smazané číslo, aby se číslo případu znovu nepoužilo.
+    Nové pole ⇒ `DATA_VERSION`, `CLIENT_VERSION`, `ODM_MIN_CLIENT` = 7.
+- Ověřeno: unit testy, serverové testy, všechny průchody v prohlížeči a aktualizace 2.3 → 2.6
+  na lokálním Apachi (`EXPECT_VERSION='2\.6' … e2e_upgrade24.js`).
+
 Stav k 10. 10. 2026 (verze 2.5):
 
 - **✦ Přeformulovat u příčiny v Top 5** přes Claude Sonnet 5.5 (`claude-sonnet-5-5`). Uživatel
@@ -245,7 +272,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.2 | `28d6bde` | Top 5 nejméně efektivně, oprava sloupce EAN v importu |
 | 2.3 | `b7a6f7d` | Kontroly (nutné úkony, namátkové kontroly 25 % z oddělení) |
 | 2.4 | `ca9f5c7` | Matice dovedností (skupiny, dovednosti 0–4, směny a kapacita, prémie), srážka ze mzdy, Top 5 PDF ve dvou verzích |
-| 2.5 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ✦ Přeformulovat u příčiny v Top 5 (Claude Sonnet 5.5, jen text pole, jména nahrazena) |
+| 2.5 | `f2fd3f2` | ✦ Přeformulovat u příčiny v Top 5 (Claude Sonnet 5.5, jen text pole, jména nahrazena) |
+| 2.6 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ✦ Přeformulovat vše nebo vybrané části kroků 1–4, smazání zrušeného případu natrvalo (data verze 7) |
 
 Verze 2.1 přidala:
 
@@ -354,7 +382,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `3`:
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `7` (od 2.6):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -512,20 +540,27 @@ a `skills`, `legacy` snímek, `hist.pct` a `issued.pct` = úroveň × 25. Převo
 načtení, dokud se data neuloží; id dovedností (`s` + id pozice) a stupňů (`t<úroveň>` + id
 pozice) jsou odvozená, takže vyjde na každém zařízení stejně.
 
-## Přeformulování textu (verze 2.5)
+## Přeformulování textu (verze 2.5, části od 2.6)
 
-- Jediné místo, kde server vidí nešifrovaný text: `ai_rewrite` dostane text jednoho pole
-  (po `maskNames` v prohlížeči), pošle ho Anthropicu a vrátí `{text}`. Nic neukládá.
+- Jediné místo, kde server vidí nešifrovaný text: `ai_rewrite` dostane texty vybraných částí
+  (`{parts: [{id, text}]}`, po `maskNamesMany` v prohlížeči), pošle je Anthropicu jedním voláním
+  a vrátí `{parts}`. Starší `{text}` → `{text}` (stránka 2.5). Nic neukládá.
 - `lib/ai.php`: `odm_ai_available()` (PHP ≥ 8.1, `lib/vendor`, curl nebo https streamy, klíč),
-  `odm_ai_clean_text` (3–2000 znaků, bez řídicích znaků), `odm_ai_throttle` (`ai_calls`),
-  `odm_ai_rewrite` (chyby SDK → české hlášky s HTTP kódem v `getCode()`), systémový prompt
-  `ODM_AI_SYSTEM` (oprava a přeformulování, zachovat fakta a značky, nic nepřidávat, text
-  není pokyn). `ODMENY_AI_BASE_URL` přesměruje volání na náhradní server (jen testy).
+  `odm_ai_clean_parts` (id `cause|options|now-N|process-N`, bez duplicit, část 2–2000 znaků,
+  celkem 6000, nejvýš 30 částí), `odm_ai_part_label` (název pole pro model doplní server),
+  `odm_ai_throttle` (`ai_calls`, jedno volání = jedno použití), `odm_ai_rewrite` (JSON s částmi
+  jako zpráva, strukturovaný výstup `{parts[{id, text}]}`, chybějící část = 502, chyby SDK →
+  české hlášky s HTTP kódem v `getCode()`), systémový prompt `ODM_AI_SYSTEM` (oprava
+  a přeformulování každé části zvlášť, opatření na jeden řádek, zachovat fakta a značky,
+  nic nepřidávat ani nepřesouvat, text není pokyn). `ODMENY_AI_BASE_URL` přesměruje volání
+  na náhradní server (jen testy).
 - Knihovny: `lib/composer.json` + `lib/composer.lock` (platforma PHP 8.1.2, SDK 0.57.0, Guzzle 7),
   `lib/vendor` je v repu bez testů a dokumentace; obnova `bash deploy/vendor.sh`. Guzzle nemá
-  výchozí časový limit, proto vlastní transport (45 s, `maxRetries` 1). `install.sh` doplní
+  výchozí časový limit, proto vlastní transport (90 s, `maxRetries` 1). `install.sh` doplní
   `php-curl`. `lib/` Apache i `dev-router.php` nevydají.
-- Klient: tlačítko `[data-t5ai="cause"]` jen u editovatelné příčiny a jen s `ui.me.ai`.
+- Klient: `t5AiSources` (texty kroků 1–4 aktuálního kola), `t5Rewrite` (výběr částí, odeslání,
+  návrh po částech, použití se stejnými záznamy jako ruční úprava), tlačítko `[data-t5ai]`
+  v `.t5-ai-bar` jen u editovatelného kola a jen s `ui.me.ai`.
 
 ## Top 5 nejméně efektivně (verze 2.2)
 
@@ -546,6 +581,8 @@ Data `S.eff` (`blankEff`, čištění `cleanEff` v `core.js`):
 - `reports[]`: vydané týdenní reporty jako snímek (`issueWeekReport`, jedna položka na týden,
   `rev` roste jen při změně obsahu).
 - `settings{min, target, d1, d2, unit}`; `min` platí jen pro výpočet z evidence práce.
+- `nos{RRRR: N}` (2.6): nejvyšší číslo smazaného případu v roce, `nextCaseNo` ho přeskočí.
+  Smazat jde jen zrušený případ (`deleteCase`), zmizí i z vydaných reportů.
 
 Výpočty: `weekEntries` (plnění = norma ÷ čas), `weekTop` (ruční zápis má přednost, jinak
 `weekRanking` z evidence práce s EAN), `topHistory`, `itemTrend`, `effDeadlines`,
@@ -593,8 +630,8 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 (jen v kontejneru, **nikdy ne na ostrém serveru**).
 
 ```bash
-python3 -m unittest discover -s tests   # 24 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 31 testů: proti původní aplikaci + opravy + 2.1 až 2.5
+python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
+node tests/test_core.js                 # 33 testů: proti původní aplikaci + opravy + 2.1 až 2.6
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

@@ -3202,20 +3202,21 @@ function t5CasesHtml() {
   const all = S.eff.cases.map(c => ({ c, s: caseState(c), ba: caseBeforeAfter(c) }));
   const list = all.filter(x => filter[2](x.s) && (!q || norm(`${caseLabel(x.c)} ${x.c.ean} ${x.c.name}`).includes(q)))
     .sort((a, b) => (a.s.late === b.s.late ? 0 : a.s.late ? -1 : 1) || (a.s.due || '9999') .localeCompare(b.s.due || '9999') || b.c.at - a.c.at);
+  const del = filter[0] === 'zrus';   // zrušené jde smazat natrvalo přímo ze seznamu
   const chips = T5_FILTERS.map(([k, t, fn]) => `<button type="button" class="chip${k === filter[0] ? ' on' : ''}" data-t5filter="${k}" aria-pressed="${k === filter[0]}">${t} <em class="t5-count">${all.filter(x => fn(x.s)).length}</em></button>`).join('');
   return `<div class="toolbar t5-casebar"><div class="chips">${chips}</div><span class="spacer"></span>
       <input type="search" id="t5Q" value="${esc(ui.t5.q)}" placeholder="Hledat EAN, název nebo případ…" aria-label="Hledat případ">
       <button class="btn sec" type="button" data-t5manual>Nový případ</button></div>
-    ${list.length ? `<div class="table-card"><table class="stack t5-table"><thead><tr><th>Případ</th><th>Položka</th><th>Stav</th><th class="r">Kolo</th><th>Zjištěno</th><th>Další termín</th><th class="r" title="Plnění při zjištění → poslední ověření">Plnění před → po</th></tr></thead><tbody>${list.map(({ c, s, ba }) => `<tr class="t5-row" data-t5open="${esc(c.id)}" tabindex="0">
+    ${list.length ? `<div class="table-card"><table class="stack t5-table"><thead><tr><th>Případ</th><th>Položka</th><th>Stav</th><th class="r">Kolo</th><th>Zjištěno</th><th>Další termín</th><th class="r" title="Plnění při zjištění → poslední ověření">Plnění před → po</th>${del ? '<th class="r" aria-label="Smazat"></th>' : ''}</tr></thead><tbody>${list.map(({ c, s, ba }) => `<tr class="t5-row" data-t5open="${esc(c.id)}" tabindex="0">
         <td class="name" data-label="Případ"><b>${esc(caseLabel(c))}</b></td>
         <td data-label="Položka"><div class="who"><b class="t5-ean">${esc(c.ean)}</b><span class="pos">${esc(c.name || 'bez názvu')}</span></div></td>
         <td data-label="Stav">${stateChip(s)}</td>
         <td class="r num" data-label="Kolo">${s.round}</td>
         <td class="num" data-label="Zjištěno">${c.week ? esc(weekName(c.week)) : esc(dayText(todayIso(c.at)))}</td>
         <td class="num" data-label="Další termín">${s.due ? esc(dayText(s.due)) : s.closed ? `<span class="muted">${esc(dayText(s.closed))}</span>` : '<span class="muted">—</span>'}</td>
-        <td class="r num" data-label="Plnění před → po">${effPct(ba.before)} → ${ba.after == null ? '<span class="muted">—</span>' : `<b>${effPct(ba.after)}</b>`}</td></tr>`).join('')}</tbody></table></div>`
+        <td class="r num" data-label="Plnění před → po">${effPct(ba.before)} → ${ba.after == null ? '<span class="muted">—</span>' : `<b>${effPct(ba.after)}</b>`}</td>${del ? `<td class="r t5-del" data-label=""><button class="btn ghost small t5-delbtn" type="button" data-t5delete="${esc(c.id)}">Smazat natrvalo</button></td>` : ''}</tr>`).join('')}</tbody></table></div>`
       : `<div class="card">${emptyState(S.eff.cases.length ? 'Nic neodpovídá' : 'Zatím žádný případ', S.eff.cases.length ? 'Zkus jiný filtr nebo hledání.' : 'Případ se zakládá z týdenního žebříčku (tlačítko Založit případ), nebo ručně tlačítkem Nový případ.')}</div>`}
-    <p class="hint">Jedna položka = jeden případ. Když se problém vrátí, otevře se v témž případu nové kolo a předchozí řešení zůstane v historii, ať se neopakuje.</p>`;
+    <p class="hint">Jedna položka = jeden případ. Když se problém vrátí, otevře se v témž případu nové kolo a předchozí řešení zůstane v historii, ať se neopakuje.${del ? ' Zrušený případ jde smazat natrvalo: zmizí ze všech přehledů, termínů, PDF i vydaných reportů a nikde se už nepočítá.' : ''}</p>`;
 }
 
 /* ---------- termíny ---------- */
@@ -3361,18 +3362,20 @@ function t5ActionsHtml(r, kind, editable) {
 
 function t5RoundHtml(c, r, editable) {
   const cat = `<select data-rf="cat" aria-label="Kategorie příčiny"${editable ? '' : ' disabled'}><option value="">— kategorie příčiny —</option>${EFF_CATS.map(([k, t]) => `<option value="${k}"${r.cat === k ? ' selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
-  /* ✦ u příčiny: přeformulování do profesionálního znění, jen když je na serveru zapnuté */
-  const ai = f => (f === 'cause' && editable && ui.me && ui.me.ai
-    ? `<div class="t5-ai-row"><button class="btn ghost small t5-ai" type="button" data-t5ai="${f}" title="Zkontrolovat a přeformulovat do profesionálního znění (Claude Sonnet 5.5). Odešle se jen text tohoto pole, jména lidí se nahradí značkami.">${I.sparkle}<span>Přeformulovat</span></button></div>` : '');
   const text = (f, ph) => (editable
-    ? `<textarea data-rf="${f}" rows="3" maxlength="4000" placeholder="${esc(ph)}">${esc(r[f])}</textarea>${ai(f)}`
+    ? `<textarea data-rf="${f}" rows="3" maxlength="4000" placeholder="${esc(ph)}">${esc(r[f])}</textarea>`
     : `<p class="t5-text">${r[f] ? esc(r[f]) : '<span class="muted">nevyplněno</span>'}</p>`);
+  /* ✦ pod krokem 4: přeformulování kroků 1–4 (vše, nebo vybrané části), jen když je na serveru zapnuté */
+  const ai = editable && ui.me && ui.me.ai
+    ? `<div class="t5-ai-bar"><div><b>Profesionální znění</b><span class="tiny muted">Zkontroluje pravopis a přeformuluje kroky 1–4: vše, nebo jen vybrané části. Odejde jen jejich text, jména lidí se nahradí značkami.</span></div>
+      <button class="btn sec small t5-ai" type="button" data-t5ai title="Přeformulovat do profesionálního znění (Claude Sonnet 5.5)">${I.sparkle}<span>Přeformulovat…</span></button></div>` : '';
   return `<div class="t5-steps">
     ${r.reason ? `<div class="note w"><b>Proč se otevřelo znovu:</b> ${esc(r.reason)}${r.base && r.base.eff != null ? ` <span class="muted">(${esc(weekName(r.week))}: plnění ${nf(r.base.eff, 1)} %)</span>` : ''}</div>` : ''}
     <section class="t5-step"><h4><i>1</i>Proč se to stalo</h4>${cat}${text('cause', 'Příčina nízkého plnění: co se na položce děje, proč je strávený čas vyšší než norma.')}</section>
     <section class="t5-step"><h4><i>2</i>Co s tím jde dělat</h4>${text('options', 'Možná řešení a jejich přínos pro průtok dílů.')}</section>
     <section class="t5-step"><h4><i>3</i>Co jde udělat hned</h4><p class="tiny muted">Okamžitá opatření bez dalších schvalování.</p>${t5ActionsHtml(r, 'now', editable)}</section>
     <section class="t5-step"><h4><i>4</i>Co si vyžádá procesní čas</h4><p class="tiny muted">Opatření, která potřebují čas na zpracování: žádost o změnu pohledovosti, přípravek s technologií, úprava normy…</p>${t5ActionsHtml(r, 'process', editable)}</section>
+    ${ai}
     <section class="t5-step"><h4><i>5</i>Ověření účinnosti</h4><p class="tiny muted">1. ověření ${r.d1} dní po dokončení všech opatření, 2. ověření ${r.d2} dní po prvním. Plnění za období ověření se počítá ze stráveného času a normy dílu (ručně, nebo z evidence práce).</p>
       <div class="t5-verify">${t5VerifyHtml(c, r, 0, editable)}${t5VerifyHtml(c, r, 1, editable)}</div></section>
   </div>`;
@@ -3392,7 +3395,7 @@ function t5CaseHtml(c) {
   const banner = s.k === 'fail'
     ? `<div class="note e"><b>Řešení nebylo účinné.</b> Otevři nové kolo a popiš, proč původní opatření nestačila. Předchozí kolo zůstane v historii. <button class="btn small" type="button" data-t5reopen="${esc(c.id)}" data-week="${esc(lastWeek)}">Otevřít nové kolo</button></div>`
     : s.k === 'ok' ? `<div class="note i"><b>Uzavřeno jako účinné ${esc(dayText(s.closed))}.</b> Když se položka vrátí do Top 5, otevři znovu tento případ. <button class="btn sec small" type="button" data-t5reopen="${esc(c.id)}" data-week="${esc(lastWeek)}">Znovu otevřít</button></div>`
-      : s.k === 'zrus' ? `<div class="note w"><b>Případ je zrušený</b> (${esc(dayText(todayIso(c.cancelled.at)))}, ${esc(c.cancelled.by || '—')}): ${esc(c.cancelled.reason)} <button class="btn sec small" type="button" data-t5restore>Vrátit zrušení</button></div>` : '';
+      : s.k === 'zrus' ? `<div class="note w"><b>Případ je zrušený</b> (${esc(dayText(todayIso(c.cancelled.at)))}, ${esc(c.cancelled.by || '—')}): ${esc(c.cancelled.reason)} <button class="btn sec small" type="button" data-t5restore>Vrátit zrušení</button> <button class="btn btn-danger small" type="button" data-t5delete="${esc(c.id)}">Smazat natrvalo</button></div>` : '';
   const prev = c.rounds.slice(0, -1).reverse();
   return `<button class="btn ghost small back-btn t5-back" type="button" data-t5back>${I.back}${esc(T5_TABS.find(t => t[0] === ui.t5.tab)[1])}</button>
   <div class="card t5-case-head"><div class="card-head">
@@ -3489,57 +3492,168 @@ async function t5Settings() {
   toast('Nastavení Top 5 uloženo.');
 }
 
-/* ✦ Přeformulování příčiny: na server jde jen text pole s jmény nahrazenými značkami,
-   návrh se ukáže vedle původního textu a použije se, až ho vedoucí potvrdí. */
+/* ✦ Přeformulování kroků 1–4 (verze 2.6). Vedoucí vybere části (vše, nebo jen některé),
+   na server jde jen jejich text se jmény nahrazenými značkami – bez odpovědných osob,
+   termínů a údajů o dílu. Návrh se ukáže po částech vedle původního textu; použije se
+   jen to, co vedoucí potvrdí, a stejnou cestou jako ruční úprava (uložení, historie případu). */
+const T5_AI_PARTS = [
+  ['cause', '1 · Proč se to stalo'],
+  ['options', '2 · Co s tím jde dělat'],
+  ['now', '3 · Co jde udělat hned'],
+  ['process', '4 · Co si vyžádá procesní čas'],
+];
+const T5_AI_MAX = 2000;
+const T5_AI_TOTAL = 6000;
+
+/** Texty kroků 1–4 aktuálního kola: příčina a možnosti jako jeden text, opatření každé zvlášť. */
+function t5AiSources(r) {
+  const out = {};
+  for (const [key] of T5_AI_PARTS) {
+    const items = key === 'cause' || key === 'options'
+      ? (String(r[key] || '').trim().length >= 2 ? [{ id: key, ref: key, text: String(r[key]).trim() }] : [])
+      : r.actions.filter(a => a.kind === key && liveText(a).length >= 2).map((a, i) => ({ id: `${key}-${i + 1}`, ref: a.id, text: liveText(a) }));
+    const chars = items.reduce((sum, x) => sum + x.text.length, 0);
+    out[key] = { items, chars, long: items.some(x => x.text.length > T5_AI_MAX) };
+  }
+  return out;
+}
+
 async function t5Rewrite(button) {
   const caseId = ui.t5.caseId;
-  const field = button.dataset.t5ai;
-  const area = $(`#t5View [data-rf="${CSS.escape(field)}"]`);
-  if (!caseId || !area) return;
-  const original = area.value.trim();
-  if (original.length < 3) { toast('Napiš nejdřív příčinu, pak ji jde přeformulovat.', true); area.focus(); return; }
-  if (original.length > 2000) { toast('Text je na přeformulování příliš dlouhý (nejvýš 2000 znaků).', true); return; }
-  const masked = maskNames(original, S.employees);
-  const label = button.innerHTML;
-  button.disabled = true;
-  button.classList.add('busy');
-  button.innerHTML = `${I.sparkle}<span>Přeformulovávám…</span>`;
+  const c0 = caseId && effCase(caseId);
+  if (!c0) return;
+  const round = curRound(c0).n;
+  const src = t5AiSources(curRound(c0));
+  const usable = T5_AI_PARTS.filter(([k]) => src[k].items.length && !src[k].long).map(([k]) => k);
+  if (!T5_AI_PARTS.some(([k]) => src[k].items.length)) { toast('Nejdřív vyplň aspoň jednu část (kroky 1–4), pak ji jde přeformulovat.', true); return; }
+
+  // 1) Co přeformulovat: vše, nebo vybrané části.
+  const preview = t => (t.length > 90 ? `${t.slice(0, 90)}…` : t);
+  const pick = await dialog({
+    title: 'Co přeformulovat', ok: 'Přeformulovat', cancel: 'Zrušit',
+    html: `<p class="small">Vyber vše, nebo jen části, které chceš přeformulovat.</p>
+      <label class="check ai-pick ai-all"><input type="checkbox" data-aiall${usable.length ? ' checked' : ''}><span><b>Vše</b><small>${usable.length} z 4 částí</small></span></label>
+      <div class="ai-picks">${T5_AI_PARTS.map(([k, label]) => {
+        const p = src[k];
+        const note = !p.items.length ? 'nevyplněno'
+          : p.long ? `text je delší než ${T5_AI_MAX} znaků, zkrať ho`
+            : k === 'now' || k === 'process' ? `${p.items.length} opatření: ${preview(p.items.map(x => x.text).join('; '))}` : preview(p.items[0].text);
+        const on = usable.includes(k);
+        return `<label class="check ai-pick${on ? '' : ' off'}"><input type="checkbox" name="${k}"${on ? ' checked' : ' disabled'}><span><b>${esc(label)}</b><small>${esc(note)}</small></span></label>`;
+      }).join('')}</div>
+      <p class="tiny muted">Odejde jen text vybraných částí. Odpovědné osoby, termíny ani údaje o dílu se neposílají a jména lidí z evidence se nahradí značkami. Upraví ho Claude Sonnet 5.5 (Anthropic).</p>`,
+    onOpen: dlg => {
+      const all = $('[data-aiall]', dlg);
+      const boxes = $$('.ai-picks input:not([disabled])', dlg);
+      all.disabled = !boxes.length;
+      all.addEventListener('change', () => boxes.forEach(b => { b.checked = all.checked; }));
+      boxes.forEach(b => b.addEventListener('change', () => { all.checked = boxes.every(x => x.checked); }));
+    },
+    validate: form => {
+      const keys = usable.filter(k => form.elements.namedItem(k).checked);
+      if (!keys.length) return 'Vyber aspoň jednu část.';
+      const total = keys.reduce((sum, k) => sum + src[k].chars, 0);
+      return total > T5_AI_TOTAL ? `Vybrané části mají dohromady ${nf(total)} znaků, najednou jde nejvýš ${nf(T5_AI_TOTAL)}. Vyber jich méně.` : null;
+    },
+  });
+  if (pick.value !== 'ok') return;
+  const keys = usable.filter(k => pick.form.elements.namedItem(k).checked);
+  const items = keys.flatMap(k => src[k].items.map(x => ({ ...x, part: k })));
+
+  // 2) Odeslání: jen id a text částí, jména nahrazená značkami.
+  const masked = maskNamesMany(items.map(x => x.text), S.employees);
+  const busy = $('#t5View [data-t5ai]') || button;
+  const label = busy.innerHTML;
+  busy.disabled = true;
+  busy.classList.add('busy');
+  busy.innerHTML = `${I.sparkle}<span>Přeformulovávám…</span>`;
   let result = null;
   try {
-    result = await Vault.api('ai_rewrite', { method: 'POST', body: { text: masked.text } });
+    result = await Vault.api('ai_rewrite', { method: 'POST', body: { parts: items.map((x, i) => ({ id: x.id, text: masked.texts[i] })) } });
   } catch (error) {
     toast(error.message, true);
   } finally {
-    const again = $(`#t5View [data-t5ai="${CSS.escape(field)}"]`) || button;
+    const again = $('#t5View [data-t5ai]') || busy;
     again.disabled = false;
     again.classList.remove('busy');
     again.innerHTML = label;
   }
-  if (!result || typeof result.text !== 'string') return;
-  const proposal = unmaskNames(result.text, masked.map).slice(0, 4000);
+  const got = new Map((result && Array.isArray(result.parts) ? result.parts : []).filter(p => p && typeof p.text === 'string').map(p => [p.id, p.text]));
+  if (!result) return;
+  if (items.some(x => !got.has(x.id))) { toast('Odpověď nešla přečíst. Zkus to znovu.', true); return; }
+  items.forEach(x => {
+    const text = unmaskNames(got.get(x.id), masked.map).trim();
+    // opatření je jeden řádek v poli o 1000 znacích, příčina a možnosti mají 4000
+    x.proposal = x.part === 'now' || x.part === 'process' ? text.replace(/\s*\n+\s*/g, ' ').slice(0, 1000) : text.slice(0, 4000);
+  });
+
+  // 3) Návrh po částech: každá část jde použít, nebo nechat.
+  const field = (x, k) => (k === 'now' || k === 'process'
+    ? `<input type="text" name="v-${esc(x.id)}" value="${esc(x.proposal)}" maxlength="1000" aria-label="Návrh">`
+    : `<textarea name="v-${esc(x.id)}" rows="5" maxlength="4000" aria-label="Návrh">${esc(x.proposal)}</textarea>`);
   const res = await dialog({
-    title: 'Návrh profesionálního znění', ok: 'Použít', cancel: 'Zahodit', wide: true,
-    html: `<div class="ai-compare"><div><p class="eyebrow">Původní text</p><div class="ai-orig">${esc(original)}</div></div>
-      <label class="field"><span>Návrh (můžeš ho ještě upravit)</span><textarea name="value" rows="6" maxlength="4000" autofocus>${esc(proposal)}</textarea></label></div>
-      <p class="tiny muted">Odeslán byl jen text tohoto pole${masked.map.length ? ` a jména lidí byla nahrazena značkami (${masked.map.length}×)` : ''}. Upravil ho Claude Sonnet 5.5 (Anthropic); zkontroluj, že návrh sedí.</p>`,
-    validate: form => (form.elements.namedItem('value').value.trim() ? null : 'Návrh je prázdný.'),
+    title: 'Návrh profesionálního znění', ok: 'Použít vybrané', cancel: 'Zahodit', wide: true,
+    html: `<div class="ai-parts">${keys.map(k => `<section class="ai-part">
+        <label class="check ai-use"><input type="checkbox" name="use-${k}" checked><span><b>${esc(T5_AI_PARTS.find(p => p[0] === k)[1])}</b><small>použít návrh</small></span></label>
+        ${items.filter(x => x.part === k).map(x => `<div class="ai-row"><div class="ai-orig">${esc(x.text)}</div>${field(x, k)}</div>`).join('')}
+      </section>`).join('')}</div>
+      <p class="tiny muted">Vlevo nahoře je původní text, pod ním návrh, který můžeš ještě upravit. Odeslán byl jen text vybraných částí${masked.map.length ? ` a jména lidí byla nahrazena značkami (${masked.map.length}×)` : ''}. Zkontroluj, že návrh sedí.</p>`,
+    validate: form => {
+      const used = keys.filter(k => form.elements.namedItem(`use-${k}`).checked);
+      if (!used.length) return 'Zaškrtni aspoň jednu část, nebo dej Zahodit.';
+      return items.some(x => used.includes(x.part) && !form.elements.namedItem(`v-${x.id}`).value.trim()) ? 'Návrh nesmí být prázdný.' : null;
+    },
   });
   if (res.value !== 'ok') return;
-  const value = res.form.elements.namedItem('value').value.trim().slice(0, 4000);
+
+  // 4) Použití: stejné zápisy jako při ručním psaní; co se mezitím změnilo, se nepřepíše.
   const c = effCase(caseId);
-  if (!c) return;
-  const now = ui.t5.caseId === caseId ? $(`#t5View [data-rf="${CSS.escape(field)}"]`) : null;
-  if (now) {
-    // stejná cesta jako ruční psaní: uloží se a do historie případu jde nové znění
-    now.value = value;
-    now.dispatchEvent(new Event('input', { bubbles: true }));
-    now.dispatchEvent(new Event('change', { bubbles: true }));
-  } else {
-    curRound(c)[field] = value;
-    effNote(c, effMeta(), `Příčina: ${value}`.slice(0, 500), true);
-    save();
+  const r = c && curRound(c);
+  if (!r || r.n !== round) { toast('Případ se mezitím změnil, návrh se nepoužil.', true); return; }
+  const meta = effMeta();
+  const done = [];
+  let skipped = 0;
+  for (const k of keys) {
+    if (!res.form.elements.namedItem(`use-${k}`).checked) continue;
+    let used = 0;
+    for (const x of items.filter(i => i.part === k)) {
+      const value = res.form.elements.namedItem(`v-${x.id}`).value.trim();
+      if (k === 'cause' || k === 'options') {
+        if (String(r[k] || '').trim() !== x.text) { skipped++; continue; }
+        if (value === String(r[k] || '').trim()) continue;
+        r[k] = value.slice(0, 4000);
+        effNote(c, meta, `${k === 'cause' ? 'Příčina' : 'Co s tím jde dělat'}: ${r[k]}`.slice(0, 500), true);
+        used++;
+      } else {
+        const a = r.actions.find(i => i.id === x.ref);
+        if (!a || liveText(a) !== x.text) { skipped++; continue; }
+        const text = value.replace(/\s*\n+\s*/g, ' ').slice(0, 1000);
+        if (text === liveText(a)) continue;
+        a.text = text;
+        effNote(c, meta, `${k === 'now' ? 'Okamžité opatření' : 'Opatření s procesním časem'} „${liveText(a)}“${a.owner ? `, odpovídá ${a.owner}` : ''}`, true);
+        used++;
+      }
+    }
+    if (used) done.push(T5_AI_PARTS.find(p => p[0] === k)[1].replace(/^\d · /, ''));
   }
-  toast('Příčina přeformulována.');
+  if (done.length) { save(); renderTop5(); }
+  const changed = skipped === 1 ? 'Jedna část se mezitím změnila' : `${skipped} ${skipped < 5 ? 'části se mezitím změnily' : 'částí se mezitím změnilo'}`;
+  if (skipped) toast(`${changed}, tam se návrh nepoužil.${done.length ? ` Přeformulováno: ${done.join(', ')}.` : ''}`, true);
+  else toast(done.length ? `Přeformulováno: ${done.join(', ')}.` : 'Návrh je stejný jako původní text, nic se nezměnilo.');
+}
+
+/* Definitivní smazání zrušeného případu (z detailu i ze seznamu Zrušené). */
+async function t5DeleteCase(id) {
+  const c = effCase(id);
+  if (!c || !c.cancelled) { toast('Smazat natrvalo jde jen zrušený případ.', true); return; }
+  const ok = await confirmBox('Smazat případ natrvalo?',
+    `Případ ${caseLabel(c)} (${c.ean}${c.name ? `, ${c.name}` : ''}) zmizí ze seznamu případů, souhrnů, termínů, PDF i z vydaných týdenních reportů a už se nikde nebude počítat. V historii změn zůstane jen záznam, kdo ho kdy smazal. Vrátit ho půjde jen obnovením starší verze dat (Nastavení → Historie verzí).`,
+    'Smazat natrvalo', true);
+  if (!ok) return;
+  if (!deleteCase(id)) { toast('Smazat natrvalo jde jen zrušený případ.', true); return; }
+  if (ui.t5.caseId === id) ui.t5.caseId = null;
+  save(); renderTop5();
+  toast(`Případ ${caseLabel(c)} je smazaný natrvalo.`);
 }
 
 /* Úpravy v detailu případu: text se ukládá průběžně, do historie jde po dokončení úpravy. */
@@ -3689,6 +3803,8 @@ function bindTop5Events() {
     const t = event.target;
     const aiBtn = t.closest('[data-t5ai]');
     if (aiBtn) { if (!aiBtn.disabled) t5Rewrite(aiBtn); return; }
+    const delBtn = t.closest('[data-t5delete]');
+    if (delBtn) { t5DeleteCase(delBtn.dataset.t5delete); return; }
     const pdf = t.closest('[data-t5pdf]');
     if (pdf) {
       if (pdf.dataset.t5pdf === 'week') exportWeekPdf(ui.t5.week, pdf);

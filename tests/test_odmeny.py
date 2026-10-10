@@ -81,7 +81,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "6", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "7", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -272,6 +272,9 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.3 by zahodila skupiny, dovednosti, směny a prémie z verze 2.4.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "5"})
         self.assertEqual(status, 426)
+        # Stránka verze 2.5 by zahodila čísla smazaných případů Top 5 z verze 2.6.
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "6"})
+        self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
         # Čtení a přihlášení staré stránce nevadí, jen zápis.
@@ -284,7 +287,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.5")
+        self.assertEqual(result["version"], "2.6")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -439,8 +442,10 @@ class FakeAnthropic:
                     return self.reply(401, {"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
                 if owner.mode == "overloaded":
                     return self.reply(529, {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}})
-                text = body["messages"][0]["content"]
-                content = [] if owner.mode == "refusal" else [{"type": "text", "text": json.dumps({"text": "Upraveno: " + text}, ensure_ascii=False)}]
+                parts = [{"id": p["id"], "text": "Upraveno: " + p["text"]} for p in json.loads(body["messages"][0]["content"])["parts"]]
+                if owner.mode == "missing":
+                    parts = parts[1:]
+                content = [] if owner.mode == "refusal" else [{"type": "text", "text": json.dumps({"parts": parts}, ensure_ascii=False)}]
                 self.reply(200, {"id": "msg_test", "type": "message", "role": "assistant", "model": body.get("model"),
                                  "content": content, "stop_reason": "refusal" if owner.mode == "refusal" else "end_turn",
                                  "stop_sequence": None, "usage": {"input_tokens": 12, "output_tokens": 9}})
@@ -467,7 +472,7 @@ class FakeAnthropic:
 
 @unittest.skipIf(PHP is None, "PHP není nainstalované")
 class OdmenyAiTests(unittest.TestCase):
-    """Přeformulování textu (Top 5, ✦): jen přihlášený, jen text, nic se neukládá, limity."""
+    """Přeformulování textu (Top 5, ✦): jen přihlášený, jen texty částí, nic se neukládá, limity."""
 
     KEY = "sk-ant-test-0123456789abcdef"
 
@@ -511,10 +516,14 @@ class OdmenyAiTests(unittest.TestCase):
         self.assertEqual(req["headers"]["anthropic-beta"], "server-side-fallback-2026-07-01")
         body = req["body"]
         self.assertEqual(body["model"], "claude-sonnet-5-5")
-        self.assertEqual(body["messages"], [{"role": "user", "content": sent}], "jen text pole, nic dalšího")
+        self.assertEqual(len(body["messages"]), 1)
+        self.assertEqual(body["messages"][0]["role"], "user")
+        self.assertEqual(json.loads(body["messages"][0]["content"]), {"parts": [{"id": "cause", "pole": "Proč se to stalo (příčina nízkého plnění)", "text": sent}]},
+                         "jen text pole a jeho název, nic dalšího")
         self.assertEqual(set(body), {"model", "max_tokens", "system", "messages", "output_config", "fallbacks"})
         self.assertEqual(body["fallbacks"], "default")
         self.assertEqual(body["output_config"]["effort"], "low")
+        self.assertEqual(body["output_config"]["format"]["schema"]["required"], ["parts"])
         self.assertNotIn("ŽLUŤOUČKÝ", body["system"])
         # Text se nikam neuloží: v databázi je jen počet volání.
         for path in self.server.data.iterdir():
@@ -528,6 +537,52 @@ class OdmenyAiTests(unittest.TestCase):
         self.assertEqual(self.client.api("POST", "ai_rewrite", {"text": "Ahoj světe"}, {"Sec-Fetch-Site": "cross-site"})[0], 403)
         self.assertEqual(self.client.api("POST", "ai_rewrite", {"text": "Ahoj světe"}, {"X-Odmeny": ""})[0], 403)
         self.assertEqual(len(self.api_mock.requests), 1)
+
+    def test_rewrites_selected_parts_in_one_call(self):
+        # 2.6: víc částí (příčina, možnosti, jednotlivá opatření) jedním voláním; název pole
+        # doplní server, další klíče od klienta (třeba odpovědná osoba) se neodešlou.
+        self.client.setup()
+        self.enable()
+        parts = [{"id": "cause", "text": "dil se upina rucne"}, {"id": "options", "text": "doraz na upinani"},
+                 {"id": "now-1", "text": "kontrola prvniho kusu", "owner": "Novák Jan", "due": "2026-10-20"},
+                 {"id": "process-2", "text": "zadost o zmenu normy\r\nna [osoba 1]"}]
+        status, result = self.client.api("POST", "ai_rewrite", {"parts": parts})
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result, {"parts": [
+            {"id": "cause", "text": "Upraveno: dil se upina rucne"}, {"id": "options", "text": "Upraveno: doraz na upinani"},
+            {"id": "now-1", "text": "Upraveno: kontrola prvniho kusu"}, {"id": "process-2", "text": "Upraveno: zadost o zmenu normy\nna [osoba 1]"}]})
+        self.assertEqual(len(self.api_mock.requests), 1, "jedno volání pro všechny části")
+        sent = json.loads(self.api_mock.requests[0]["body"]["messages"][0]["content"])
+        self.assertEqual(sent, {"parts": [
+            {"id": "cause", "pole": "Proč se to stalo (příčina nízkého plnění)", "text": "dil se upina rucne"},
+            {"id": "options", "pole": "Co s tím jde dělat (možná řešení)", "text": "doraz na upinani"},
+            {"id": "now-1", "pole": "Co jde udělat hned (jedno okamžité opatření)", "text": "kontrola prvniho kusu"},
+            {"id": "process-2", "pole": "Co si vyžádá procesní čas (jedno opatření)", "text": "zadost o zmenu normy\nna [osoba 1]"}]})
+        self.assertNotIn("Novák", json.dumps(self.api_mock.requests[0]["body"], ensure_ascii=False))
+        db = sqlite3.connect(self.server.data / "odmeny.sqlite3")
+        self.assertEqual(db.execute("SELECT COUNT(*), SUM(chars) FROM ai_calls").fetchone(), (1, 18 + 16 + 21 + 33))
+        db.close()
+        # Model vynechal část: návrh se nepřiřadí špatně, přijde chyba.
+        self.api_mock.mode = "missing"
+        status, result = self.client.api("POST", "ai_rewrite", {"parts": parts[:2]})
+        self.assertEqual(status, 502, result)
+        self.assertIn("nešla přečíst", result["error"])
+
+    def test_parts_are_validated(self):
+        self.client.setup()
+        self.enable()
+        ok = {"id": "cause", "text": "Díl se upíná ručně."}
+        for parts, code in (([], 422), ({"cause": "text"}, 422), ("text", 422), ([ok, ok], 422),
+                            ([{"id": "ean", "text": "8590001000011"}], 422), ([{"id": "now-0", "text": "abc"}], 422),
+                            ([{"id": "now-100", "text": "abc"}], 422), ([{"id": "cause ", "text": "abc"}], 422),
+                            ([{"id": "now-1", "text": "x"}], 422), ([{"id": "now-1", "text": 5}], 422), ([{"id": 1, "text": "abc"}], 422),
+                            ([{"id": "cause", "text": "x" * 2001}], 413),
+                            ([{"id": f"now-{i}", "text": "x" * 1600} for i in range(1, 5)], 413),
+                            ([{"id": f"now-{i}", "text": "abc"} for i in range(1, 32)], 413)):
+            status, result = self.client.api("POST", "ai_rewrite", {"parts": parts})
+            self.assertEqual(status, code, (parts if len(json.dumps(parts)) < 200 else len(parts), result))
+        self.assertEqual(self.api_mock.requests, [], "neplatný požadavek se neodeslal")
+        self.assertEqual(self.client.api("POST", "ai_rewrite", {"parts": [{"id": f"now-{i}", "text": "x" * 1500} for i in range(1, 5)]})[0], 200)
 
     def test_validation_and_limits(self):
         card = self.client.setup()

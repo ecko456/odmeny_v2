@@ -54,16 +54,35 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   se i zařízení, která se přes ni zapamatovala. Pozor: když ztratíš všechny
   kartičky a nemáš zapamatované zařízení, k datům se už nedostane nikdo, ani správce
   serveru. Vytiskni si proto dvě kartičky a jednu ulož bokem.
-- **Přeformulování textu (✦) je jediná výjimka**: když u příčiny v Top 5 klikneš na
-  „Přeformulovat“, odejde text toho jednoho pole přes server do API Anthropicu (Claude
-  Sonnet 5.5). Jména lidí z evidence prohlížeč předtím nahradí značkami `[osoba 1]`.
-  Server text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli
-  limitu. Bez klíče k API je funkce vypnutá a tlačítko se neukáže.
+- **Přeformulování textu (✦) je jediná výjimka**: když v případu Top 5 klikneš na
+  „Přeformulovat“ a vybereš části (kroky 1–4), odejde text jen těch částí přes server do
+  API Anthropicu (Claude Sonnet 5.5). Jména lidí z evidence prohlížeč předtím nahradí
+  značkami `[osoba 1]`; odpovědné osoby, termíny ani údaje o dílu se neposílají. Server
+  text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
+  klíče k API je funkce vypnutá a tlačítko se neukáže.
+
+## Co je nového ve verzi 2.6
+
+- **Přeformulovat vše, nebo jen vybrané části.** Tlačítko ✦ je teď pod krokem 4 případu.
+  Po kliknutí vybereš, co se má přeformulovat: Proč se to stalo, Co s tím jde dělat, Co
+  jde udělat hned a Co si vyžádá procesní čas (u opatření se posílá jen jejich text, každé
+  zvlášť). Vše jde jedním voláním.
+  - Návrh se ukáže po částech vedle původního textu; každou část jde ještě upravit nebo
+    odškrtnout. **Použít vybrané** zapíše jen zaškrtnuté části (do historie případu stejně
+    jako ruční úprava), **Zahodit** nic nezmění.
+  - Co jsi během čekání na návrh sám přepsal, se nepřepíše.
+  - Jedna část nejvýš 2000 znaků, všechny vybrané dohromady 6000.
+- **Zrušený případ jde smazat natrvalo** (v detailu případu, nebo v seznamu Zrušené).
+  Zmizí ze seznamu případů, souhrnů, termínů, PDF i z vydaných týdenních reportů (položka
+  v žebříčku tam zůstane, jen bez odkazu na případ) a nikde se už nepočítá. V historii
+  změn zůstane jen záznam, kdo ho kdy smazal; vrátit ho jde obnovením starší verze dat.
+  Číslo smazaného případu se znovu nepoužije.
+- Stránka otevřená ještě ve verzi 2.5 po aktualizaci nic neuloží a vyzve k obnovení.
 
 ## Co je nového ve verzi 2.5
 
 - **Přeformulování příčiny v Top 5.** U pole „Proč se to stalo“ je tlačítko
-  **✦ Přeformulovat**. Claude Sonnet 5.5 zkontroluje pravopis a přepíše text do věcné,
+  **✦ Přeformulovat** (od 2.6 pod krokem 4 pro všechny části, viz výše). Claude Sonnet 5.5 zkontroluje pravopis a přepíše text do věcné,
   profesionální češtiny pro auditora; fakta, čísla, EAN a názvy nechá, nic nepřidá.
   - Odejde **jen text toho pole**, nic dalšího z aplikace. Jména lidí z evidence se
     předtím nahradí značkami (i ve skloňovaných tvarech) a v návrhu se vrátí zpátky.
@@ -339,17 +358,18 @@ v hlavičce každého skriptu:
   sloupců, navýšení platu, jen Kafe, PDF s pravidly, historie, mobil);
 - `tests/e2e_top5.js`: novinky 2.2 (ruční zápis Top 5 týdne, případ, opatření, ověření
   s ručními hodnotami, nové kolo, termíny, vydaný report, souhrn a PDF případu, jednotka
-  času, předvyplnění z evidence práce s EAN, mobil, tmavý režim);
+  času, předvyplnění z evidence práce s EAN, mobil, tmavý režim, od 2.6 i smazání zrušeného
+  případu natrvalo);
 - `tests/e2e_kontroly.js`: novinky 2.3 (nutné úkony, plán 25 % z oddělení, zápis kontroly,
   neproběhlo, náhradník, přesun, ruční přidání, přegenerování, PDF plánu a výsledků, karta
   člověka, výsledky, historie, nastavení, mobil, tmavý režim);
 - `tests/e2e_matice.js`: novinky 2.4 (skupiny, dovednosti a schémata, hodnocení u člověka
   i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
   mzdy s upozorněním, mobil, tmavý režim);
-- `tests/e2e_ai.js`: novinka 2.5 (✦ Přeformulovat u příčiny s náhradním API Anthropicu:
-  tlačítko jen s klíčem, odchází jen text s jmény nahrazenými značkami, Zahodit, Použít,
-  historie případu, chyba služby, mobil, tmavý režim). Server musí běžet
-  s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`.
+- `tests/e2e_ai.js`: novinky 2.5 a 2.6 (✦ Přeformulovat s náhradním API Anthropicu:
+  tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
+  návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
+  služby, mobil, tmavý režim). Server musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`.
 
 **Aktualizace na místě** na lokálním Apachi v kontejneru (stará stránka dostane 426, sdílená
 data, výpočty a historie zůstanou, novinky se uloží nad převzatými daty). 2.3 → 2.4:
@@ -360,6 +380,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
+S `EXPECT_VERSION='2\.6'` jde stejný test pustit na aktualizaci 2.3 → 2.6 (data verze 5 → 7).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

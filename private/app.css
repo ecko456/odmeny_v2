@@ -1013,13 +1013,26 @@ input[type="date"]:disabled { opacity: .55; }
 @media (max-width: 640px) { .wage-item { flex-direction: column; align-items: stretch; } }
 
 /* Top 5: přeformulování příčiny (✦, verze 2.5) */
-.t5-ai-row { display: flex; justify-content: flex-end; margin-top: 6px; }
-.t5-ai { gap: 6px; color: var(--acc); }
+.t5-ai-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; padding: 12px 14px; border: 1px dashed var(--line); border-radius: 12px; background: var(--surface-2); }
+.t5-ai-bar > div { display: grid; gap: 2px; min-width: 0; flex: 1 1 260px; }
+.t5-ai-bar b { font-size: 14px; }
+.t5-ai { gap: 6px; flex: none; }
 .t5-ai .icon { width: 16px; height: 16px; }
 .t5-ai.busy { opacity: .75; cursor: progress; }
 .t5-ai.busy .icon { animation: ai-pulse 1s ease-in-out infinite; }
 @keyframes ai-pulse { 50% { transform: scale(.8); opacity: .55; } }
 @media (prefers-reduced-motion: reduce) { .t5-ai.busy .icon { animation: none; } }
-.ai-compare { display: grid; gap: 12px; }
-.ai-compare .eyebrow { margin: 0 0 4px; }
+.btn.ghost.t5-delbtn { color: var(--crit); }
+.ai-picks, .ai-parts { display: grid; gap: 8px; margin: 8px 0 10px; }
+.ai-parts { gap: 14px; }
+.ai-pick { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.ai-pick span, .ai-use span { display: grid; gap: 2px; min-width: 0; }
+.ai-pick small, .ai-use small { color: var(--ink-3); font-size: 12.5px; overflow-wrap: anywhere; }
+.ai-pick.off { opacity: .6; cursor: default; }
+.ai-all { background: transparent; }
+.ai-part { display: grid; gap: 8px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+.ai-part:last-child { border-bottom: 0; padding-bottom: 0; }
+.ai-row { display: grid; gap: 6px; }
+.ai-row input[type="text"], .ai-row textarea { width: 100%; }
+.ai-part:has(.ai-use input:not(:checked)) .ai-row { opacity: .45; }
 .ai-orig { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--ink-2); font-size: 14px; white-space: pre-wrap; max-height: 180px; overflow: auto; }

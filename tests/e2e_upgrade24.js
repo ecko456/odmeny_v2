@@ -82,7 +82,9 @@ function compare(beforeJson, afterJson) {
   const a = JSON.parse(beforeJson), b = JSON.parse(afterJson);
   const out = [];
   const same = (x, y, what) => { if (JSON.stringify(x) !== JSON.stringify(y)) out.push(`${what}: ${JSON.stringify(x).slice(0, 160)} → ${JSON.stringify(y).slice(0, 160)}`); };
-  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v'].includes(k)).forEach(k => same(a[k], b[k], k));
+  // 2.6 přidá do Top 5 jen prázdnou evidenci smazaných čísel případů (eff.nos)
+  const effOld = e => { if (!e || !('nos' in e)) return e; const c = { ...e }; same(c.nos, {}, 'eff.nos'); delete c.nos; return c; };
+  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
   same(a.positions.map(p => p.id), b.positions.map(p => p.id), 'pořadí skupin');
   a.positions.forEach((p, i) => {
     const q = b.positions[i];
@@ -238,7 +240,8 @@ function compare(beforeJson, afterJson) {
   const page = await ctx2.newPage();
   await watch(page, 'nová');
   await login(page, keyA);
-  check(/2\.4/.test(await page.evaluate(() => ui.me.version)), 'po aktualizaci neběží 2.4');
+  // EXPECT_VERSION: stejný test jde pustit i na pozdější aktualizaci (2.3 → 2.6)
+  check(new RegExp(process.env.EXPECT_VERSION || '2\\.4').test(await page.evaluate(() => ui.me.version)), 'po aktualizaci neběží očekávaná verze');
   const after = await page.evaluate(STATE);
   fs.writeFileSync(path.join(S, 'u24-before.json'), before);
   fs.writeFileSync(path.join(S, 'u24-after.json'), after);
