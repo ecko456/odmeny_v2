@@ -143,6 +143,34 @@ const editor = '#posEditor';
   await page.selectOption('#matrixShift', 'S2');
   check(!(await page.$(`[data-mxr="${adam.key}"]`)), 'filtr směny skryje skupinu 1');
   await page.selectOption('#matrixShift', '*');
+
+  // Matice po odděleních (2.10.1): oddělení pod sebou, každé jen se svými dovednostmi.
+  await page.selectOption('#matrixGroup', '');
+  await page.waitForFunction(() => document.querySelectorAll('#matrixView .mx-sec').length > 1);
+  const secs = await page.evaluate(() => {
+    const list = [...document.querySelectorAll('#matrixView .mx-sec')];
+    return { names: list.map(x => x.dataset.mxdept), want: [...new Set(S.positions.filter(p => isGroup(p) && groupSkills(p).length).map(deptOf))],
+      wrong: list.flatMap(x => [...x.querySelectorAll('[data-skill]')].filter(b => deptOf(skillById(b.dataset.skill).p) !== x.dataset.mxdept).map(b => b.dataset.skill)),
+      kpis: list.every(x => x.querySelectorAll('.mx-kpi').length >= 2) };
+  });
+  check(JSON.stringify(secs.names) === JSON.stringify(secs.want), `oddělení pod sebou: ${secs.names} / ${secs.want}`);
+  check(!secs.wrong.length && secs.kpis, `v oddělení jen jeho dovednosti a souhrn: ${secs.wrong}`);
+  // Oddělení se dvěma skupinami: filtr „celé oddělení“, názvy skupin nad dovednostmi.
+  const dept0 = await page.evaluate(id => S.positions.find(p => p.id === id).dept || '', grp.id);
+  const other = await page.evaluate(id => deptOf(S.positions.find(p => isGroup(p) && groupSkills(p).length && p.id !== id)), grp.id);
+  await page.evaluate(([id, d]) => { S.positions.find(p => p.id === id).dept = d; save(); renderMatrix(); }, [grp.id, other]);
+  await page.selectOption('#matrixGroup', `d:${other}`);
+  await page.waitForFunction(d => { const l = document.querySelectorAll('#matrixView .mx-sec'); return l.length === 1 && l[0].dataset.mxdept === d; }, other);
+  const two = await page.evaluate(() => ({ heads: [...document.querySelectorAll('#matrixView .mx-sec .mx-dept')].map(th => th.textContent.trim()), title: document.querySelector('#matrixView .mx-sec-title').textContent.replace(/\s+/g, ' ') }));
+  check(two.heads.length === 2 && two.heads.includes('Frézování') && /Skupiny .*Frézování/.test(two.title), `oddělení se dvěma skupinami: ${JSON.stringify(two)}`);
+  await page.screenshot({ path: `${shots}/03b-matrix-dept.png`, fullPage: true });
+  await page.evaluate(([id, d]) => { S.positions.find(p => p.id === id).dept = d; save(); renderMatrix(); }, [grp.id, dept0]);
+  // oddělení zbyla jedna skupina: filtr ukazuje tu skupinu (výběr odpovídá tomu, co je vidět)
+  await page.waitForFunction(() => document.querySelectorAll('#matrixView .mx-sec').length === 1);
+  check(await page.inputValue('#matrixGroup') !== '', 'výběr filtru odpovídá zobrazenému oddělení');
+  await page.selectOption('#matrixGroup', '');
+  await page.waitForFunction(() => document.querySelectorAll('#matrixView .mx-sec').length > 1);
+  await saved(page);
   const [xl] = await Promise.all([page.waitForEvent('download'), page.click('#btnMatrixXlsx')]);
   await xl.saveAs(path.join(S, 'matice.xlsx'));
   check(fs.statSync(path.join(S, 'matice.xlsx')).size > 4000, 'Excel matice je podezřele malý');

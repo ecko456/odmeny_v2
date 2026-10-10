@@ -838,13 +838,16 @@ function leadsFollowDept(before,after){
 }
 /* Kdo se v matici ukazuje: nevyřazení (a ne vedoucí) se skupinou nebo s nějakým hodnocením. */
 function matrixPeople(){return Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&(e.positionId||(e.rate&&Object.keys(e.rate).length)));}
-/* Matice: lidé × dovednosti (všech skupin, nebo jedné). Řazení podle směny, skupiny a jména. */
-function skillGrid(groupId,shift){
-  const groups=S.positions.filter(p=>isGroup(p)&&groupSkills(p).length&&(!groupId||p.id===groupId));
+/* Matice: lidé × dovednosti (všech skupin, jedné skupiny, nebo jednoho oddělení). Řádky = lidé
+   těch skupin a lidé odjinud, kteří mají některou z dovedností ohodnocenou (zaučení).
+   Řazení podle směny, vlastní skupiny, pořadí skupin a jména. */
+function skillGrid(groupId,shift,dept){
+  const groups=S.positions.filter(p=>isGroup(p)&&groupSkills(p).length&&(!groupId||p.id===groupId)&&(!dept||deptOf(p)===dept));
   const cols=groups.flatMap(p=>groupSkills(p).map(s=>({p,s})));
   const order=new Map(S.positions.map((p,i)=>[p.id,i])),so=k=>{const i=SHIFT_KEYS.indexOf(k);return i<0?9:i;};
-  const rows=matrixPeople().filter(e=>(shift==null||shift==="*"||shiftOf(e)===shift)&&(!groupId||e.positionId===groupId||cols.some(c=>rateOf(e,c.s.id)>0)))
-    .map(e=>{const pos=posOf(e);return {e,pos,shift:shiftOf(e),home:!groupId||e.positionId===groupId,pct:isGroup(pos)?skillPct(e,pos):null,cells:cols.map(c=>rateOf(e,c.s.id))};})
+  const all=!groupId&&!dept,ids=new Set(groups.map(p=>p.id));
+  const rows=matrixPeople().filter(e=>(shift==null||shift==="*"||shiftOf(e)===shift)&&(all||ids.has(e.positionId)||cols.some(c=>rateOf(e,c.s.id)>0)))
+    .map(e=>{const pos=posOf(e);return {e,pos,shift:shiftOf(e),home:all||ids.has(e.positionId),pct:isGroup(pos)?skillPct(e,pos):null,cells:cols.map(c=>rateOf(e,c.s.id))};})
     .sort((x,y)=>so(x.shift)-so(y.shift)||(y.home-x.home)||((order.get(x.e.positionId)??999)-(order.get(y.e.positionId)??999))||norm(x.e.last+" "+x.e.first).localeCompare(norm(y.e.last+" "+y.e.first),"cs"));
   const coverage=cols.map((c,j)=>{const by={};[...SHIFT_KEYS,""].forEach(k=>{by[k]={ready:0,trained:0};});
     rows.forEach(r=>{const v=r.cells[j];if(v>=1)by[r.shift].trained++;if(v>=3)by[r.shift].ready++;});

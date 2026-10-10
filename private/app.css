@@ -977,7 +977,7 @@ input[type="date"]:disabled { opacity: .55; }
   .sk-row { flex-direction: column; }
   .sk-level { grid-template-columns: 26px minmax(0, 1fr); }
   .sk-level textarea { grid-column: 2; }
-  .mx-filters select { min-width: 0; flex: 1 1 140px; }
+  .mx-filters select { min-width: 0; flex: 1 1 100%; }
   .cap-table th, .cap-table td { white-space: normal; }
 }
 @media print {
@@ -1047,13 +1047,6 @@ input[type="date"]:disabled { opacity: .55; }
 .opt-check { margin: 4px 0 10px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
 .opt-check small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 12.5px; font-weight: 400; }
 .lead-pick { margin-top: 4px; }
-.mx-leads { margin: 0 0 14px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-.mx-leads .eyebrow { margin: 0 0 8px; }
-.mx-lead-list { display: flex; flex-wrap: wrap; gap: 8px 24px; }
-.mx-lead { display: grid; gap: 1px; min-width: 0; }
-.mx-lead-dept { color: var(--ink-3); font-size: 12.5px; }
-.mx-lead-who { font-weight: 600; font-size: 14.5px; overflow-wrap: anywhere; }
-@media print { .mx-leads { border-color: #bbb; } }
 
 /* Kapacita směn po týdnech (2.8): skupiny 1 a 2 se střídají po týdnu */
 .cap-table th.cap-wk { text-align: center; border-left: 1px solid var(--line); }
@@ -1081,3 +1074,46 @@ input[type="date"]:disabled { opacity: .55; }
 .lead-matrix .mx-main { min-width: 120px; max-width: 240px; white-space: normal; }
 .lead-skills .card-head > div, .lead-rate .card-head > div { flex: 1 1 320px; }
 .lead-skills .tiny { margin: 12px 0 0; }
+
+/* Matice po odděleních (2.10.1): každé oddělení vlastní karta pod sebou, sloupce zarovnané */
+#matrixView { display: grid; gap: 16px; min-width: 0; }
+.mx-sec { padding: 0; overflow: hidden; }
+.mx-sec-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 24px; padding: 18px 20px 16px; }
+.mx-sec-title { flex: 1 1 260px; min-width: 0; }
+.mx-sec-title .eyebrow { margin: 0 0 2px; }
+.mx-sec-title h3 { margin: 0; font-size: 21px; line-height: 1.15; }
+.mx-sec-title p { margin: 4px 0 0; }
+.mx-sec-lead { font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.mx-sec-lead .linkish { font-weight: 600; color: var(--ink); }
+.mx-kpis { display: flex; flex-wrap: wrap; gap: 8px; }
+.mx-kpi { display: grid; align-content: start; gap: 3px; min-width: 96px; max-width: 168px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.mx-kpi b { font: 600 18px/1.1 var(--mono); color: var(--ink); }
+.mx-kpi span { color: var(--ink-3); font-size: 12px; line-height: 1.25; }
+.mx-kpi b small { color: var(--ink-3); font: 500 13px/1 var(--body); }
+.mx-kpi.warn { border-color: color-mix(in srgb, var(--warn) 35%, transparent); background: var(--warn-soft); }
+.mx-kpi.warn b { color: var(--warn); }
+.mx-kpi.ok b { color: var(--good); }
+.mx-sec-empty { margin: 0; padding: 14px 20px 18px; border-top: 1px solid var(--line); }
+.table-card.mx-sec-table { border-top: 1px solid var(--line); border-radius: 0; max-height: calc(100vh - 160px); }
+.table-card.mx-sec-table .matrix { width: 100%; min-width: max-content; }
+.mx-sec-table .matrix th:first-child, .mx-sec-table .matrix th:last-child { border-radius: 0; }
+.mx-sec-table .mx-name { width: 210px; }
+.mx-sec-table .mx-main { width: 170px; }
+.mx-sec-table .mx-pct { width: 64px; }
+.mx-sec-table .mx-col { width: 84px; min-width: 84px; max-width: 84px; }
+.mx-sec-table .mx-col span { max-width: 80px; }
+.matrix .mx-fill { width: auto; min-width: 0; padding: 0; }
+.mx-guest .mx-name .linkish { color: var(--ink-2); font-weight: 500; }
+.mx-guest .mx-main .tag { margin-left: 4px; }
+@media (max-width: 900px) {
+  .mx-sec-head { padding: 14px 14px 12px; }
+  .mx-kpi { min-width: 0; flex: 1 1 calc(50% - 8px); max-width: none; }
+  .mx-sec-table .mx-name { width: auto; }
+  .mx-sec-table .mx-main { width: auto; }
+}
+@media print {
+  #matrixView { gap: 10px; }
+  .mx-sec { overflow: visible; }
+  .mx-sec-head { padding: 8px 10px; }
+  .mx-kpi { padding: 4px 8px; border-color: #bbb; }
+}

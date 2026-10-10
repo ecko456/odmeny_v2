@@ -1,7 +1,7 @@
 // Prohlížečový průchod vedoucími pracovníky (verze 2.7): přidání vedoucího s odděleními,
 // oddíl „Vedoucí pracovníci“ v Lidech, zaškrtávání oddělení, z běžného člověka vedoucí
 // a zpátky. Vedoucí se nepočítá do přehledu (tabáky, Kafe, prémie), sankcí, kontrol ani
-// kapacity; v Matici dovedností je v pásu „Vedoucí oddělení“ (i při filtru skupiny).
+// kapacity; v Matici dovedností je u svých oddělení jako vedoucí (i při filtru skupiny).
 // Dovednosti vedoucích (2.10): společný seznam v záložce Vedoucí, hodnocení 0–4 v matici
 // vedoucích i v detailu vedoucího, list Vedoucí v Excelu.
 // Na konci uložená data, historie změn, mobil a tmavý režim.
@@ -97,20 +97,21 @@ const overflow = page => page.evaluate(() => document.documentElement.scrollWidt
     grid: skillGrid(null, '*').rows.some(r => r.e.key === key), rows: activeRows().some(r => r.e.key === key) }), [info.worker, d1]);
   check(!outside.kt && !outside.grid && !outside.rows, `vedoucí mimo kontroly, matici lidí a hodnocení: ${JSON.stringify(outside)}`);
 
-  // Matice dovedností: pás „Vedoucí oddělení“.
+  // Matice dovedností: vedoucí v hlavičce svého oddělení.
   await page.click('#nav [data-view="matice"]');
-  await page.waitForSelector('#matrixView .mx-leads');
-  const band = (await page.textContent('#matrixView .mx-leads')).replace(/\s+/g, ' ');
-  check(band.includes(d1) && band.includes(info.workerName) && band.includes('Šéf Karel'), `pás vedoucích: ${band}`);
+  await page.waitForSelector('#matrixView .mx-sec-lead');
+  const band = (await page.textContent(`#matrixView .mx-sec[data-mxdept="${d1}"] .mx-sec-lead`)).replace(/\s+/g, ' ');
+  check(band.includes(info.workerName) && band.includes('Šéf Karel'), `vedoucí oddělení ${d1}: ${band}`);
   check(!(await page.$(`#matrixView tbody [data-mxperson="${info.worker}"]`)), 'vedoucí není mezi řádky matice');
   await page.screenshot({ path: `${shots}/03-matrix.png`, fullPage: true });
   const g2 = await page.evaluate(d => S.positions.find(p => isGroup(p) && groupSkills(p).length && deptOf(p) === d).id, d2);
   await page.selectOption('#matrixGroup', g2);
   await page.waitForTimeout(150);
-  const band2 = (await page.textContent('#matrixView .mx-leads')).replace(/\s+/g, ' ');
-  check(band2.includes(d2) && !band2.includes(info.workerName) && band2.includes('Šéf Karel'), `pás při filtru skupiny: ${band2}`);
+  const band2 = (await page.textContent('#matrixView .mx-sec-lead')).replace(/\s+/g, ' ');
+  const secs2 = await page.$$eval('#matrixView .mx-sec', l => l.map(x => x.dataset.mxdept));
+  check(JSON.stringify(secs2) === JSON.stringify([d2]) && !band2.includes(info.workerName) && band2.includes('Šéf Karel'), `vedoucí při filtru skupiny: ${secs2} ${band2}`);
   await page.selectOption('#matrixGroup', '');
-  await page.click('#matrixView .mx-leads [data-mxperson="sef|karel"]');
+  await page.click(`#matrixView .mx-sec[data-mxdept="${d1}"] .mx-sec-lead [data-mxperson="sef|karel"]`);
   await page.waitForSelector('#view-lide.on #lDetail [data-leaddept]');
   check(/Šéf Karel/.test(await page.textContent('#lDetail h2')), 'klik na vedoucího v matici otevře jeho detail');
 
@@ -205,7 +206,7 @@ const overflow = page => page.evaluate(() => document.documentElement.scrollWidt
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.click('#nav [data-view="matice"]');
   await page.click('#mxTabs [data-mxtab="matrix"]');   // naposledy otevřená záložka byla Vedoucí
-  await page.waitForSelector('#matrixView .mx-leads');
+  await page.waitForSelector('#matrixView .mx-sec-lead');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200);
   check(await overflow(page) <= 1, 'mobil: matice bez přetečení stránky');

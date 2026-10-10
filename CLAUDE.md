@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 10. 10. 2026 (verze 2.10.1):
+
+- **Matice po odděleních.** Uživatel: „mi přijde jako nesmysl, aby skupiny byly v řadě za sebou.
+  Je to pak nepřehledné … třeba podle oddělení jednotlivých a dát je pod sebe“.
+  - `skillGrid(groupId, shift, dept)`: třetí parametr omezí sloupce na skupiny oddělení,
+    řádky jsou jeho lidé a zaučení odjinud (`home: false`).
+  - UI: `renderMatrixGrid` skládá karty `mxSectionHtml` (`.mx-sec[data-mxdept]`): hlavička
+    s vedoucími (`.mx-sec-lead`, nahradila pás `.mx-leads` z 2.7) a souhrnem `.mx-kpi`,
+    tabulka s pevnými šířkami sloupců a prázdným sloupcem `.mx-fill` (zarovnání pod sebou).
+    Řádek za směnu jen při víc směnách, `tr.mx-guest` + štítek „zaučení“.
+  - Filtr `#matrixGroup`: `''`, id skupiny, nebo `d:` + oddělení (jen u oddělení s víc
+    skupinami, `mxFilter`/`mxFilterOptions`; oddělení s jednou skupinou = ta skupina).
+    `P.matrixDept` drží až 80 znaků. Excel se nezměnil.
+  - Data beze změny (verze dat zůstává 11).
+
 Stav k 10. 10. 2026 (verze 2.10):
 
 - **Dovednosti vedoucích.** Uživatel: „U vedoucích pracovníků, ať je možné také přidat
@@ -97,7 +112,7 @@ Stav k 10. 10. 2026 (verze 2.7):
   - UI: dialog Přidat člověka (volba vedoucího + oddělení), oddíl „Vedoucí pracovníci“ v seznamu,
     `renderLeadDetail` (zaškrtávání oddělení `[data-leaddept]`, poznámka, přepínač `#pLead`),
     přepínač `#pLead` i u běžného člověka (`setLead`, předvyplní oddělení jeho skupiny),
-    pás `.mx-leads` nad maticí (`mxLeadsHtml`), sloupec „Vedoucí oddělení“ v exportu/importu
+    pás `.mx-leads` nad maticí (`mxLeadsHtml`, od 2.10.1 jména v hlavičce oddělení), sloupec „Vedoucí oddělení“ v exportu/importu
     zařazení, záznamy v historii změn („je vedoucí pracovník (…)“, „už není vedoucí“, změna oddělení).
   - Opraveno mimochodem: `input` bez `type` (jednoduché dialogy přes `promptBox`) neměl styl.
 
@@ -348,7 +363,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.7 | `7554e68` | vedoucí pracovníci (mimo benefity, v matici jako vedoucí oddělení; data verze 8) |
 | 2.8 | `a3bc6cb` | stálá odpolední směna, kapacita po týdnech se sloučenými směnami (data verze 9) |
 | 2.9 | `d70331b` | plánovaná kapacita skupiny (ks/h na osobu), nemoc u lidí (data verze 10) |
-| 2.10 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: dovednosti vedoucích, společné pro všechny, úroveň 0–4 (data verze 11) |
+| 2.10 | `42f5539` | dovednosti vedoucích, společné pro všechny, úroveň 0–4 (data verze 11) |
+| 2.10.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: matice po odděleních pod sebou (jen vzhled, data beze změny) |
 
 Verze 2.1 přidala:
 
@@ -483,7 +499,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `rate`: hodnocení dovedností (0 se neukládá); `shift`: `R|O|S1|S2` (O = stálá odpolední, 2.8);
   - `sick` (2.9): datum, od kdy je nemocný; dočasně mimo kapacity;
   - `lead` (2.7): vedoucí pracovník, pole oddělení, která má na starosti (může být prázdné);
-    kdo ho má, nehodnotí se a v matici je jen v pásu „Vedoucí oddělení“; dovednosti
+    kdo ho má, nehodnotí se a v matici je jen jako vedoucí v hlavičce oddělení; dovednosti
     vedoucích (2.10) má v `rate` pod id z `leadSkills`;
   - `legacy`: snímek zařazení z 2.3 `{at, pos, dept, level, levelName, levelDesc, tabaky, onlyKafe, raise, skills[{pos, level, levelName}]}`,
     dokud ho vedoucí nesmaže; `hist.pct` = procento dovedností (na 0,1).

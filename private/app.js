@@ -48,7 +48,7 @@ function cleanPrefs(input) {
     sanFilter: MONTH_RE.test(String(x.sanFilter)) ? x.sanFilter : '',
     lockMinutes: [5, 10, 15, 30, 60].includes(+x.lockMinutes) ? +x.lockMinutes : 15,
     logSeen: Number.isFinite(+x.logSeen) ? Math.max(0, +x.logSeen) : 0,
-    matrixDept: str(x.matrixDept, 60),
+    matrixDept: str(x.matrixDept, 80),   // id skupiny, nebo „d:“ + název oddělení
     matrixShift: ['*', 'R', 'O', 'S1', 'S2', ''].includes(x.matrixShift) ? x.matrixShift : '*',
     mxTab: ['matrix', 'groups', 'cap', 'leads'].includes(x.mxTab) ? x.mxTab : 'matrix',
     profileRange: ['month', '3', '6', '12', 'year', 'all', 'custom'].includes(x.profileRange) ? x.profileRange : '12',
@@ -2497,60 +2497,103 @@ function renderMatrix() {
   else renderMatrixGrid();
 }
 
-/* Vedoucí oddělení nad maticí (2.7): jen když nějaký vedoucí pracovník je. */
-function mxLeadsHtml(groups) {
-  if (!leadPeople().length) return '';
-  const deps = [...new Set(groups.map(deptOf))];
-  if (!deps.length) return '';
-  return `<div class="mx-leads"><p class="eyebrow">Vedoucí oddělení</p><div class="mx-lead-list">${deps.map(d => {
-    const l = leadsOf(d);
-    return `<div class="mx-lead"><span class="mx-lead-dept">${esc(d)}</span><span class="mx-lead-who">${l.length ? l.map(e => `<button class="linkish" type="button" data-mxperson="${esc(e.key)}">${esc(e.last)} ${esc(e.first)}</button>`).join(', ') : '<span class="muted">bez vedoucího</span>'}</span></div>`;
-  }).join('')}</div></div>`;
+/* Filtr matice: všechna oddělení, celé oddělení („d:“ + název), nebo jedna skupina (id). */
+function mxFilter(groups) {
+  const v = String(P.matrixDept || '');
+  const group = groups.find(p => p.id === v);
+  if (group) return { group };
+  const gs = v.startsWith('d:') ? groups.filter(p => deptOf(p) === v.slice(2)) : [];
+  // oddělení, kterému zbyla jedna skupina, je v nabídce jako ta skupina
+  if (gs.length === 1) return { group: gs[0] };
+  return gs.length ? { dept: v.slice(2) } : {};
+}
+function mxFilterOptions(groups, f) {
+  const opt = (v, label, on) => `<option value="${esc(v)}"${on ? ' selected' : ''}>${esc(label)}</option>`;
+  return opt('', 'Všechna oddělení', !f.group && !f.dept) + [...new Set(groups.map(deptOf))].map(d => {
+    const gs = groups.filter(p => deptOf(p) === d);
+    if (gs.length === 1) return opt(gs[0].id, gs[0].name === d ? d : `${d} – ${gs[0].name || '(bez názvu)'}`, f.group === gs[0]);
+    return `<optgroup label="${esc(d)}">${opt(`d:${d}`, `${d} – celé oddělení`, f.dept === d)}${gs.map(p => opt(p.id, p.name || '(bez názvu)', f.group === p)).join('')}</optgroup>`;
+  }).join('');
+}
+
+/* Jedno oddělení v matici (2.10.1): hlavička s vedoucími a souhrnem, tabulka jen s dovednostmi
+   oddělení (lidé jeho skupin a zaučení odjinud) a dole pokrytí úrovní 3–4 po směnách. */
+function mxSectionHtml(dept, m, shift) {
+  const home = m.rows.filter(r => r.home);
+  const pcts = home.map(r => r.pct).filter(v => v != null);
+  const avg = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
+  const guests = m.rows.length - home.length;
+  const weak = m.rows.length ? m.coverage.filter(c => c.ready < 2).length : 0;
+  const leads = leadPeople().length ? leadsOf(dept) : null;
+  const names = m.groups.map(p => p.name || '(bez názvu)');
+  const kpi = (v, label, cls = '') => `<div class="mx-kpi${cls}"><b>${v}</b><span>${label}</span></div>`;
+  const head = `<div class="mx-sec-head">
+    <div class="mx-sec-title"><p class="eyebrow">Oddělení</p><h3>${esc(dept)}</h3>
+      ${m.groups.length > 1 || names[0] !== dept ? `<p class="small muted">${m.groups.length > 1 ? 'Skupiny' : 'Skupina'} ${names.map(esc).join(', ')}</p>` : ''}
+      ${leads ? `<p class="mx-sec-lead">Vedoucí: ${leads.length ? leads.map(e => `<button class="linkish" type="button" data-mxperson="${esc(e.key)}">${esc(e.last)} ${esc(e.first)}</button>`).join(', ') : '<span class="muted">bez vedoucího</span>'}</p>` : ''}</div>
+    <div class="mx-kpis">
+      ${kpi(home.length, home.length === 1 ? 'člověk' : home.length >= 2 && home.length <= 4 ? 'lidé' : 'lidí')}
+      ${guests ? kpi(`+${guests}`, 'zaučení odjinud') : ''}
+      ${kpi(avg != null ? `${nf(avg, 0)} %` : '—', 'průměr dovedností')}
+      ${m.rows.length ? kpi(`${weak}<small> z ${m.cols.length}</small>`, weak ? `${m.cols.length === 1 ? 'dovednosti' : 'dovedností'} má na úrovni 3–4 méně než 2 lidi` : 'každou dovednost umí na úrovni 3–4 aspoň 2 lidé', weak ? ' warn' : ' ok')
+        : kpi(m.cols.length, m.cols.length === 1 ? 'dovednost' : m.cols.length >= 2 && m.cols.length <= 4 ? 'dovednosti' : 'dovedností')}
+    </div></div>`;
+  if (!m.rows.length) return `<section class="card mx-sec" data-mxdept="${esc(dept)}">${head}<p class="small muted mx-sec-empty">${shift !== '*' ? 'Na vybrané směně tu nikdo není.' : 'Zatím tu nikdo není. Lidi zařadíš do skupin v části Lidé.'}</p></section>`;
+  const spans = [];
+  m.cols.forEach(c => { const last = spans[spans.length - 1]; if (last && last.p === c.p) last.n += 1; else spans.push({ p: c.p, n: 1 }); });
+  const cell = (r, v, j) => {
+    const c = m.cols[j];
+    const own = r.e.positionId === c.p.id;
+    const next = (v + 1) % 5;
+    return `<td class="mx-cell${own ? ' is-main' : ''}"><button type="button" class="mx-btn" data-mxr="${esc(r.e.key)}" data-skill="${esc(c.s.id)}" data-lvl="${v}" title="${esc(`${c.s.name}: ${rateTitle(c.s, v)}. Kliknutím ${next ? `na ${next}` : 'na 0'}.`)}" aria-label="${esc(`${r.e.last} ${r.e.first}, ${c.s.name}: ${v}`)}">${iluo(v, own)}<b>${v || ''}</b></button></td>`;
+  };
+  const n = m.cols.length + 4;   // + prázdný sloupec do plné šířky (sloupce oddělení jsou pod sebou zarovnané)
+  const fill = '<td class="mx-fill"></td>';
+  let body = '';
+  const blocks = SHIFT_ORDER.filter(k => m.rows.some(r => r.shift === k));
+  blocks.forEach(k => {
+    const rows = m.rows.filter(r => r.shift === k);
+    body += `<tr class="mx-sep"><td colspan="${n}">${esc(shiftName(k))} · ${peopleCount(rows.length)}</td></tr>`;
+    body += rows.map(r => `<tr${r.home ? '' : ' class="mx-guest"'}>
+      <th class="mx-name" scope="row"><button class="linkish" type="button" data-mxperson="${esc(r.e.key)}">${esc(r.e.last)} ${esc(r.e.first)}</button>${r.e.sick ? ' <span class="tag warn" title="Dočasně se nepočítá do kapacit směn">nemoc</span>' : ''}</th>
+      <td class="mx-main">${r.pos ? esc(r.pos.name) : '<span class="muted">—</span>'}${r.home ? '' : ' <span class="tag" title="Patří do jiné skupiny, tady je zaučený">zaučení</span>'}</td>
+      <td class="mx-pct num">${r.pct != null ? `${nf(r.pct, 0)} %` : '<span class="muted">—</span>'}</td>
+      ${r.cells.map((v, j) => cell(r, v, j)).join('')}${fill}</tr>`).join('');
+    // jen jedna směna: součet za směnu = celkem dole, neopakuje se
+    if (blocks.length > 1) body += `<tr class="mx-sub"><th colspan="3">Úroveň 3–4 · ${esc(shiftName(k))}</th>${m.coverage.map(c => `<td class="${c.by[k].ready ? '' : 'mx-risk'}">${c.by[k].ready}</td>`).join('')}${fill}</tr>`;
+  });
+  return `<section class="card mx-sec" data-mxdept="${esc(dept)}">${head}
+    <div class="table-card flat matrix-card mx-sec-table"><table class="matrix skills">
+      <thead>${m.groups.length > 1 ? `<tr class="mx-depts"><th colspan="3"></th>${spans.map(g => `<th colspan="${g.n}" class="mx-dept">${esc(g.p.name || '')}</th>`).join('')}<th class="mx-fill"></th></tr>` : ''}
+        <tr><th class="mx-name">Zaměstnanec</th><th class="mx-main">Skupina</th><th class="mx-pct">%</th>${m.cols.map(c => `<th class="mx-col" title="${esc(`${c.p.name}: ${c.s.name}${c.s.desc ? ` – ${c.s.desc}` : ''}`)}"><span>${esc(c.s.name)}</span></th>`).join('')}<th class="mx-fill"></th></tr></thead>
+      <tbody>${body}</tbody>
+      <tfoot><tr><th colspan="3">Úroveň 3–4 celkem</th>${m.coverage.map(c => `<td class="${c.ready < 2 ? 'mx-risk' : ''}">${c.ready}</td>`).join('')}${fill}</tr>
+        <tr><th colspan="3">Hodnoceno 1–4 celkem</th>${m.coverage.map(c => `<td>${c.trained}</td>`).join('')}${fill}</tr></tfoot>
+    </table></div></section>`;
 }
 
 function renderMatrixGrid() {
   const box = $('#matrixView');
   const groups = S.positions.filter(p => isGroup(p) && groupSkills(p).length);
-  const gid = groups.some(p => p.id === P.matrixDept) ? P.matrixDept : '';
+  const f = mxFilter(groups);
   const shift = ['*', ...SHIFT_ORDER].includes(P.matrixShift) ? P.matrixShift : '*';
-  $('#matrixGroup').innerHTML = `<option value="">Všechny skupiny</option>${groups.map(p => `<option value="${esc(p.id)}"${p.id === gid ? ' selected' : ''}>${esc(p.name || '(bez názvu)')}</option>`).join('')}`;
+  $('#matrixGroup').innerHTML = mxFilterOptions(groups, f);
   $('#matrixShift').innerHTML = `<option value="*">Všechny směny</option>${SHIFT_ORDER.map(k => `<option value="${k}"${k === shift ? ' selected' : ''}>${esc(shiftName(k))}</option>`).join('')}`;
   $('#matrixLegend').innerHTML = `${STD_SCALE.map((l, i) => `<span>${iluo(i)} ${i} ${esc(l.name.replace(' úroveň', ''))}</span>`).join('')}<span>${iluo(3, true)} dovednost vlastní skupiny</span><span><i class="mx-risk-dot"></i> na směně nikdo na úrovni 3–4</span>`;
-  const m = skillGrid(gid || null, shift);
-  if (!m.cols.length || !m.rows.length) {
-    box.innerHTML = `${mxLeadsHtml(m.groups)}<div class="card">${emptyState(m.cols.length ? 'Zatím nikdo' : 'Žádné dovednosti', m.cols.length ? 'Zařaď lidi do skupin v části Lidé (nebo změň filtr směny).' : 'Nejdřív založ skupiny a jejich dovednosti v záložce Skupiny a pravidla.', m.cols.length ? '' : '<button class="btn" type="button" data-mxtab="groups">Skupiny a pravidla</button>')}</div>`;
+  if (!groups.length) {
+    box.innerHTML = `<div class="card">${emptyState('Žádné dovednosti', 'Nejdřív založ skupiny a jejich dovednosti v záložce Skupiny a pravidla.', '<button class="btn" type="button" data-mxtab="groups">Skupiny a pravidla</button>')}</div>`;
     return;
   }
-  const spans = [];
-  m.cols.forEach(c => { const last = spans[spans.length - 1]; if (last && last.p === c.p) last.n += 1; else spans.push({ p: c.p, n: 1 }); });
-  const cell = (r, v, j) => {
-    const c = m.cols[j];
-    const home = r.e.positionId === c.p.id;
-    const next = (v + 1) % 5;
-    return `<td class="mx-cell${home ? ' is-main' : ''}"><button type="button" class="mx-btn" data-mxr="${esc(r.e.key)}" data-skill="${esc(c.s.id)}" data-lvl="${v}" title="${esc(`${c.s.name}: ${rateTitle(c.s, v)}. Kliknutím ${next ? `na ${next}` : 'na 0'}.`)}" aria-label="${esc(`${r.e.last} ${r.e.first}, ${c.s.name}: ${v}`)}">${iluo(v, home)}<b>${v || ''}</b></button></td>`;
-  };
-  const n = m.cols.length + 3;
-  let body = '';
-  SHIFT_ORDER.forEach(k => {
-    const rows = m.rows.filter(r => r.shift === k);
-    if (!rows.length) return;
-    body += `<tr class="mx-sep"><td colspan="${n}">${esc(shiftName(k))} · ${peopleCount(rows.length)}</td></tr>`;
-    body += rows.map(r => `<tr>
-      <th class="mx-name" scope="row"><button class="linkish" type="button" data-mxperson="${esc(r.e.key)}">${esc(r.e.last)} ${esc(r.e.first)}</button>${r.e.sick ? ' <span class="tag warn" title="Dočasně se nepočítá do kapacit směn">nemoc</span>' : ''}</th>
-      <td class="mx-main">${r.pos ? esc(r.pos.name) : '<span class="muted">—</span>'}</td>
-      <td class="mx-pct num">${r.pct != null ? `${nf(r.pct, 0)} %` : '<span class="muted">—</span>'}</td>
-      ${r.cells.map((v, j) => cell(r, v, j)).join('')}</tr>`).join('');
-    body += `<tr class="mx-sub"><th colspan="3">Úroveň 3–4 · ${esc(shiftName(k))}</th>${m.coverage.map(c => `<td class="${c.by[k].ready ? '' : 'mx-risk'}">${c.by[k].ready}</td>`).join('')}</tr>`;
+  const deps = f.group ? [deptOf(f.group)] : f.dept ? [f.dept] : [...new Set(groups.map(deptOf))];
+  const secs = deps.map(d => ({ d, m: f.group ? skillGrid(f.group.id, shift) : skillGrid(null, shift, d) }));
+  // s filtrem směny jen oddělení, kde na směně někdo je
+  const shown = shift === '*' || deps.length === 1 ? secs : secs.filter(x => x.m.rows.length);
+  box.innerHTML = shown.length ? shown.map(x => mxSectionHtml(x.d, x.m, shift)).join('')
+    : `<div class="card">${emptyState('Zatím nikdo', 'Na vybrané směně nikdo není. Změň filtr směny, nebo doplň směny lidem v části Lidé.')}</div>`;
+  $$('.matrix', box).forEach(table => {
+    const deptRow = table.querySelector('tr.mx-depts');
+    if (deptRow) $$('thead tr:not(.mx-depts) th', table).forEach(th => { th.style.top = `${deptRow.offsetHeight}px`; });
   });
-  box.innerHTML = `${mxLeadsHtml(m.groups)}<div class="table-card matrix-card"><table class="matrix skills">
-    <thead><tr class="mx-depts"><th colspan="3"></th>${spans.map(g => `<th colspan="${g.n}" class="mx-dept">${esc(g.p.name || '')}</th>`).join('')}</tr>
-      <tr><th class="mx-name">Zaměstnanec</th><th class="mx-main">Skupina</th><th class="mx-pct">%</th>${m.cols.map(c => `<th class="mx-col" title="${esc(`${c.p.name}: ${c.s.name}${c.s.desc ? ` – ${c.s.desc}` : ''}`)}"><span>${esc(c.s.name)}</span></th>`).join('')}</tr></thead>
-    <tbody>${body}</tbody>
-    <tfoot><tr><th colspan="3">Úroveň 3–4 celkem</th>${m.coverage.map(c => `<td class="${c.ready < 2 ? 'mx-risk' : ''}">${c.ready}</td>`).join('')}</tr>
-      <tr><th colspan="3">Hodnoceno 1–4 celkem</th>${m.coverage.map(c => `<td>${c.trained}</td>`).join('')}</tr></tfoot>
-  </table></div>`;
-  const deptRow = box.querySelector('tr.mx-depts');
-  if (deptRow) $$('thead tr:not(.mx-depts) th', box).forEach(th => { th.style.top = `${deptRow.offsetHeight}px`; });
 }
 
 /* Dovednosti vedoucích (2.10): jeden seznam pro všechny vedoucí pracovníky, každý se hodnotí

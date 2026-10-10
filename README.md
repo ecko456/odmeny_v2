@@ -61,6 +61,23 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.10.1
+
+- **Matice dovedností po odděleních.** Na záložce Matice už nejsou všechny skupiny vedle sebe
+  v jedné široké tabulce. Každé oddělení má vlastní kartu a karty jsou pod sebou.
+  - V hlavičce karty je název oddělení, jeho skupiny a vedoucí. Vedle jsou souhrnná čísla:
+    počet lidí, zaučení z jiných oddělení, průměr dovedností a kolik dovedností má na úrovni
+    3–4 méně než 2 lidi.
+  - Tabulka má jen dovednosti daného oddělení. Lidé odjinud, kteří v nich mají hodnocení,
+    jsou v ní se štítkem „zaučení“.
+  - Pod tabulkou je pokrytí po směnách a celkem. Když je v oddělení jen jedna směna, řádek za
+    směnu se neopakuje.
+  - Sloupce mají ve všech kartách stejnou šířku, takže jsou pod sebou zarovnané.
+- **Filtr** nabízí všechna oddělení, celé oddělení (když má víc skupin) nebo jednu skupinu.
+  S filtrem směny se ukážou jen oddělení, kde na směně někdo je.
+- Pás „Vedoucí oddělení“ nad maticí nahradila jména vedoucích v hlavičce každého oddělení.
+- Data se nemění.
+
 ## Co je nového ve verzi 2.10
 
 - **Dovednosti vedoucích.** Vedoucí pracovníci mají vlastní seznam dovedností, **stejný pro
@@ -424,14 +441,14 @@ v hlavičce každého skriptu:
 - `tests/e2e_matice.js`: novinky 2.4 (skupiny, dovednosti a schémata, hodnocení u člověka
   i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
   mzdy s upozorněním, od 2.8 stálá odpolední směna a kapacita po týdnech, od 2.9 plánovaná
-  kapacita a nemoc, mobil, tmavý režim);
+  kapacita a nemoc, od 2.10.1 oddělení pod sebou a filtr celého oddělení, mobil, tmavý režim);
 - `tests/e2e_ai.js`: novinky 2.5 a 2.6 (✦ Přeformulovat s náhradním API Anthropicu:
   tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
   návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
   služby, mobil, tmavý režim). Server musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
-  i při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
+  i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
   hodnocení v matici vedoucích i v detailu, list Vedoucí v Excelu; historie změn, mobil,
   tmavý režim).
 
@@ -444,7 +461,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.10'` jde stejný test pustit na aktualizaci 2.3 → 2.10 (data verze 5 → 11).
+S `EXPECT_VERSION='2\.10'` jde stejný test pustit na aktualizaci 2.3 → 2.10.x (data verze 5 → 11).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 
