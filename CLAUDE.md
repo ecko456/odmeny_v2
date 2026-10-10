@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 10. 10. 2026 (verze 2.10):
+
+- **Dovednosti vedoucích.** Uživatel: „U vedoucích pracovníků, ať je možné také přidat
+  dovednosti, budou stejné pro všechny jen každý bude mít jinou úroveň podle standartního
+  schématu 1 až 4“.
+  - Data: `S.leadSkills[]` = `{id, name, desc}` (id s předponou `l`, vždy `STD_SCALE`, bez
+    vlastního schématu). Hodnocení je v `e.rate[id]` jako u skupin; sanitize přidá id do
+    `skillIds`, takže se hodnocení vedoucích uloží. `leadPct(e)` = průměr × 25 % (bez
+    dovedností `null`). Do `levelOf`, tabáků, prémií ani `capacity` nezasahuje.
+  - UI: záložka **Vedoucí** v Matici (`MX_TABS` `leads`, `#mxPanelLeads`/`#leadView`,
+    `renderLeadMatrix`): matice vedoucích (stejná tlačítka `data-mxr`/`data-skill` jako
+    hlavní matice, klik po setRate volá `renderMatrix()`), seznam `leadSkillRowHtml`
+    (`data-lsrow`, `data-lsup/lsdown/lsedit/lsdel`, `leadSkillClick`), dialog `leadSkillDialog`
+    (jen název a popis). Detail vedoucího: karta `.lead-rate` s `rateRows(e, S.leadSkills)`
+    a `[data-goleads]`. Excel: list „Vedoucí“ (`matrixSheets`). Historie: „Dovednosti vedoucích: …“
+    a u člověka „vedoucí – název“ (`skillLabel`).
+  - `.table-card` má `container-type: inline-size`; karta s `width: fit-content` ho musí
+    vypnout (`.lead-wrap`), jinak se smrskne na nulu.
+- Data verze 11.
+
 Stav k 10. 10. 2026 (verze 2.9):
 
 - **Plánovaná kapacita skupiny.** Uživatel: „ať jde u některých skupin zaškrtnout plánovaná
@@ -327,7 +347,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.6.1 | `485e678` | osekané PDF Top 5 neuvádí, že je osekané (ani v názvu souboru) |
 | 2.7 | `7554e68` | vedoucí pracovníci (mimo benefity, v matici jako vedoucí oddělení; data verze 8) |
 | 2.8 | `a3bc6cb` | stálá odpolední směna, kapacita po týdnech se sloučenými směnami (data verze 9) |
-| 2.9 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plánovaná kapacita skupiny (ks/h na osobu), nemoc u lidí (data verze 10) |
+| 2.9 | `d70331b` | plánovaná kapacita skupiny (ks/h na osobu), nemoc u lidí (data verze 10) |
+| 2.10 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: dovednosti vedoucích, společné pro všechny, úroveň 0–4 (data verze 11) |
 
 Verze 2.1 přidala:
 
@@ -436,7 +457,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `10` (od 2.9):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `11` (od 2.10):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -462,9 +483,12 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `rate`: hodnocení dovedností (0 se neukládá); `shift`: `R|O|S1|S2` (O = stálá odpolední, 2.8);
   - `sick` (2.9): datum, od kdy je nemocný; dočasně mimo kapacity;
   - `lead` (2.7): vedoucí pracovník, pole oddělení, která má na starosti (může být prázdné);
-    kdo ho má, nehodnotí se a v matici je jen v pásu „Vedoucí oddělení“;
+    kdo ho má, nehodnotí se a v matici je jen v pásu „Vedoucí oddělení“; dovednosti
+    vedoucích (2.10) má v `rate` pod id z `leadSkills`;
   - `legacy`: snímek zařazení z 2.3 `{at, pos, dept, level, levelName, levelDesc, tabaky, onlyKafe, raise, skills[{pos, level, levelName}]}`,
     dokud ho vedoucí nesmaže; `hist.pct` = procento dovedností (na 0,1).
+- `leadSkills[]` (2.10): dovednosti vedoucích `{id, name, desc}`, jeden seznam pro všechny,
+  hodnotí se `STD_SCALE` (0–4).
 - `periods{YYYY-MM}`: docházka, `{days[iso], rows{key: {first, last, h[], c[]}}, codes, file, at, headerRow}`.
 - `production{YYYY-MM}`: evidence práce.
   - `{names{normJméno: {name, total, count, days{iso: ks}, spent, norm, nspent}}, records, total, time, file, at}`.
@@ -688,7 +712,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 38 testů: proti původní aplikaci + opravy + 2.1 až 2.9
+node tests/test_core.js                 # 40 testů: proti původní aplikaci + opravy + 2.1 až 2.10
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -708,7 +732,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4);
   - `e2e_ai.js`: ✦ Přeformulovat (2.5); sám spustí náhradní API na 127.0.0.1:8598, server
     musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
-  - `e2e_vedouci.js`: vedoucí pracovníci (2.7);
+  - `e2e_vedouci.js`: vedoucí pracovníci (2.7) a jejich dovednosti (2.10);
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.

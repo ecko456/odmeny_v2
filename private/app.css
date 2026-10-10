@@ -1071,3 +1071,13 @@ input[type="date"]:disabled { opacity: .55; }
 .plan-table { min-width: 0; }
 .table-card .plan-table tbody th { background: transparent; color: var(--ink); font: 600 14px/1.3 var(--body); text-transform: none; letter-spacing: 0; text-align: left; }
 .plan-wrap + .tiny { margin-top: 6px; }
+
+/* Dovednosti vedoucích (2.10): matice vedoucích a společný seznam dovedností */
+#leadView { display: grid; gap: 14px; min-width: 0; }
+#leadView .mx-legend { margin: 0 2px; }
+/* šířka podle obsahu: bez container-type (inline-size by kartu smrskl na nulu) */
+.table-card.lead-wrap { container-type: normal; width: fit-content; max-width: 100%; }
+.table-card .matrix.lead-matrix { width: auto; min-width: 0; }
+.lead-matrix .mx-main { min-width: 120px; max-width: 240px; white-space: normal; }
+.lead-skills .card-head > div, .lead-rate .card-head > div { flex: 1 1 320px; }
+.lead-skills .tiny { margin: 12px 0 0; }

@@ -61,6 +61,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.10
+
+- **Dovednosti vedoucích.** Vedoucí pracovníci mají vlastní seznam dovedností, **stejný pro
+  všechny vedoucí**. Každý vedoucí má u každé dovednosti svou úroveň **0–4 podle standardního
+  schématu** (žádná, základní, střední, pokročilá, odborná úroveň).
+  - Seznam se spravuje v Matici dovedností na nové záložce **Vedoucí**: přidat, upravit
+    název a popis, změnit pořadí, smazat (smazáním zmizí i hodnocení u všech vedoucích).
+  - Na stejné záložce je **matice vedoucích**: kliknutím do buňky se úroveň zvedne o jedna
+    (po 4 zase 0), u každého je oddělení a průměr v procentech (každá úroveň 25 %).
+  - Hodnotit jde i v detailu vedoucího v Lidech (karta Dovednosti vedoucího, tlačítko
+    Upravit seznam vede na záložku Vedoucí).
+  - Do tabáků, Kafe, prémií ani kapacity směn se dovednosti vedoucích nepočítají.
+  - Excel matice má nový list **Vedoucí**, změny jsou v historii změn.
+- Stránka otevřená ještě ve verzi 2.9 po aktualizaci nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.9
 
 - **Plánovaná kapacita skupiny.** V Matici dovedností → Skupiny a pravidla jde u skupiny
@@ -414,9 +429,11 @@ v hlavičce každého skriptu:
   tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
   návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
   služby, mobil, tmavý režim). Server musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
-- `tests/e2e_vedouci.js`: novinka 2.7 (vedoucí pracovníci: přidání s odděleními, oddíl
-  v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici i při
-  filtru skupiny, historie změn, mobil, tmavý režim).
+- `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
+  oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
+  i při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
+  hodnocení v matici vedoucích i v detailu, list Vedoucí v Excelu; historie změn, mobil,
+  tmavý režim).
 
 **Aktualizace na místě** na lokálním Apachi v kontejneru (stará stránka dostane 426, sdílená
 data, výpočty a historie zůstanou, novinky se uloží nad převzatými daty). 2.3 → 2.4:
@@ -427,7 +444,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.9'` jde stejný test pustit na aktualizaci 2.3 → 2.9 (data verze 5 → 10).
+S `EXPECT_VERSION='2\.10'` jde stejný test pustit na aktualizaci 2.3 → 2.10 (data verze 5 → 11).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

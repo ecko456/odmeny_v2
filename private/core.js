@@ -120,7 +120,7 @@ function save(){_prodIdx=null;_effCache=null;if(typeof onStateChange==="function
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),v:DATA_VERSION};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],v:DATA_VERSION};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -828,6 +828,8 @@ function blankCapReport(){return {groups:[],thr:3,hidden:[],note:"",s1am:""};}
 function isLead(e){return !!(e&&Array.isArray(e.lead));}
 function leadsOf(dept){return Object.values(S.employees).filter(e=>isLead(e)&&e.lead.includes(dept))
   .sort((a,b)=>norm(a.last+" "+a.first).localeCompare(norm(b.last+" "+b.first),"cs"));}
+/* Průměr dovedností vedoucího v % (každá úroveň 25 %), bez dovedností null. */
+function leadPct(e){const sk=S.leadSkills||[];return sk.length?sk.reduce((x,k)=>x+rateOf(e,k.id),0)/sk.length*25:null;}
 function leadPeople(){return Object.values(S.employees).filter(isLead).sort((a,b)=>norm(a.last+" "+a.first).localeCompare(norm(b.last+" "+b.first),"cs"));}
 /* Přejmenované oddělení: vedoucí ho mají dál zaškrtnuté, pokud staré jméno už žádná skupina nemá. */
 function leadsFollowDept(before,after){
@@ -1301,7 +1303,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=10;
+const DATA_VERSION=11;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
@@ -1374,6 +1376,9 @@ function sanitizeState(input){
     }
     return g;
   });
+  /* dovednosti vedoucích (2.10): jeden seznam pro všechny, hodnotí se standardním schématem 0–4 */
+  out.leadSkills=arr(o.leadSkills).filter(x=>x&&typeof x==="object").slice(0,60).map(x=>({id:sid(x.id,"l"),name:str(x.name,80).trim()||"Dovednost",desc:str(x.desc,1000)}))
+    .filter(x=>!skillIds.has(x.id)&&skillIds.add(x.id));
   const posIds=new Set(out.positions.map(p=>p.id));
   const posById=new Map(out.positions.map(p=>[p.id,p]));
   Object.entries(o.employees).slice(0,5000).forEach(([key_,e])=>{
@@ -1619,7 +1624,8 @@ function describeChanges(a,b,meta){
   const pctH=(st,e)=>{const g=posIn(st,e.positionId);return isGroup(g)&&groupSkills(g).length?{pct:Math.round(skillPct(e,g)*10)/10}:{};};
   added.forEach(k=>{if(eb[k].positionId)hist.push([k,{at,pos:eb[k].positionId,lvl:eb[k].level||null,...pctH(b,eb[k])}]);});
   const moves=[],widMoves=[],rateChanges=[];
-  const skillLabel=(st,id)=>{for(const g of st.positions||[])for(const x of groupSkills(g))if(x.id===id)return (g.name||"?")+" – "+x.name;return "(smazaná dovednost)";};
+  const skillLabel=(st,id)=>{for(const g of st.positions||[])for(const x of groupSkills(g))if(x.id===id)return (g.name||"?")+" – "+x.name;
+    for(const x of st.leadSkills||[])if(x.id===id)return "vedoucí – "+x.name;return "(smazaná dovednost)";};
   Object.keys(eb).filter(k=>ea[k]).forEach(k=>{
     const x=ea[k],y=eb[k],n=who(k);
     const hx=pctH(a,x),hy=pctH(b,y);
@@ -1780,6 +1786,13 @@ function describeChanges(a,b,meta){
   if(!same(a.sanReasons,b.sanReasons))add("settings","Upraven seznam důvodů sankcí",{m:"reasons"});
   if(!same((a.settings||{}).prodCols||null,(b.settings||{}).prodCols||null))add("settings","Nastavení – sloupce importu výroby",{m:"prodcols"});
 
+  /* dovednosti vedoucích (2.10) */
+  const LA=new Map((a.leadSkills||[]).map(x=>[x.id,x])),LB=new Map((b.leadSkills||[]).map(x=>[x.id,x]));
+  LB.forEach((x,id)=>{const o=LA.get(id);
+    if(!o)add("position","Dovednosti vedoucích: nová dovednost „"+x.name+"“",{m:"lsk:"+id});
+    else{if(o.name!==x.name)add("position","",{m:"lskn:"+id,p:"Dovednosti vedoucích: ",v0:"„"+o.name+"“",v1:"„"+x.name+"“"});
+      if(o.desc!==x.desc)add("position","Dovednosti vedoucích: upraven popis „"+x.name+"“",{m:"lskd:"+id});}});
+  LA.forEach((x,id)=>{if(!LB.has(id))add("position","Dovednosti vedoucích: smazána dovednost „"+x.name+"“",{m:"lsk:"+id});});
   /* Top 5 nejméně efektivních: nové záznamy z historie případů, nastavení a vydané reporty */
   const fa=a.eff||blankEff(),fb=b.eff||blankEff();
   const CA=new Map((fa.cases||[]).map(c=>[c.id,c]));
@@ -2036,6 +2049,14 @@ function matrixSheets(){
   sheets.push({name:sheetName("Všechny skupiny",used),rows:build("Všechny skupiny",all),cols:[16,12,18,16,10,...all.cols.map(()=>12)]});
   S.positions.filter(p=>isGroup(p)&&groupSkills(p).length).forEach(p=>{const m=skillGrid(p.id,"*");
     sheets.push({name:sheetName(p.name||"Skupina",used),rows:build(p.name||"Skupina",m),cols:[16,12,18,16,10,...m.cols.map(()=>14)]});});
+  /* vedoucí a jejich dovednosti (2.10) */
+  const ls=S.leadSkills||[],lp=leadPeople();
+  if(ls.length&&lp.length){
+    const rows=[["Vedoucí – dovednosti ("+new Date().toLocaleDateString("cs-CZ")+")"],["Příjmení","Jméno","Oddělení","Dovednosti %",...ls.map(x=>x.name)]];
+    lp.forEach(e=>rows.push([e.last,e.first,e.lead.join(", "),Math.round(leadPct(e)),...ls.map(x=>rateOf(e,x.id))]));
+    rows.push([]);rows.push(["Úrovně: "+STD_SCALE.map((l,i)=>i+" "+l.name).join(" · ")]);
+    sheets.push({name:sheetName("Vedoucí",used),rows,cols:[16,12,22,12,...ls.map(()=>14)]});
+  }
   const legend=[["Skupina","Dovednost","Popis",...STD_SCALE.map((_,i)=>"Úroveň "+i)]];
   S.positions.filter(isGroup).forEach(p=>groupSkills(p).forEach(x=>legend.push([p.name,x.name,x.desc||"",...skillScale(x).map(l=>l.name+(l.desc?": "+l.desc:""))])));
   sheets.push({name:sheetName("Popis dovedností",used),rows:legend,cols:[16,24,40,30,30,30,30,30]});

@@ -84,7 +84,9 @@ function compare(beforeJson, afterJson) {
   const same = (x, y, what) => { if (JSON.stringify(x) !== JSON.stringify(y)) out.push(`${what}: ${JSON.stringify(x).slice(0, 160)} → ${JSON.stringify(y).slice(0, 160)}`); };
   // 2.6 přidá do Top 5 jen prázdnou evidenci smazaných čísel případů (eff.nos)
   const effOld = e => { if (!e || !('nos' in e)) return e; const c = { ...e }; same(c.nos, {}, 'eff.nos'); delete c.nos; return c; };
-  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
+  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
+  // 2.10 přidá prázdný seznam dovedností vedoucích
+  if ('leadSkills' in b) same(a.leadSkills || [], b.leadSkills, 'leadSkills');
   same(a.positions.map(p => p.id), b.positions.map(p => p.id), 'pořadí skupin');
   a.positions.forEach((p, i) => {
     const q = b.positions[i];

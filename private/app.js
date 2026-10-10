@@ -50,7 +50,7 @@ function cleanPrefs(input) {
     logSeen: Number.isFinite(+x.logSeen) ? Math.max(0, +x.logSeen) : 0,
     matrixDept: str(x.matrixDept, 60),
     matrixShift: ['*', 'R', 'O', 'S1', 'S2', ''].includes(x.matrixShift) ? x.matrixShift : '*',
-    mxTab: ['matrix', 'groups', 'cap'].includes(x.mxTab) ? x.mxTab : 'matrix',
+    mxTab: ['matrix', 'groups', 'cap', 'leads'].includes(x.mxTab) ? x.mxTab : 'matrix',
     profileRange: ['month', '3', '6', '12', 'year', 'all', 'custom'].includes(x.profileRange) ? x.profileRange : '12',
     profileFrom: MONTH_RE.test(String(x.profileFrom)) ? x.profileFrom : '',
     profileTo: MONTH_RE.test(String(x.profileTo)) ? x.profileTo : '',
@@ -945,6 +945,7 @@ function setLead(e, on) {
 }
 
 function renderLeadDetail(box, e) {
+  const sk = S.leadSkills || [];
   box.innerHTML = `<button class="btn ghost small back-btn" type="button" id="pBack">${I.back}Seznam lidí</button>
     <div class="stack"><div class="card">
       <div class="card-head">
@@ -956,6 +957,11 @@ function renderLeadDetail(box, e) {
       ${leadDeptsHtml(e.lead, 'data-leaddept')}
       <div class="form-grid"><label class="field"><span>Poznámka</span><input type="text" id="pNote" value="${esc(e.note || '')}" placeholder="volitelné" maxlength="500"></label></div>
       <label class="switch"><input type="checkbox" id="pLead" checked><span>Vedoucí pracovník (vypnutím se z něj stane běžně hodnocený člověk)</span></label>
+    </div>
+    <div class="card lead-rate">
+      <div class="card-head"><div><h3>Dovednosti vedoucího</h3>${sk.length ? `<p class="small muted">Průměr <b>${nf(leadPct(e), 1)} %</b> · stejné dovednosti pro všechny vedoucí, standardní schéma 0–4</p>` : ''}</div>
+        <button class="btn ghost small" type="button" data-goleads>Upravit seznam</button></div>
+      ${sk.length ? `<div class="rate-list">${rateRows(e, sk)}</div>` : '<p class="small muted">Zatím žádné dovednosti vedoucích. Seznam, stejný pro všechny vedoucí, založíš v Matici dovedností → Vedoucí.</p>'}
     </div></div>`;
   $('#pBack').onclick = () => { ui.personOpen = false; renderPeople(); };
   $('#pNote').oninput = event => { e.note = event.target.value; save(); };
@@ -2458,7 +2464,7 @@ function iluo(n, main = false) {
   return `<svg class="iluo l${n}${main ? ' is-home' : ''}" viewBox="0 0 18 18" aria-hidden="true"><circle class="ring" cx="${c}" cy="${c}" r="${r}"/>${fill}</svg>`;
 }
 
-const MX_TABS = [['matrix', 'Matice'], ['groups', 'Skupiny a pravidla'], ['cap', 'Směny a kapacita']];
+const MX_TABS = [['matrix', 'Matice'], ['groups', 'Skupiny a pravidla'], ['cap', 'Směny a kapacita'], ['leads', 'Vedoucí']];
 const SHIFT_ORDER = ['R', 'O', 'S1', 'S2', ''];
 
 /* Hodnocení dovednosti u člověka (0 = žádná úroveň, neukládá se). */
@@ -2484,8 +2490,10 @@ function renderMatrix() {
   $('#mxPanelMatrix').hidden = tab !== 'matrix';
   $('#mxPanelGroups').hidden = tab !== 'groups';
   $('#mxPanelCap').hidden = tab !== 'cap';
+  $('#mxPanelLeads').hidden = tab !== 'leads';
   if (tab === 'groups') renderPositions();
   else if (tab === 'cap') renderCapacity();
+  else if (tab === 'leads') renderLeadMatrix();
   else renderMatrixGrid();
 }
 
@@ -2543,6 +2551,88 @@ function renderMatrixGrid() {
   </table></div>`;
   const deptRow = box.querySelector('tr.mx-depts');
   if (deptRow) $$('thead tr:not(.mx-depts) th', box).forEach(th => { th.style.top = `${deptRow.offsetHeight}px`; });
+}
+
+/* Dovednosti vedoucích (2.10): jeden seznam pro všechny vedoucí pracovníky, každý se hodnotí
+   0–4 standardním schématem. Do tabáků, prémií ani kapacity směn se nepočítají. */
+function leadSkillRowHtml(x, i, n) {
+  return `<div class="sk-row" data-lsrow="${esc(x.id)}">
+    <div class="sk-main"><b>${esc(x.name)}</b>${x.desc ? `<p class="small muted">${esc(x.desc)}</p>` : ''}</div>
+    <div class="sk-tools">
+      <button class="icon-btn" type="button" data-lsup aria-label="Posunout nahoru"${i ? '' : ' disabled'}>${I.back}</button>
+      <button class="icon-btn sk-down" type="button" data-lsdown aria-label="Posunout dolů"${i < n - 1 ? '' : ' disabled'}>${I.back}</button>
+      <button class="btn sec small" type="button" data-lsedit>Upravit</button>
+      <button class="icon-btn" type="button" data-lsdel aria-label="Smazat dovednost">${I.x}</button>
+    </div>
+  </div>`;
+}
+function renderLeadMatrix() {
+  const box = $('#leadView');
+  const sk = S.leadSkills || [];
+  const people = leadPeople();
+  const cell = (e, x) => {
+    const v = rateOf(e, x.id);
+    const next = (v + 1) % 5;
+    return `<td class="mx-cell"><button type="button" class="mx-btn" data-mxr="${esc(e.key)}" data-skill="${esc(x.id)}" data-lvl="${v}" title="${esc(`${x.name}: ${rateTitle(x, v)}. Kliknutím na ${next}.`)}" aria-label="${esc(`${e.last} ${e.first}, ${x.name}: ${v}`)}">${iluo(v)}<b>${v || ''}</b></button></td>`;
+  };
+  const count = (x, lo) => people.filter(e => rateOf(e, x.id) >= lo).length;
+  let grid = '';
+  if (!people.length) grid = `<div class="card">${emptyState('Zatím žádný vedoucí', 'Vedoucího přidáš v části Lidé: Přidat člověka → Vedoucí pracovník, nebo zapneš Vedoucí pracovník u člověka v seznamu.')}</div>`;
+  else if (sk.length) {
+    grid = `<div class="table-card matrix-card lead-wrap"><table class="matrix skills lead-matrix">
+      <thead><tr><th class="mx-name">Vedoucí</th><th class="mx-main">Oddělení</th><th class="mx-pct">%</th>${sk.map(x => `<th class="mx-col" title="${esc(`${x.name}${x.desc ? ` – ${x.desc}` : ''}`)}"><span>${esc(x.name)}</span></th>`).join('')}</tr></thead>
+      <tbody>${people.map(e => `<tr><th class="mx-name" scope="row"><button class="linkish" type="button" data-mxperson="${esc(e.key)}">${esc(e.last)} ${esc(e.first)}</button></th>
+        <td class="mx-main">${e.lead.length ? esc(e.lead.join(', ')) : '<span class="muted">bez oddělení</span>'}</td>
+        <td class="mx-pct num">${nf(leadPct(e), 0)} %</td>${sk.map(x => cell(e, x)).join('')}</tr>`).join('')}</tbody>
+      <tfoot><tr><th colspan="3">Úroveň 3–4 celkem</th>${sk.map(x => `<td>${count(x, 3)}</td>`).join('')}</tr>
+        <tr><th colspan="3">Hodnoceno 1–4 celkem</th>${sk.map(x => `<td>${count(x, 1)}</td>`).join('')}</tr></tfoot>
+    </table></div>
+    <div class="mx-legend">${STD_SCALE.map((l, i) => `<span>${iluo(i)} ${i} ${esc(l.name.replace(' úroveň', ''))}</span>`).join('')}</div>`;
+  }
+  box.innerHTML = `${grid}<div class="card lead-skills">
+    <div class="card-head"><div><h3>Dovednosti vedoucích</h3><p class="small muted">Stejné pro všechny vedoucí pracovníky, každý má svou úroveň 0–4 podle standardního schématu. Hodnotíš kliknutím do matice nebo v detailu vedoucího v části Lidé. Do tabáků, prémií ani kapacity směn se nepočítají.</p></div>
+      <button class="btn small" type="button" id="leadSkillAdd">Přidat dovednost</button></div>
+    ${sk.length ? `<div class="sk-list">${sk.map((x, i) => leadSkillRowHtml(x, i, sk.length)).join('')}</div>` : '<p class="small muted">Zatím žádná dovednost. Přidej první, třeba Vedení lidí, Plánování směn nebo Řešení problémů.</p>'}
+    <p class="tiny muted">Standardní schéma: ${STD_SCALE.map((l, i) => `${i} ${esc(l.name)}`).join(' · ')}</p>
+  </div>`;
+}
+/* Dialog dovednosti vedoucích: jen název a popis, hodnotí se vždy standardním schématem. */
+async function leadSkillDialog(x) {
+  const result = await dialog({
+    title: x ? 'Upravit dovednost vedoucích' : 'Přidat dovednost vedoucích', ok: x ? 'Uložit' : 'Přidat',
+    html: `<label class="field"><span>Název dovednosti</span><input name="name" value="${esc(x ? x.name : '')}" maxlength="80" required autofocus placeholder="např. Vedení lidí"></label>
+      <label class="field"><span>Popis (nepovinné)</span><textarea name="desc" rows="3" maxlength="1000" placeholder="Co dovednost zahrnuje">${esc(x ? x.desc : '')}</textarea></label>
+      <p class="small muted">Platí pro všechny vedoucí. Hodnotí se standardním schématem: ${STD_SCALE.map((l, i) => `${i} ${esc(l.name)}`).join(' · ')}.</p>`,
+    validate: form => (form.elements.namedItem('name').value.trim() ? null : 'Napiš název dovednosti.'),
+  });
+  if (result.value !== 'ok') return null;
+  const f = result.form.elements;
+  return { name: f.namedItem('name').value.trim().slice(0, 80), desc: f.namedItem('desc').value.trim().slice(0, 1000) };
+}
+async function leadSkillClick(t) {
+  S.leadSkills = S.leadSkills || [];
+  const list = S.leadSkills;
+  if (t.closest('#leadSkillAdd')) {
+    const v = await leadSkillDialog(null);
+    if (!v) return;
+    list.push({ id: uid('l'), ...v });
+    save(); renderMatrix(); toast(`Dovednost ${v.name} přidána ke všem vedoucím.`);
+    return;
+  }
+  const row = t.closest('[data-lsrow]');
+  const i = row ? list.findIndex(x => x.id === row.dataset.lsrow) : -1;
+  if (i < 0) return;
+  if (t.closest('[data-lsup]') && i > 0) [list[i - 1], list[i]] = [list[i], list[i - 1]];
+  else if (t.closest('[data-lsdown]') && i < list.length - 1) [list[i + 1], list[i]] = [list[i], list[i + 1]];
+  else if (t.closest('[data-lsedit]')) { const v = await leadSkillDialog(list[i]); if (!v) return; Object.assign(list[i], v); }
+  else if (t.closest('[data-lsdel]')) {
+    const x = list[i];
+    const rated = leadPeople().filter(e => rateOf(e, x.id) > 0).length;
+    if (!(await confirmBox('Smazat dovednost vedoucích?', `Dovednost ${x.name} zmizí u všech vedoucích${rated ? ` a ${rated} z nich přijde o její hodnocení` : ''}.`, 'Smazat', true))) return;
+    list.splice(i, 1);
+    Object.values(S.employees).forEach(e => { if (e.rate) { delete e.rate[x.id]; if (!Object.keys(e.rate).length) delete e.rate; } });
+  } else return;
+  save(); renderMatrix(); renderPeople();
 }
 
 async function exportMatrix() {
@@ -2728,13 +2818,14 @@ function bindMatrixEvents() {
     if (btn) {
       const v = (+btn.dataset.lvl + 1) % 5;
       setRate(btn.dataset.mxr, btn.dataset.skill, v);
-      renderMatrixGrid(); renderOverview(); renderPeople();
+      renderMatrix(); renderOverview(); renderPeople();
       const again = $(`[data-mxr="${CSS.escape(btn.dataset.mxr)}"][data-skill="${CSS.escape(btn.dataset.skill)}"]`);
       if (again) again.focus();
       return;
     }
     const person = t.closest('[data-mxperson]');
     if (person) { ui.selPerson = person.dataset.mxperson; ui.personOpen = true; showView('lide'); renderPeople(); return; }
+    if (t.closest('#leadView #leadSkillAdd, #leadView [data-lsrow] button')) { await leadSkillClick(t); return; }
     const g = t.closest('[data-capgroup]');
     if (g) {
       const all = S.positions.filter(p => isGroup(p) && groupSkills(p).length).map(p => p.id);
@@ -4772,6 +4863,7 @@ function bindEvents() {
     }
     const gg = event.target.closest('[data-gogroup]');
     if (gg) { ui.selPos = gg.dataset.gogroup; ui.posOpen = true; ui.mxTab = 'groups'; showView('matice'); return; }
+    if (event.target.closest('[data-goleads]')) { ui.mxTab = 'leads'; showView('matice'); return; }
     const adj = event.target.closest('[data-adj]');
     if (!adj) return;
     bumpAdj(adj.dataset.adj, +adj.dataset.dir);
