@@ -17,6 +17,8 @@ const ODM_PRIVATE_FILES = [
     'jspdf.js' => ['private/vendor/jspdf.umd.min.js', 'text/javascript; charset=utf-8'],
     'pdf-regular.ttf' => ['private/vendor/plex-sans-regular.ttf', 'font/ttf'],
     'pdf-semibold.ttf' => ['private/vendor/plex-sans-semibold.ttf', 'font/ttf'],
+    // Čtení čárových a QR kódů z kamery (kartička zaměstnance v Sankcích), ZXing 0.23.0, Apache-2.0.
+    'zxing.js' => ['private/vendor/zxing.min.js', 'text/javascript; charset=utf-8'],
 ];
 
 $name = (string)($_GET['f'] ?? '');

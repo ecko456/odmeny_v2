@@ -120,7 +120,7 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertNotIn("style=", page)
 
     def test_private_code_needs_session(self):
-        for name in ("app.html", "app.css", "core.js", "app.js", "xlsx.js", "jspdf.js", "pdf-regular.ttf", "pdf-semibold.ttf"):
+        for name in ("app.html", "app.css", "core.js", "app.js", "xlsx.js", "jspdf.js", "pdf-regular.ttf", "pdf-semibold.ttf", "zxing.js"):
             status, _, body = self.client.request("GET", f"/app.php?f={name}")
             self.assertEqual(status, 401, name)
             self.assertEqual(body, b"")
@@ -128,7 +128,7 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual(status, 404)
         for path in ("/private/app.js", "/private/core.js", "/lib/odmeny.php", "/bin/setup-token.php", "/data/odmeny.sqlite3",
                      "/tests/test_odmeny.py", "/deploy/install.sh", "/dev-router.php", "/.gitignore", "/static/vendor/LICENSE-jsqr.txt",
-                     "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf", "/CLAUDE.md"):
+                     "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf", "/private/vendor/zxing.min.js", "/CLAUDE.md"):
             status, _, _ = self.client.request("GET", path)
             self.assertEqual(status, 404, path)
         self.client.setup()
@@ -140,6 +140,11 @@ class OdmenyHttpTests(unittest.TestCase):
         status, headers, body = self.client.request("GET", "/app.php?f=jspdf.js")
         self.assertEqual(status, 200)
         self.assertIn(b"jsPDF", body[:400])
+        # Čtení čárových a QR kódů z kamery (skener kartičky v Sankcích, 2.13).
+        status, headers, body = self.client.request("GET", "/app.php?f=zxing.js")
+        self.assertEqual(status, 200)
+        self.assertIn("javascript", headers["Content-Type"])
+        self.assertIn(b"ZXing", body[:400])
         status, headers, body = self.client.request("GET", "/app.php?f=pdf-regular.ttf")
         self.assertEqual((status, headers["Content-Type"]), (200, "font/ttf"))
         self.assertEqual(body[:4], b"\x00\x01\x00\x00", "TrueType písmo")
@@ -305,7 +310,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.12")
+        self.assertEqual(result["version"], "2.13")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

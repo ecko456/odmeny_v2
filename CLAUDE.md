@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 10. 2026 (verze 2.13):
+
+- **Skener kartičky v Sankcích.** Uživatel: „ikonu scanneru k Zaměstnanec … scan kartičky
+  ‚ID v evidenci práce‘ a tím si urychlil hledání“.
+  - `keyByScan(raw)` v `core.js`: `keyByWid` celého kódu, pak částí (nejdřív oddělených
+    mezerou nebo `;,:|=/`, pak jen písmena a číslice).
+  - `app.js`: `#sanScan` vedle `#sanWho`, `scanEmployee(blocked)` (dialog s kamerou,
+    polem `#scanInput` pro čtečku jako klávesnici + Enter, `#scanFind`), `startCodeScan`
+    (BarcodeDetector, jinak ZXing přes `app.php?f=zxing.js`, každých 160 ms),
+    `stopCodeScan` při zavření. Vyřazený a vedoucí se nevybere.
+  - Knihovna `private/vendor/zxing.min.js` = `@zxing/library` 0.23.0 (UMD, Apache-2.0,
+    `LICENSE-zxing.txt`), bez eval a síťových volání; jen pro odemčenou relaci.
+  - Test: `e2e_skener.js` s `--use-file-for-fake-video-capture` (MJPEG z
+    `tests/fixtures/code128-4711.jpg`); Chromium na Linuxu nemá BarcodeDetector, takže
+    test ověřuje cestu přes ZXing.
+- **„HALA 2“ v exportech.** Uživatel: „ve všech exportech apod. namísto názvu aplikace
+  ‚ODMĚNY‘ uváděj ‚HALA 2‘“. `EXPORT_NAME` v `app.js`: zápatí a záhlaví PDF (pravidla,
+  kapacita, kontroly), `creator` PDF, název zálohy `hala2-zaloha-….odmeny` (formát zálohy
+  `odmeny-backup` a přípona zůstávají kvůli obnově). Top 5 je bez názvu (dřívější přání),
+  aplikace samotná a přístupová kartička se dál jmenují Odměny.
+- Data beze změny (verze dat zůstává 13).
+
 Stav k 11. 10. 2026 (verze 2.12):
 
 - **Srážky ze mzdy za neproduktivitu.** Uživatel: „možnost srážek u některých skupin jen za
@@ -406,7 +428,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.10 | `42f5539` | dovednosti vedoucích, společné pro všechny, úroveň 0–4 (data verze 11) |
 | 2.10.1 | `ab18e3f` | matice po odděleních pod sebou (jen vzhled, data beze změny) |
 | 2.11 | `f7951ed` | varianty prémie se zaškrtávanými podmínkami, vybrané dovednosti, kontroly, morálka (data verze 12) |
-| 2.12 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: srážky ze mzdy za neproduktivitu podle pásem plnění normy (data verze 13) |
+| 2.12 | `78e1cbc` | srážky ze mzdy za neproduktivitu podle pásem plnění normy (data verze 13) |
+| 2.13 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: skener kartičky v Sankcích (kamera, čtečka), „HALA 2“ v exportech |
 
 Verze 2.1 přidala:
 
@@ -656,6 +679,8 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `exportRulesPdf` a `drawRules` v `app.js`;
   - obsah dodává `rulesDoc()` v `core.js`;
   - jsPDF + podmnožina IBM Plex Sans (TTF z `private/vendor/`).
+- Čtení kódů kamerou: ZXing (`private/vendor/zxing.min.js`, 2.13), přihlašovací QR dál jsQR
+  (`static/vendor/jsQR.js`, funguje i bez přihlášení).
 - Barevné tokeny pro světlý i tmavý režim jsou v `static/lock.css` (`:root`,
   `prefers-color-scheme`) a `app.css` na ně navazuje přes `var(--…)`.
 - Barvy grafů v profilu jsou ověřené validátorem palety (skill dataviz).
@@ -772,7 +797,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 44 testů: proti původní aplikaci + opravy + 2.1 až 2.12
+node tests/test_core.js                 # 45 testů: proti původní aplikaci + opravy + 2.1 až 2.13
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -793,6 +818,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_ai.js`: ✦ Přeformulovat (2.5); sám spustí náhradní API na 127.0.0.1:8598, server
     musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
   - `e2e_vedouci.js`: vedoucí pracovníci (2.7) a jejich dovednosti (2.10);
+  - `e2e_skener.js`: skener kartičky v Sankcích (2.13), falešná kamera Chromia;
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.

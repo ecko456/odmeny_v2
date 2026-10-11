@@ -396,6 +396,16 @@ function keyByWid(raw){
   for(const e of Object.values(S.employees))if(e.wid&&widKey(e.wid)===w)return e.key;
   return null;
 }
+/* Kód z kartičky (skener, 2.13) → člověk podle ID v evidenci práce: nejdřív celý kód, pak jeho
+   části z písmen a číslic (QR může nést víc údajů, např. „ID:123;Novák“). */
+function keyByScan(raw){
+  const t=String(raw==null?"":raw).trim();
+  if(!t)return null;
+  const k=keyByWid(t);if(k)return k;
+  /* nejdřív části oddělené mezerou nebo oddělovačem (ID může mít pomlčku), pak jen písmena a číslice */
+  for(const re of [/[\s;,:|=\/]+/,/[^0-9A-Za-z]+/])for(const part of t.split(re).filter(Boolean)){const x=keyByWid(part);if(x)return x;}
+  return null;
+}
 /* Vypadá jako ID (ne jako jméno): bez mezer a s číslicí. */
 function looksLikeId(raw){const t=String(raw==null?"":raw).trim();return !!t&&!/\s/.test(t)&&/\d/.test(t);}
 function prodLabel(raw){return looksLikeId(raw)?"ID "+String(raw).trim():String(raw);}

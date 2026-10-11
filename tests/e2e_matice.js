@@ -212,6 +212,7 @@ const editor = '#posEditor';
   if (capText != null) {
     check(/Kapacita dovedností podle směn/.test(capText) && /Zaučit skupinu 2/.test(capText) && /Frézování/.test(capText), `PDF kapacity: ${capText.slice(0, 300)}`);
     check(/úroveň aspoň 2/i.test(capText), 'PDF kapacity ukazuje práh 2');
+    check(/HALA 2/.test(capText) && !/Odměny|ODMĚNY/.test(capText), `PDF kapacity: místo názvu aplikace HALA 2 (2.13): ${capText.slice(0, 200)}`);
   }
   // Report se pamatuje i po přepnutí záložek.
   await page.click('[data-mxtab="groups"]');
@@ -307,6 +308,7 @@ const editor = '#posEditor';
   check(rules.pdf, 'PDF pravidel');
   const rulesText = pdfText(rules.path);
   if (rulesText != null) check(/Frézování/.test(rulesText) && /Obsluha frézy/.test(rulesText) && /Začátečník/.test(rulesText) && /navýšení mzdy o 15 %/.test(rulesText), `PDF pravidel: ${rulesText.slice(0, 400)}`);
+  if (rulesText != null) check(/HALA 2/.test(rulesText) && !/Odměny|ODMĚNY/.test(rulesText), 'PDF pravidel: HALA 2 místo názvu aplikace');
 
   // Bod vedoucího u prémie (Dvořák z ukázky, skupina CNC).
   await page.click('#nav [data-view="lide"]');

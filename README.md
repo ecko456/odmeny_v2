@@ -61,6 +61,24 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.13
+
+- **Skener kartičky v Sankcích.** U pole Zaměstnanec je ikona skeneru. Po klepnutí se otevře
+  okno s kamerou a stačí ukázat kód z kartičky zaměstnance. Aplikace vybere člověka podle
+  **ID v evidenci práce**.
+  - Čte čárové kódy (Code 128, Code 39, EAN a další) i QR kódy. Kde to prohlížeč umí
+    (Android, macOS), čte přímo, jinde přes přibalenou knihovnu ZXing.
+  - Ruční čtečka, která píše jako klávesnice (USB nebo Bluetooth), zapíše kód do pole
+    v okně a Enter člověka vybere. ID jde i napsat ručně.
+  - Nuly na začátku nevadí (0042 = 42). Když QR kód nese víc údajů, hledá se ID i v jejich
+    částech.
+  - Když kód nikomu nepatří, okno to napíše a čte dál. Vyřazeného člověka ani vedoucího
+    nevybere.
+  - ID v evidenci práce se zadává u člověka v Lidech nebo importem zařazení.
+- **„HALA 2“ v exportech.** V PDF (pravidla, kapacita směn, plán a výsledky kontrol) a v názvu
+  zálohy je místo názvu aplikace „HALA 2“. Top 5 dál bez názvu, jak bylo dřív domluveno.
+- Data se nemění.
+
 ## Co je nového ve verzi 2.12
 
 - **Srážky ze mzdy za neproduktivitu.** V Matici dovedností → Skupiny a pravidla jde
@@ -492,6 +510,9 @@ v hlavičce každého skriptu:
   tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
   návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
   služby, mobil, tmavý režim). Server musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
+- `tests/e2e_skener.js`: novinka 2.13 (skener kartičky v Sankcích: falešná kamera Chromia
+  s čárovým kódem z `tests/fixtures`, čtečka jako klávesnice, neznámý kód, vyřazený člověk,
+  vypnutí kamery, mobil, tmavý režim);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -507,7 +528,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.12'` jde stejný test pustit na aktualizaci 2.3 → 2.12 (data verze 5 → 13).
+S `EXPECT_VERSION='2\.13'` jde stejný test pustit na aktualizaci 2.3 → 2.13 (data verze 5 → 13).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

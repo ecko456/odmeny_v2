@@ -1733,6 +1733,18 @@ test('aktualizace 2.11 → 2.12: data zůstanou beze změny, srážky za neprodu
   return null;
 });
 
+test('skener kartičky (2.13): kód z čárového nebo QR kódu → člověk podle ID v evidenci práce', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    S.employees['novak|martin'].wid = '4711';
+    S.employees['dvorak|petr'].wid = 'A-17';
+    JSON.stringify(['4711', ' 004711 ', 'ID:4711;Novák Martin', 'a-17', 'A17', 'ZAM A-17', '5555', '', null].map(x => keyByScan(x)))`));
+  assert.deepStrictEqual(out, ['novak|martin', 'novak|martin', 'novak|martin', 'dvorak|petr', null, 'dvorak|petr', null, null, null],
+    'celý kód, nuly na začátku, část QR textu, velikost písmen; jiné ID ani prázdný kód nikoho nenajde');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

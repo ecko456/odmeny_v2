@@ -1151,3 +1151,19 @@ input[type="date"]:disabled { opacity: .55; }
 .ncut-res { margin: 6px 0 8px; font-size: 15px; }
 .ncut-res .pen { font-weight: 700; }
 .ncut-card .tiny { margin: 8px 0 0; }
+
+/* Skener kartičky zaměstnance v Sankcích (2.13) */
+.who-scan { display: flex; gap: 8px; align-items: stretch; }
+.who-scan select { flex: 1 1 auto; min-width: 0; }
+.scan-btn { flex: none; width: 44px; height: auto; min-height: 42px; border: 1px solid var(--line-2); border-radius: 12px; background: var(--surface); color: var(--acc); }
+.scan-btn:hover { border-color: var(--acc-line); background: var(--acc-soft); }
+.scan-btn .icon { width: 22px; height: 22px; }
+.emp-scan { display: grid; gap: 10px; }
+.emp-scan p { margin: 0; }
+.scanner.wide-scan { aspect-ratio: 4 / 3; max-height: 46vh; }
+.scanner.wide-scan .frame { inset: 26% 9%; }
+.scan-row { display: flex; gap: 8px; }
+.scan-row input { flex: 1 1 auto; min-width: 0; font-family: var(--mono); }
+.emp-scan .field { margin: 0; }
+.field > label { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.field > .scan-row { font-size: inherit; font-weight: inherit; color: inherit; }

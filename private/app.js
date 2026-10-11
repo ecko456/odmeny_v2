@@ -102,6 +102,8 @@ async function updatedElsewhere() {
 function toast(message, error = false) { window.odmToast(message, error); }
 function setWidths(root = document) { $$('[data-w]', root).forEach(element => { element.style.width = `${element.dataset.w}%`; }); }
 
+/* Název v exportech (PDF, záloha): uživatel chce „HALA 2“ místo názvu aplikace (2.13). */
+const EXPORT_NAME = 'HALA 2';
 const I = {
   tab: '<svg class="icon tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8.5c0-2 1.6-3.5 3.5-3.5h5C16.4 5 18 6.5 18 8.5V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19z"/><path d="M6 10h12M10 14.5c1.3-1 2.7-1 4 0"/></svg>',
   kafe: '<svg class="icon kafe-ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 9.5h12v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z"/><path d="M16.5 11h1.5a2.5 2.5 0 0 1 0 5h-1.8M8 3.5c-.8 1 .8 2 0 3M12 3.5c-.8 1 .8 2 0 3"/></svg>',
@@ -110,6 +112,7 @@ const I = {
   back: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>',
   arrow: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
   x: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  scan: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7 9v6M10 9v6M13 9v6M17 9v6"/></svg>',
   shield: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.2 2.9 8 7 9.5 4.1-1.5 7-5.3 7-9.5V6z"/><path d="m9 12 2 2 4-4"/></svg>',
 };
 
@@ -1119,7 +1122,8 @@ function renderSanctions() {
   const reasons = S.sanReasons || [];
   if (d.reason && d.reason !== '__other' && !reasons.includes(d.reason)) d.reason = '';
   $('#sanForm').innerHTML = `<h3>Nová sankce</h3>${people.length ? `<div class="stack">
-    <label class="field"><span>Zaměstnanec</span><select id="sanWho"><option value="">— vyber —</option>${people.map(e => `<option value="${esc(e.key)}"${e.key === d.key ? ' selected' : ''}>${esc(`${e.last} ${e.first}`)}</option>`).join('')}</select></label>
+    <div class="field"><label for="sanWho">Zaměstnanec</label><div class="who-scan"><select id="sanWho"><option value="">— vyber —</option>${people.map(e => `<option value="${esc(e.key)}"${e.key === d.key ? ' selected' : ''}>${esc(`${e.last} ${e.first}`)}</option>`).join('')}</select>
+      <button class="icon-btn scan-btn" type="button" id="sanScan" title="Naskenovat kartičku (ID v evidenci práce)" aria-label="Naskenovat kartičku zaměstnance">${I.scan}</button></div></div>
     <label class="field"><span>Měsíc</span><input type="month" id="sanMonth" value="${esc(d.period)}"></label>
     <label class="field"><span>Důvod</span><select id="sanWhy"><option value="">— vyber důvod —</option>${reasons.map(n => `<option value="${esc(n)}"${n === d.reason ? ' selected' : ''}>${esc(n)}</option>`).join('')}<option value="__other"${d.reason === '__other' ? ' selected' : ''}>Jiný důvod…</option></select></label>
     ${d.reason === '__other' ? `<label class="field"><span>Jiný důvod</span><input type="text" id="sanOther" value="${esc(d.other)}" placeholder="napiš důvod" maxlength="100"></label>` : ''}
@@ -1165,6 +1169,13 @@ function renderSanctions() {
   const preview = () => { const el = $('#sanPrev'); if (el) el.innerHTML = sanPreview(); };
   if (people.length) {
     $('#sanWho').onchange = event => { d.key = event.target.value; preview(); };
+    $('#sanScan').onclick = async () => {
+      const key = await scanEmployee(e => (e.excluded ? 'vyřazení ze seznamu, sankce se nezadává' : isLead(e) ? 'vedoucí pracovník, sankce se nezadává' : ''));
+      if (!key) return;
+      d.key = key; renderSanctions();
+      toast(`Vybráno: ${nameOf(key)}`);
+      const why = $('#sanWhy'); if (why && !why.value) why.focus();
+    };
     $('#sanMonth').onchange = event => { d.period = event.target.value; preview(); };
     $('#sanWhy').onchange = event => { const was = d.reason === '__other'; d.reason = event.target.value; if (was !== (d.reason === '__other')) renderSanctions(); };
     if ($('#sanOther')) $('#sanOther').oninput = event => { d.other = event.target.value; };
@@ -1224,6 +1235,111 @@ function addSanction() {
   d.note = ''; d.other = ''; d.wage = false;
   save(); renderAll();
   toast(`${nameOf(d.key)}: ${name} −${pctValue} %${wage ? ' ze mzdy' : ''} za ${monthLabel(d.period)}.`);
+}
+
+/* ---------- skener kartičky zaměstnance (2.13) ----------
+   Kód z kartičky (čárový nebo QR) nese ID v evidenci práce. Kamerou: BarcodeDetector, kde ho
+   prohlížeč má (Android, macOS), jinak knihovna ZXing. Čtečka, která píše jako klávesnice,
+   zapíše kód do pole a Enter ho vyhledá; ID jde i napsat ručně. */
+let codeScan = null;
+function stopCodeScan() {
+  if (!codeScan) return;
+  codeScan.active = false;
+  codeScan.stream?.getTracks().forEach(track => track.stop());
+  codeScan = null;
+}
+async function zxingDecoder() {
+  if (!window.ZXing) await OdmLock.loadScript(`app.php?f=zxing.js&v=${document.body.dataset.privateVersion || '1'}`);
+  const Z = window.ZXing;
+  const reader = new Z.MultiFormatReader();
+  reader.setHints(new Map([[Z.DecodeHintType.TRY_HARDER, true]]));
+  return canvas => {
+    try { return reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(canvas)))).getText(); } catch { return null; } finally { reader.reset(); }
+  };
+}
+/* Čte kódy z kamery, dokud onText nevrátí true (nalezeno) nebo se skener nezastaví. */
+async function startCodeScan(video, onText) {
+  if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tento prohlížeč neumí použít kameru.');
+  stopCodeScan();
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false });
+  const cur = { stream, active: true };
+  codeScan = cur;
+  video.srcObject = stream;
+  video.setAttribute('playsinline', '');
+  await video.play();
+  let native = null;
+  if ('BarcodeDetector' in window) {
+    try { const formats = await window.BarcodeDetector.getSupportedFormats(); if (formats.length) native = new window.BarcodeDetector({ formats }); } catch { native = null; }
+  }
+  const zx = native ? null : await zxingDecoder();
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const tick = async () => {
+    if (!cur.active) return;
+    let text = null;
+    if (video.readyState >= 2 && video.videoWidth) {
+      if (native) { try { const codes = await native.detect(video); text = codes[0]?.rawValue || null; } catch { text = null; } }
+      else {
+        const scale = Math.min(1, 960 / video.videoWidth);
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        text = zx(canvas);
+      }
+    }
+    if (text && cur.active && onText(text)) return;
+    setTimeout(tick, 160);
+  };
+  tick();
+}
+/* Dialog skeneru: vrátí klíč nalezeného člověka, nebo null. blocked(e) = důvod, proč ho vybrat nejde. */
+async function scanEmployee(blocked) {
+  let found = null;
+  let last = '';
+  await dialog({
+    title: 'Naskenovat kartičku', ok: '', cancel: 'Zavřít',
+    html: `<div class="emp-scan">
+      <div class="scanner wide-scan" id="scanCam"><video muted playsinline aria-label="Náhled kamery"></video><div class="frame"></div><div class="scanner-hint">Kód kartičky do rámečku</div></div>
+      <p class="small muted" id="scanState">Zapínám kameru…</p>
+      <label class="field"><span>ID v evidenci práce</span><span class="scan-row"><input type="text" id="scanInput" autocomplete="off" spellcheck="false" placeholder="naskenuj čtečkou, nebo napiš" maxlength="120" autofocus><button class="btn sec" type="button" id="scanFind">Najít</button></span></label>
+      <div id="scanMsg" aria-live="polite"></div></div>`,
+    onOpen: dlg => {
+      const msg = (text, cls = 'w') => { $('#scanMsg', dlg).innerHTML = text ? `<div class="note ${cls}">${text}</div>` : ''; };
+      // vrátí true, když je hotovo (dialog se zavře s vybraným člověkem)
+      const tryCode = (raw, typed) => {
+        const code = String(raw || '').trim();
+        if (!code) return false;
+        if (!typed && code === last) return false;   // stejný kód z kamery: hláška už je vidět
+        last = code;
+        const key = keyByScan(code);
+        const e = key ? S.employees[key] : null;
+        if (!e) { msg(`Kód <b>${esc(code)}</b> nemá nikdo jako ID v evidenci práce. ID doplníš v Lidech u člověka.`); return false; }
+        const why = blocked ? blocked(e) : '';
+        if (why) { msg(`${esc(`${e.last} ${e.first}`)}: ${esc(why)}.`); return false; }
+        found = key;
+        if (navigator.vibrate) navigator.vibrate(60);
+        stopCodeScan();
+        dlg.close('ok');
+        return true;
+      };
+      const input = $('#scanInput', dlg);
+      input.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' || event.isComposing) return;
+        event.preventDefault(); event.stopPropagation();   // Enter by jinak dialog zavřel
+        if (!tryCode(input.value, true)) input.select();
+      });
+      $('#scanFind', dlg).onclick = () => { if (!tryCode(input.value, true)) { input.focus(); input.select(); } };
+      dlg.addEventListener('close', stopCodeScan, { once: true });
+      startCodeScan($('#scanCam video', dlg), text => tryCode(text, false))
+        .then(() => { const st = $('#scanState', dlg); if (st) st.textContent = 'Kamera běží. Drž čárový nebo QR kód kartičky v rámečku.'; })
+        .catch(() => {
+          const cam = $('#scanCam', dlg); if (cam) cam.hidden = true;
+          const st = $('#scanState', dlg); if (st) st.textContent = 'Kamera není k dispozici (nebo k ní prohlížeč nemá povolení). Naskenuj kartičku čtečkou, nebo napiš ID.';
+        });
+    },
+  });
+  stopCodeScan();
+  return found;
 }
 
 /* ---------- srážky ze mzdy: upozornění a „Srážka zpracována“ ---------- */
@@ -2060,7 +2176,7 @@ function drawRules(doc, d) {
   for (let i = 1; i <= pages; i += 1) {
     doc.setPage(i);
     font(8, false, MUTED);
-    doc.text(`Odměny · ${d.title} · ${d.date}`, M, H - 9);
+    doc.text(`${EXPORT_NAME} · ${d.title} · ${d.date}`, M, H - 9);
     doc.text(`strana ${i} / ${pages}`, W - M, H - 9, { align: 'right' });
   }
 }
@@ -2077,7 +2193,7 @@ async function exportRulesPdf() {
     doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
     doc.addFont('Plex-SemiBold.ttf', 'Plex', 'bold');
     const d = rulesDoc();
-    doc.setProperties({ title: d.title, subject: d.sub, creator: 'Odměny' });
+    doc.setProperties({ title: d.title, subject: d.sub, creator: EXPORT_NAME });
     drawRules(doc, d);
     downloadFile(`pravidla-hodnoceni-${new Date().toISOString().slice(0, 10)}.pdf`, doc.output('blob'), 'application/pdf');
     toast('PDF s pravidly se stahuje.');
@@ -2310,7 +2426,7 @@ async function downloadBackup() {
   try {
     await flushSave();
     const file = await Vault.backup(S);
-    downloadFile(`odmeny-zaloha-${new Date().toISOString().slice(0, 10)}.odmeny`, JSON.stringify(file), 'application/json');
+    downloadFile(`hala2-zaloha-${new Date().toISOString().slice(0, 10)}.odmeny`, JSON.stringify(file), 'application/json');
     toast('Záloha stažená. Je šifrovaná, otevře ji jen platná kartička.');
   } catch (error) { toast(error.message, true); }
 }
@@ -2933,7 +3049,7 @@ function drawCapacity(doc) {
   const rep = S.capReport || blankCapReport();
   const cap = capacity(rep.groups, rep.thr, rep.hidden);
   const weeks = capWeeks(rep);
-  k.header({ eyebrow: 'ODMĚNY · MATICE DOVEDNOSTÍ', right: `Stav k ${dayText(todayIso())}`, title: 'Kapacita dovedností podle směn',
+  k.header({ eyebrow: `${EXPORT_NAME} · MATICE DOVEDNOSTÍ`, right: `Stav k ${dayText(todayIso())}`, title: 'Kapacita dovedností podle směn',
     sub: `Schopný = úroveň aspoň ${cap.thr} (${STD_SCALE[cap.thr].name.toLowerCase()})`,
     meta: `Počty lidí, kteří dovednost zvládají. Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `${w.label}: ${capCompo(w.v)}.`).join(' ')}` });
   const noShift = cap.head[''] > 0;
@@ -2982,11 +3098,11 @@ function drawCapacity(doc) {
   if (rep.note) { k.keep(() => { k.heading('Závěr a opatření', 11.5); k.para(rep.note, k.M, k.CW, 9.4); k.y += 4; }, 25); }
   k.need(26);
   k.signoff();
-  k.footer(`Odměny · kapacita dovedností podle směn · ${dayText(todayIso())}`);
+  k.footer(`${EXPORT_NAME} · kapacita dovedností podle směn · ${dayText(todayIso())}`);
 }
 async function exportCapacityPdf(button) {
   await withPdf(button, doc => {
-    doc.setProperties({ title: 'Kapacita dovedností podle směn', creator: 'Odměny' });
+    doc.setProperties({ title: 'Kapacita dovedností podle směn', creator: EXPORT_NAME });
     drawCapacity(doc);
     downloadFile(`kapacita-smen-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
   });
@@ -5559,7 +5675,7 @@ function drawAuditPlan(doc, weekId) {
   const plan = audPlan(weekId);
   const today = todayIso();
   const sum = planSummary(weekId, today);
-  k.header({ eyebrow: 'ODMĚNY · NAMÁTKOVÉ KONTROLY', right: `Stav k ${tsText(Date.now())}`, title: 'Plán namátkových kontrol', sub: weekLong(weekId),
+  k.header({ eyebrow: `${EXPORT_NAME} · NAMÁTKOVÉ KONTROLY`, right: `Stav k ${tsText(Date.now())}`, title: 'Plán namátkových kontrol', sub: weekLong(weekId),
     meta: `Z každého oddělení ${plan.pct} % lidí (zaokrouhleno nahoru), rozloženo do pracovních dnů. Přednost měli ti, kdo nejdéle nebyli kontrolovaní. Plán vygeneroval(a) ${plan.by || '—'} ${tsText(plan.at)}. U každého bodu se zaškrtne splněno, nebo nesplněno.` });
   k.tiles([
     ['Naplánováno', String(sum.planned), `${new Set(plan.items.map(i => i.dept)).size} oddělení`],
@@ -5618,7 +5734,7 @@ function drawAuditPlan(doc, weekId) {
       k.keep(draw, 50);
     });
   });
-  k.footer(`Odměny · namátkové kontroly · ${weekName(weekId)} (${weekRange(weekById(weekId))})`);
+  k.footer(`${EXPORT_NAME} · namátkové kontroly · ${weekName(weekId)} (${weekRange(weekById(weekId))})`);
 }
 
 function drawAuditResults(doc) {
@@ -5629,7 +5745,7 @@ function drawAuditResults(doc) {
   const r = auditResults(from, today, ui.kt.dept || '');
   const pts = r.rows.reduce((x, c) => x + c.score.n, 0), ok = r.rows.reduce((x, c) => x + c.score.ok, 0);
   const first = r.rows.length ? r.rows[r.rows.length - 1].done : today;
-  k.header({ eyebrow: 'ODMĚNY · NAMÁTKOVÉ KONTROLY', right: `Stav k ${tsText(Date.now())}`, title: 'Výsledky namátkových kontrol',
+  k.header({ eyebrow: `${EXPORT_NAME} · NAMÁTKOVÉ KONTROLY`, right: `Stav k ${tsText(Date.now())}`, title: 'Výsledky namátkových kontrol',
     sub: `${ui.kt.dept ? `${ui.kt.dept} · ` : ''}${dayText(from || first)} – ${dayText(today)}`,
     meta: 'Plnění nutných úkonů podle zapsaných kontrol: po odděleních, nejčastěji nesplněné body a seznam kontrol s nesplněnými body.' });
   k.tiles([
@@ -5691,13 +5807,13 @@ function drawAuditResults(doc) {
     k.hline(k.y - 0.8);
   });
   k.onPage = null;
-  k.footer(`Odměny · výsledky namátkových kontrol · stav k ${dayText(today)}`);
+  k.footer(`${EXPORT_NAME} · výsledky namátkových kontrol · stav k ${dayText(today)}`);
 }
 
 async function exportAuditPlanPdf(weekId, button) {
   if (!audPlan(weekId)) return;
   await withPdf(button, doc => {
-    doc.setProperties({ title: `Plán namátkových kontrol · ${weekName(weekId)}`, subject: weekLong(weekId), creator: 'Odměny' });
+    doc.setProperties({ title: `Plán namátkových kontrol · ${weekName(weekId)}`, subject: weekLong(weekId), creator: EXPORT_NAME });
     drawAuditPlan(doc, weekId);
     const w = weekById(weekId);
     downloadFile(`kontroly-tyden-${w.w}-${w.y}.pdf`, doc.output('blob'), 'application/pdf');
@@ -5705,7 +5821,7 @@ async function exportAuditPlanPdf(weekId, button) {
 }
 async function exportAuditResultsPdf(button) {
   await withPdf(button, doc => {
-    doc.setProperties({ title: 'Výsledky namátkových kontrol', creator: 'Odměny' });
+    doc.setProperties({ title: 'Výsledky namátkových kontrol', creator: EXPORT_NAME });
     drawAuditResults(doc);
     downloadFile(`kontroly-vysledky-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
   });
