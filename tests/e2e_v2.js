@@ -54,6 +54,12 @@ async function loginWithKey(page, key) {
   await page.waitForTimeout(400);
 }
 
+// Na telefonu jsou méně používané části v nabídce Více (2.14).
+async function nav(page, view) {
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
+  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+}
+
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -175,7 +181,7 @@ async function loginWithKey(page, key) {
   await watch(m, 'mobil');
   await m.goto(BASE);
   await loginWithKey(m, keyB);
-  await m.click('#nav [data-view="matice"]');
+  await nav(m, 'matice');
   await m.waitForSelector('#matrixView .matrix');
   await m.locator('#matrixView [data-mxperson]').first().click();
   await m.waitForSelector('#view-lide.on');

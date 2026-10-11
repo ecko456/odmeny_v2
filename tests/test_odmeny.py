@@ -119,6 +119,28 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertNotIn("<script>", page)
         self.assertNotIn("style=", page)
 
+    def test_home_screen_manifest(self):
+        # Přidání na plochu telefonu (2.14): manifest povolený v CSP, ikony bez přihlášení.
+        status, headers, body = self.client.request("GET", "/")
+        self.assertIn("manifest-src 'self'", headers["Content-Security-Policy"])
+        page = body.decode()
+        self.assertIn('rel="manifest" href="static/manifest.webmanifest?v=', page)
+        self.assertIn('rel="apple-touch-icon" href="static/apple-touch-icon.png?v=', page)
+        status, headers, body = self.client.request("GET", "/static/manifest.webmanifest")
+        self.assertEqual(status, 200)
+        self.assertIn("application/manifest+json", headers["Content-Type"])
+        manifest = json.loads(body)
+        self.assertEqual((manifest["display"], manifest["start_url"], manifest["scope"]), ("standalone", "../", "../"))
+        purposes = set()
+        for icon in manifest["icons"]:
+            status, headers, body = self.client.request("GET", f"/static/{icon['src']}")
+            self.assertEqual(status, 200, icon["src"])
+            self.assertEqual(headers["Content-Type"].split(";")[0], icon["type"], icon["src"])
+            purposes.add((icon["sizes"], icon["purpose"]))
+        self.assertTrue({("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")} <= purposes)
+        status, headers, body = self.client.request("GET", "/static/apple-touch-icon.png")
+        self.assertEqual((status, body[:8]), (200, b"\x89PNG\r\n\x1a\n"))
+
     def test_private_code_needs_session(self):
         for name in ("app.html", "app.css", "core.js", "app.js", "xlsx.js", "jspdf.js", "pdf-regular.ttf", "pdf-semibold.ttf", "zxing.js"):
             status, _, body = self.client.request("GET", f"/app.php?f={name}")
@@ -310,7 +332,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.13")
+        self.assertEqual(result["version"], "2.14")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -664,6 +686,9 @@ class OdmenyStaticTests(unittest.TestCase):
         self.assertIn("php-curl", install)
         self.assertIn("lib", conf.split("DirectoryMatch")[1])
         self.assertTrue((APP / "lib" / "vendor" / "autoload.php").is_file())
+        # Manifest pro plochu telefonu má na Apachi správný typ i ochranné hlavičky (2.14).
+        self.assertIn("AddType application/manifest+json .webmanifest", conf)
+        self.assertIn("webmanifest)$", conf)
 
     def test_version_2_never_touches_live_install(self):
         # Verze 2 má vlastní adresu, kód, data i konfiguraci Apache. Ostrá /odmeny/ se jen čte

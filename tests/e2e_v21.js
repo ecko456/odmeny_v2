@@ -63,6 +63,12 @@ async function watch(page, label) {
 }
 const saved = page => page.waitForFunction(() => document.querySelector('#saveState').dataset.state === 'saved', null, { timeout: 10000 });
 
+// Na telefonu jsou méně používané části v nabídce Více (2.14).
+async function nav(page, view) {
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
+  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+}
+
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -234,7 +240,7 @@ const saved = page => page.waitForFunction(() => document.querySelector('#saveSt
   await m.waitForSelector('#view-prehled.on');
   await m.waitForTimeout(400);
   await m.screenshot({ path: `${shots}/07-m-overview.png`, fullPage: true });
-  await m.click('#nav [data-view="matice"]');
+  await nav(m, 'matice');
   await m.click('[data-mxtab="groups"]');
   await m.locator('#posList .list-item').first().click();
   await m.waitForTimeout(300);

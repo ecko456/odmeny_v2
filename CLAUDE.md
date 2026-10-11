@@ -34,6 +34,41 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 10. 2026 (verze 2.14):
+
+- **Telefon jako aplikace.** Uživatel: „V telefonu mi to přijde trošku rozházené … ať to je
+  na telefonu jako aplikace a přívětivé … Jen to dělej opatrně, ať nic nerozbiješ.“
+  Všechno je v `@media screen and (max-width: 900px)`; desktop je beze změny (ověřeno
+  souřadnicemi postranního panelu před a po).
+  - `app.html`: období (`.period-box`) je uvnitř `.side-top` (desktop: mřížka, období pod
+    logem jako dřív; telefon: jedna lepivá lišta logo | období | uložení, historie, zámek).
+    Méně používané části mají v `#nav` třídu `nav-sec`, přibylo `#navMore` (Více)
+    a `<dialog class="sheet" id="moreSheet">`. Filtry přehledu: `#ovTools` s `#ovFilterBtn`
+    (`mob-only`) a třídou `ov-extra` u skupiny, přepínačů a sloupců.
+  - Spodní lišta: `#nav` je `position: fixed` mřížka 5 tlačítek, `.nav-sec` skryté.
+    `openMoreSheet()` staví dlaždice z `#nav .nav-sec` (i s odznaky), `renderMoreDot()`
+    (volá ji `renderTop5Badge`) ukáže tečku u Více.
+  - Historie: `syncHistory()` (volá `showView`, `renderPeople`, `renderPositions`,
+    `renderTop5`) zapisuje `{odmView, sub, i}`; `sub` z `navSub()` = `person`/`pos` jen na
+    telefonu, `case` v Top 5. `ui.hist` zrcadlí záznamy této stránky. `onPopState`: otevřený
+    `#dlg`/`#moreSheet` zavře (událost `cancel` jako Esc) a záznam vrátí; jinak přepne část
+    nebo zavře podstránku. Tlačítka zpět v aplikaci (`#pBack`, `#posBack`, `[data-t5back]`,
+    `[data-pfback]`) jdou přes `navBack(isTarget, fallback)`: `history.back()` jen když je
+    předchozí záznam přesně cíl, jinak původní akce (záznam se přepíše).
+  - `#main[data-view]` (pruh s ukázkou jen v Přehledu), `#view-lide:has(.split.show-detail)`
+    schová záhlaví, `.page-head .lede` sevřená na 2 řádky (klik přepne `.open`),
+    `showActiveChip()` posune záložky vodorovně (ne stránku), dialogy `dialog.dlg` zespodu
+    (`sheet-up`), `scroll-padding` kvůli lištám, 16px písmo polí jen na iOS (`@supports
+    (-webkit-touch-callout: none)`).
+  - PWA bez service workeru: `static/manifest.webmanifest` (start a scope `../`), ikony
+    `static/icon-192.png`, `icon-512.png`, `icon-maskable-512.png`, `apple-touch-icon.png`
+    (vyrenderované z loga v Chromiu), odkazy a meta v `index.php`, CSP `manifest-src 'self'`,
+    v Apache `AddType application/manifest+json .webmanifest`.
+  - Testy: nový `e2e_mobil.js`; testy, které na telefonu klikaly na skryté části, mají
+    pomocníka `nav()` přes Více; `e2e_top5` ověří Zpět z případu; `test_odmeny.py`
+    `test_home_screen_manifest`.
+- Data beze změny (verze dat zůstává 13), jen `ODM_VERSION` 2.14.
+
 Stav k 11. 10. 2026 (verze 2.13):
 
 - **Skener kartičky v Sankcích.** Uživatel: „ikonu scanneru k Zaměstnanec … scan kartičky
@@ -429,7 +464,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.10.1 | `ab18e3f` | matice po odděleních pod sebou (jen vzhled, data beze změny) |
 | 2.11 | `f7951ed` | varianty prémie se zaškrtávanými podmínkami, vybrané dovednosti, kontroly, morálka (data verze 12) |
 | 2.12 | `78e1cbc` | srážky ze mzdy za neproduktivitu podle pásem plnění normy (data verze 13) |
-| 2.13 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: skener kartičky v Sankcích (kamera, čtečka), „HALA 2“ v exportech |
+| 2.13 | `6d0a74f` | skener kartičky v Sankcích (kamera, čtečka), „HALA 2“ v exportech |
+| 2.14 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: telefon jako aplikace (spodní lišta, Více, Zpět, okna zespodu), přidání na plochu |
 
 Verze 2.1 přidala:
 
@@ -796,7 +832,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 (jen v kontejneru, **nikdy ne na ostrém serveru**).
 
 ```bash
-python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
+python3 -m unittest discover -s tests   # 27 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
 node tests/test_core.js                 # 45 testů: proti původní aplikaci + opravy + 2.1 až 2.13
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
@@ -819,6 +855,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
   - `e2e_vedouci.js`: vedoucí pracovníci (2.7) a jejich dovednosti (2.10);
   - `e2e_skener.js`: skener kartičky v Sankcích (2.13), falešná kamera Chromia;
+  - `e2e_mobil.js`: telefon jako aplikace (2.14): lišty, Více, Zpět, okna, filtry, manifest;
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.

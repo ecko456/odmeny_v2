@@ -61,6 +61,34 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.14
+
+- **Telefon jako aplikace.** Na telefonu (do šířky 900 px) má aplikace ovládání jako běžná
+  mobilní aplikace:
+  - **horní lišta** zůstává při posunu nahoře: logo, hodnocené období, stav uložení,
+    poslední změny a zámek;
+  - **spodní lišta** s Přehledem, Lidmi, Sankcemi a Kontrolami. Ostatní části (Matice
+    dovedností, Docházka, Výroba, Top 5, Nastavení) a Zamknout jsou v nabídce **Více**, která
+    vyjede zespodu. Když má schovaná část odznak (třeba termíny Top 5 po splatnosti), je
+    u Více tečka;
+  - **tlačítko Zpět** telefonu (i gesto) vrací v aplikaci: na předchozí část, ze seznamu
+    k detailu člověka nebo skupiny a z případu Top 5 zpět. Otevřené okno nebo nabídku Zpět
+    zavře. Aplikace se tím nezavře omylem;
+  - **okna vyjíždějí zespodu** přes celou šířku, tlačítka jsou velká a dole pod palcem;
+  - úvodní text pod nadpisem má dva řádky a klepnutím se rozbalí. Detail člověka nemá nad
+    sebou záhlaví seznamu, ukázková data jsou jen v Přehledu;
+  - v Přehledu je vidět hledání a tlačítko **Filtry**; skupina, přepínače, sloupce a práh
+    Kafe se ukážou po klepnutí. Když je nastavený filtr, má tlačítko tečku;
+  - záložky (Matice, Top 5, Kontroly) jsou v jednom řádku s posunem do strany;
+  - větší plochy pro prst; na iPhonu se stránka při psaní do pole nezvětšuje.
+- **Přidání na plochu.** Aplikace má manifest a ikony, takže ji jde z prohlížeče přidat na
+  plochu telefonu (Android: menu ⋮ → Přidat na plochu / Instalovat aplikaci; iPhone: Sdílet →
+  Přidat na plochu). Spustí se pak v celém okně bez lišty prohlížeče. Nic se neukládá offline:
+  data jsou dál jen na serveru a zašifrovaná.
+- Desktop vypadá stejně jako dřív, jen tlačítko Zpět prohlížeče teď také vrací mezi částmi.
+- Data se nemění. Mění se konfigurace Apache (typ souboru manifestu), nainstaluje ji
+  `deploy/install.sh`.
+
 ## Co je nového ve verzi 2.13
 
 - **Skener kartičky v Sankcích.** U pole Zaměstnanec je ikona skeneru. Po klepnutí se otevře
@@ -513,6 +541,10 @@ v hlavičce každého skriptu:
 - `tests/e2e_skener.js`: novinka 2.13 (skener kartičky v Sankcích: falešná kamera Chromia
   s čárovým kódem z `tests/fixtures`, čtečka jako klávesnice, neznámý kód, vyřazený člověk,
   vypnutí kamery, mobil, tmavý režim);
+- `tests/e2e_mobil.js`: novinka 2.14 (telefon jako aplikace: horní a spodní lišta, nabídka
+  Více s tečkou, Zpět a Vpřed mezi částmi, detail člověka, okno i nabídka, okna zespodu,
+  schované filtry přehledu, úvodní text, záložky s posunem, všechny části na 390 a 360 px,
+  manifest a ikony, tmavý režim, desktop beze změny, zamknutí z nabídky);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -528,7 +560,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.13'` jde stejný test pustit na aktualizaci 2.3 → 2.13 (data verze 5 → 13).
+S `EXPECT_VERSION='2\.14'` jde stejný test pustit na aktualizaci 2.3 → 2.14 (data verze 5 → 13).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

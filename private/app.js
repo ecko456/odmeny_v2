@@ -17,6 +17,7 @@ const ui = {
   me: { cardId: '', label: '', device: '' }, profileKey: null, prevView: 'lide',
   t5: { tab: 'week', week: null, caseId: null, filter: 'active', q: '' },
   kt: { tab: 'plan', week: null, range: '12', dept: '' },
+  hist: [], popping: false, listY: 0,
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -372,10 +373,147 @@ function showView(name) {
   if (name === 'kontroly') renderKontroly();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
+  $('#main').dataset.view = name;
+  $$(`#view-${name} .chips.t5-tabs`).forEach(showActiveChip);
+  $('#navMore').setAttribute('aria-current', String(!!$(`#nav .nav-sec[data-view="${name}"]`)));
   window.scrollTo({ top: 0, behavior: 'instant' });
-  const active = $(`#nav [data-view="${name}"]`);
-  if (active) active.scrollIntoView({ block: 'nearest', inline: 'center' });
   if (name === 'nastaveni') loadSecurityLists();
+  syncHistory();
+}
+
+/* ==========================================================================
+   Telefon: spodní lišta, nabídka Více a tlačítko Zpět (2.14)
+   ========================================================================== */
+const isPhone = () => window.matchMedia('(max-width: 900px)').matches;
+
+/* Podstránka uvnitř části, kterou Zpět zavře: detail člověka a skupiny (na telefonu
+   zakrývají seznam) a případ v Top 5. */
+function navSub() {
+  if (ui.view === 'lide' && ui.personOpen && isPhone()) return 'person';
+  if (ui.view === 'matice' && ui.mxTab === 'groups' && ui.posOpen && isPhone()) return 'pos';
+  if (ui.view === 'top5' && ui.t5.caseId) return 'case';
+  return '';
+}
+
+/* Každá část a podstránka je záznam v historii prohlížeče, takže Zpět (gesto nebo tlačítko
+   telefonu) vrací v aplikaci, místo aby ji zavřelo. ui.hist zrcadlí záznamy z téhle stránky. */
+function syncHistory(replace = false) {
+  if (!S || ui.popping || ui.locking) return;
+  const cur = history.state && history.state.odmView ? history.state : null;
+  const want = { odmView: ui.view, sub: navSub(), i: cur ? +cur.i || 0 : 0 };
+  if (cur && cur.odmView === want.odmView && (cur.sub || '') === want.sub && ui.hist[want.i]) return;
+  // podstránka zavřená jinak než přes Zpět (smazaný člověk, otočený telefon): záznam se jen přepíše
+  if (!cur || replace || !ui.hist[want.i] || (cur.odmView === want.odmView && cur.sub && !want.sub)) {
+    history.replaceState(want, '');
+  } else {
+    want.i += 1;
+    ui.hist.length = want.i;
+    history.pushState(want, '');
+  }
+  ui.hist[want.i] = want;
+}
+
+/* Tlačítko „zpět“ v aplikaci jde po historii, jen když předchozí záznam je to, kam vede
+   (jinak by Zpět potom vrátil na stejné místo ještě jednou). */
+function navBack(isTarget, fallback) {
+  const cur = history.state;
+  const prev = cur && cur.odmView ? ui.hist[(+cur.i || 0) - 1] : null;
+  if (prev && isTarget(prev)) history.back(); else fallback();
+}
+
+function closePersonDetail() {
+  ui.personOpen = false;
+  renderPeople();
+  if (isPhone()) window.scrollTo({ top: ui.listY || 0, behavior: 'instant' });
+}
+
+function onPopState(event) {
+  const st = event.state;
+  if (!S || ui.locking || !st || !st.odmView) return;
+  // Zpět při otevřeném dialogu nebo nabídce je zavře (jako Esc) a v aplikaci se zůstane.
+  const open = [$('#moreSheet'), $('#dlg')].find(d => d && d.open);
+  if (open) {
+    if (open.dispatchEvent(new Event('cancel', { cancelable: true }))) open.close();
+    const stay = { odmView: ui.view, sub: navSub(), i: (+st.i || 0) + 1 };
+    ui.hist.length = stay.i;
+    ui.hist[stay.i] = stay;
+    history.pushState(stay, '');
+    return;
+  }
+  ui.popping = true;
+  try {
+    if (st.odmView !== ui.view) showView(st.odmView);
+    const sub = navSub();
+    if (sub && sub !== (st.sub || '')) {
+      if (sub === 'person') closePersonDetail();
+      else if (sub === 'pos') { ui.posOpen = false; renderPositions(); }
+      else if (sub === 'case') { ui.t5.caseId = null; renderTop5(); }
+    } else if (!sub && st.sub === 'person' && ui.view === 'lide' && isPhone() && S.employees[ui.selPerson]) {
+      ui.personOpen = true;
+      renderPeople();
+    }
+  } finally {
+    ui.popping = false;
+  }
+  syncHistory(true);   // stav po návratu se může od záznamu lišit (smazaný člověk), záznam se srovná
+}
+
+function openMoreSheet() {
+  $('#moreGrid').innerHTML = $$('#nav .nav-sec').map(button => {
+    const badge = $('.nav-badge', button);
+    return `<button type="button" class="sheet-item" data-view="${esc(button.dataset.view)}" aria-current="${button.dataset.view === ui.view}">
+      ${$('svg', button).outerHTML}<span>${esc($('span', button).textContent)}</span>${badge && !badge.hidden ? `<em class="nav-badge">${esc(badge.textContent)}</em>` : ''}</button>`;
+  }).join('');
+  $('#moreSheet').showModal();
+  $('#navMore').setAttribute('aria-expanded', 'true');
+}
+
+/* Na telefonu jsou záložky v jednom řádku s vodorovným posunem: vybraná má být vidět
+   (jen vodorovně, stránka se neposune). */
+function showActiveChip(box) {
+  const chip = box && $('.chip.on', box);
+  if (!chip || box.scrollWidth <= box.clientWidth) return;
+  const r = chip.getBoundingClientRect();
+  const b = box.getBoundingClientRect();
+  if (r.left < b.left || r.right > b.right) box.scrollLeft += r.left - b.left - (b.width - r.width) / 2;
+}
+
+/* Tečka u Více: některá ze schovaných částí má odznak (třeba termíny Top 5 po splatnosti). */
+function renderMoreDot() {
+  const dot = $('#navMoreDot');
+  if (dot) dot.hidden = !$$('#nav .nav-sec .nav-badge').some(badge => !badge.hidden);
+}
+
+function bindPhoneUi() {
+  history.scrollRestoration = 'manual';
+  window.addEventListener('popstate', onPopState);
+  const sheet = $('#moreSheet');
+  $('#navMore').onclick = openMoreSheet;
+  $('#moreGrid').addEventListener('click', event => {
+    const item = event.target.closest('[data-view]');
+    if (!item) return;
+    sheet.close();
+    showView(item.dataset.view);
+  });
+  $('#moreClose').onclick = () => sheet.close();
+  $('#moreLock').onclick = () => { sheet.close(); lockApp(); };
+  sheet.addEventListener('close', () => $('#navMore').setAttribute('aria-expanded', 'false'));
+  // klepnutí mimo nabídku (na ztmavené pozadí) ji zavře
+  sheet.addEventListener('click', event => {
+    if (event.target !== sheet) return;
+    const r = sheet.getBoundingClientRect();
+    if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) sheet.close();
+  });
+  // Úvodní text pod nadpisem je na telefonu na dva řádky, klepnutím se rozbalí celý.
+  $('#main').addEventListener('click', event => {
+    const lede = event.target.closest('.page-head .lede');
+    if (!lede || !isPhone() || event.target.closest('a, button')) return;
+    if (lede.classList.contains('open') || lede.scrollHeight > lede.clientHeight + 1) lede.classList.toggle('open');
+  });
+  $('#ovFilterBtn').onclick = () => {
+    const open = $('#ovTools').classList.toggle('open');
+    $('#ovFilterBtn').setAttribute('aria-expanded', String(open));
+  };
 }
 
 function renderDemoBanner() {
@@ -610,6 +748,7 @@ function renderOverview() {
   select.value = S.positions.some(p => p.id === P.pos) ? P.pos : '';
   $('#ovOnlyImported').checked = P.onlyImported;
   $('#ovOnlyOpen').checked = P.onlyOpen;
+  $('#ovFilterDot').hidden = !(select.value || !P.onlyImported || P.onlyOpen);   // na telefonu jsou filtry schované
   $('#ovTitle').textContent = p ? periodName(p) : 'Zatím bez docházky';
   const meta = p ? periodMeta(p) : null;
   $('#ovLede').innerHTML = p
@@ -881,6 +1020,7 @@ function renderPeople() {
   }).join('') : emptyState('Nikdo tu není', 'Nahraj docházku, nebo přidej člověka ručně.');
   $('#peopleSplit').classList.toggle('show-detail', ui.personOpen);
   renderPersonDetail();
+  syncHistory();
 }
 
 /* Hodnocení dovedností u člověka: řádek za dovednost s volbou úrovně 0–4. */
@@ -998,7 +1138,7 @@ function renderLeadDetail(box, e) {
         <button class="btn ghost small" type="button" data-goleads>Upravit seznam</button></div>
       ${sk.length ? `<div class="rate-list">${rateRows(e, sk)}</div>` : '<p class="small muted">Zatím žádné dovednosti vedoucích. Seznam, stejný pro všechny vedoucí, založíš v Matici dovedností → Vedoucí.</p>'}
     </div></div>`;
-  $('#pBack').onclick = () => { ui.personOpen = false; renderPeople(); };
+  $('#pBack').onclick = () => navBack(prev => prev.odmView === 'lide' && !prev.sub, closePersonDetail);
   $('#pNote').oninput = event => { e.note = event.target.value; save(); };
   $('#pLead').onchange = event => setLead(e, event.target.checked);
   box.querySelectorAll('[data-leaddept]').forEach(input => {
@@ -1069,7 +1209,7 @@ function renderPersonDetail() {
     ${ktPersonCard(e.key)}
   </div>`;
   setWidths(box);
-  $('#pBack').onclick = () => { ui.personOpen = false; renderPeople(); };
+  $('#pBack').onclick = () => navBack(prev => prev.odmView === 'lide' && !prev.sub, closePersonDetail);
   $('#pPos').onchange = event => {
     e.positionId = event.target.value || null;
     const g = posOf(e);
@@ -1514,6 +1654,7 @@ function renderPositions() {
       <span class="nm"><b>${esc(x.name || '(bez názvu)')}</b><span>${groupSummary(x, counts[x.id])}</span></span>
     </button>`).join('') : emptyState('Žádné skupiny', 'Přidej první skupinu tlačítkem Nová skupina.');
   $('#posSplit').classList.toggle('show-detail', ui.posOpen);
+  syncHistory();
   const editor = $('#posEditor');
   if (!p) { editor.innerHTML = ''; return; }
   const skills = groupSkills(p);
@@ -1704,7 +1845,7 @@ function bindGroupEditor() {
     const p = cur();
     const t = event.target;
     if (!p) return;
-    if (t.closest('#posBack')) { ui.posOpen = false; renderPositions(); return; }
+    if (t.closest('#posBack')) { navBack(prev => prev.odmView === 'matice' && !prev.sub, () => { ui.posOpen = false; renderPositions(); }); return; }
     if (t.closest('#posDel')) {
       const n = Object.values(S.employees).filter(e => e.positionId === p.id).length;
       if (!(await confirmBox('Smazat skupinu?', `Skupina ${p.name}${n ? ` zmizí a ${n} lidí zůstane bez skupiny.` : ' zmizí.'} Hodnocení jejích dovedností u lidí se smaže.`, 'Smazat', true))) return;
@@ -2743,6 +2884,7 @@ function renderMatrix() {
   const want = ui.mxTab || P.mxTab;
   const tab = MX_TABS.some(t => t[0] === want) ? want : 'matrix';
   $('#mxTabs').innerHTML = MX_TABS.map(([k, t]) => `<button type="button" class="chip${k === tab ? ' on' : ''}" data-mxtab="${k}" aria-pressed="${k === tab}">${t}</button>`).join('');
+  showActiveChip($('#mxTabs'));
   $('#mxPanelMatrix').hidden = tab !== 'matrix';
   $('#mxPanelGroups').hidden = tab !== 'groups';
   $('#mxPanelCap').hidden = tab !== 'cap';
@@ -3417,7 +3559,7 @@ function bindExtraEvents() {
   const view = $('#profileView');
   view.addEventListener('click', event => {
     const target = event.target;
-    if (target.closest('[data-pfback]')) { showView(ui.prevView && ui.prevView !== 'profil' ? ui.prevView : 'lide'); return; }
+    if (target.closest('[data-pfback]')) { const to = ui.prevView && ui.prevView !== 'profil' ? ui.prevView : 'lide'; navBack(prev => prev.odmView === to, () => showView(to)); return; }
     if (target.closest('[data-pfedit]')) { ui.selPerson = ui.profileKey; ui.personOpen = true; renderPeople(); showView('lide'); return; }
     if (target.closest('[data-pfxlsx]')) { exportProfile(); return; }
     if (target.closest('[data-pfprint]')) { window.print(); return; }
@@ -3512,12 +3654,15 @@ function renderTop5Badge() {
   badge.hidden = !n;
   badge.textContent = String(n);
   badge.title = n ? `${n} ${n === 1 ? 'termín' : n <= 4 ? 'termíny' : 'termínů'} po splatnosti` : '';
+  renderMoreDot();
 }
 
 function renderTop5() {
   const view = $('#t5View');
   if (!view || !S) return;
   renderTop5Badge();
+  if (ui.t5.caseId && !effCase(ui.t5.caseId)) ui.t5.caseId = null;
+  syncHistory();
   const late = effDeadlines().filter(x => x.late).length;
   const counts = { cases: S.eff.cases.filter(c => T5_FILTERS[0][2](caseState(c))).length, deadlines: effDeadlines(null, 14).length, reports: S.eff.reports.length };
   $('#t5Tabs').innerHTML = T5_TABS.map(([k, t]) => {
@@ -3525,6 +3670,7 @@ function renderTop5() {
     const n = counts[k];
     return `<button type="button" class="chip${on ? ' on' : ''}" data-t5tab="${k}" aria-pressed="${on}">${t}${n ? ` <em class="t5-count${k === 'deadlines' && late ? ' late' : ''}">${n}</em>` : ''}</button>`;
   }).join('');
+  showActiveChip($('#t5Tabs'));
   const c = ui.t5.caseId ? effCase(ui.t5.caseId) : null;
   if (ui.t5.caseId && !c) ui.t5.caseId = null;
   view.innerHTML = c ? t5CaseHtml(c)
@@ -4228,7 +4374,7 @@ async function t5CaseClick(event) {
   if (!c) return false;
   const r = curRound(c);
   const meta = effMeta();
-  if (t.closest('[data-t5back]')) { ui.t5.caseId = null; renderTop5(); return true; }
+  if (t.closest('[data-t5back]')) { navBack(prev => prev.odmView === 'top5' && !prev.sub, () => { ui.t5.caseId = null; renderTop5(); }); return true; }
   const add = t.closest('[data-actadd]');
   if (add) {
     const a = { id: uid('a'), kind: add.dataset.actadd === 'process' ? 'process' : 'now', text: '', owner: '', due: '', done: '', note: '' };
@@ -5070,6 +5216,7 @@ function bindEvents() {
   $('#lockBtn').onclick = () => lockApp();
   $('#lockBtnTop').onclick = () => lockApp();
   $('#logBtn').onclick = () => openLog();
+  bindPhoneUi();
 
   // Filtry přehledu jsou osobní: pamatují se jen pro tuto kartičku.
   $('#ovSearch').addEventListener('input', renderOverview);
@@ -5122,10 +5269,11 @@ function bindEvents() {
   $('#lList').addEventListener('click', event => {
     const button = event.target.closest('[data-key]');
     if (!button) return;
+    if (!ui.personOpen) ui.listY = window.scrollY;
     ui.selPerson = button.dataset.key;
     ui.personOpen = true;
     renderPeople();
-    if (window.matchMedia('(max-width: 900px)').matches) window.scrollTo({ top: 0, behavior: 'instant' });
+    if (isPhone()) window.scrollTo({ top: 0, behavior: 'instant' });
   });
   $('#lDetail').addEventListener('click', async event => {
     if (await handleIssueClick(event)) return;
@@ -5297,6 +5445,7 @@ function renderKontroly() {
   if (!view || !S) return;
   renderKtBadge();
   $('#ktTabs').innerHTML = KT_TABS.map(([k, t]) => `<button type="button" class="chip${k === ui.kt.tab ? ' on' : ''}" data-kttab="${k}" aria-pressed="${k === ui.kt.tab}">${t}</button>`).join('');
+  showActiveChip($('#ktTabs'));
   view.innerHTML = ui.kt.tab === 'tasks' ? ktTasksHtml() : ui.kt.tab === 'results' ? ktResultsHtml() : ktPlanHtml();
   setWidths(view);
 }

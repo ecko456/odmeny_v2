@@ -382,6 +382,14 @@ async function markDone(page, id, date) {
   overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   check(overflow <= 1, `mobil případ: vodorovné přetečení ${overflow} px`);
   await page.screenshot({ path: `${shots}/11-mobile-case.png`, fullPage: true });
+  // Zpět (gesto telefonu) zavře případ a zůstane se v Top 5 (2.14).
+  const caseOpen = await page.evaluate(() => ui.t5.caseId);
+  check(caseOpen && await page.evaluate(() => history.state.sub === 'case'), 'případ je záznam v historii');
+  await page.goBack();
+  await page.waitForFunction(() => !ui.t5.caseId && ui.view === 'top5', null, { timeout: 5000 }).catch(() => {});
+  check(await page.evaluate(() => !ui.t5.caseId && ui.view === 'top5'), 'Zpět zavřel případ');
+  await page.click('#t5View tbody tr >> nth=1');
+  await page.waitForFunction(() => !!ui.t5.caseId);
   await page.click('[data-t5back]');
 
   // Tmavý režim.

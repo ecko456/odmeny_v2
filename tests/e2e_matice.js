@@ -54,6 +54,12 @@ async function prompt(page, value) {
 }
 const editor = '#posEditor';
 
+// Na telefonu jsou méně používané části v nabídce Více (2.14).
+async function nav(page, view) {
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
+  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+}
+
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -461,7 +467,7 @@ const editor = '#posEditor';
 
   // Mobil: matice, kapacita, skupiny a sankce bez vodorovného přetečení.
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.click('#nav [data-view="matice"]');
+  await nav(page, 'matice');
   for (const tab of ['matrix', 'groups', 'cap']) {
     await page.click(`[data-mxtab="${tab}"]`);
     await page.waitForTimeout(200);

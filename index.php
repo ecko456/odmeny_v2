@@ -23,8 +23,15 @@ $privateVersion = (string)max(array_map(static fn(string $file): int => (int)fil
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="no-referrer">
   <meta name="theme-color" content="#0e6b5d">
+  <meta name="application-name" content="Odměny">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Odměny">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <title>Odměny 2</title>
   <link rel="icon" href="<?= $asset('static/icon.svg') ?>" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="<?= $asset('static/apple-touch-icon.png') ?>">
+  <link rel="manifest" href="<?= $asset('static/manifest.webmanifest') ?>">
   <link rel="stylesheet" href="<?= $asset('static/lock.css') ?>">
 </head>
 <body data-private-version="<?= htmlspecialchars($privateVersion, ENT_QUOTES) ?>">

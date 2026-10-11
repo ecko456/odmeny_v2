@@ -49,6 +49,12 @@ async function login(page, key) {
   await page.waitForTimeout(400);
 }
 
+// Na telefonu jsou méně používané části v nabídce Více (2.14).
+async function nav(page, view) {
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
+  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+}
+
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -153,7 +159,7 @@ async function login(page, key) {
     const badge = await p2.textContent('#logBadge');
     if (!(+badge > 0)) problems.push(`druhá kartička nevidí nové změny (odznak "${badge}")`);
     await p2.screenshot({ path: `${shots}/m-overview.png`, fullPage: true });
-    await p2.click('#nav [data-view="matice"]');
+    await nav(p2, 'matice');
     await p2.waitForSelector('.matrix');
     await p2.screenshot({ path: `${shots}/m-matrix.png`, fullPage: true });
     await p2.locator('.matrix [data-profile]').first().click();

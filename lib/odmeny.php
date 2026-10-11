@@ -18,7 +18,7 @@ declare(strict_types=1);
 
 // Verze aplikace. Klient posílá verzi svého tvaru dat v hlavičce X-Odmeny-Client;
 // stránka otevřená ještě před aktualizací už nesmí uložit data ve starém tvaru.
-const ODM_VERSION = '2.13';
+const ODM_VERSION = '2.14';
 const ODM_MIN_CLIENT = 13;
 const ODM_SESSION_COOKIE = 'odmeny_session';
 const ODM_SESSION_HOURS = 12;
@@ -185,7 +185,7 @@ function odm_security_headers(): void
     header('Cross-Origin-Resource-Policy: same-origin');
     header('X-Robots-Tag: noindex, nofollow, noarchive');
     header('Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()');
-    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; media-src 'self' blob:; form-action 'none'; frame-ancestors 'none'; base-uri 'none'");
+    header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; media-src 'self' blob:; manifest-src 'self'; form-action 'none'; frame-ancestors 'none'; base-uri 'none'");
     if (odm_is_https()) {
         header('Strict-Transport-Security: max-age=31536000');
     }

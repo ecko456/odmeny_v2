@@ -41,6 +41,12 @@ async function watch(page, label) {
   });
 }
 
+// Na telefonu jsou méně používané části v nabídce Více (2.14).
+async function nav(page, view) {
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
+  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+}
+
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -190,7 +196,7 @@ async function watch(page, label) {
   await m.waitForSelector('#ovBody tr.detail');
   await m.screenshot({ path: `${shots}/12-m-detail.png`, fullPage: true });
   for (const view of ['lide', 'matice', 'sankce', 'dochazka', 'nastaveni']) {
-    await m.click(`#nav [data-view="${view}"]`);
+    await nav(m, view);
     await m.waitForTimeout(350);
     await m.screenshot({ path: `${shots}/13-m-${view}.png`, fullPage: true });
   }
