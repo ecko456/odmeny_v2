@@ -54,10 +54,14 @@ async function prompt(page, value) {
 }
 const editor = '#posEditor';
 
-// Na telefonu jsou méně používané části v nabídce Více (2.14).
+// Na telefonu (2.15) není postranní menu: části se otevírají z hlavního menu (logo vlevo nahoře).
 async function nav(page, view) {
-  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
-  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) { await page.click(`#nav [data-view="${view}"]`); return; }
+  await page.click('#brandHome');
+  await page.waitForSelector('#view-domu.on');
+  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
+  await page.click(`#homeView .home-menu [data-go="${view}"]`);
+  await page.waitForFunction(v => ui.view === v, view);
 }
 
 (async () => {
@@ -471,14 +475,14 @@ async function nav(page, view) {
   for (const tab of ['matrix', 'groups', 'cap']) {
     await page.click(`[data-mxtab="${tab}"]`);
     await page.waitForTimeout(200);
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     check(overflow <= 1, `mobil ${tab}: vodorovné přetečení ${overflow} px`);
     await page.screenshot({ path: `${shots}/10-mobile-${tab}.png`, fullPage: true });
   }
-  await page.click('#nav [data-view="sankce"]');
+  await nav(page, 'sankce');
   await page.waitForTimeout(200);
   await page.screenshot({ path: `${shots}/10-mobile-sankce.png`, fullPage: true });
-  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 1, 'mobil sankce: přetečení');
+  check(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1, 'mobil sankce: přetečení');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.click('#nav [data-view="matice"]');

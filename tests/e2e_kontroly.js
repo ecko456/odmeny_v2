@@ -268,7 +268,7 @@ async function openMenu(page, id) {
   for (const tab of ['plan', 'tasks', 'results']) {
     await page.click(`#ktTabs [data-kttab="${tab}"]`);
     await page.waitForTimeout(200);
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     check(overflow <= 1, `mobil ${tab}: vodorovné přetečení ${overflow} px`);
     await page.screenshot({ path: `${shots}/09-mobile-${tab}.png`, fullPage: true });
   }

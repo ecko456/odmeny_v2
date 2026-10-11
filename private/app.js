@@ -17,7 +17,7 @@ const ui = {
   me: { cardId: '', label: '', device: '' }, profileKey: null, prevView: 'lide',
   t5: { tab: 'week', week: null, caseId: null, filter: 'active', q: '' },
   kt: { tab: 'plan', week: null, range: '12', dept: '' },
-  hist: [], popping: false, listY: 0,
+  hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -115,6 +115,13 @@ const I = {
   x: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   scan: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7 9v6M10 9v6M13 9v6M17 9v6"/></svg>',
   shield: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.2 2.9 8 7 9.5 4.1-1.5 7-5.3 7-9.5V6z"/><path d="m9 12 2 2 4-4"/></svg>',
+  sun: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M5.3 18.7l1.5-1.5M17.2 6.8l1.5-1.5"/></svg>',
+  moon: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>',
+  search: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5.5 5.5"/></svg>',
+  grid: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
+  chart: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M6.5 16v-4M11 16V7.5M15.5 16v-6M20 16V5"/></svg>',
+  warn: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
+  lock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>',
 };
 
 /* ==========================================================================
@@ -128,7 +135,7 @@ function dialog(options) {
   return run;
 }
 
-function openDialog({ title, html = '', ok = 'OK', cancel = 'Zrušit', danger = false, wide = false, onOpen = null, validate = null }) {
+function openDialog({ title, html = '', ok = 'OK', cancel = 'Zrušit', danger = false, wide = false, tall = false, onOpen = null, validate = null }) {
   return new Promise(resolve => {
     const dlg = $('#dlg');
     const form = $('#dlgForm');
@@ -140,6 +147,7 @@ function openDialog({ title, html = '', ok = 'OK', cancel = 'Zrušit', danger = 
     $('#dlgCancel').textContent = cancel || '';
     $('#dlgCancel').hidden = !cancel;
     dlg.classList.toggle('wide', wide);
+    dlg.classList.toggle('tall', tall);
     const onSubmit = event => {
       if (event.submitter?.value !== 'ok' || !validate) return;
       const problem = validate(form);
@@ -357,6 +365,7 @@ function renderAll() {
   if (ui.view === 'profil') renderProfile();
   if (ui.view === 'top5') renderTop5(); else renderTop5Badge();
   if (ui.view === 'kontroly') renderKontroly(); else renderKtBadge();
+  if (ui.view === 'domu') renderHome();
   renderSaveState();
   renderLogBadge();
 }
@@ -371,18 +380,20 @@ function showView(name) {
   if (name === 'matice') renderMatrix();
   if (name === 'top5') renderTop5();
   if (name === 'kontroly') renderKontroly();
+  if (name === 'domu') renderHome();
+  closeFab();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
   $('#main').dataset.view = name;
+  document.body.dataset.view = name;
   $$(`#view-${name} .chips.t5-tabs`).forEach(showActiveChip);
-  $('#navMore').setAttribute('aria-current', String(!!$(`#nav .nav-sec[data-view="${name}"]`)));
   window.scrollTo({ top: 0, behavior: 'instant' });
   if (name === 'nastaveni') loadSecurityLists();
   syncHistory();
 }
 
 /* ==========================================================================
-   Telefon: spodní lišta, nabídka Více a tlačítko Zpět (2.14)
+   Telefon: tlačítko Zpět (2.14), hlavní menu a plovoucí menu (2.15)
    ========================================================================== */
 const isPhone = () => window.matchMedia('(max-width: 900px)').matches;
 
@@ -430,10 +441,11 @@ function closePersonDetail() {
 function onPopState(event) {
   const st = event.state;
   if (!S || ui.locking || !st || !st.odmView) return;
-  // Zpět při otevřeném dialogu nebo nabídce je zavře (jako Esc) a v aplikaci se zůstane.
-  const open = [$('#moreSheet'), $('#dlg')].find(d => d && d.open);
-  if (open) {
-    if (open.dispatchEvent(new Event('cancel', { cancelable: true }))) open.close();
+  // Zpět při otevřeném dialogu nebo plovoucím menu je zavře (jako Esc) a v aplikaci se zůstane.
+  const open = $('#dlg').open ? $('#dlg') : null;
+  if (open || ui.fabOpen) {
+    if (ui.fabOpen) closeFab();
+    else if (open.dispatchEvent(new Event('cancel', { cancelable: true }))) open.close();
     const stay = { odmView: ui.view, sub: navSub(), i: (+st.i || 0) + 1 };
     ui.hist.length = stay.i;
     ui.hist[stay.i] = stay;
@@ -458,16 +470,6 @@ function onPopState(event) {
   syncHistory(true);   // stav po návratu se může od záznamu lišit (smazaný člověk), záznam se srovná
 }
 
-function openMoreSheet() {
-  $('#moreGrid').innerHTML = $$('#nav .nav-sec').map(button => {
-    const badge = $('.nav-badge', button);
-    return `<button type="button" class="sheet-item" data-view="${esc(button.dataset.view)}" aria-current="${button.dataset.view === ui.view}">
-      ${$('svg', button).outerHTML}<span>${esc($('span', button).textContent)}</span>${badge && !badge.hidden ? `<em class="nav-badge">${esc(badge.textContent)}</em>` : ''}</button>`;
-  }).join('');
-  $('#moreSheet').showModal();
-  $('#navMore').setAttribute('aria-expanded', 'true');
-}
-
 /* Na telefonu jsou záložky v jednom řádku s vodorovným posunem: vybraná má být vidět
    (jen vodorovně, stránka se neposune). */
 function showActiveChip(box) {
@@ -478,32 +480,20 @@ function showActiveChip(box) {
   if (r.left < b.left || r.right > b.right) box.scrollLeft += r.left - b.left - (b.width - r.width) / 2;
 }
 
-/* Tečka u Více: některá ze schovaných částí má odznak (třeba termíny Top 5 po splatnosti). */
-function renderMoreDot() {
-  const dot = $('#navMoreDot');
-  if (dot) dot.hidden = !$$('#nav .nav-sec .nav-badge').some(badge => !badge.hidden);
-}
-
 function bindPhoneUi() {
   history.scrollRestoration = 'manual';
   window.addEventListener('popstate', onPopState);
-  const sheet = $('#moreSheet');
-  $('#navMore').onclick = openMoreSheet;
-  $('#moreGrid').addEventListener('click', event => {
-    const item = event.target.closest('[data-view]');
+  $('#brandHome').onclick = () => showView(isPhone() ? 'domu' : 'prehled');
+  $('#fab').onclick = () => (ui.fabOpen ? closeFab() : openFab());
+  $('#fabScrim').onclick = closeFab;
+  $('#fabMenu').addEventListener('click', event => {
+    const item = event.target.closest('[data-fab]');
     if (!item) return;
-    sheet.close();
-    showView(item.dataset.view);
+    closeFab();
+    if (item.dataset.fab === 'search') openPersonSearch(); else showView(item.dataset.fab);
   });
-  $('#moreClose').onclick = () => sheet.close();
-  $('#moreLock').onclick = () => { sheet.close(); lockApp(); };
-  sheet.addEventListener('close', () => $('#navMore').setAttribute('aria-expanded', 'false'));
-  // klepnutí mimo nabídku (na ztmavené pozadí) ji zavře
-  sheet.addEventListener('click', event => {
-    if (event.target !== sheet) return;
-    const r = sheet.getBoundingClientRect();
-    if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) sheet.close();
-  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && ui.fabOpen) { closeFab(); $('#fab').focus(); } });
+  $('#homeView').addEventListener('click', homeClick);
   // Úvodní text pod nadpisem je na telefonu na dva řádky, klepnutím se rozbalí celý.
   $('#main').addEventListener('click', event => {
     const lede = event.target.closest('.page-head .lede');
@@ -514,6 +504,284 @@ function bindPhoneUi() {
     const open = $('#ovTools').classList.toggle('open');
     $('#ovFilterBtn').setAttribute('aria-expanded', String(open));
   };
+}
+
+/* ---------- Hlavní menu na telefonu (2.15) ----------
+   Po přihlášení krátká animace HALA 2, pak plánovaná obsazenost dne (kdo má ranní a odpolední
+   podle zařazení a střídání skupin, kapacita, nemoc, dovednosti bez zástupu, kontroly a termíny).
+   Volba směny (Ranní / Odpolední / Obě) zvýrazní její čísla, ukáže rizika a rozevře menu částí. */
+const SLOT_NAME = { am: 'Ranní', pm: 'Odpolední', both: 'Obě směny' };
+const DOW_NAME = ['neděle', 'pondělí', 'úterý', 'středa', 'čtvrtek', 'pátek', 'sobota'];
+const MONTH_GEN = ['ledna', 'února', 'března', 'dubna', 'května', 'června', 'července', 'srpna', 'září', 'října', 'listopadu', 'prosince'];
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function dayLong(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return `${DOW_NAME[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d}. ${MONTH_GEN[m - 1]}`;
+}
+function greeting(h) { return h < 10 ? 'Dobré ráno' : h < 18 ? 'Dobrý den' : 'Dobrý večer'; }
+/* Která směna právě běží (ranní 6–14, odpolední 14–22); jen nápověda u přepínače. */
+function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm' : ''; }
+function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
+function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
+function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['top5', 'Top 5'], ['matice', 'Matice'], ['dochazka', 'Docházka'], ['vyroba', 'Výroba'], ['nastaveni', 'Nastavení']];
+
+function homeTileMeta(view, sd) {
+  const p = curPeriod();
+  switch (view) {
+    case 'prehled': return p ? periodName(p) : 'bez docházky';
+    case 'lide': { const n = Object.values(S.employees).filter(e => !e.excluded && !isLead(e)).length; return `${n} ${lidiN(n)}`; }
+    case 'sankce': { const n = S.current ? S.sanctions.filter(x => x.period === S.current).length : 0; return n ? `${n} za ${p ? periodName(p) : 'měsíc'}` : 'zadat sankci'; }
+    case 'kontroly': return sd.today && sd.checks.list.length ? `dnes ${sd.checks.open + sd.checks.done} · hotovo ${sd.checks.done}` : 'plán týdne';
+    case 'top5': return sd.deadlines.late ? `${sd.deadlines.late} po termínu` : sd.deadlines.due ? `${sd.deadlines.due} termín dnes` : 'případy a termíny';
+    case 'matice': { const n = departments().length; return `${n} ${n === 1 ? 'oddělení' : 'oddělení'}`; }
+    case 'dochazka': return p ? 'nahráno' : 'nahrát export';
+    case 'vyroba': return prodPeriod() ? 'evidence práce' : 'nahrát evidenci';
+    default: return 'pravidla a zálohy';
+  }
+}
+
+function homeRisks(sd, sel) {
+  const slots = sel === 'both' ? ['am', 'pm'] : [sel];
+  const list = sd.depts.flatMap(r => r.risks.filter(x => slots.includes(x.slot)).map(x => ({ ...x, dept: r.dept })))
+    .sort((a, b) => a.n - b.n);
+  if (!list.length) return `<div class="home-ok">${I.check}<span>Na ${sel === 'both' ? 'obou směnách' : sel === 'am' ? 'ranní' : 'odpolední'} má každá dovednost aspoň dva lidi s úrovní ${sd.thr}+.</span></div>`;
+  const shown = list.slice(0, 5);
+  return `<section class="home-risks card"><h2>${I.warn}Na co si dát pozor</h2><ul>${shown.map(x => `<li class="${x.n ? 'thin' : 'none'}"><b>${esc(x.skill)}</b><span>${esc(x.group || x.dept)}${sel === 'both' ? ` · ${x.slot === 'am' ? 'ranní' : 'odpolední'}` : ''}</span><em>${x.n ? 'jen 1 člověk' : 'nikdo'} s úrovní ${sd.thr}+</em></li>`).join('')}</ul>${list.length > shown.length ? `<p class="tiny muted">a ${list.length - shown.length} dalších v Matici dovedností → Směny a kapacita</p>` : ''}</section>`;
+}
+
+function renderHome(unfold = false) {
+  const box = $('#homeView');
+  if (!box || !S) return;
+  const sd = staffDay();
+  const sel = ui.homeShift || '';
+  const h = new Date().getHours();
+  const live = sd.today ? liveSlot(h) : '';
+  const max = Math.max(1, ...sd.depts.map(r => Math.max(r.am.length, r.pm.length)));
+  const wage = wageAllPending().length;
+  const flags = [
+    sd.total.sick ? `<button type="button" class="hf" data-go="lide">${sd.total.sick} v nemoci</button>` : '',
+    sd.total.none ? `<button type="button" class="hf warn" data-go="lide">${sd.total.none} bez směny</button>` : '',
+    sd.total.rot ? `<button type="button" class="hf warn" data-hgo="cap">Směnnost: nastav střídání skupin</button>` : '',
+    sd.checks.list.length ? `<button type="button" class="hf" data-go="kontroly">Kontroly ${sd.checks.open + sd.checks.done}${sd.checks.done ? ` · ${sd.checks.done} hotovo` : ''}</button>` : '',
+    sd.deadlines.late ? `<button type="button" class="hf crit" data-go="top5">Top 5: ${sd.deadlines.late} po termínu</button>` : sd.deadlines.due ? `<button type="button" class="hf" data-go="top5">Top 5: ${sd.deadlines.due} termín</button>` : '',
+    wage ? `<button type="button" class="hf crit" data-hgo="wage">Srážky ke zpracování: ${wage}</button>` : '',
+  ].filter(Boolean).join('');
+  const big = k => `<div class="hb ${k}${live === k ? ' live' : ''}"><span class="hb-k">${k === 'am' ? I.sun : I.moon}${k === 'am' ? 'Ranní' : 'Odpolední'}${live === k ? '<i>teď</i>' : ''}</span>
+      <b class="num" data-count="${sd.total[k]}">${sd.total[k]}</b><small>${lidiN(sd.total[k])}${planText(sumPlan(sd, k)) ? ` · ${planText(sumPlan(sd, k))}` : ''}</small></div>`;
+  box.innerHTML = `<div class="home" data-sel="${sel}">
+    <section class="home-hero">
+      <div class="hh-top"><span class="hh-brand">HALA <i>2</i></span><span class="hh-week">${esc(weekName(sd.week))}</span></div>
+      <h1 id="homeTitle">${greeting(h)}</h1>
+      <p class="hh-sub">${sd.today ? `Dnes je ${esc(dayLong(sd.day))}` : `Dnes se nepracuje · plán na ${esc(dayLong(sd.day))}`}</p>
+      <p class="hh-cap">Plánovaná obsazenost</p>
+      <div class="hh-big">${big('am')}${big('pm')}</div>
+      ${flags ? `<div class="hh-flags">${flags}</div>` : ''}
+    </section>
+    <div class="seg" role="radiogroup" aria-label="Směna, kterou dnes řídíš" data-on="${sel}">
+      <span class="seg-pill" aria-hidden="true"></span>
+      ${['am', 'pm', 'both'].map(k => `<button type="button" role="radio" aria-checked="${sel === k}" data-hshift="${k}"${live === k && !sel ? ' class="hint"' : ''}>${SLOT_NAME[k]}</button>`).join('')}
+    </div>
+    ${sel ? '' : '<p class="home-hint">Vyber směnu, kterou dnes řídíš. Pak se otevře menu.</p>'}
+    <div class="home-open${unfold ? ' unfold' : ''}"${sel ? '' : ' hidden'}>${sel ? homeOpenHtml(sd, sel) : ''}</div>
+    <section class="home-staff card">
+      <div class="hs-head"><h2>Obsazenost podle oddělení</h2><span class="tiny muted">${sd.mg ? `ranní má ${sd.mg === 'S1' ? 'skupina 1' : 'skupina 2'}` : 'střídání skupin nenastavené'}</span></div>
+      ${sd.depts.length ? `<div class="hs-table">
+        <div class="hs-row hs-th"><span></span><span class="am">${I.sun}Ranní</span><span class="pm">${I.moon}Odpolední</span></div>
+        ${sd.depts.map(r => `<div class="hs-row">
+          <div class="hs-dept"><b>${esc(r.dept)}</b>${[r.sick.length ? `${r.sick.length} v nemoci` : '', r.rot.length ? `${r.rot.length} směnnost` : '', r.none.length ? `${r.none.length} bez směny` : ''].filter(Boolean).map(t => `<small>${esc(t)}</small>`).join('')}</div>
+          ${['am', 'pm'].map(k => `<div class="hs-cell ${k}${r.risks.some(x => x.slot === k && !x.n) ? ' risk' : ''}"><b class="num">${r[k].length}</b><span class="hs-bar"><i data-w="${(r[k].length / max * 100).toFixed(1)}"></i></span><small>${esc(planText(r.plan[k]))}</small></div>`).join('')}
+        </div>`).join('')}</div>` : '<p class="small muted">Zatím nikdo nemá skupinu a směnu. Nastavíš je v Lidech.</p>'}
+    </section>
+    <button class="btn ghost home-lock" type="button" id="homeLock">${I.lock}Zamknout</button>
+  </div>`;
+  setWidths(box);
+  $('#homeLock').onclick = () => lockApp();
+}
+function homeOpenHtml(sd, sel) {
+  return `<nav class="home-menu" aria-label="Části aplikace">${HOME_TILES.map(([v, label]) => {
+    const badge = navBadge(v);
+    return `<button type="button" class="tile" data-go="${v}">${navIcon(v)}<b>${label}</b><small>${esc(homeTileMeta(v, sd))}</small>${badge ? `<em class="nav-badge">${esc(badge)}</em>` : ''}</button>`;
+  }).join('')}</nav>${homeRisks(sd, sel)}`;
+}
+function sumPlan(sd, k) {
+  return sd.depts.reduce((x, r) => ({ ks: x.ks + r.plan[k].ks, h: x.h + r.plan[k].h }), { ks: 0, h: 0 });
+}
+
+function homeClick(event) {
+  const shift = event.target.closest('[data-hshift]');
+  if (shift) { chooseShift(shift.dataset.hshift); return; }
+  const go = event.target.closest('[data-hgo]');
+  if (go && go.dataset.hgo === 'cap') { ui.mxTab = 'cap'; showView('matice'); return; }
+  if (go && go.dataset.hgo === 'wage') openWageList();
+}
+
+/* Volba směny mění jen dotčené části (přepínač tak plynule přejede); poprvé se menu rozevře. */
+function chooseShift(k) {
+  const first = !ui.homeShift;
+  ui.homeShift = k;
+  const home = $('#homeView .home');
+  if (!home) { renderHome(); return; }
+  home.dataset.sel = k;
+  const seg = $('.seg', home);
+  seg.dataset.on = k;
+  $$('[data-hshift]', seg).forEach(b => { b.setAttribute('aria-checked', String(b.dataset.hshift === k)); b.classList.remove('hint'); });
+  const hint = $('.home-hint', home);
+  if (hint) hint.remove();
+  const open = $('.home-open', home);
+  open.innerHTML = homeOpenHtml(staffDay(), k);
+  open.hidden = false;
+  if (first && !reducedMotion()) {
+    open.classList.add('unfold');
+    // přepínač nahoru pod lištu, pod ním se rozevře menu
+    setTimeout(() => { if (ui.view === 'domu') seg.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+  } else {
+    open.classList.remove('unfold');
+  }
+}
+
+/* Čísla obsazenosti „naběhnou“ od nuly. */
+function countUp(root) {
+  if (reducedMotion()) return;
+  $$('[data-count]', root).forEach(el => {
+    const to = +el.dataset.count || 0;
+    if (!to) return;
+    const t0 = performance.now(), dur = 900;
+    const step = now => {
+      const t = Math.min(1, (now - t0) / dur);
+      el.textContent = String(Math.round(to * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) requestAnimationFrame(step);
+    };
+    el.textContent = '0';
+    requestAnimationFrame(step);
+  });
+}
+
+/* Úvodní animace HALA 2 po přihlášení na telefonu; klepnutím se přeskočí. */
+function playSplash() {
+  const sp = $('#splash');
+  const intro = () => {
+    const box = $('#homeView');
+    box.classList.add('intro');
+    countUp(box);
+    setTimeout(() => box.classList.remove('intro'), 1600);
+  };
+  if (!sp || reducedMotion()) { intro(); return; }
+  $('#splashSub').textContent = ui.me.label ? `${greeting(new Date().getHours())}, ${ui.me.label}` : greeting(new Date().getHours());
+  sp.hidden = false;
+  document.body.classList.add('splashing');
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(ui.splashTimer);
+    sp.classList.add('out');
+    intro();
+    setTimeout(() => { sp.hidden = true; sp.classList.remove('out'); document.body.classList.remove('splashing'); }, 560);
+  };
+  ui.splashTimer = setTimeout(finish, 2000);
+  sp.addEventListener('click', finish, { once: true });
+}
+
+/* ---------- plovoucí menu vpravo dole (2.15) ---------- */
+const FAB_ITEMS = [['search', 'Vyhledat člověka'], ['sankce', 'Sankce'], ['top5', 'Top 5'], ['kontroly', 'Kontroly']];
+function openFab() {
+  $('#fabMenu').innerHTML = `<button type="button" role="menuitem" class="fab-item fab-home" data-fab="domu"><span class="fab-l">Hlavní menu</span><span class="fab-i">${I.grid}</span></button>${FAB_ITEMS.map(([k, label]) => {
+    const badge = k === 'search' ? '' : navBadge(k);
+    return `<button type="button" role="menuitem" class="fab-item" data-fab="${k}"><span class="fab-l">${label}</span><span class="fab-i">${k === 'search' ? I.search : navIcon(k)}${badge ? `<em class="nav-badge">${esc(badge)}</em>` : ''}</span></button>`;
+  }).join('')}`;
+  ui.fabOpen = true;
+  $('#fabMenu').hidden = false;
+  $('#fabScrim').hidden = false;
+  $('#fab').setAttribute('aria-expanded', 'true');
+  $('#fab').setAttribute('aria-label', 'Zavřít rychlé volby');
+  requestAnimationFrame(() => requestAnimationFrame(() => { if (ui.fabOpen) document.body.classList.add('fab-open'); }));
+}
+function closeFab() {
+  if (!ui.fabOpen) return;
+  ui.fabOpen = false;
+  document.body.classList.remove('fab-open');
+  $('#fab').setAttribute('aria-expanded', 'false');
+  $('#fab').setAttribute('aria-label', 'Rychlé volby');
+  setTimeout(() => { if (!ui.fabOpen) { $('#fabMenu').hidden = true; $('#fabScrim').hidden = true; } }, 240);
+}
+/* Tečka na plovoucím tlačítku: Top 5 nebo Kontroly mají odznak. */
+function renderFabDot() {
+  const dot = $('#fabDot');
+  if (dot) dot.hidden = !navBadge('top5') && !navBadge('kontroly');
+}
+
+/* ---------- vyhledání člověka (jméno, ID v evidenci práce, kartička) ---------- */
+function initials(e) { return `${(e.last || '?')[0]}${(e.first || '')[0] || ''}`.toUpperCase(); }
+async function openPersonSearch() {
+  const mg = staffDay().mg;
+  let filter = ui.homeShift === 'am' || ui.homeShift === 'pm' ? ui.homeShift : '';
+  let pick = null;
+  const slotLabel = e => { const sl = slotOn(e, mg); return sl === 'am' ? 'ranní' : sl === 'pm' ? 'odpolední' : sl === 'rot' ? shiftName(shiftOf(e)).replace('Směnnost – s', 'S') : 'bez směny'; };
+  const row = e => {
+    const lead = isLead(e), pos = posOf(e), noSan = e.excluded || lead;
+    const sub = [lead ? 'vedoucí' : pos ? pos.name : 'bez skupiny', lead ? '' : slotLabel(e), e.wid ? `ID ${e.wid}` : ''].filter(Boolean).join(' · ');
+    const name = `${e.last} ${e.first}`;
+    return `<div class="ps-row${e.excluded ? ' out' : ''}">
+      <button type="button" class="ps-main" data-psgo="detail" data-pskey="${esc(e.key)}"><span class="ps-av">${esc(initials(e))}</span><span class="nm"><b>${esc(name)}</b><span>${esc(sub)}</span></span>${e.sick ? '<span class="tag warn">nemoc</span>' : ''}${e.excluded ? '<span class="tag">vyřazen</span>' : ''}</button>
+      <button type="button" class="icon-btn" data-psgo="sankce" data-pskey="${esc(e.key)}" title="Zadat sankci" aria-label="Sankce: ${esc(name)}"${noSan ? ' disabled' : ''}>${I.warn}</button>
+      <button type="button" class="icon-btn" data-psgo="profil" data-pskey="${esc(e.key)}" title="Profil a historie" aria-label="Profil: ${esc(name)}">${I.chart}</button>
+    </div>`;
+  };
+  const result = await dialog({
+    title: 'Vyhledat člověka', ok: '', cancel: 'Zavřít', tall: true,
+    html: `<div class="ps">
+      <div class="ps-bar"><input type="search" id="psQ" placeholder="Jméno nebo ID v evidenci práce" aria-label="Jméno nebo ID v evidenci práce" autocomplete="off" spellcheck="false" maxlength="80" autofocus>
+        <button type="button" class="scan-btn" id="psScan" title="Naskenovat kartičku" aria-label="Naskenovat kartičku">${I.scan}</button></div>
+      <div class="chips ps-f" id="psF">${[['', 'Všichni'], ['am', 'Ranní'], ['pm', 'Odpolední']].map(([k, t]) => `<button type="button" class="chip${filter === k ? ' on' : ''}" data-psf="${k}" aria-pressed="${filter === k}">${t}</button>`).join('')}</div>
+      <p class="tiny muted" id="psCount"></p>
+      <div class="ps-list" id="psList"></div></div>`,
+    onOpen: dlg => {
+      const input = $('#psQ', dlg);
+      const draw = () => {
+        const q = norm(input.value.trim());
+        const digits = input.value.replace(/\D/g, '').replace(/^0+/, '');
+        let list = Object.values(S.employees).filter(e => !q || norm(`${e.last} ${e.first}`).includes(q) || norm(`${e.first} ${e.last}`).includes(q)
+          || (digits && String(e.wid || '').replace(/^0+/, '') === digits) || (e.wid && norm(e.wid).includes(q)));
+        if (filter) list = list.filter(e => !isLead(e) && slotOn(e, mg) === filter);
+        list.sort((a, b) => (a.excluded - b.excluded) || norm(`${a.last} ${a.first}`).localeCompare(norm(`${b.last} ${b.first}`), 'cs'));
+        $('#psCount', dlg).textContent = list.length ? `${list.length} ${lidiN(list.length)}${filter ? ` · ${filter === 'am' ? 'ranní' : 'odpolední'}` : ''}` : '';
+        $('#psList', dlg).innerHTML = list.length ? list.slice(0, 80).map(row).join('') : emptyState('Nikdo takový', q ? 'Zkus jinou část jména nebo ID.' : 'Na této směně nikdo není.');
+      };
+      input.addEventListener('input', draw);
+      input.addEventListener('keydown', event => {
+        if (event.key !== 'Enter') return;
+        const first = $('#psList [data-psgo="detail"]', dlg);
+        if (first) { event.preventDefault(); pick = { key: first.dataset.pskey, act: 'detail' }; dlg.close('ok'); }
+      });
+      $('#psF', dlg).addEventListener('click', event => {
+        const chip = event.target.closest('[data-psf]');
+        if (!chip) return;
+        filter = chip.dataset.psf;
+        $$('#psF .chip', dlg).forEach(c => { c.classList.toggle('on', c === chip); c.setAttribute('aria-pressed', String(c === chip)); });
+        draw();
+      });
+      $('#psList', dlg).addEventListener('click', event => {
+        const b = event.target.closest('[data-psgo]');
+        if (!b || b.disabled) return;
+        pick = { key: b.dataset.pskey, act: b.dataset.psgo };
+        dlg.close('ok');
+      });
+      $('#psScan', dlg).onclick = () => { pick = { act: 'scan' }; dlg.close('ok'); };
+      draw();
+    },
+  });
+  if (result.value !== 'ok' || !pick) return;
+  let key = pick.key;
+  if (pick.act === 'scan') { key = await scanEmployee(); if (!key) return; pick.act = 'detail'; }
+  if (!S.employees[key]) return;
+  if (pick.act === 'profil') { openProfile(key); return; }
+  if (pick.act === 'sankce') { ui.sanDraft.key = key; showView('sankce'); renderSanctions(); return; }
+  ui.selPerson = key;
+  ui.personOpen = true;
+  ui.listY = 0;
+  showView('lide');
+  renderPeople();
 }
 
 function renderDemoBanner() {
@@ -1007,7 +1275,7 @@ function renderPeople() {
     if (r === 1) {
       return `${sep}<button class="list-item lead-item" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       <span class="lvl lead" title="Vedoucí pracovník" aria-hidden="true">V</span>
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span>${e.lead.length ? esc(e.lead.join(', ')) : '<span class="warn-t">bez oddělení</span>'}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span title="${esc(e.lead.join(', '))}">${e.lead.length ? esc(e.lead.join(', ')) : '<span class="warn-t">bez oddělení</span>'}</span></span>
       <span class="tag">vedoucí</span></button>`;
     }
     const ev = evaluate(e, p);
@@ -3654,7 +3922,7 @@ function renderTop5Badge() {
   badge.hidden = !n;
   badge.textContent = String(n);
   badge.title = n ? `${n} ${n === 1 ? 'termín' : n <= 4 ? 'termíny' : 'termínů'} po splatnosti` : '';
-  renderMoreDot();
+  renderFabDot();
 }
 
 function renderTop5() {
@@ -5438,6 +5706,7 @@ function renderKtBadge() {
   badge.hidden = !n;
   badge.textContent = String(n);
   badge.title = [now ? `dnes ${now} ${kontrolN(now)}` : '', late ? `${late} nezapsaných po termínu` : ''].filter(Boolean).join(', ');
+  renderFabDot();
 }
 
 function renderKontroly() {
@@ -6017,7 +6286,11 @@ window.OdmApp = {
     }
     applyPeriodPref();
     bindEvents();
+    // Telefon (2.15): po přihlášení hlavní menu s obsazeností dne a úvodní animací HALA 2.
+    const phone = isPhone();
+    if (phone) ui.view = 'domu';
     renderAll();
-    showView('prehled');
+    showView(phone ? 'domu' : 'prehled');
+    if (phone) playSplash();
   },
 };

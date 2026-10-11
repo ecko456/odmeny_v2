@@ -25,7 +25,7 @@ async function watch(page, label) {
   });
 }
 const saved = page => page.waitForFunction(() => !store.dirty && !store.saving && document.querySelector('#saveState').dataset.state === 'saved', null, { timeout: 15000 });
-const overflow = page => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+const overflow = page => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 (async () => {
   fs.mkdirSync(shots, { recursive: true });

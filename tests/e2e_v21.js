@@ -63,10 +63,14 @@ async function watch(page, label) {
 }
 const saved = page => page.waitForFunction(() => document.querySelector('#saveState').dataset.state === 'saved', null, { timeout: 10000 });
 
-// Na telefonu jsou méně používané části v nabídce Více (2.14).
+// Na telefonu (2.15) není postranní menu: části se otevírají z hlavního menu (logo vlevo nahoře).
 async function nav(page, view) {
-  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
-  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) { await page.click(`#nav [data-view="${view}"]`); return; }
+  await page.click('#brandHome');
+  await page.waitForSelector('#view-domu.on');
+  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
+  await page.click(`#homeView .home-menu [data-go="${view}"]`);
+  await page.waitForFunction(v => ui.view === v, view);
 }
 
 (async () => {
@@ -237,7 +241,9 @@ async function nav(page, view) {
   await m.click('#keyForm button[type="submit"]');
   await m.waitForSelector('#skip');
   await m.click('#skip');
-  await m.waitForSelector('#view-prehled.on');
+  await m.waitForSelector('#view-prehled.on, #view-domu.on');
+  await m.waitForFunction(() => !document.querySelector('#splash') || document.querySelector('#splash').hidden);
+  await nav(m, 'prehled');
   await m.waitForTimeout(400);
   await m.screenshot({ path: `${shots}/07-m-overview.png`, fullPage: true });
   await nav(m, 'matice');
@@ -245,9 +251,9 @@ async function nav(page, view) {
   await m.locator('#posList .list-item').first().click();
   await m.waitForTimeout(300);
   await m.screenshot({ path: `${shots}/08-m-position.png`, fullPage: true });
-  const mOverflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  const mOverflow = await m.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(mOverflow <= 1, `mobil: vodorovné přetečení ${mOverflow}px`);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(overflow <= 1, `vodorovné přetečení ${overflow}px`);
 
   await browser.close();

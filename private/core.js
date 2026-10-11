@@ -994,6 +994,58 @@ function groupPlan(p,v,days){
   return {per,unit:p.plan.unit==="h"?"h":"ks",amN,pmN,am:r(amN*per),pm:r(pmN*per),day:r((amN+pmN)*per),days:d,week:r((amN+pmN)*per*d),none:by(""),sick:all.length-m.length};
 }
 
+/* ---------- plánovaná obsazenost dne (2.15) ----------
+   Kdo má podle zařazení ranní a kdo odpolední: stálá ranní ráno, stálá odpolední odpoledne,
+   skupiny 1 a 2 podle týdenního střídání (Matice → Směny a kapacita, S.capReport.s1am).
+   Bez nastaveného střídání jsou skupiny 1 a 2 zvlášť („rot“). Nemocní, vyřazení a vedoucí
+   se nepočítají. O víkendu a ve svátek se ukáže nejbližší pracovní den.
+   Po odděleních: lidé na směně, plánovaná kapacita (ks/h na osobu × lidé skupiny) a dovednosti,
+   které na směně nikdo (nebo jen jeden) nezvládá aspoň na úrovni z reportu kapacit. */
+const DAY_SLOTS=["am","pm"];
+/* Směna člověka v týdnu: am / pm, „rot“ = skupina 1 nebo 2 bez nastaveného střídání, „none“ = bez směny. */
+function slotOn(e,mg){const s=shiftOf(e);return s==="R"?"am":s==="O"?"pm":s==="S1"||s==="S2"?(mg?(s===mg?"am":"pm"):"rot"):"none";}
+function staffDay(from){
+  from=from||todayIso();
+  let day=from;
+  for(let i=0;i<14;i++){const [y,m,d]=day.split("-").map(Number);if(mkDay(y,m,d).work)break;day=addDays(day,1);}
+  const week=isoWeek(day).id,rep=S.capReport||blankCapReport(),mg=morningGroup(week,rep.s1am);
+  const thr=clamp(Math.round(+rep.thr||3),1,4);
+  const slotOf=e=>slotOn(e,mg);
+  const all=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e));
+  const live=all.filter(e=>!e.sick);
+  const rows=new Map();
+  const row=d=>{if(!rows.has(d))rows.set(d,{dept:d,am:[],pm:[],rot:[],none:[],sick:[],plan:{am:{ks:0,h:0},pm:{ks:0,h:0}},risks:[]});return rows.get(d);};
+  departments().forEach(row);
+  all.forEach(e=>{const r=row(empDept(e)||"Bez skupiny");(e.sick?r.sick:r[slotOf(e)]).push(e);});
+  S.positions.forEach(p=>{
+    if(!isGroup(p))return;
+    const r=rows.get(deptOf(p)),members=live.filter(e=>e.positionId===p.id);
+    const per=p.plan&&+p.plan.v>0?+p.plan.v:0,unit=p.plan&&p.plan.unit==="h"?"h":"ks";
+    DAY_SLOTS.forEach(sl=>{
+      const here=members.filter(e=>slotOf(e)===sl);
+      if(per)r.plan[sl][unit]+=here.length*per;
+      // riziko jen tam, kde skupina na směně někoho má (oddělení bez odpolední nehlásí nic)
+      if(!here.length)return;
+      groupSkills(p).forEach(s=>{
+        const n=live.filter(e=>slotOf(e)===sl&&rateOf(e,s.id)>=thr).length;
+        if(n<=1)r.risks.push({slot:sl,group:p.name||"",skill:s.name,n});
+      });
+    });
+  });
+  const r1=x=>Math.round(x*10)/10;
+  const depts=[...rows.values()].filter(r=>r.am.length+r.pm.length+r.rot.length+r.none.length+r.sick.length)
+    .map(r=>({...r,plan:{am:{ks:r1(r.plan.am.ks),h:r1(r.plan.am.h)},pm:{ks:r1(r.plan.pm.ks),h:r1(r.plan.pm.h)}}}));
+  const total={am:0,pm:0,rot:0,none:0,sick:0};
+  depts.forEach(r=>Object.keys(total).forEach(k=>{total[k]+=r[k].length;}));
+  // kontroly naplánované na ten den a termíny Top 5 (po termínu a na ten den)
+  const ap=audPlan(week);
+  const checks=ap?ap.items.filter(i=>i.day===day&&i.state!=="skip").map(i=>{const e=S.employees[i.key];return {item:i,e:e||null,slot:e?slotOf(e):"none"};}):[];
+  const dl=S.eff&&Array.isArray(S.eff.cases)?effDeadlines(day,0):[];
+  return {from,day,today:day===from,week,mg,thr,depts,total,
+    checks:{list:checks,open:checks.filter(c=>c.item.state==="plan").length,done:checks.filter(c=>c.item.state==="done").length},
+    deadlines:{late:dl.filter(x=>x.late).length,due:dl.filter(x=>!x.late).length}};
+}
+
 /* ---------- původní zařazení z verze 2.3 ----------
    Při převodu pozic na skupiny si každý člověk ponese snímek původní pozice, úrovně a zaučení.
    Ukazuje se v jeho detailu, dokud ho vedoucí nesmaže tlačítkem „Převedeno do nové verze“. */

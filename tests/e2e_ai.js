@@ -268,7 +268,7 @@ async function pickParts(page, keys) {
   await page.waitForTimeout(200);
   await page.locator('.t5-ai-bar').scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${shots}/05-mobile.png` });
-  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 1, 'mobil: vodorovné přetečení');
+  check(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1, 'mobil: vodorovné přetečení');
   await page.click('[data-t5ai]');
   await page.waitForSelector('#dlg[open] .ai-picks');
   await page.waitForTimeout(400);   // dialog se zobrazuje s animací

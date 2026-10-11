@@ -373,13 +373,13 @@ async function markDone(page, id, date) {
   // Mobil: týden a detail případu bez vodorovného přetečení.
   await page.setViewportSize({ width: 390, height: 844 });
   await goWeek(page, 4);
-  let overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  let overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(overflow <= 1, `mobil týden: vodorovné přetečení ${overflow} px`);
   await page.screenshot({ path: `${shots}/10-mobile-week.png`, fullPage: true });
   await page.click('#t5Tabs [data-t5tab="cases"]');
   await page.click('#t5View tbody tr >> nth=1');
   await page.waitForTimeout(300);
-  overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   check(overflow <= 1, `mobil případ: vodorovné přetečení ${overflow} px`);
   await page.screenshot({ path: `${shots}/11-mobile-case.png`, fullPage: true });
   // Zpět (gesto telefonu) zavře případ a zůstane se v Top 5 (2.14).
@@ -452,7 +452,7 @@ async function markDone(page, id, date) {
   check(afterDel.log.length === 2 && afterDel.log.every(t => /^P-\d{4}-00[34] \(85900010000(97|80), .*\): zrušený případ smazán natrvalo$/.test(t)), `historie změn po smazání: ${afterDel.log.join(' | ')}`);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click('[data-t5filter="zrus"]');
-  check(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 1, 'mobil Zrušené: bez přetečení');
+  check(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth) <= 1, 'mobil Zrušené: bez přetečení');
 
   await browser.close();
   if (problems.length) { console.log(problems.join('\n')); process.exit(1); }

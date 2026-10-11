@@ -61,6 +61,32 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.15
+
+- **HALA 2 po přihlášení na telefonu.** Krátká animace (medaile se nakreslí, vyjede nápis
+  HALA 2 a pozdrav), pak **hlavní menu s plánovanou obsazeností dne**:
+  - kolik lidí má podle zařazení **ranní** a kolik **odpolední** (stálá ranní a odpolední,
+    skupiny 1 a 2 podle střídání nastaveného v Matici → Směny a kapacita), s plánovanou
+    kapacitou v ks a hodinách. O víkendu a ve svátek ukáže nejbližší pracovní den;
+  - po odděleních: lidé na směně, kapacita, kdo je v nemoci a kdo nemá směnu;
+  - štítky dne: nemoc, lidé bez směny, nenastavené střídání, dnešní kontroly, termíny Top 5,
+    srážky ze mzdy ke zpracování (klepnutím vedou na místo, kde se to řeší).
+  - Přepínač **Ranní / Odpolední / Obě směny**: po volbě se zvýrazní čísla té směny, animací
+    se **rozevře menu** všech částí (s odznaky a krátkým stavem) a pod ním **na co si dát
+    pozor**: dovednosti, které na směně nikdo (nebo jen jeden člověk) nezvládá aspoň na
+    úrovni z reportu kapacit.
+- **Rozbalovací menu vpravo dole** místo spodní lišty: Vyhledat člověka, Sankce, Top 5,
+  Kontroly a Hlavní menu. Tečka na tlačítku, když Top 5 nebo Kontroly něco čekají. Do
+  hlavního menu vede i logo vlevo nahoře.
+- **Vyhledat člověka**: podle jména nebo ID v evidenci práce (i s nulami na začátku), filtr
+  Všichni / Ranní / Odpolední (předvybraný podle zvolené směny), naskenování kartičky.
+  U každého rovnou **Sankce** (otevře Sankce s vybraným člověkem) a **Profil**; klepnutí na
+  jméno otevře detail v Lidech.
+- **Oprava:** seznam lidí na telefonu se už neroztáhne do strany, když má vedoucí hodně
+  oddělení (oddělení se zalomí na dva řádky).
+- Zpět (gesto) zavře i rozbalovací menu a hledání. Při zapnutém omezení animací v telefonu se
+  úvodní animace přeskočí. Desktop je beze změny, logo tam vede do Přehledu. Data se nemění.
+
 ## Co je nového ve verzi 2.14
 
 - **Telefon jako aplikace.** Na telefonu (do šířky 900 px) má aplikace ovládání jako běžná
@@ -541,10 +567,12 @@ v hlavičce každého skriptu:
 - `tests/e2e_skener.js`: novinka 2.13 (skener kartičky v Sankcích: falešná kamera Chromia
   s čárovým kódem z `tests/fixtures`, čtečka jako klávesnice, neznámý kód, vyřazený člověk,
   vypnutí kamery, mobil, tmavý režim);
-- `tests/e2e_mobil.js`: novinka 2.14 (telefon jako aplikace: horní a spodní lišta, nabídka
-  Více s tečkou, Zpět a Vpřed mezi částmi, detail člověka, okno i nabídka, okna zespodu,
-  schované filtry přehledu, úvodní text, záložky s posunem, všechny části na 390 a 360 px,
-  manifest a ikony, tmavý režim, desktop beze změny, zamknutí z nabídky);
+- `tests/e2e_mobil.js`: novinky 2.14 a 2.15 (telefon jako aplikace: animace HALA 2, hlavní
+  menu s obsazeností dne proti výpočtu, volba směny a rozevřené menu, rizika dovedností,
+  rozbalovací menu vpravo dole, vyhledání člověka podle jména, ID a kartičky se Sankcí
+  a Profilem, Zpět u menu, hledání, detailu i dialogu, seznam lidí s vedoucím s mnoha
+  odděleními, schované filtry přehledu, všechny části na 390 a 360 px bez přetečení,
+  manifest a ikony, tmavý režim, omezené animace, desktop beze změny, zamknutí);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -560,7 +588,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.14'` jde stejný test pustit na aktualizaci 2.3 → 2.14 (data verze 5 → 13).
+S `EXPECT_VERSION='2\.15'` jde stejný test pustit na aktualizaci 2.3 → 2.15 (data verze 5 → 13).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

@@ -50,14 +50,19 @@ async function loginWithKey(page, key) {
   await page.click('#keyForm button[type="submit"]');
   await page.waitForSelector('#skip');
   await page.click('#skip');
-  await page.waitForSelector('#view-prehled.on');
+  await page.waitForSelector('#view-prehled.on, #view-domu.on');
+  await page.waitForFunction(() => !document.querySelector('#splash') || document.querySelector('#splash').hidden);
   await page.waitForTimeout(400);
 }
 
-// Na telefonu jsou méně používané části v nabídce Více (2.14).
+// Na telefonu (2.15) není postranní menu: části se otevírají z hlavního menu (logo vlevo nahoře).
 async function nav(page, view) {
-  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
-  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) { await page.click(`#nav [data-view="${view}"]`); return; }
+  await page.click('#brandHome');
+  await page.waitForSelector('#view-domu.on');
+  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
+  await page.click(`#homeView .home-menu [data-go="${view}"]`);
+  await page.waitForFunction(v => ui.view === v, view);
 }
 
 (async () => {

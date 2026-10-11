@@ -1745,6 +1745,48 @@ test('skener kartičky (2.13): kód z čárového nebo QR kódu → člověk pod
   return null;
 });
 
+test('plánovaná obsazenost dne (2.15): střídání skupin, víkend a svátek, nemoc, kapacita, rizika a kontroly', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const g = S.positions.find(p => isGroup(p) && groupSkills(p).length >= 2);
+    const [s0, s1] = groupSkills(g);
+    g.plan = { v: 100, unit: 'ks' };
+    const base = S.employees[Object.keys(S.employees)[0]];
+    const mk = (key, shift, extra) => Object.assign(JSON.parse(JSON.stringify(base)), { key, last: key, first: '', positionId: g.id, shift, rate: {}, excluded: false }, extra || {});
+    for (const k of Object.keys(S.employees)) delete S.employees[k];
+    [mk('A', 'R', { rate: { [s0.id]: 4 } }), mk('B', 'O', { rate: { [s0.id]: 3 } }), mk('C', 'S1', { rate: { [s0.id]: 3 } }), mk('D', 'S2'),
+     mk('E', 'S1', { sick: '2026-10-01' }), mk('F', ''), mk('G', 'R', { lead: [deptOf(g)] }), mk('H', 'R', { excluded: true })]
+      .forEach(e => { if (!e.sick) delete e.sick; if (!e.lead) delete e.lead; S.employees[e.key] = e; });
+    S.capReport = Object.assign(blankCapReport(), { s1am: '2026-W41', thr: 3 });
+    S.audit = blankAudit();
+    S.audit.plans['2026-W42'] = { items: [
+      { id: 'i1', key: 'A', dept: deptOf(g), day: '2026-10-12', state: 'plan', results: [] },
+      { id: 'i2', key: 'B', dept: deptOf(g), day: '2026-10-12', state: 'done', done: '2026-10-12', results: [] },
+      { id: 'i3', key: 'C', dept: deptOf(g), day: '2026-10-13', state: 'plan', results: [] }] };
+    const names = list => list.map(e => e.key).sort().join('');
+    const pick = d => { const r = d.depts.find(x => x.dept === deptOf(g)); return { day: d.day, today: d.today, mg: d.mg, total: d.total,
+      am: names(r.am), pm: names(r.pm), rot: names(r.rot), none: names(r.none), sick: names(r.sick), plan: r.plan,
+      risks: r.risks.filter(x => x.skill === s0.name || x.skill === s1.name).map(x => x.slot + ':' + (x.skill === s0.name ? 's0' : 's1') + ':' + x.n).sort(),
+      checks: [d.checks.open, d.checks.done, d.checks.list.map(c => c.slot).join(',')] }; };
+    const mon = pick(staffDay('2026-10-12'));
+    const sun = pick(staffDay('2026-10-11'));
+    const hol = staffDay('2026-10-28');
+    S.capReport.s1am = '';
+    const norot = pick(staffDay('2026-10-12'));
+    JSON.stringify({ mon, sun: [sun.day, sun.today], hol: [hol.day, hol.today], norot: [norot.total, norot.rot, norot.plan] })`));
+  assert.deepStrictEqual(out.mon.total, { am: 2, pm: 2, rot: 0, none: 1, sick: 1 }, 'v T42 má ranní skupina 2 (T41 skupina 1); nemocný, vedoucí a vyřazený se nepočítají');
+  assert.deepStrictEqual([out.mon.am, out.mon.pm, out.mon.none, out.mon.sick, out.mon.mg, out.mon.day, out.mon.today], ['AD', 'BC', 'F', 'E', 'S2', '2026-10-12', true]);
+  assert.deepStrictEqual(out.mon.plan, { am: { ks: 200, h: 0 }, pm: { ks: 200, h: 0 } }, 'kapacita 100 ks na osobu × lidé skupiny na směně');
+  assert.deepStrictEqual(out.mon.risks, ['am:s0:1', 'am:s1:0', 'pm:s1:0'], 'dovednost na ranní umí jen jeden; druhou nikdo');
+  assert.deepStrictEqual(out.mon.checks, [1, 1, 'am,pm'], 'kontroly na ten den: jedna naplánovaná, jedna hotová');
+  assert.deepStrictEqual(out.sun, ['2026-10-12', false], 'v neděli se ukáže pondělí');
+  assert.deepStrictEqual(out.hol, ['2026-10-29', false], 've svátek (28. 10.) další pracovní den');
+  assert.deepStrictEqual(out.norot, [{ am: 1, pm: 1, rot: 2, none: 1, sick: 1 }, 'CD', { am: { ks: 100, h: 0 }, pm: { ks: 100, h: 0 } }],
+    'bez nastaveného střídání jsou skupiny 1 a 2 zvlášť a do kapacity směny se nepočítají');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

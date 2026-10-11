@@ -34,6 +34,36 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 10. 2026 (verze 2.15):
+
+- **HALA 2, hlavní menu a rozbalovací menu na telefonu.** Uživatel: „dole napravo …
+  rozevírací menu … ‚Vyhledat člověka‘ ‚Sankce‘ ‚TOP 5‘ ‚Kontroly‘ a při přihlášení … krátká
+  hezká animace ‚Hala 2‘ a rychlý přehled plánované obsazenosti pro dnešní den … ‚Ranní /
+  Odpolední / Obě směny‘ a až po zvolení se animací rozevře menu“; „ať to je fakt pěkně
+  udělané … a zároveň pro byznys“. Spodní lišta a nabídka Více z 2.14 jsou pryč.
+  - `core.js`: `slotOn(e, mg)` (am/pm/rot/none) a `staffDay(from)`: nejbližší pracovní den,
+    střídání podle `S.capReport.s1am`, po odděleních lidé na směně, nemoc, bez směny,
+    kapacita (ks/h na osobu × lidé skupiny), rizika dovedností (≤ 1 člověk s úrovní ≥ práh
+    z reportu kapacit, jen kde skupina na směně někoho má), kontroly dne, termíny Top 5.
+    Test v `test_core.js`.
+  - `app.js`: pohled `domu` (`#view-domu`, `renderHome`, `homeOpenHtml`, `chooseShift` mění
+    jen dotčené části, aby přepínač plynule přejel), `playSplash` (`#splash`, 2 s, klepnutím
+    přeskočit, s `prefers-reduced-motion` se neukáže), `countUp`, plovoucí menu (`openFab`,
+    `closeFab`, `renderFabDot`, `ui.fabOpen`, Zpět ho zavře v `onPopState`),
+    `openPersonSearch` (dialog `tall`, filtr směny z `ui.homeShift`, akce detail / sankce /
+    profil / kartička přes `scanEmployee`). Na telefonu se po přihlášení nastaví
+    `ui.view = 'domu'` ještě před `renderAll`, takže hlavní menu je první záznam historie.
+  - `app.html`: logo je tlačítko `#brandHome` (telefon → hlavní menu, desktop → Přehled;
+    desktop je pixelově stejný), `.brand-text`, `#fabWrap`, `#fabScrim`, `#splash`.
+  - Oprava seznamu lidí: `.list` a `.split-list` mají `grid-template-columns: minmax(0, 1fr)`,
+    `.list-item` `min-width: 0`, oddělení vedoucího na dva řádky.
+  - **Pozor na testy přetečení:** v mobilním režimu Playwrightu (`isMobile`) se okno při
+    přetečení samo rozšíří a `innerWidth` roste. Měř `scrollWidth - clientWidth`
+    (opraveno ve všech e2e).
+  - Testy na telefonu: po přihlášení čekají na `#view-prehled.on, #view-domu.on` a konec
+    animace; pomocník `nav()` jde přes logo → hlavní menu → dlaždici.
+- Data beze změny (verze dat zůstává 13), jen `ODM_VERSION` 2.15.
+
 Stav k 11. 10. 2026 (verze 2.14):
 
 - **Telefon jako aplikace.** Uživatel: „V telefonu mi to přijde trošku rozházené … ať to je
@@ -465,7 +495,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.11 | `f7951ed` | varianty prémie se zaškrtávanými podmínkami, vybrané dovednosti, kontroly, morálka (data verze 12) |
 | 2.12 | `78e1cbc` | srážky ze mzdy za neproduktivitu podle pásem plnění normy (data verze 13) |
 | 2.13 | `6d0a74f` | skener kartičky v Sankcích (kamera, čtečka), „HALA 2“ v exportech |
-| 2.14 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: telefon jako aplikace (spodní lišta, Více, Zpět, okna zespodu), přidání na plochu |
+| 2.14 | `655e374` | telefon jako aplikace (spodní lišta, Více, Zpět, okna zespodu), přidání na plochu |
+| 2.15 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: HALA 2 a hlavní menu s obsazeností dne, rozbalovací menu vpravo dole, vyhledání člověka |
 
 Verze 2.1 přidala:
 
@@ -833,7 +864,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 27 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 45 testů: proti původní aplikaci + opravy + 2.1 až 2.13
+node tests/test_core.js                 # 46 testů: proti původní aplikaci + opravy + 2.1 až 2.13
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -855,7 +886,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
   - `e2e_vedouci.js`: vedoucí pracovníci (2.7) a jejich dovednosti (2.10);
   - `e2e_skener.js`: skener kartičky v Sankcích (2.13), falešná kamera Chromia;
-  - `e2e_mobil.js`: telefon jako aplikace (2.14): lišty, Více, Zpět, okna, filtry, manifest;
+  - `e2e_mobil.js`: telefon jako aplikace (2.14, 2.15): HALA 2, hlavní menu, směna, rozbalovací
+    menu, hledání, Zpět, okna, filtry, šířka seznamu, manifest;
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.

@@ -41,10 +41,14 @@ async function watch(page, label) {
   });
 }
 
-// Na telefonu jsou méně používané části v nabídce Více (2.14).
+// Na telefonu (2.15) není postranní menu: části se otevírají z hlavního menu (logo vlevo nahoře).
 async function nav(page, view) {
-  if (await page.isVisible(`#nav [data-view="${view}"]`)) await page.click(`#nav [data-view="${view}"]`);
-  else { await page.click('#navMore'); await page.click(`#moreSheet [data-view="${view}"]`); }
+  if (await page.isVisible(`#nav [data-view="${view}"]`)) { await page.click(`#nav [data-view="${view}"]`); return; }
+  await page.click('#brandHome');
+  await page.waitForSelector('#view-domu.on');
+  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
+  await page.click(`#homeView .home-menu [data-go="${view}"]`);
+  await page.waitForFunction(v => ui.view === v, view);
 }
 
 (async () => {
@@ -189,7 +193,10 @@ async function nav(page, view) {
   await m.setInputFiles('#photo', png);
   await m.waitForSelector('#skip');
   await m.click('#skip');
-  await m.waitForSelector('#view-prehled.on');
+  await m.waitForSelector('#view-prehled.on, #view-domu.on');
+  await m.waitForFunction(() => !document.querySelector('#splash') || document.querySelector('#splash').hidden);
+  await m.screenshot({ path: `${shots}/10b-m-home.png` });
+  await nav(m, 'prehled');
   await m.waitForTimeout(400);
   await m.screenshot({ path: `${shots}/11-m-overview.png`, fullPage: true });
   await m.locator('#ovBody tr[data-key]').first().click({ position: { x: 20, y: 12 } });
@@ -200,11 +207,11 @@ async function nav(page, view) {
     await m.waitForTimeout(350);
     await m.screenshot({ path: `${shots}/13-m-${view}.png`, fullPage: true });
   }
-  await m.click('#nav [data-view="lide"]');
+  await nav(m, 'lide');
   await m.locator('#lList .list-item').first().click();
   await m.waitForTimeout(250);
   await m.screenshot({ path: `${shots}/14-m-person.png`, fullPage: true });
-  const overflow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  const overflow = await m.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   if (overflow > 1) problems.push(`mobil: vodorovné přetečení ${overflow}px`);
 
   // Tmavý režim a export do Excelu pod CSP (SheetJS)

@@ -70,7 +70,8 @@ async function login(page, key) {
   await page.click('#keyForm button[type="submit"]');
   await page.waitForSelector('#skip');
   await page.click('#skip');
-  await page.waitForSelector('#view-prehled.on');
+  await page.waitForSelector('#view-prehled.on, #view-domu.on');
+  await page.waitForFunction(() => !document.querySelector('#splash') || document.querySelector('#splash').hidden);
   await page.waitForTimeout(500);
 }
 /** Sdílený stav bez polí, která přidala 2.1, s klíči v pevném pořadí. */
