@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 10. 2026 (verze 2.12):
+
+- **Srážky ze mzdy za neproduktivitu.** Uživatel: „možnost srážek u některých skupin jen za
+  neproduktivitu ve formě srážek ze mzdy. Např. Plnění normy pod 50% je srážka 50% ze mzdy,
+  Plnění mezi 51 až 60% je 25% srážka ze mzdy.“
+  - Data (verze 13): skupina `normCut {from: 'YYYY-MM' | '', rows[{max, pct}]}` (pásma
+    vzestupně, „do X %“ včetně, nejvýš 10, bez dvojic), `S.normCutDone {měsíc: {klíč: {pct,
+    norm, at, by}}}` = snímek při „Srážka zpracována“ (už se nepřepočítá).
+  - Výpočet: `normCutRule`, `normCutBand`, `normPctOf(prod)` (stejně jako `perfOf().norm`),
+    `normCutOf(e, pid, prod)` (`allRows` → `r.ncut`), `normCutPending(today)` (měsíce
+    v `S.production` od `wageFrom`, `withPeriod` kvůli evidenci toho měsíce),
+    `wageAllPending` = ruční srážky ze mzdy + za neproduktivitu (`kind: 'san' | 'norm'`,
+    id `n:měsíc:klíč`), `setNormCutDone`, `normCutText` (historie, PDF).
+  - UI: `normCutEditorHtml` v editoru skupiny (`#posNormCut`, `[data-ncrow]` s `data-ncmax`
+    a `data-ncpct`, `data-ncadd/ncdel`, `#posNormCutFrom`; výchozí pásma 50 → 50 %, 60 → 25 %,
+    platí od vybraného měsíce, když je tento nebo minulý, jinak od tohoto), sloupec přehledu
+    `ncut` (jen když má skupina pravidlo, jde skrýt), karta `normCutCardHtml` v detailu
+    (`data-ncdone/ncundo`), upozornění a seznam (`markWage` zná id `n:`).
+  - Benefity nekrátí, do tabáků ani prémií nezasahuje.
+
 Stav k 10. 10. 2026 (verze 2.11):
 
 - **Varianty prémie.** Uživatel: „přepracoval prémie, ať mohu přidat více variant a pro každou
@@ -385,7 +405,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.9 | `d70331b` | plánovaná kapacita skupiny (ks/h na osobu), nemoc u lidí (data verze 10) |
 | 2.10 | `42f5539` | dovednosti vedoucích, společné pro všechny, úroveň 0–4 (data verze 11) |
 | 2.10.1 | `ab18e3f` | matice po odděleních pod sebou (jen vzhled, data beze změny) |
-| 2.11 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: varianty prémie se zaškrtávanými podmínkami, vybrané dovednosti, kontroly, morálka (data verze 12) |
+| 2.11 | `f7951ed` | varianty prémie se zaškrtávanými podmínkami, vybrané dovednosti, kontroly, morálka (data verze 12) |
+| 2.12 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: srážky ze mzdy za neproduktivitu podle pásem plnění normy (data verze 13) |
 
 Verze 2.1 přidala:
 
@@ -494,7 +515,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `12` (od 2.11):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `13` (od 2.12):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -510,6 +531,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - `positions[]` (skupiny): `{id, name, dept, max, onlyKafe, levels[4], skillset[], maxTab, tiers[], penalty[], bonus[], plan{v, unit ks|h}}` (`plan` od 2.9, jen když je zapnutá plánovaná kapacita)
   - `max: null` = bez stropu (maximum + nejvyšší bonus, `posMaxAuto`);
   - `skillset[]`: `{id, name, desc, scale}`; `scale` je 5 úrovní `{name, desc}`, `null` = `STD_SCALE`;
+  - `normCut` (2.12): `{from, rows[{max, pct}]}`, srážky ze mzdy za neproduktivitu (jen když jsou zapnuté);
   - `tiers[]` (varianty prémie): `{id, name, minSkill 0–4, skills[{id, lvl}], raise %, reward, maxAbs, minWknd, minAtt, minNorm, minUse, maxKt, moral, manual[{id, text}], streak{months, label}|null}` (`skills`, `maxKt`, `moral` od 2.11);
     prázdná podmínka = `null` = nehlídá se;
   - `levels[4]` (`{name, tabaky, desc, raise, minAtt, minNorm, minUse}`) je tvar z verze 2.3,
@@ -524,6 +546,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
     vedoucích (2.10) má v `rate` pod id z `leadSkills`;
   - `legacy`: snímek zařazení z 2.3 `{at, pos, dept, level, levelName, levelDesc, tabaky, onlyKafe, raise, skills[{pos, level, levelName}]}`,
     dokud ho vedoucí nesmaže; `hist.pct` = procento dovedností (na 0,1).
+- `normCutDone{YYYY-MM: {klíč: {pct, norm, at, by}}}` (2.12): zpracované srážky za neproduktivitu (snímek).
 - `leadSkills[]` (2.10): dovednosti vedoucích `{id, name, desc}`, jeden seznam pro všechny,
   hodnotí se `STD_SCALE` (0–4).
 - `periods{YYYY-MM}`: docházka, `{days[iso], rows{key: {first, last, h[], c[]}}, codes, file, at, headerRow}`.
@@ -749,7 +772,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 26 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 42 testů: proti původní aplikaci + opravy + 2.1 až 2.11
+node tests/test_core.js                 # 44 testů: proti původní aplikaci + opravy + 2.1 až 2.12
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

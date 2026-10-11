@@ -61,6 +61,28 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.12
+
+- **Srážky ze mzdy za neproduktivitu.** V Matici dovedností → Skupiny a pravidla jde
+  u vybraných skupin zapnout **Srážky za neproduktivitu**. Nastaví se pásma plnění normy
+  a srážka ze mzdy, například:
+  - plnění normy do 50 % → srážka 50 % ze mzdy;
+  - nad 50 do 60 % → srážka 25 % ze mzdy;
+  - nad posledním pásmem srážka není.
+- Platí nejnižší pásmo, do kterého plnění spadá (hranice „do X %“ včetně). Pásmo jde přidat,
+  upravit i smazat. U pravidla se nastaví, od kterého měsíce platí.
+- Plnění normy se bere z evidence práce (normovaný čas ÷ strávený čas). Bez údaje o normě
+  srážka není.
+- Benefity (tabáky, Kafe, prémie) se nekrátí, srážka se zpracuje ve mzdách:
+  - týden před koncem měsíce se objeví v upozornění „Zpracuj srážky ze mzdy“ spolu
+    s ručními srážkami, se štítkem „automaticky“;
+  - „Srážka zpracována“ uloží procento a plnění normy v tu chvíli, pozdější změna evidence
+    nebo pásem už zpracovanou srážku nezmění. Zpracování jde zrušit.
+- V přehledu je sloupec **Srážka ze mzdy** (jen když ji má nějaká skupina zapnutou) a stejný
+  údaj je v exportu do Excelu. U člověka v Lidech je karta se srážkou za vybraný měsíc.
+  Pásma jsou i v pravidlech do PDF a v exportu zařazení.
+- Stránka otevřená ještě ve verzi 2.11 po aktualizaci nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.11
 
 - **Varianty prémie se zaškrtávanými podmínkami.** V Matici dovedností → Skupiny a pravidla
@@ -464,7 +486,8 @@ v hlavičce každého skriptu:
   i v matici, směny a kapacita, PDF, prémie a body vedoucího, sankce s posuvníkem, srážka ze
   mzdy s upozorněním, od 2.8 stálá odpolední směna a kapacita po týdnech, od 2.9 plánovaná
   kapacita a nemoc, od 2.10.1 oddělení pod sebou a filtr celého oddělení, od 2.11 varianty
-  prémie se zaškrtávanými podmínkami a vybranými dovednostmi, mobil, tmavý režim);
+  prémie se zaškrtávanými podmínkami a vybranými dovednostmi, od 2.12 srážky ze mzdy za
+  neproduktivitu, mobil, tmavý režim);
 - `tests/e2e_ai.js`: novinky 2.5 a 2.6 (✦ Přeformulovat s náhradním API Anthropicu:
   tlačítko jen s klíčem, výběr částí, odchází jen jejich text s jmény nahrazenými značkami,
   návrh po částech, Použít vybrané, Zahodit, souběh s ruční úpravou, historie případu, chyba
@@ -484,7 +507,7 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.11'` jde stejný test pustit na aktualizaci 2.3 → 2.11 (data verze 5 → 12).
+S `EXPECT_VERSION='2\.12'` jde stejný test pustit na aktualizaci 2.3 → 2.12 (data verze 5 → 13).
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

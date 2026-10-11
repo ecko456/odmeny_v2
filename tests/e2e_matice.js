@@ -400,6 +400,63 @@ const editor = '#posEditor';
   check(log.some(t => /^Srážka ze mzdy zpracována: Procházka Lukáš/.test(t)), 'historie: zpracováno');
   check(log.some(t => /^Fréza Adam: Frézování – Programování 0 → 2$/.test(t) || /^Fréza Adam: Frézování – Programování 1 → 2$/.test(t)), `historie: hodnocení z matice (${log.filter(t => /Fréza/.test(t)).join(' | ')})`);
 
+  // Srážky ze mzdy za neproduktivitu (2.12): pásma u skupiny CNC, přehled, upozornění, zpracování.
+  await page.click('#nav [data-view="matice"]');
+  await page.click('[data-mxtab="groups"]');
+  await page.click('#posList [data-selpos="p_cnc"]');
+  await page.check('#posNormCut');
+  await page.waitForSelector('#normCutCard [data-ncrow]');
+  const demoMonth = await page.evaluate(() => S.current);
+  await page.selectOption('#posNormCutFrom', demoMonth);
+  await page.click('#normCutCard [data-ncadd]');
+  await page.waitForFunction(() => document.querySelectorAll('#normCutCard [data-ncrow]').length === 3);
+  await page.fill('#normCutCard [data-ncrow="2"] [data-ncmax]', '90');
+  await page.press('#normCutCard [data-ncrow="2"] [data-ncmax]', 'Tab');
+  await page.waitForFunction(() => S.positions.find(p => p.id === 'p_cnc').normCut.rows[2].max === 90);
+  // hranice, která už je, se nepřijme
+  await page.fill('#normCutCard [data-ncrow="0"] [data-ncmax]', '60');
+  await page.press('#normCutCard [data-ncrow="0"] [data-ncmax]', 'Tab');
+  await page.waitForTimeout(150);
+  const nc = await page.evaluate(() => S.positions.find(p => p.id === 'p_cnc').normCut);
+  check(JSON.stringify(nc) === JSON.stringify({ from: demoMonth, rows: [{ max: 50, pct: 50 }, { max: 60, pct: 25 }, { max: 90, pct: 10 }] }), `pásma: ${JSON.stringify(nc)}`);
+  check(/Nad 90 %: bez srážky/.test(await page.textContent('#normCutCard')), 'text nad posledním pásmem');
+  await page.locator('#normCutCard').screenshot({ path: `${shots}/11b-normcut-editor.png` });
+  await page.click('#nav [data-view="prehled"]');
+  await page.waitForSelector('#ovBody tr[data-key="novak|martin"] .col-ncut, #ovBody tr[data-key="novak|martin"] td');
+  const ovCut = await page.evaluate(() => { const r = allRows().find(x => x.e.key === 'novak|martin'); return [r.ncut.norm, r.ncut.pct]; });
+  check(JSON.stringify(ovCut) === JSON.stringify([84.9, 10]), `Novák v přehledu: ${JSON.stringify(ovCut)}`);
+  check(/Srážka ze mzdy/.test(await page.textContent('#view-prehled thead')) && /−10 %/.test(await page.textContent('#ovBody tr[data-key="novak|martin"]')), 'sloupec Srážka ze mzdy v přehledu');
+  await page.waitForSelector('#wageAlert .wage-alert');
+  check(/Novák Martin/.test(await page.textContent('#wageAlert')), 'upozornění na srážku za neproduktivitu');
+  await page.click('#wageOpen');
+  await page.waitForSelector('#dlg[open] [data-wageok^="n:"]');
+  check(/neproduktivita, plnění normy 84,9 %/.test(await page.textContent('#wageDlg')) && /automaticky/.test(await page.textContent('#wageDlg')), 'seznam srážek ze mzdy obsahuje srážku za neproduktivitu');
+  await page.screenshot({ path: `${shots}/11c-normcut-list.png` });
+  await page.click('#dlg[open] [data-wageok^="n:"]');
+  await page.waitForFunction(() => !document.querySelector('#dlg[open] [data-wageok^="n:"]'));   // ruční srážky můžou v seznamu zůstat
+  await page.click('#dlgCancel');
+  const ncDone = await page.evaluate(m => S.normCutDone[m], demoMonth);
+  check(ncDone && ncDone['novak|martin'] && ncDone['novak|martin'].pct === 10 && ncDone['novak|martin'].norm === 84.9 && ncDone['novak|martin'].by === 'Vedoucí dílny', `zpracováno: ${JSON.stringify(ncDone)}`);
+  check(!/Novák Martin/.test(await page.textContent('#wageAlert')), 'po zpracování Novák z upozornění zmizí');
+  // v detailu člověka: zpracováno, zrušit vrátí upozornění
+  await page.click('#nav [data-view="lide"]');
+  await page.click('#lList [data-key="novak|martin"]');
+  await page.waitForSelector('#lDetail .ncut-card [data-ncundo]');
+  check(/−10 % ze mzdy/.test(await page.textContent('#lDetail .ncut-card')) && /zpracováno/.test(await page.textContent('#lDetail .ncut-card')), 'karta srážky u člověka');
+  await page.locator('#lDetail .ncut-card').screenshot({ path: `${shots}/11d-normcut-card.png` });
+  await page.click('#lDetail .ncut-card [data-ncundo]');
+  await page.waitForSelector('#lDetail .ncut-card [data-ncdone]');
+  await page.waitForFunction(() => /Novák Martin/.test(document.querySelector('#wageAlert').textContent));
+  await page.click('#lDetail .ncut-card [data-ncdone]');
+  await page.waitForSelector('#lDetail .ncut-card [data-ncundo]');
+  await saved(page);
+  const ncLog = await page.evaluate(() => S.log.map(e => e.text));
+  check(ncLog.some(t => /^Skupina CNC, srážky ze mzdy za neproduktivitu: vypnuto → do 50 % → 50 %/.test(t) || /^Skupina CNC, srážky ze mzdy za neproduktivitu: .*do 90 % → 10 %/.test(t)), `historie: pásma (${ncLog.filter(t => /neproduktiv/.test(t)).join(' | ')})`);
+  check(ncLog.some(t => /^Srážka ze mzdy za neproduktivitu zpracována: Novák Martin – plnění normy 84,9 %, srážka 10 % ze mzdy/.test(t)), 'historie: srážka za neproduktivitu zpracována');
+  await page.click('#nav [data-view="matice"]');
+  await page.click('[data-mxtab="groups"]');
+  await page.click('#posList [data-selpos="p_cnc"]');
+
   // Mobil: matice, kapacita, skupiny a sankce bez vodorovného přetečení.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click('#nav [data-view="matice"]');

@@ -32,7 +32,7 @@ const PREF_DEFAULTS = {
 };
 let P = { ...PREF_DEFAULTS };
 const prefStore = { timer: null, saving: false, dirty: false };
-const SORT_KEYS = ['name', 'days', 'hours', 'wk', 'kafe', 'lvl', 'prod', 'att', 'pen', 'adj', 'score', 'iss', 'raise'];
+const SORT_KEYS = ['name', 'days', 'hours', 'wk', 'kafe', 'lvl', 'prod', 'att', 'pen', 'adj', 'score', 'iss', 'raise', 'ncut'];
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
 function cleanPrefs(input) {
@@ -453,6 +453,9 @@ function ovColumns() {
     { k: 'score', t: 'Tabáky', sort: true, cls: 'score', hint: 'Dovednosti ± docházka (nejvýš do stropu) − sankce ± ruční úprava',
       cell: r => (r.kafeOnly ? `<span class="onlykafe" title="${esc(`Skupina ${r.pos.name} nemá tabáky, hodnotí se jen Kafe`)}">jen Kafe</span>` : meter(r.max ? r.total / r.max : 0, `<b>${nf(r.total, 0)}</b> <small>/ ${nf(r.max, 0)}</small>`)),
       foot: rows => `<b class="num">${nf(SUMF(rows, r => r.total), 0)} ${tabW(SUMF(rows, r => r.total))}</b>` },
+    ...(S.positions.some(normCutRule) ? [{ k: 'ncut', t: 'Srážka ze mzdy', sort: true, cls: 'r', hint: 'Srážka ze mzdy za neproduktivitu podle plnění normy skupiny (benefity nekrátí)',
+      cell: r => ncutCell(r),
+      foot: rows => { const n = rows.filter(r => r.ncut && r.ncut.pct).length; return n ? `<span class="num pen" title="Lidí se srážkou ze mzdy za neproduktivitu">${n}×</span>` : ''; } }] : []),
     ...(S.positions.some(hasRaise) ? [{ k: 'raise', t: 'Prémie', sort: true, cls: 'r', hint: 'Nejvyšší splněná varianta prémie skupiny za měsíc a navýšení mzdy',
       cell: r => raiseCell(r),
       foot: rows => { const n = rows.filter(r => r.tier.lvl > 0).length; return n ? `<span class="num" title="Lidí s prémií">${n}×</span>` : ''; } }] : []),
@@ -570,6 +573,7 @@ function ovData() {
     prod: r.prod ? (avgPerDay(r.prod, r.att) ?? -0.5) : -1, pen: r.pctSum * 1000 + r.pen, score: r.total, adj: r.adj,
     iss: r.issued ? (r.issuedChanged ? 1 : 2) : (r.toIssue ? 0 : -1),
     raise: r.tier.lvl * 1000 + r.tier.pct,
+    ncut: r.ncut ? r.ncut.pct * 10 + (r.ncut.done ? 0 : 1) : -1,
   }[k]);
   rows.sort((a, b) => {
     const x = val(a);
@@ -735,6 +739,15 @@ function raiseTip(r) {
   return lines.join('\n');
 }
 
+/* Srážka ze mzdy za neproduktivitu v přehledu (2.12). */
+function ncutCell(r) {
+  const x = r.ncut;
+  if (!x) return '<span class="muted">—</span>';
+  const why = x.done ? `Zpracováno ${dayText(todayIso(x.done.at), false)}: plnění normy ${x.done.norm == null ? '—' : `${nf(x.done.norm, 1)} %`}, srážka ${x.pct} % ze mzdy`
+    : x.norm == null ? 'Plnění normy za měsíc zatím není (evidence práce s normou)' : `Plnění normy ${nf(x.norm, 1)} %${x.band ? ` → srážka ${x.pct} % ze mzdy` : ' – bez srážky'}`;
+  if (!x.pct) return `<span class="muted num" title="${esc(why)}">${x.norm == null ? '—' : '0'}</span>`;
+  return `<span class="pen num" title="${esc(why)}">−${x.pct} %</span>${x.done ? ` <span class="ok-mark" title="${esc(why)}">${I.check}</span>` : ''}`;
+}
 function raiseCell(r) {
   if (!r.pos || !hasRaise(r.pos)) return '<span class="muted">—</span>';
   const x = r.tier;
@@ -889,6 +902,25 @@ function tierHtml(r, withMarks) {
     ${pid ? '' : '<p class="small muted">Prémie se vyhodnocuje za vybrané období s docházkou.</p>'}</div>`;
 }
 
+/* Srážka ze mzdy za neproduktivitu u člověka za vybraný měsíc (2.12). */
+function normCutCardHtml(e, prod) {
+  const x = S.current ? normCutOf(e, S.current, prod) : null;
+  const rule = normCutRule(posOf(e));
+  if (!x && !rule) return '';
+  const head = `<h3>Srážka ze mzdy za neproduktivitu · ${esc(periodName2(curPeriod()))}</h3>`;
+  if (!x) return `<div class="card ncut-card">${head}<p class="small muted">${S.current && rule.from && S.current < rule.from ? `Srážky za neproduktivitu platí od ${esc(monthLabel(rule.from))}.` : 'Vyber měsíc s evidencí práce.'}</p></div>`;
+  const bands = x.rule ? `<p class="tiny muted">Pásma skupiny: ${esc(normCutText(x.rule))}.</p>` : '';
+  let body;
+  if (x.done) body = `<p class="ncut-res"><span class="pen">−${x.pct} % ze mzdy</span> · plnění normy ${x.done.norm == null ? '—' : `${nf(x.done.norm, 1)} %`}</p>
+    <div class="wage-cell"><span class="ok-mark" title="${esc(x.done.by ? `Zpracoval(a) ${x.done.by}` : '')}">${I.check}zpracováno ${esc(dayText(todayIso(x.done.at), false))}</span> <button class="linkbtn" type="button" data-ncundo="${esc(e.key)}">zrušit</button></div>`;
+  else if (x.norm == null) body = '<p class="small muted">Plnění normy za měsíc zatím není. Spočítá se z evidence práce (řádky s časem i normou).</p>';
+  else if (!x.pct) body = `<p class="ncut-res"><span class="raise-ok">Bez srážky</span> · plnění normy <b>${nf(x.norm, 1)} %</b></p>`;
+  else body = `<p class="ncut-res"><span class="pen">−${x.pct} % ze mzdy</span> · plnění normy <b>${nf(x.norm, 1)} %</b> (pásmo do ${nf(x.band.max, 1)} %)</p>
+    <p class="small muted">Benefity se nekrátí. Srážku zpracuj ve mzdách; týden před koncem měsíce vyskočí upozornění.</p>
+    <div class="row gap"><button class="btn small" type="button" data-ncdone="${esc(e.key)}">Srážka zpracována</button></div>`;
+  return `<div class="card ncut-card">${head}${body}${bands}</div>`;
+}
+
 /* Okno s původním zařazením z verze 2.3 (zůstane, dokud ho vedoucí nesmaže). */
 /* Tabáky za dovednosti teď proti tabákům za původní úroveň (stejné, když úrovně šly po 25 %). */
 function legacyCompare(e) {
@@ -1028,6 +1060,7 @@ function renderPersonDetail() {
       ${a && a.found ? `<hr class="sep">${calStrip(a)}` : ''}
     </div>
     ${pos && (pos.tiers || []).length ? `<div class="card"><h3>Prémie · ${esc(periodName2(p))}</h3>${tierHtml(r, true)}</div>` : ''}
+    ${normCutCardHtml(e, pr)}
     ${pr ? `<div class="card"><h3>Výroba · ${esc(periodName2(p))}</h3>${prodKv({ prod: pr, att: a, e })}<p class="explain">Údaj z evidence práce. Do tabáků se nezapočítává.</p></div>`
       : (prodPeriod() ? '<div class="card"><h3>Výroba</h3><p class="small muted">Pro tenhle měsíc nemá žádný záznam v evidenci práce. Pokud je tam pod jiným tvarem jména, spáruj ho v části <b>Výroba</b>.</p></div>' : '')}
     ${ktPersonCard(e.key)}
@@ -1195,17 +1228,22 @@ function addSanction() {
 
 /* ---------- srážky ze mzdy: upozornění a „Srážka zpracována“ ---------- */
 function markWage(id, done) {
-  if (!setWageDone(id, done, effMeta())) return;
+  if (id.startsWith('n:')) {
+    // srážka za neproduktivitu: n:měsíc:klíč (zpracování uloží snímek, aby se už nepřepočítala)
+    const pid = id.slice(2, 9), key = id.slice(10), e = S.employees[key];
+    if (!e) return;
+    if (done) { const x = normCutOf(e, pid); if (!x || !x.pct) return; setNormCutDone(pid, key, { pct: x.pct, norm: x.norm }, effMeta()); } else setNormCutDone(pid, key, null);
+  } else if (!setWageDone(id, done, effMeta())) return;
   save(); renderAll();
-  const left = wagePending().length;
+  const left = wageAllPending().length;
   toast(done ? (left ? `Srážka zpracována. Zbývá ${left}.` : 'Srážka zpracována. Všechny srážky ze mzdy jsou hotové.') : 'Zpracování zrušeno, srážka je zase v upozornění.');
 }
 function wageListHtml() {
-  const list = wagePending();
+  const list = wageAllPending();
   if (!list.length) return `<div class="note i">Všechny srážky ze mzdy jsou zpracované.</div>`;
   return `<p class="small muted">Srážky ze mzdy, které je potřeba zpracovat ve mzdách. Po zpracování klikni na „Srážka zpracována“; když budou hotové všechny, upozornění zmizí.</p>
     <div class="wage-list">${list.map(s => `<div class="wage-item" data-wageitem="${esc(s.id)}">
-      <div><b>${esc(nameOf(s.key))}</b><small>${esc(monthLabel(s.period))} · ${esc(s.name)} · <span class="pen">−${s.pct} % ze mzdy</span>${s.note ? ` · ${esc(s.note)}` : ''}</small></div>
+      <div><b>${esc(nameOf(s.key))}</b><small>${esc(monthLabel(s.period))} · ${esc(s.name)} · <span class="pen">−${s.pct} % ze mzdy</span>${s.note ? ` · ${esc(s.note)}` : ''}${s.kind === 'norm' ? ' · <span class="tag">automaticky</span>' : ''}</small></div>
       <button class="btn small" type="button" data-wageok="${esc(s.id)}">Srážka zpracována</button></div>`).join('')}</div>`;
 }
 async function openWageList() {
@@ -1226,7 +1264,7 @@ async function openWageList() {
 function renderWageAlert() {
   const box = $('#wageAlert');
   if (!box) return;
-  const list = wagePending();
+  const list = wageAllPending();
   if (!list.length) { box.innerHTML = ''; return; }
   const people = [...new Set(list.map(s => s.key))].map(nameOf);
   const last = list.reduce((x, s) => (s.period > x ? s.period : x), list[0].period);
@@ -1390,12 +1428,39 @@ function renderPositions() {
     ${p.onlyKafe ? `<div class="note i">Kafe dostane, kdo odpracuje aspoň měsíční fond hodin (nebo práh nastavený u období v přehledu).${cutoffDays() ? ` Od ${cutoffDays()} dní absence po vyplnění víkendem nárok zaniká (Nastavení).` : ''}</div>` : `<div class="rule-grid">${ruleCard(p, 'penalty')}${ruleCard(p, 'bonus')}</div>
     <div class="note i">Platí vždy nejvyšší splněný řádek. Absence je celý pracovní den bez docházky; kratší směna absence není (projeví se jen v hodinách u Kafe). Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence a víkend použitý na vyplnění se do bonusu nepočítá.${cutoffDays() ? ` Od ${cutoffDays()} dní absence neplatí nic, bez nároku na tabák i kafe (Nastavení).` : ' Hranici, od které člověk ztrácí nárok úplně, nastavíš v Nastavení.'}
       <div class="mt-s"><button class="btn sec small" type="button" id="posCopyRules">Použít srážky a bonusy u všech skupin</button></div></div>`}
+    ${normCutEditorHtml(p)}
     <div class="card" id="tierCard">
       <div class="card-head"><div><h3>Varianty prémie</h3><p class="small muted">U každé varianty zaškrtni, co musí člověk za měsíc splnit, a vyber dovednosti s úrovní. Varianty jsou seřazené od nejnižší po nejvyšší; za měsíc platí nejvyšší varianta, kterou člověk splnil.</p></div>
         <button class="btn small" type="button" data-tieradd>Přidat variantu</button></div>
       ${(p.tiers || []).length ? p.tiers.map((t, i) => tierCardHtml(p, t, i)).join('') : '<p class="small muted">Zatím bez prémie. První varianta se předvyplní podle zadání (všechny dovednosti aspoň 3, absence nejvýš 3 dny, aspoň 2 víkendy, plnění normy 80 %, pracovní morálka, navýšení mzdy 20 %), druhá jako extra bonus.</p>'}
       ${(p.tiers || []).length ? '<div class="mt-s"><button class="btn sec small" type="button" id="posCopyTiers">Použít prémie u všech skupin</button></div>' : ''}
     </div>
+  </div>`;
+}
+
+/* Srážky ze mzdy za neproduktivitu u skupiny (2.12): pásma plnění normy a od kterého měsíce platí. */
+const NORM_CUT_DEFAULT = [{ max: 50, pct: 50 }, { max: 60, pct: 25 }];
+function ncutMonths(cur) {
+  const now = todayIso().slice(0, 7);
+  const out = new Set([cur, ...Object.keys(S.periods), ...Object.keys(S.production || {})].filter(m => MONTH_RE.test(String(m))));
+  let y = +now.slice(0, 4), m = +now.slice(5, 7) + 1;
+  for (let i = 0; i < 14; i++) { if (m > 12) { m = 1; y++; } if (m < 1) { m = 12; y--; } out.add(`${y}-${String(m).padStart(2, '0')}`); m--; }
+  return [...out].sort().reverse();
+}
+function normCutEditorHtml(p) {
+  const nc = normCutRule(p);
+  const rows = nc ? nc.rows : [];
+  return `<div class="card" id="normCutCard">
+    <div class="card-head"><div><h3>Srážky ze mzdy za neproduktivitu</h3><p class="small muted">Podle plnění normy za měsíc z evidence práce. Benefity (tabáky, Kafe, prémie) se nekrátí, srážka se zpracuje ve mzdách. Týden před koncem měsíce vyskočí upozornění stejně jako u ruční srážky ze mzdy.</p></div></div>
+    <label class="check opt-check"><input type="checkbox" id="posNormCut"${nc ? ' checked' : ''}><span><b>Srážky za neproduktivitu u této skupiny</b><small>Pásma plnění normy a srážka ze mzdy v %. Platí nejnižší pásmo, do kterého plnění spadá; bez údaje o normě srážka není.</small></span></label>
+    ${nc ? `<div class="ncut-rows">${rows.map((r, i) => `<div class="ncut-row" data-ncrow="${i}">
+        <span class="ncut-range">${i ? `nad ${nf(rows[i - 1].max, 1)} %` : 'od 0 %'}</span>
+        <span class="ncut-f"><span>do</span><span class="pctbox"><input type="number" data-ncmax value="${r.max}" min="0" max="300" step="0.5" aria-label="Plnění normy do (%)"><i>%</i></span></span>
+        <span class="ncut-f"><span>→ srážka</span><span class="pctbox"><input type="number" data-ncpct value="${r.pct}" min="1" max="100" step="1" aria-label="Srážka ze mzdy (%)"><i>% ze mzdy</i></span></span>
+        <button class="icon-btn" type="button" data-ncdel aria-label="Smazat pásmo">${I.x}</button></div>`).join('')}
+      <p class="small muted ncut-rest">Nad ${nf(rows[rows.length - 1].max, 1)} %: bez srážky.</p>
+      <div class="row gap wrap ncut-foot"><button class="btn sec small" type="button" data-ncadd>Přidat pásmo</button><span class="spacer"></span>
+        <label class="field ncut-from"><span>Platí od měsíce</span><select id="posNormCutFrom">${ncutMonths(nc.from).map(m => `<option value="${m}"${m === nc.from ? ' selected' : ''}>${esc(monthLabel(m))}</option>`).join('')}</select></label></div></div>` : ''}
   </div>`;
 }
 
@@ -1423,7 +1488,7 @@ async function skillDialog(x) {
 function bindGroupEditor() {
   const editor = $('#posEditor');
   const cur = () => S.positions.find(x => x.id === ui.selPos);
-  const refresh = (list = true) => { save(); renderOverview(); renderPeople(); if (list) renderPositions(); };
+  const refresh = (list = true) => { save(); renderWageAlert(); renderOverview(); renderPeople(); if (list) renderPositions(); };
   /* procenta na desetiny; prázdná hodnota = podmínka se nehlídá */
   const pctVal = (v, hi) => { const t = String(v).trim().replace(',', '.'); return t === '' || !Number.isFinite(+t) ? null : Math.round(clamp(+t, 0, hi) * 10) / 10; };
   const intVal = (v, hi) => { const t = String(v).trim(); return t === '' || !Number.isFinite(+t) ? null : Math.round(clamp(+t, 0, hi)); };
@@ -1446,6 +1511,27 @@ function bindGroupEditor() {
     if (!p) return;
     if (t.id === 'posDept') { const before = deptOf(p); p.dept = String(t.value).trim().slice(0, 60); leadsFollowDept(before, deptOf(p)); refresh(); return; }
     if (t.id === 'posOnlyKafe') { p.onlyKafe = t.checked; refresh(); return; }
+    if (t.id === 'posNormCut') {
+      // platí od vybraného měsíce, pokud se teprve uzavírá (tento nebo minulý), jinak od tohoto měsíce
+      const now = todayIso().slice(0, 7), from = S.current && S.current >= prevMonth(now) && S.current <= now ? S.current : now;
+      if (t.checked) p.normCut = { from, rows: NORM_CUT_DEFAULT.map(r => ({ ...r })) }; else delete p.normCut;
+      refresh(); return;
+    }
+    if (t.id === 'posNormCutFrom' && p.normCut) { p.normCut.from = MONTH_RE.test(t.value) ? t.value : ''; refresh(); return; }
+    const ncRow = t.closest('[data-ncrow]');
+    if (ncRow && p.normCut) {
+      const r = p.normCut.rows[+ncRow.dataset.ncrow];
+      if (!r) return;
+      if ('ncmax' in t.dataset) {
+        const v = pctVal(t.value, 300);
+        if (v == null) { toast('Zadej hranici plnění normy v %.', true); refresh(); return; }
+        if (p.normCut.rows.some(x => x !== r && x.max === v)) { toast(`Pásmo do ${nf(v, 1)} % už je.`, true); refresh(); return; }
+        r.max = v;
+        p.normCut.rows.sort((a, b) => a.max - b.max);   // pásma vždy vzestupně
+      }
+      if ('ncpct' in t.dataset) r.pct = clamp(Math.round(+t.value || 0), 1, 100);
+      refresh(); return;
+    }
     if (t.id === 'posPlan') { if (t.checked) p.plan = p.plan || { v: 25, unit: 'ks' }; else delete p.plan; refresh(); renderMatrix(); return; }
     if (t.id === 'posPlanUnit' && p.plan) { p.plan.unit = t.value === 'h' ? 'h' : 'ks'; if (p.plan.unit === 'ks') p.plan.v = Math.max(1, Math.round(p.plan.v)); refresh(); return; }
     if (t.id === 'posPlanV' && p.plan) {
@@ -1567,6 +1653,17 @@ function bindGroupEditor() {
       refresh(); toast('Prémie zkopírovány do všech skupin.'); return;
     }
     if (t.closest('[data-tieradd]')) { p.tiers = p.tiers || []; p.tiers.push(newTier(p)); refresh(); return; }
+    if (t.closest('[data-ncadd]') && p.normCut) {
+      const last = p.normCut.rows[p.normCut.rows.length - 1];
+      if (last.max >= 300) { toast('Nad 300 % už další pásmo nejde.', true); return; }
+      p.normCut.rows.push({ max: Math.min(300, last.max + 10), pct: Math.max(1, Math.min(last.pct, 10)) });
+      refresh(); return;
+    }
+    if (t.closest('[data-ncdel]') && p.normCut) {
+      p.normCut.rows.splice(+t.closest('[data-ncrow]').dataset.ncrow, 1);
+      if (!p.normCut.rows.length) delete p.normCut;
+      refresh(); return;
+    }
     const card = t.closest('[data-tier]');
     if (card) {
       const i = p.tiers.findIndex(x => x.id === card.dataset.tier);
@@ -4949,6 +5046,8 @@ function bindEvents() {
     }
     const gg = event.target.closest('[data-gogroup]');
     if (gg) { ui.selPos = gg.dataset.gogroup; ui.posOpen = true; ui.mxTab = 'groups'; showView('matice'); return; }
+    const nc = event.target.closest('[data-ncdone], [data-ncundo]');
+    if (nc && S.current) { markWage(`n:${S.current}:${nc.dataset.ncdone || nc.dataset.ncundo}`, 'ncdone' in nc.dataset); return; }
     if (event.target.closest('[data-goleads]')) { ui.mxTab = 'leads'; showView('matice'); return; }
     const adj = event.target.closest('[data-adj]');
     if (!adj) return;

@@ -1006,6 +1006,7 @@ input[type="date"]:disabled { opacity: .55; }
 .wage-list { display: grid; gap: 8px; margin-top: 10px; }
 .wage-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .wage-item small { display: block; margin-top: 2px; color: var(--ink-2); font-size: 12.5px; }
+.wage-item > .btn { flex: none; white-space: nowrap; }
 .ok-mark { display: inline-flex; align-items: center; gap: 4px; color: var(--good); font-weight: 600; }
 .ok-mark .icon { width: 14px; height: 14px; }
 .d-block { display: block; margin-top: 3px; }
@@ -1136,3 +1137,17 @@ input[type="date"]:disabled { opacity: .55; }
 .tsk-other summary { padding: 4px 0; color: var(--ink-2); font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .tsk-other .tc-grid { margin-top: 4px; }
 .tsk-group { margin: 10px 0 0; color: var(--ink-3); font: 600 11.5px/1.2 var(--disp); letter-spacing: .1em; text-transform: uppercase; }
+
+/* Srážky ze mzdy za neproduktivitu (2.12): pásma u skupiny a karta u člověka */
+.ncut-rows { display: grid; gap: 8px; margin-top: 4px; }
+.ncut-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.ncut-range { min-width: 82px; color: var(--ink-2); font: 600 13px/1.2 var(--mono); }
+.ncut-f { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); font-size: 13.5px; }
+.ncut-row .icon-btn { margin-left: auto; width: 32px; height: 32px; }
+.ncut-row [data-ncdel]:hover { background: var(--crit-soft); color: var(--crit); }
+.ncut-rest { margin: 0; }
+.ncut-foot { align-items: flex-end; }
+.ncut-from { margin: 0; min-width: 190px; }
+.ncut-res { margin: 6px 0 8px; font-size: 15px; }
+.ncut-res .pen { font-weight: 700; }
+.ncut-card .tiny { margin: 8px 0 0; }

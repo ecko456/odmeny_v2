@@ -120,7 +120,7 @@ function save(){_prodIdx=null;_effCache=null;if(typeof onStateChange==="function
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],v:DATA_VERSION};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},v:DATA_VERSION};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -181,6 +181,56 @@ function setWageDone(id,done,meta){
   const s=S.sanctions.find(x=>x.id===id&&x.wage);if(!s)return false;
   if(done)s.done={at:(meta&&meta.at)||Date.now(),by:String((meta&&meta.by)||"").slice(0,60)};else delete s.done;
   return true;
+}
+/* Srážky ze mzdy za neproduktivitu (2.12): u skupiny pásma „plnění normy do X %“ → srážka Y %
+   ze mzdy (normCut {from, rows[{max, pct}]}, pásma vzestupně). Platí nejnižší pásmo, do kterého
+   plnění spadá; bez údaje o normě srážka není. Benefity nekrátí a zpracuje se ve mzdách stejně
+   jako ruční srážka ze mzdy: upozornění od týdne před koncem měsíce, „Srážka zpracována“ uloží
+   snímek (normCutDone {měsíc: {člověk: {pct, norm, at, by}}}), který se už nepřepočítá. */
+function normCutRule(p){return isGroup(p)&&p.normCut&&Array.isArray(p.normCut.rows)&&p.normCut.rows.length?p.normCut:null;}
+function normCutBand(rule,nv){if(!rule||nv==null)return null;return rule.rows.find(r=>nv<=r.max+1e-9)||null;}
+function normPctOf(prod){return prod&&prod.nspent>0?Math.round(prod.norm/prod.nspent*1000)/10:null;}
+function normCutDoneOf(pid,key){const b=S.normCutDone&&S.normCutDone[pid];return b&&b[key]?b[key]:null;}
+/* Srážka člověka za měsíc pid; prod = jeho evidence práce za ten měsíc (bez ní se dohledá). */
+function normCutOf(e,pid,prod){
+  const done=normCutDoneOf(pid,e.key),rule=normCutRule(posOf(e));
+  const on=!!rule&&!e.excluded&&!isLead(e)&&PERIOD_ID.test(String(pid))&&(!rule.from||pid>=rule.from);
+  if(!on&&!done)return null;
+  const nv=on?normPctOf(prod!==undefined?prod:pid===S.current?productionOf(e.key):withPeriod(pid,()=>productionOf(e.key))):null;
+  const band=on?normCutBand(rule,nv):null;
+  return {rule:on?rule:null,norm:nv,band,pct:done?done.pct:band?band.pct:0,done};
+}
+/* Srážky za neproduktivitu ke zpracování: měsíce s evidencí práce od týdne před koncem měsíce. */
+function normCutPending(today){
+  const t=today||todayIso(),out=[];
+  const groups=S.positions.filter(normCutRule);
+  if(!groups.length)return out;
+  Object.keys(S.production||{}).filter(id=>PERIOD_ID.test(id)&&t>=wageFrom(id)).sort().forEach(pid=>{
+    const people=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&!normCutDoneOf(pid,e.key)
+      &&groups.some(g=>g.id===e.positionId&&(!g.normCut.from||pid>=g.normCut.from)));
+    if(!people.length)return;
+    const calc=()=>people.map(e=>{const x=normCutOf(e,pid,productionOf(e.key));
+      return x&&x.pct>0?{kind:"norm",id:"n:"+pid+":"+e.key,key:e.key,period:pid,pct:x.pct,norm:x.norm,name:"neproduktivita, plnění normy "+nf(x.norm,1)+" %",note:""}:null;}).filter(Boolean);
+    out.push(...(pid===S.current?calc():withPeriod(pid,calc)));
+  });
+  return out;
+}
+/* item = {pct, norm} → zpracováno (snímek), null → zase ke zpracování */
+function setNormCutDone(pid,key,item,meta){
+  S.normCutDone=S.normCutDone||{};
+  const b=S.normCutDone[pid]||(S.normCutDone[pid]={});
+  if(item)b[key]={pct:item.pct,norm:item.norm==null?null:item.norm,at:(meta&&meta.at)||Date.now(),by:String((meta&&meta.by)||"").slice(0,60)};
+  else delete b[key];
+  if(!Object.keys(b).length)delete S.normCutDone[pid];
+}
+/* Všechny srážky ze mzdy ke zpracování: ruční (sankce) i za neproduktivitu, podle měsíce a jména. */
+function wageAllPending(today){
+  return [...wagePending(today).map(s=>({kind:"san",id:s.id,key:s.key,period:s.period,pct:s.pct,name:s.name,note:s.note||""})),...normCutPending(today)]
+    .sort((a,b)=>a.period.localeCompare(b.period)||norm(nameOfKey(a.key)).localeCompare(norm(nameOfKey(b.key)),"cs"));
+}
+function normCutText(nc){
+  if(!nc||!nc.rows||!nc.rows.length)return "vypnuto";
+  return nc.rows.map((r,i)=>(i?"nad "+nf(nc.rows[i-1].max,1)+" do ":"do ")+nf(r.max,1)+" % → "+r.pct+" %").join(", ")+(nc.from?" (od "+monthLabel(nc.from)+")":"");
 }
 /* potvrzení výdeje benefitu - u měsíce, se snímkem toho, co se vydalo */
 function issuedOf(key){const b=S.issued&&S.issued[adjKey()];return b&&b[key]?b[key]:null;}
@@ -711,7 +761,7 @@ function allRows(){
   return Object.values(S.employees).map(e=>{
     const ev=evaluate(e,p),prod=productionOf(e.key),perf=perfOf(ev.att,prod);
     const tier=isGroup(ev.pos)?tierOf(e,ev,perf,S.current,true):legacyTier(raiseOf(ev.L,perf));
-    return {e,p,prod,...ev,perf,tier,raise:tier};
+    return {e,p,prod,...ev,perf,tier,raise:tier,ncut:normCutOf(e,S.current,prod)};
   });
 }
 
@@ -1024,6 +1074,8 @@ function exportRows(rows){
     {t:"Docházka %",v:r=>r.perf&&r.perf.att!=null?r.perf.att:""},
     {t:"Plnění normy %",v:r=>r.perf&&r.perf.norm!=null?r.perf.norm:""},
     {t:"Využití fondu %",v:r=>r.perf&&r.perf.use!=null?r.perf.use:""},
+    {t:"Srážka ze mzdy za neproduktivitu %",v:r=>r.ncut&&r.ncut.pct?r.ncut.pct:""},
+    {t:"Srážka za neproduktivitu zpracována",v:r=>r.ncut&&r.ncut.done?new Date(r.ncut.done.at).toLocaleDateString("cs-CZ"):""},
     {t:"Prémie (varianta)",v:r=>r.tier&&r.tier.lvl?r.tier.name:""},
     {t:"Navýšení mzdy %",v:r=>r.tier&&r.tier.pct?r.tier.pct:""},
     {t:"Odměna prémie",v:r=>r.tier&&r.tier.reward?r.tier.reward:""},
@@ -1058,6 +1110,8 @@ function rosterSheets(){
     rules.push([p.name,"strop celkem","",p.max!=null&&p.max!==""?+p.max:"",p.max!=null&&p.max!==""?"vlastní strop":"bez stropu"]);
     (p.penalty||[]).forEach(r=>rules.push([p.name,"srážka",+r.at,-Math.abs(+r.t||0),"chybí aspoň "+r.at+" prac. "+dnW(+r.at)]));
     (p.bonus||[]).forEach(r=>rules.push([p.name,"bonus",+r.at,Math.abs(+r.t||0),"aspoň "+r.at+" víkend. "+smW(+r.at)+" navíc"]));
+    const nc=normCutRule(p);
+    if(nc)nc.rows.forEach((r,i)=>rules.push([p.name,"srážka ze mzdy za neproduktivitu",+r.max,"−"+r.pct+" % mzdy",(i?"plnění normy nad "+nf(nc.rows[i-1].max,1)+" do ":"plnění normy do ")+nf(r.max,1)+" %"+(nc.from?", od "+monthLabel(nc.from):"")]));
     (p.tiers||[]).forEach(t=>rules.push([p.name,"prémie: "+t.name,"",(+t.raise?"+"+nf(+t.raise,1)+" % mzdy":"")+(t.reward?(+t.raise?", ":"")+t.reward:""),tierConds(t).join(", ")+(t.streak?"; "+t.streak.months+" měsíců v řadě: "+t.streak.label:"")]));
   });
   return {main,rates,posSheet,rules};
@@ -1332,8 +1386,8 @@ function demoData(){
 const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
-const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise"];
-const DATA_VERSION=12;
+const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
+const DATA_VERSION=13;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit"];
@@ -1389,6 +1443,17 @@ function sanitizeState(input){
           raise:pctOpt(l.raise,100)||0,minAtt:pctOpt(l.minAtt,100),minNorm:pctOpt(l.minNorm,300),minUse:pctOpt(l.minUse,100)};}),
       penalty:rules(p.penalty),bonus:rules(p.bonus)};
     /* plánovaná kapacita (2.9): na osobu za směnu v kusech, nebo v hodinách; jen u skupin, kde je zapnutá */
+    /* srážky ze mzdy za neproduktivitu (2.12): pásma plnění normy vzestupně, bez dvojic */
+    if(p.normCut&&typeof p.normCut==="object"&&!Array.isArray(p.normCut)){
+      const nc=p.normCut,rows=[];
+      arr(nc.rows).filter(r=>r&&typeof r==="object").slice(0,10).forEach(r=>{
+        const mx=Number(r.max),pc=Math.round(Number(r.pct));
+        if(!Number.isFinite(mx)||!Number.isFinite(pc)||pc<1)return;
+        const x={max:Math.round(clamp(mx,0,300)*10)/10,pct:Math.min(100,pc)};
+        if(!rows.some(y=>y.max===x.max))rows.push(x);
+      });
+      if(rows.length)g.normCut={from:PERIOD_ID.test(String(nc.from))?String(nc.from):"",rows:rows.sort((a,b)=>a.max-b.max)};
+    }
     const pl=obj(p.plan);
     if(+pl.v>0)g.plan=pl.unit==="h"?{v:Math.round(num(pl.v,0,0.1,1000)*10)/10,unit:"h"}:{v:int(pl.v,1,1,100000),unit:"ks"};
     if(Array.isArray(p.skillset)){
@@ -1596,6 +1661,17 @@ function sanitizeState(input){
     });
     if(Object.keys(per).length)out.marks[id]=per;
   });
+  /* srážky za neproduktivitu zpracované ve mzdách (2.12): snímek srážky v době zpracování */
+  Object.entries(obj(o.normCutDone)).forEach(([id,b])=>{
+    if(!PERIOD_ID.test(id))return;
+    const per={};
+    Object.entries(obj(b)).slice(0,5000).forEach(([k,x])=>{
+      const kk=key(k,200);x=obj(x);if(!kk)return;
+      const nv=Number(x.norm);
+      per[kk]={pct:int(x.pct,0,0,100),norm:x.norm==null||!Number.isFinite(nv)?null:Math.round(clamp(nv,0,10000)*10)/10,at:num(x.at,0,0,1e15),by:str(x.by,60)};
+    });
+    if(Object.keys(per).length)out.normCutDone[id]=per;
+  });
   /* report kapacit směn: vybrané skupiny, práh úrovně, skryté dovednosti, závěr a týden,
      kdy má skupina 1 ranní (s1am, 2.8; skupiny se střídají po týdnu) */
   const cr=obj(o.capReport);
@@ -1718,6 +1794,11 @@ function describeChanges(a,b,meta){
   SB.forEach((s,id)=>{const o=SA.get(id);if(o&&!!o.done!==!!s.done)
     add("sanction",(s.done?"Srážka ze mzdy zpracována: ":"Zrušeno zpracování srážky ze mzdy: ")+sanTxt(s),{key:s.key,...per(s.period)});});
   SA.forEach((s,id)=>{if(!SB.has(id))add("sanction","Smazána sankce: "+sanTxt(s),{key:s.key,...per(s.period)});});
+  /* srážky ze mzdy za neproduktivitu (2.12): zpracování a jeho zrušení */
+  const NA=a.normCutDone||{},NB=b.normCutDone||{};
+  [...new Set([...Object.keys(NA),...Object.keys(NB)])].sort().forEach(id=>{const A=NA[id]||{},B=NB[id]||{};
+    [...new Set([...Object.keys(A),...Object.keys(B)])].forEach(k=>{if(!!A[k]===!!B[k])return;const x=B[k]||A[k];
+      add("sanction",(B[k]?"Srážka ze mzdy za neproduktivitu zpracována: ":"Zrušeno zpracování srážky ze mzdy za neproduktivitu: ")+who(k)+" – plnění normy "+(x.norm==null?"—":nf(x.norm,1)+" %")+", srážka "+x.pct+" % ze mzdy ("+mon(id)+")",{key:k,...per(id)});});});
 
   /* ruční úpravy a výdej (po měsících) */
   const perKey=(xa,xb,fn)=>{
@@ -1794,6 +1875,7 @@ function describeChanges(a,b,meta){
         else if(!same(o,t))add("position","Skupina "+nm+": varianta prémie „"+t.name+"“ ("+tierText(t)+")",{m:"tier:"+tid});});
       TA.forEach((t,tid)=>{if(!TB.has(tid))add("position","Skupina "+nm+": smazána varianta prémie „"+t.name+"“",{m:"tier:"+tid});});
       if((q.tiers||[]).filter(t=>TB.has(t.id)).map(t=>t.id).join()!==(p.tiers||[]).filter(t=>TA.has(t.id)).map(t=>t.id).join())add("position","Skupina "+nm+": změněno pořadí variant prémie",{m:"tiero:"+id});
+      if(normCutText(q.normCut)!==normCutText(p.normCut))add("position","",{m:"ncut:"+id,p:"Skupina "+nm+", srážky ze mzdy za neproduktivitu: ",v0:normCutText(q.normCut),v1:normCutText(p.normCut)});
     }
     const P0=isGroup(p)?"Skupina ":"Pozice ";
     if(!!q.onlyKafe!==!!p.onlyKafe)add("position",P0+nm+(p.onlyKafe?": jen Kafe, bez tabáků":": znovu s tabáky"),{m:"pkafe:"+id});
@@ -2160,7 +2242,7 @@ function rulesDoc(){
       rules:p.onlyKafe?["Jen Kafe, bez tabáků."]:[
         "Maximum za dovednosti: "+mt+" "+tabW(mt)+" (všechny dovednosti na úrovni 4)."+(p.max!=null&&p.max!==""?" Strop celkem včetně bonusu: "+p.max+" "+tabW(+p.max)+".":" Bonus za víkendy se přičte navíc."),
         "Srážka za absenci: "+((p.penalty||[]).length?p.penalty.slice().sort((a,b)=>a.at-b.at).map(r=>"od "+r.at+" "+dnW(r.at)+" −"+r.t).join(", "):"žádná")+".",
-        "Bonus za víkendy navíc: "+((p.bonus||[]).length?p.bonus.slice().sort((a,b)=>a.at-b.at).map(r=>"od "+r.at+" "+smW(r.at)+" +"+r.t).join(", "):"žádný")+"."],
+        "Bonus za víkendy navíc: "+((p.bonus||[]).length?p.bonus.slice().sort((a,b)=>a.at-b.at).map(r=>"od "+r.at+" "+smW(r.at)+" +"+r.t).join(", "):"žádný")+"."].concat(normCutRule(p)?["Srážka ze mzdy za neproduktivitu (plnění normy): "+normCutText(p.normCut)+". Benefity nekrátí."]:[]),
       tiers:(p.tiers||[]).map(t=>({name:t.name,conds:tierConds(t),reward:[+t.raise?"navýšení mzdy o "+nf(+t.raise,1)+" %":"",t.reward||""].filter(Boolean).join(", ")||"—",
         streak:t.streak?"Po "+t.streak.months+" měsících v řadě: "+t.streak.label+".":""}))};
   });
