@@ -26,7 +26,7 @@
   const DEVICE_STORAGE = deviceStorageKey(root.location && root.location.pathname);
   const DATA_AAD = 'odmeny/data/v1';
   // Verze tvaru dat, kterou server žádá u zápisu (stará otevřená stránka nové údaje neumí).
-  const CLIENT_VERSION = '13';
+  const CLIENT_VERSION = '14';
 
   /* ------------------------------------------------------------ bajty */
 
@@ -395,16 +395,68 @@
     return openData(requireDek(), result.blob);
   }
 
-  /** Šifrovaná záloha: data + DEK zabalený každou kartičkou. Obnovit ji jde kteroukoli z nich. */
-  async function backup(state) {
+  /* Šifrované soubory (fotky v Protokolech, 2.16): [verze 1][IV][šifra], AAD s id souboru,
+     takže server nemůže fotky prohodit ani podstrčit jinou. */
+  const fileAad = id => `odmeny/file/v1|${id}`;
+  const FILE_ID = /^[a-f0-9]{32}$/;
+
+  async function sealFile(dek, bytes, id) {
+    return toBase64(concatBytes(new Uint8Array([1]), await seal(dek, bytes, fileAad(id))));
+  }
+
+  async function openFile(dek, blob, id) {
+    const raw = fromBase64(blob);
+    if (raw[0] !== 1) throw new Error('Neznámý formát fotky.');
+    return open(dek, raw.subarray(1), fileAad(id));
+  }
+
+  async function saveFile(bytes) {
+    const id = toHex(randomBytes(16));
+    await api('file', { method: 'POST', query: { id }, body: { blob: await sealFile(requireDek(), bytes, id) } });
+    return id;
+  }
+
+  async function loadFile(id) {
+    const result = await api('file', { query: { id } });
+    return openFile(requireDek(), result.blob, id);
+  }
+
+  function deleteFile(id) {
+    return api('file', { method: 'DELETE', query: { id } });
+  }
+
+  /** Šifrovaná záloha: data + DEK zabalený každou kartičkou. Obnovit ji jde kteroukoli z nich.
+      Fotky (fileIds) jdou do zálohy tak, jak leží na serveru (šifrované). */
+  async function backup(state, fileIds = []) {
     const cards = await api('cards');
+    const files = {};
+    for (const id of fileIds) {
+      if (!FILE_ID.test(id)) continue;
+      try { files[id] = (await api('file', { query: { id } })).blob; } catch (error) { /* fotka už není */ }
+    }
     return {
       format: 'odmeny-backup',
       version: 1,
       created_at: new Date().toISOString(),
       cards: cards.items.map(card => ({ id: card.id, label: card.label, wrapped_dek: card.wrapped_dek })),
       data: await sealData(requireDek(), state),
+      ...(Object.keys(files).length ? { files } : {}),
     };
+  }
+
+  /** Fotky ze zálohy zpátky na server. Záloha z jiné instalace má jiný klíč: fotka se
+      rozšifruje jejím klíčem a zašifruje klíčem této instalace. Vrací počet obnovených. */
+  async function restoreFiles(files, dek) {
+    let n = 0;
+    for (const [id, blob] of Object.entries(files || {})) {
+      if (!FILE_ID.test(id) || typeof blob !== 'string') continue;
+      try {
+        const sealed = dek === session.dek ? blob : await sealFile(requireDek(), await openFile(dek, blob, id), id);
+        await api('file', { method: 'POST', query: { id }, body: { blob: sealed } });
+        n += 1;
+      } catch (error) { /* poškozená fotka se přeskočí */ }
+    }
+    return n;
   }
 
   /** Otevře zálohu. Bez klíče zkusí aktuální DEK (stejná instalace), jinak klíč z kartičky. */
@@ -439,6 +491,7 @@
     readDevice, forgetDevice, deviceLabel, deviceStorageKey,
     setup, loginWithKey, unlockWithPin, enrollDevice, createCard,
     loadData, saveData, loadVersion, backup, openBackup, lock, loadPrefs, savePrefs, me,
+    saveFile, loadFile, deleteFile, restoreFiles,
     newDek, sealData, openData, cardSecrets, toBase64, fromBase64,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

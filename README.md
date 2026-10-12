@@ -38,7 +38,8 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   otisk pro přihlášení a klíč, kterým odemkne data. Kartičku jde naskenovat
   kamerou, nahrát fotku, nebo klíč opsat (překlep v klíči aplikace pozná).
 - **Data jsou šifrovaná v prohlížeči** (AES-256-GCM). Server dostane i uloží jen
-  šifrovaný blok. Kdo získá databázi ze serveru, bez kartičky nic nepřečte.
+  šifrovaný blok. Kdo získá databázi ze serveru, bez kartičky nic nepřečte. Stejně jsou
+  šifrované i fotky v Protokolech.
 - **Zapamatované zařízení s PINem.** Po přihlášení kartičkou si zařízení může
   pamatovat šestimístný PIN. Klíč k datům se skládá z tajemství v prohlížeči,
   tajemství na serveru a PINu; server vydá svou část jen po ověření PINu. Po pěti
@@ -60,6 +61,44 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   značkami `[osoba 1]`; odpovědné osoby, termíny ani údaje o dílu se neposílají. Server
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
+
+## Co je nového ve verzi 2.16
+
+- **Nový modul Protokoly: provozní deníky strojů.** Ke každému stroji:
+  - **karta stroje**: název, evidenční a výrobní číslo, výrobce, typ, rok výroby, oddělení,
+    umístění, odpovědná osoba, kontakt na údržbu, kde je návod, bezpečnost a OOPP, poznámka
+    a fotka stroje;
+  - **úkony** s postupem, kritériem „v pořádku, když“, kdo je provádí (obsluha, seřizovač,
+    údržba, vedoucí), příznakem „za klidu stroje“ a **až třemi fotkami** (co přesně
+    zkontrolovat). Úkony jdou přidat, seřadit a odebrat, v seznamu jsou sbalené;
+  - **interval** každého úkonu: každou směnu, denně, týdně (vybraný den), každý N. týden,
+    měsíčně, každých N měsíců (čtvrtletně, pololetně), ročně, každých N dní, po N motohodinách
+    nebo podle potřeby. Počítá se od data „intervaly počítat od“;
+  - **vzorové úkony** (8 běžných úkonů) na začátek a **kopie deníku** pro další stejný stroj
+    (bez fotek a výrobního čísla).
+- **Doporučení na každý den.** Z intervalů aplikace spočítá, které úkony připadají na který
+  den. Víkendy a státní svátky jsou šedé (svátek s názvem); když stroj o víkendu nepracuje,
+  termín, který na ně vyjde, se posune na další pracovní den. Náhled na 14 dní je v detailu
+  stroje, v seznamu strojů štítek „dnes N“.
+- **Tisk deníku do PDF** na celý rok, nebo na vlastní období od–do (nejvýš dva roky):
+  - na začátku karta stroje, návod „Jak deník vyplňovat“ a úkony s postupem a fotkami
+    (jde vypnout);
+  - pak měsíční archy: den, **doporučené úkony** (třeba „1, 2, 4“), k zakroužkování
+    **„Dle doporučení“** nebo **„Provedené úkony:“** s místem na vypsání, závady a opatření,
+    jméno, podpis; volitelně sloupec směny (1–3 záznamy za den) a stav počitadla. Dole na
+    každém archu měsíční kontrola vedoucím;
+  - na konci záznam oprav a mimořádných událostí a seznam zaškolené obsluhy (jde vypnout).
+- **Fotky jsou šifrované stejně jako data**: prohlížeč je zmenší (nejvýš 1600 px), zašifruje
+  a server uloží jen šifrovaný blok. Nejsou součástí uloženého stavu, takže ukládání zůstává
+  rychlé. **Šifrovaná záloha obsahuje i fotky** a obnova je vrátí na server.
+- Změny v Protokolech jsou v historii změn (nový a smazaný deník, údaje stroje, úkony,
+  intervaly, fotky, pořadí).
+- **Doporučení není záznam.** Předtištěná čísla jsou jen plán; záznamem je řádek, kde obsluha
+  zakroužkuje nebo vypíše provedené úkony a podepíše ho. Intervaly mají vycházet z návodu
+  výrobce a místního provozního předpisu. Revize vyhrazených technických zařízení
+  (elektrická, tlaková, zdvihací, plynová) deník nenahrazuje.
+- Verze dat 14: stránka verze 2.15 po aktualizaci dostane výzvu k obnovení (ať Protokoly
+  nezahodí). Stávající data se nemění, Protokoly začnou prázdné.
 
 ## Co je nového ve verzi 2.15
 
@@ -510,7 +549,10 @@ sudo chown www-data:www-data /var/lib/odmeny_v2/odmeny.sqlite3
   z každé hodiny za poslední týden a z každého dne před tím (nejvýš 150 verzí).
   Vrátit jde v Nastavení → Data a zálohy → Historie verzí.
 - **Šifrovaná záloha** (`.odmeny`) otevře kterákoli platná kartička, i na novém
-  serveru (při prvním spuštění „Obnovit ze šifrované zálohy“).
+  serveru (při prvním spuštění „Obnovit ze šifrované zálohy“). Od 2.16 obsahuje i fotky
+  z Protokolů; obnova je vrátí na server.
+- Fotky z Protokolů nejsou v historii verzí. Smazaná fotka zmizí ze serveru hned; když se
+  vrátí starší verze dat, místo smazané fotky je prázdné pole (vrátí ji jen záloha).
 - Záloha JSON z původní aplikace se načte přes „Načíst data z původní aplikace“.
 
 ## Rozdíly proti původní aplikaci
@@ -573,6 +615,12 @@ v hlavičce každého skriptu:
   a Profilem, Zpět u menu, hledání, detailu i dialogu, seznam lidí s vedoucím s mnoha
   odděleními, schované filtry přehledu, všechny části na 390 a 360 px bez přetečení,
   manifest a ikony, tmavý režim, omezené animace, desktop beze změny, zamknutí);
+- `tests/e2e_protokoly.js`: novinka 2.16 (Protokoly: karta stroje, vzorové úkony, sbalené
+  úkony, šifrované fotky se zmenšením, limitem tří, smazáním ze serveru a náhledem, poškozený
+  soubor, intervaly, vlastní úkon, pořadí, náhled 14 dní s víkendy i víkendovým provozem,
+  PDF na rok a na vlastní období se dvěma směnami a počitadlem s kontrolou textu, chybné
+  období, kopie a smazání deníku, historie změn, záloha s fotkami a obnova ztracené fotky,
+  mobil se Zpět, tmavý režim);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -588,7 +636,8 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.15'` jde stejný test pustit na aktualizaci 2.3 → 2.15 (data verze 5 → 13).
+S `EXPECT_VERSION='2\.16'` jde stejný test pustit na aktualizaci 2.3 → 2.16 (data verze 5 → 14);
+od 2.16 ověří i uložení a načtení šifrované fotky v aktualizované instalaci.
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

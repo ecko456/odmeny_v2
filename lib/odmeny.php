@@ -18,8 +18,8 @@ declare(strict_types=1);
 
 // Verze aplikace. Klient posílá verzi svého tvaru dat v hlavičce X-Odmeny-Client;
 // stránka otevřená ještě před aktualizací už nesmí uložit data ve starém tvaru.
-const ODM_VERSION = '2.15';
-const ODM_MIN_CLIENT = 13;
+const ODM_VERSION = '2.16';
+const ODM_MIN_CLIENT = 14;
 const ODM_SESSION_COOKIE = 'odmeny_session';
 const ODM_SESSION_HOURS = 12;
 const ODM_IDLE_MINUTES = 60;
@@ -27,6 +27,12 @@ const ODM_MAX_BLOB_CHARS = 12 * 1024 * 1024;
 const ODM_MAX_JSON_BYTES = 16 * 1024 * 1024;
 const ODM_MAX_SMALL_JSON_BYTES = 64 * 1024;
 const ODM_MAX_PREFS_BYTES = 32 * 1024; // v base64 i s obálkou se vejde do ODM_MAX_SMALL_JSON_BYTES
+// Šifrované fotky (Protokoly, 2.16): jedna fotka po zmenšení v prohlížeči, počet a celkový objem
+// (base64). Celek drží šifrovanou zálohu s fotkami v rozumné velikosti pro prohlížeč.
+const ODM_MAX_FILE_BYTES = 1536 * 1024;
+const ODM_MAX_FILE_JSON_BYTES = 2304 * 1024;
+const ODM_MAX_FILES = 2000;
+const ODM_MAX_FILES_TOTAL = 300 * 1024 * 1024;
 // Historie: posledních 30 uložení celých, starší jen poslední stav z každé hodiny
 // (týden zpátky) a z každého dne, dohromady nejvýš 150 verzí.
 const ODM_KEEP_RECENT = 30;
@@ -116,6 +122,15 @@ CREATE TABLE IF NOT EXISTS prefs (
     card_id TEXT PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
     blob TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+-- Šifrované soubory (fotky strojů a úkonů v Protokolech, 2.16). Obsah šifruje prohlížeč
+-- klíčem dat; server vidí jen šifru a velikost. Nepatří kartičce, jsou součástí sdílených dat.
+CREATE TABLE IF NOT EXISTS files (
+    id TEXT PRIMARY KEY,
+    blob TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    card_id TEXT,
+    created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_attempts ON attempts(kind, ip, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_card ON sessions(card_id);

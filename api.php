@@ -137,6 +137,40 @@ try {
         odm_json(['ok' => true]);
     }
 
+    /* Šifrované soubory (fotky v Protokolech, 2.16): šifruje a dešifruje prohlížeč, id je náhodné. */
+    if ($action === 'file') {
+        $id = (string)($_GET['id'] ?? '');
+        if (!preg_match('/^[a-f0-9]{32}$/', $id)) {
+            odm_fail('Neplatný soubor.', 422);
+        }
+        if ($method === 'GET') {
+            $row = odm_one('SELECT blob FROM files WHERE id = ?', [$id]);
+            if ($row === null) {
+                odm_fail('Fotka už na serveru není.', 404);
+            }
+            odm_json(['blob' => $row['blob']]);
+        }
+        if ($method === 'POST') {
+            odm_require_client();
+            $blob = odm_input(ODM_MAX_FILE_JSON_BYTES)['blob'] ?? null;
+            odm_b64($blob, 30, ODM_MAX_FILE_BYTES, 'soubor');
+            $stats = odm_one('SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS total FROM files');
+            if ((int)$stats['n'] >= ODM_MAX_FILES || (int)$stats['total'] + strlen($blob) > ODM_MAX_FILES_TOTAL) {
+                odm_fail('Úložiště fotek je plné. Smaž fotky, které už nejsou potřeba.', 507);
+            }
+            // stejné id podruhé (obnova zálohy) nic nepřepíše
+            odm_exec('INSERT INTO files (id, blob, size, card_id, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING', [
+                $id, $blob, strlen($blob), $session['card_id'], odm_now(),
+            ]);
+            odm_json(['ok' => true]);
+        }
+        if ($method === 'DELETE') {
+            odm_require_client();
+            odm_exec('DELETE FROM files WHERE id = ?', [$id]);
+            odm_json(['ok' => true]);
+        }
+    }
+
     if ($action === 'data' && $method === 'GET') {
         $current = odm_current_version();
         odm_json(['rev' => $current === null ? 0 : (int)$current['rev'], 'blob' => $current['blob'] ?? null, 'saved_at' => $current['created_at'] ?? null]);

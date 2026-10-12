@@ -84,10 +84,12 @@ function compare(beforeJson, afterJson) {
   const same = (x, y, what) => { if (JSON.stringify(x) !== JSON.stringify(y)) out.push(`${what}: ${JSON.stringify(x).slice(0, 160)} → ${JSON.stringify(y).slice(0, 160)}`); };
   // 2.6 přidá do Top 5 jen prázdnou evidenci smazaných čísel případů (eff.nos)
   const effOld = e => { if (!e || !('nos' in e)) return e; const c = { ...e }; same(c.nos, {}, 'eff.nos'); delete c.nos; return c; };
-  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
-  // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu
+  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
+  // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu,
+  // 2.16 prázdné Protokoly
   if ('leadSkills' in b) same(a.leadSkills || [], b.leadSkills, 'leadSkills');
   if ('normCutDone' in b) same(a.normCutDone || {}, b.normCutDone, 'normCutDone');
+  if ('logbooks' in b) same(a.logbooks || [], b.logbooks, 'logbooks');
   same(a.positions.map(p => p.id), b.positions.map(p => p.id), 'pořadí skupin');
   a.positions.forEach((p, i) => {
     const q = b.positions[i];
@@ -319,6 +321,17 @@ function compare(beforeJson, afterJson) {
   check(JSON.stringify(rowsAgain) === beforeRows, 'srážka ze mzdy nebo směna změnila výpočty');
   check(await again.isVisible('#wageAlert .wage-alert') === await again.evaluate(() => wagePending().length > 0), 'upozornění na srážku ze mzdy');
   await again.screenshot({ path: `${shots}/07-again.png`, fullPage: true });
+  // Od 2.16: šifrované fotky Protokolů (nová tabulka files) fungují i v aktualizované instalaci.
+  if (await again.evaluate(() => typeof Vault.saveFile === 'function')) {
+    const photoOk = await again.evaluate(async () => {
+      const bytes = new Uint8Array(200000).map((_, i) => (i * 7) % 251);
+      const id = await Vault.saveFile(bytes);
+      const back = await Vault.loadFile(id);
+      await Vault.deleteFile(id);
+      return back.length === bytes.length && back.every((v, i) => v === bytes[i]);
+    }).catch(error => String(error));
+    check(photoOk === true, `fotka po aktualizaci: ${photoOk}`);
+  }
   await ctx4.close();
 
   await browser.close();

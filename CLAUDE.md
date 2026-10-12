@@ -34,6 +34,30 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 12. 10. 2026 (verze 2.16):
+
+- **Protokoly: provozní deníky strojů.** Uživatel: „modul ‚Protokoly‘, kde bude možné vytvořit
+  provozní deník pro jednotlivé stroje … jednotlivé kroky i s fotkami … a intervalem provedení
+  … tisk … pro jaký rok … nebo individuální od kdy do kdy … víkendy vždy nějak označ … Doporučení
+  pro dnešek: 1, 2, 4 … na dva roky dopředu … zakroužkovat ‚Dle doporučení‘ nebo ‚Provedené
+  úkony:‘“. Ptal se i, jestli je legislativně v pořádku předtisknout doporučení (viz níže).
+  - Data `S.logbooks[]` (verze dat 14), čištění `cleanLogbooks`, plánovač v `core.js`
+    (`lbDue`, `lbPlan`, `lbRowSteps`, `lbRange`, `lbEveryText`), historie `lbChanges` (kind
+    `logbook`). Podrobnosti v sekci Protokoly níže.
+  - **Fotky jsou mimo stav**: tabulka `files` na serveru, `api.php?action=file`
+    (GET/POST/DELETE), šifruje je `Vault.saveFile` stejným DEK (AAD `odmeny/file/v1|<id>`).
+    Ukládání stavu tak zůstává malé a verze se nenafukují. Záloha `.odmeny` je nese v `files`,
+    obnova je vrátí (`Vault.restoreFiles`, záloha z jiné instalace se přešifruje).
+  - UI: pohled `#view-protokoly` (seznam strojů a detail jako Lidé), karta stroje, úkony
+    (sbalené, rozbalí se klepnutím), náhled 14 dní, tisk. PDF `drawLogbook` (jsPDF, `pdfKit`):
+    karta stroje a úkony s fotkami, měsíční archy, opravy a zaškolená obsluha.
+  - Legislativa (odpověď uživateli, není to právní rada): předtištěné doporučení je plán,
+    záznamem je až zakroužkovaný/vypsaný a podepsaný řádek. Intervaly mají vycházet z návodu
+    výrobce a místního provozního předpisu (NV 378/2001 Sb., zákoník práce). Revize vyhrazených
+    technických zařízení deník nenahrazuje. Totéž je v UI (`.lb-legal`) i v PDF.
+  - Čeká se na zpětnou vazbu uživatele (vzhled archu, vzorové úkony, co v deníku chybí).
+- `ODM_VERSION` 2.16, `DATA_VERSION` = `CLIENT_VERSION` = `ODM_MIN_CLIENT` = 14.
+
 Stav k 11. 10. 2026 (verze 2.15):
 
 - **HALA 2, hlavní menu a rozbalovací menu na telefonu.** Uživatel: „dole napravo …
@@ -362,6 +386,38 @@ Stav k 1. 10. 2026:
 - **Nové zadání:** víc modulů v jedné aplikaci (viz „Plán: víc modulů v jedné aplikaci“).
   Čeká se na odpovědi na otevřené otázky.
 
+## Protokoly (verze 2.16)
+
+Data `S.logbooks[]` (`blankLogbook`, `blankStep`, čištění `cleanLogbooks` v `core.js`, nejvýš
+200 deníků a 60 úkonů):
+
+- deník: `{id, name, inv, maker, model, serial, year, dept, place, owner, service, manual,
+  safety, note, weekend, shifts 1–3, counter, from (ISO, kotva intervalů), photo, steps[]}`;
+- úkon: `{id, name, how, ok, who obsluha|serizovac|udrzba|vedouci, stop, every{k, n, dow, day,
+  month}, photos[≤ 3]}`; `every.k` je `shift|day|week|weeks|month|months|year|ndays|hours|need`
+  (`LB_EVERY`), `day` 0 = první pracovní den měsíce;
+- `photo` a `photos` jsou id souborů v tabulce `files` (ne data). `lbFileIds(S)` je všechny
+  posbírá (záloha, mazání deníku).
+
+Výpočty: `lbWork` (pracovní den; svátky nikdy, víkend jen s `weekend`), `lbShift` (termín
+mimo pracovní den se posune na další pracovní), `lbDue(book, step, from, to)` (fáze `weeks`
+a `ndays` od `book.from`), `lbPlan` (dny `{iso, dow, weekend, hol, work, day[], shift[]}`),
+`lbRowSteps(d, řádek)` (řádek 0 = úkony směny i dne, další řádky jen úkony každé směny),
+`lbRange('year'|'custom', …)` (vlastní nejvýš 731 dní, `cut: true`). `hours` a `need`
+termín nemají (jen v kartě úkonů). `describeChanges` → `lbChanges`: klíče sloučení `lb:`
+(deník), `lbf:<id>:<pole>` (údaje), `lbs:` (úkon), `lbe:` (interval „původně → teď“),
+`lbp:` (fotky), `lbo:` (pořadí).
+
+UI v `app.js` (sekce „PROTOKOLY“): `renderLogbooks`, `renderLbDetail`, `lbStepHtml` (sbalený
+úkon = souhrn s náhledy, `ui.lb.openSteps`), `lbPreviewHtml`, `lbInput`, `lbClick`,
+`addPhotos` (`shrinkPhoto`: max. 1600 px, JPEG 0,82), `removePhoto` (smaže i ze serveru),
+`photoUrl` (dešifruje do `blob:` URL, `photoCache`), `exportLogbookPdf` a `drawLogbook`.
+Na telefonu se detail otevírá přes `syncHistory` (`sub: 'book'`), Zpět ho zavře.
+
+Známá omezení: fotka smazaná v aplikaci zmizí ze serveru hned, takže starší verze dat
+z historie ji už neukáže (prázdné pole `.ph.missing`); vrátí ji jen záloha. Fotky, na které
+neodkazuje žádný stav (nahrané, ale neuložené), na serveru zůstanou; úklid zatím není.
+
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 
 Uživatel chce z verze 2 udělat **jednu multifunkční aplikaci s moduly**, ať se nemusí
@@ -496,7 +552,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.12 | `78e1cbc` | srážky ze mzdy za neproduktivitu podle pásem plnění normy (data verze 13) |
 | 2.13 | `6d0a74f` | skener kartičky v Sankcích (kamera, čtečka), „HALA 2“ v exportech |
 | 2.14 | `655e374` | telefon jako aplikace (spodní lišta, Více, Zpět, okna zespodu), přidání na plochu |
-| 2.15 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: HALA 2 a hlavní menu s obsazeností dne, rozbalovací menu vpravo dole, vyhledání člověka |
+| 2.15 | `f21b39b` | HALA 2 a hlavní menu s obsazeností dne, rozbalovací menu vpravo dole, vyhledání člověka |
+| 2.16 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Protokoly – provozní deníky strojů s úkony, fotkami, intervaly a tiskem archů (data verze 14) |
 
 Verze 2.1 přidala:
 
@@ -560,7 +617,8 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
 - Výjimka (2.5): text, který vedoucí sám pošle tlačítkem ✦ k přeformulování, server vidí
   a předá Anthropicu (`lib/ai.php`). Nic jiného nešifrovaně neprochází.
 - Tabulky: `cards`, `devices`, `sessions`, `attempts`, `versions`, `prefs`, `ai_calls` (jen
-  kartička, délka textu a čas volání).
+  kartička, délka textu a čas volání), `files` (2.16: šifrované fotky Protokolů, id 32 hex,
+  nejvýš 1,5 MB na fotku, 2000 fotek a 300 MB base64 celkem, jinak 507).
 - Hlídá jen přístup:
   - otisk kartičky (uložený jen jako sha256);
   - relace: 12 h, po 60 min nečinnosti končí;
@@ -591,7 +649,9 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
 - **Osobní nastavení** šifruje stejný DEK s AAD `odmeny/prefs/v1|card:<id>`.
 - **Zařízení s PINem**: DEK je zabalený klíčem z (tajemství v localStorage + `server_share`
   + PIN). Server vydá share až po ověření PIN.
-- **Záloha `.odmeny`** obsahuje data a DEK zabalený každou kartičkou.
+- **Fotky** (2.16) šifruje stejný DEK s AAD `odmeny/file/v1|<id>`, formát `[1][IV][šifra]`
+  v base64. Id vymýšlí klient (16 náhodných bajtů), stejné id podruhé server nepřepíše.
+- **Záloha `.odmeny`** obsahuje data a DEK zabalený každou kartičkou, od 2.16 i `files{id: blob}`.
 - **Kdo ztratí všechny kartičky a nemá zapamatované zařízení, k datům se nedostane.**
 
 **Ukládání** (`private/app.js`).
@@ -605,7 +665,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `13` (od 2.12):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `14` (od 2.16):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -651,7 +711,8 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `issued{period: {key: {at, tabaky, kafe, pos, lvl, pct, tier, raise}}}` (snímek při výdeji);
   - `marks{period: {key: {bodId: důvod}}}`: body prémie, které vedoucí označil jako nesplněné;
   - `capReport{groups[], thr, hidden[], note}`: report Směny a kapacita;
-  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit`);
+  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook`);
+  - `logbooks[]` (2.16): Protokoly (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -863,8 +924,8 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 (jen v kontejneru, **nikdy ne na ostrém serveru**).
 
 ```bash
-python3 -m unittest discover -s tests   # 27 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API)
-node tests/test_core.js                 # 46 testů: proti původní aplikaci + opravy + 2.1 až 2.13
+python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
+node tests/test_core.js                 # 48 testů: proti původní aplikaci + opravy + 2.1 až 2.16
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -888,6 +949,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_skener.js`: skener kartičky v Sankcích (2.13), falešná kamera Chromia;
   - `e2e_mobil.js`: telefon jako aplikace (2.14, 2.15): HALA 2, hlavní menu, směna, rozbalovací
     menu, hledání, Zpět, okna, filtry, šířka seznamu, manifest;
+  - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
+    PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
+    daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.
