@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.17.1
+
+- **Kusy jen z operací přiřazených ke skupině.** Operace bez skupiny se nepočítají nikde
+  (přehled, PDF, Excel). Nová operace z výkazu práce přijde bez skupiny. Po nahrání se rovnou
+  otevře Nastavení s operacemi, které na skupinu čekají. Návrh skupiny podle názvu se použije až
+  po klepnutí (u operace „návrh: …“, nebo tlačítkem Přiřadit navržené skupiny). Volba
+  „— nepočítat —“ operaci zase vyřadí. Přepínač Zohlednit zmizel, rozhoduje jen skupina.
+- **Přehled je historický, po týdnech nebo po měsících**, za 3, 6, 12 měsíců nebo vše:
+  - lidé v práci (průměr na pracovní den proti plánu), obsazenost, zpracované kusy a kusy na
+    osobosměnu;
+  - tři grafy (lidé s čárkou plánu, kusy, kusy na osobosměnu) a tabulka období. Klepnutím na
+    řádek se otevřou jeho dny.
+- **Pro auditora jen fakta a grafy:**
+  - PDF (A4 na šířku): souhrn, grafy a tabulka po měsících a po týdnech, jedna věta s definicemi;
+  - Excel: listy Souhrn, Týdny a Měsíce.
+  - Dny, body ke kontrole, ruční úpravy, operace ani názvy souborů v exportech nejsou, zůstávají
+    jen v aplikaci.
+- Záložky Auditu: Přehled, Dny (s body ke kontrole), Úpravy, Nastavení. Data beze změny.
+
 ## Co je nového ve verzi 2.17
 
 - **Nový modul Audit: lidé v práci a zpracované kusy**, den po dni, po týdnech a měsících.
@@ -676,12 +695,13 @@ v hlavičce každého skriptu:
   PDF na rok a na vlastní období se dvěma směnami a počitadlem s kontrolou textu, chybné
   období, kopie a smazání deníku, historie změn, záloha s fotkami a obnova ztracené fotky,
   mobil se Zpět, tmavý režim);
-- `tests/e2e_audit.js`: novinka 2.17 (Audit: Excel obsazenosti a výkazu práce vyrobený
-  v prohlížeči z vymyšlených čísel, chybný soubor, souhrn před nahráním, skupiny operací
-  podle názvu, přehled s grafy a body ke kontrole, dny s víkendem a svátkem, úprava hodnoty
-  s povinným důvodem a ručně doplněné kusy, nastavení skupin a operací, týdny a vlastní
-  období, zrušení úpravy, nové nahrání se zachováním úprav, Excel a PDF s kontrolou obsahu,
-  historie změn, telefon, tmavý režim);
+- `tests/e2e_audit.js`: novinky 2.17 a 2.17.1 (Audit: Excel obsazenosti a výkazu práce za dva
+  měsíce vyrobený v prohlížeči z vymyšlených čísel, chybný soubor, souhrn před nahráním, nové
+  operace bez skupiny a nepočítané, návrh skupiny po klepnutí, historický přehled po týdnech
+  a měsících s grafy, dny s víkendem, svátkem a body ke kontrole, úprava hodnoty s povinným
+  důvodem a ručně doplněné kusy, nastavení skupin a operací, vlastní období, zrušení úpravy,
+  nové nahrání se zachováním úprav, osekaný Excel a PDF bez interních údajů, historie změn,
+  telefon, tmavý režim);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,

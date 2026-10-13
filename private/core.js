@@ -3272,8 +3272,9 @@ function lbChanges(A,B,add){
    AUDIT: lidé v práci a zpracované kusy (verze 2.17)
    Obsazenost ze souboru vedoucích (řádek = den, ranní a odpolední směna po skupinách)
    a výkaz práce z IS (datum, operace, kusy). Operace se přiřazují skupinám, skupina může
-   být neproduktivní, nebo mimo IS (její práce se ve výkazu neobjeví). Každou hodnotu jde
-   opravit s důvodem; původní hodnota zůstává vidět i v exportu pro auditora.
+   být neproduktivní, nebo mimo IS (její práce se ve výkazu neobjeví). Kusy se počítají jen
+   u operací přiřazených ke skupině (2.17.1). Každou hodnotu jde opravit s důvodem; původní
+   hodnota zůstává uložená.
    ========================================================================== */
 const WA_GROUPS=[
   {id:"brus",name:"Brusiči",am:"K",pm:"X",unprod:false,noIs:false},
@@ -3288,7 +3289,7 @@ const WA_GROUPS=[
    V skutečnost. Výkaz práce A datum, H operace, J kusy. */
 const WA_COLS={att:{date:"D",amPlan:"I",amTotal:"T",amAbs:"R",pmPlan:"U",pmTotal:"V"},work:{date:"A",op:"H",ks:"J"}};
 const WA_COL_LABEL={date:"Datum",amPlan:"Ranní: mělo dorazit",amTotal:"Ranní: celkem v práci",amAbs:"Ranní: absence",pmPlan:"Odpolední: požadavek",pmTotal:"Odpolední: skutečně v práci",op:"Operace",ks:"Počet kusů"};
-/* Odhad skupiny podle názvu operace (jen předvyplnění, vždy jde změnit). */
+/* Odhad skupiny podle názvu operace: jen návrh na tlačítko v Nastavení, sám nic nepřiřadí. */
 const WA_GUESS=[["tryska",/trysk|piskov|tryskac/],["brush",/brush|kartac/],["brus",/brus|brous/],["frez",/frez|cnc/],["lep",/lepen|znacen|lepi/],["kont",/kontrol|balen/]];
 const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am|pm)|pcs\.o\d{1,6})$/;
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
@@ -3391,7 +3392,8 @@ function waGuessGroup(name,groups){
   const hit=WA_GUESS.find(([id,re])=>re.test(n)&&groups.some(g=>g.id===id));
   return hit?hit[0]:"";
 }
-/* Nahrání: dny ze souboru nahradí uložené dny (úpravy zůstanou), ostatní dny se nemění. */
+/* Nahrání: dny ze souboru nahradí uložené dny (úpravy zůstanou), ostatní dny se nemění.
+   Nová operace přijde bez skupiny, takže se nezapočítá, dokud ji uživatel nepřiřadí. */
 function waApplyAttendance(wa,parsed,meta){
   Object.entries(parsed.days).forEach(([iso,d])=>{wa.days[iso]=d;});
   wa.files.push({kind:"att",name:(meta&&meta.name)||"",at:(meta&&meta.at)||Date.now(),by:(meta&&meta.by)||"",from:parsed.from,to:parsed.to,days:Object.keys(parsed.days).length,rows:parsed.rows});
@@ -3404,7 +3406,7 @@ function waApplyWork(wa,parsed,meta){
   Object.keys(parsed.ops).sort((a,b)=>a.localeCompare(b,"cs")).forEach(name=>{
     if(byName.has(norm(name)))return;
     wa.seq=(wa.seq||0)+1;
-    const op={id:"o"+wa.seq,name,group:waGuessGroup(name,wa.groups),on:true};
+    const op={id:"o"+wa.seq,name,group:"",on:true};
     wa.ops.push(op);byName.set(norm(name),op);added.push(op);
   });
   Object.entries(parsed.byDay).forEach(([iso,day])=>{
@@ -3446,8 +3448,9 @@ function waDay(wa,iso){
   wa.ops.forEach(op=>{
     const n=v("pcs."+op.id);if(n==null)return;pcs[op.id]=n;
     if(!op.on)return;
+    if(!op.group){noGroup=(noGroup||0)+n;return;}   // bez skupiny se nezapočítá
     pcsTotal=(pcsTotal||0)+n;
-    if(op.group)groupPcs[op.group]=(groupPcs[op.group]||0)+n;else noGroup=(noGroup||0)+n;
+    groupPcs[op.group]=(groupPcs[op.group]||0)+n;
   });
   const people=waSum([am.total,pm.total]);
   const plan=waSum([am.plan,pm.plan]);
@@ -3487,7 +3490,7 @@ function waTotals(wa,days){
   const t={days:days.length,workDays:0,offDays:0,offWorked:0,missingAtt:0,missingWork:0,shifts:null,amShifts:null,pmShifts:null,plan:null,planned:null,
     abs:null,pcs:null,noGroup:null,prodShifts:null,prodPcs:null,unprodShifts:null,noIsShifts:null,edits:0,group:{}};
   wa.groups.forEach(g=>{t.group[g.id]={shifts:null,am:null,pm:null,pcs:null};});
-  let fillPeople=0,fillPlan=0,workPeople=0,workWithAtt=0;
+  let fillPeople=0,fillPlan=0,workPeople=0,workWithAtt=0,workPlan=0,workWithPlan=0;
   days.forEach(d=>{
     if(d.day.work)t.workDays++;else{t.offDays++;if(d.people)t.offWorked++;}
     if(d.day.work&&!d.hasAtt)t.missingAtt++;
@@ -3496,12 +3499,13 @@ function waTotals(wa,days){
     t.plan=add(t.plan,d.plan);t.abs=add(t.abs,d.am.abs);t.pcs=add(t.pcs,d.pcsTotal);t.noGroup=add(t.noGroup,d.noGroup);
     t.prodShifts=add(t.prodShifts,d.prodPeople);t.prodPcs=add(t.prodPcs,d.prodPcs);t.unprodShifts=add(t.unprodShifts,d.unprodPeople);t.noIsShifts=add(t.noIsShifts,d.noIsPeople);
     if(d.people!=null&&d.plan){fillPeople+=d.people;fillPlan+=d.plan;}
-    if(d.day.work&&d.people!=null){workPeople+=d.people;workWithAtt++;}
+    if(d.day.work&&d.people!=null){workPeople+=d.people;workWithAtt++;if(d.plan){workPlan+=d.plan;workWithPlan++;}}
     t.edits+=d.edited.length;
     wa.groups.forEach(g=>{const x=t.group[g.id],y=d.g[g.id];x.shifts=add(x.shifts,y.sum);x.am=add(x.am,y.am);x.pm=add(x.pm,y.pm);x.pcs=add(x.pcs,d.groupPcs[g.id]);});
   });
   t.fill=fillPlan?fillPeople/fillPlan:null;
   t.avgPeople=workWithAtt?workPeople/workWithAtt:null;
+  t.avgPlan=workWithPlan?workPlan/workWithPlan:null;
   t.perShift=t.prodShifts&&t.prodPcs!=null?t.prodPcs/t.prodShifts:null;
   t.perDay=t.workDays&&t.pcs!=null?t.pcs/Math.max(1,days.filter(d=>d.hasWork).length):null;
   t.unprodShare=t.shifts&&t.unprodShifts!=null?t.unprodShifts/t.shifts:null;
@@ -3563,54 +3567,38 @@ function waIssues(wa,days){
 }
 /* Typ dne pro tabulky a exporty. */
 function waDayType(day){return day.hol?"svátek – "+day.hol:day.sat?"sobota":day.sun?"neděle":"pracovní den";}
-function waGroupKind(g){return g.noIs?"mimo IS":g.unprod?"neproduktivní":"produktivní";}
 const waR=(v,d=2)=>v==null?null:Math.round(v*10**d)/10**d;
-/* Listy Excelu pro auditora (hodnoty jsou čísla, úpravy jsou vidět i s původní hodnotou). */
-function waSheets(wa,from,to){
-  const days=waDays(wa,from,to),t=waTotals(wa,days),weeks=waWeeks(wa,days),G=wa.groups;
-  const pct=v=>v==null?null:Math.round(v*1000)/10;
-  const edits=waEditList(wa,from,to);
-  const sum=[["Audit obsazenosti a zpracovaných kusů"],["Období",dayText(from)+" – "+dayText(to)],[],
-    ["Pracovní dny",t.workDays],["Víkendy a svátky v období (s daty nebo ve všední den)",t.offDays],["Z toho víkendy a svátky, kdy se pracovalo",t.offWorked],
-    ["Pracovní dny bez obsazenosti",t.missingAtt],["Pracovní dny bez výkazu práce",t.missingWork],[],
-    ["Osobosměny ranní",t.amShifts],["Osobosměny odpolední",t.pmShifts],["Osobosměny celkem",t.shifts],["Plán (mělo dorazit + požadavek)",t.plan],
-    ["Obsazenost proti plánu %",pct(t.fill)],["Absence (ranní směna)",t.abs],["Průměr lidí v práci na pracovní den",waR(t.avgPeople,1)],[],
-    ["Kusy celkem (započítané operace)",t.pcs],["Kusy produktivních skupin",t.prodPcs],["Osobosměny produktivních skupin",t.prodShifts],
-    ["Kusy na osobosměnu produktivních skupin",waR(t.perShift,1)],["Osobosměny neproduktivních pozic",t.unprodShifts],["Podíl neproduktivních pozic %",pct(t.unprodShare)],
-    ["Osobosměny mimo IS",t.noIsShifts],["Kusy operací bez skupiny",t.noGroup],["Ruční úpravy hodnot",edits.length],[],
-    ["Osobosměna = jeden člověk na jedné směně. Kusy na osobosměnu počítají jen skupiny, které nejsou neproduktivní ani mimo IS."]];
-  const dayHead=["Datum","Den","Typ dne","Ranní: mělo dorazit","Ranní: v práci","Ranní: absence",...G.filter(g=>g.am).map(g=>"Ranní: "+g.name),
-    "Odpolední: požadavek","Odpolední: v práci",...G.filter(g=>g.pm).map(g=>"Odpolední: "+g.name),"Celkem v práci","Obsazenost %","Kusy","Kusy produktivní","Kusy na osobosměnu",
-    "Rozdíl skupin ranní","Rozdíl skupin odpolední","Upravené hodnoty","Poznámka"];
-  const dayRows=days.map(d=>[d.iso,DOW[d.day.dow],waDayType(d.day),d.am.plan,d.am.total,d.am.abs,...G.filter(g=>g.am).map(g=>d.g[g.id].am),
-    d.pm.plan,d.pm.total,...G.filter(g=>g.pm).map(g=>d.g[g.id].pm),d.people,pct(d.fill),d.pcsTotal,d.prodPcs,waR(d.perProd,1),d.check.am||null,d.check.pm||null,
-    d.edited.map(k=>waKeyLabel(wa,k)).join("; "),d.note]);
-  const weekHead=["Týden","Od – do","Pracovní dny","Osobosměny ranní","Osobosměny odpolední","Osobosměny celkem","Plán","Obsazenost %","Absence","Kusy","Kusy na osobosměnu","Úpravy"];
-  const weekRows=weeks.map(w=>[w.label,w.range,w.t.workDays,w.t.amShifts,w.t.pmShifts,w.t.shifts,w.t.plan,pct(w.t.fill),w.t.abs,w.t.pcs,waR(w.t.perShift,1),w.t.edits]);
-  const opTot=waOpTotals(wa,days);
-  const grpHead=["Skupina","Zařazení","Sloupec ranní","Sloupec odpolední","Osobosměny ranní","Osobosměny odpolední","Osobosměny celkem","Kusy","Kusy na osobosměnu","Operace"];
-  const grpRows=G.map(g=>{const x=t.group[g.id];return [g.name,waGroupKind(g),g.am||"—",g.pm||"—",x.am,x.pm,x.shifts,x.pcs,waR(x.per,1),wa.ops.filter(o=>o.group===g.id).map(o=>o.name+(o.on?"":" (nezapočítává se)")).join("; ")];});
-  const gname=id=>{const g=G.find(x=>x.id===id);return g?g.name:"bez skupiny";};
-  const opHead=["Operace","Skupina","Započítává se","Kusy v období"];
-  const opRows=opTot.map(o=>[o.name,gname(o.group),o.on?"ano":"ne",o.ks]);
-  const pcsHead=["Datum","Operace","Skupina","Započítává se","Kusy","Původně (před úpravou)"];
-  const pcsRows=[];
-  days.forEach(d=>wa.ops.forEach(o=>{if(d.pcs[o.id]==null)return;const e=(wa.edits[d.iso]||{})["pcs."+o.id];pcsRows.push([d.iso,o.name,gname(o.group),o.on?"ano":"ne",d.pcs[o.id],e?e.was:null]);}));
-  const editHead=["Datum","Hodnota","Původně","Nově","Důvod","Upravil","Kdy"];
-  const ts=at=>at?new Date(at).toISOString().slice(0,16).replace("T"," "):"";
-  const editRows=edits.map(e=>[e.iso,e.label,e.was,e.v,e.note,e.by,ts(e.at)]);
-  const noteRows=Object.entries(wa.notes).filter(([iso])=>iso>=from&&iso<=to).sort().map(([iso,n])=>[iso,n]);
-  const fileHead=["Soubor","Obsah","Nahráno","Kdo","Od","Do","Dní","Řádků"];
-  const fileRows=wa.files.slice().reverse().map(f=>[f.name,f.kind==="work"?"výkaz práce":"obsazenost",ts(f.at),f.by,f.from,f.to,f.days,f.rows]);
+/* Historický přehled (2.17.1): posledních `months` měsíců do posledního dne s daty (0 = vše).
+   Týdny začínají pondělím týdne, ve kterém začíná první měsíc, ať jsou celé. */
+function waHistRange(wa,months){
+  const span=waSpan(wa);
+  if(!span)return null;
+  let first=span.from.slice(0,7);
+  if(months>0){
+    const [y,m]=span.to.split("-").map(Number);
+    const t=y*12+m-1-(months-1);
+    const fm=Math.floor(t/12)+"-"+String(t%12+1).padStart(2,"0");
+    if(fm>first)first=fm;
+  }
+  const from=first+"-01";
+  return {from,to:span.to,wFrom:isoWeek(from).from};
+}
+/* Řádek souhrnu za týden nebo měsíc: jen fakta pro auditora. */
+const WA_FACT_HEAD=["Pracovní dny","Ø lidí v práci na pracovní den","Ø plán na pracovní den","Obsazenost proti plánu %","Osobosměny","Zpracované kusy","Kusy na osobosměnu"];
+function waFacts(t){return [t.workDays,waR(t.avgPeople,1),waR(t.avgPlan,1),t.fill==null?null:Math.round(t.fill*1000)/10,t.shifts,t.pcs,waR(t.perShift,1)];}
+/* Listy Excelu pro auditora: souhrn, týdny a měsíce (bez dnů a interních podkladů). */
+function waSheets(wa,r){
+  const t=waTotals(wa,waDays(wa,r.from,r.to));
+  const weeks=waWeeks(wa,waDays(wa,r.wFrom,r.to));
+  const months=waMonths(wa,waDays(wa,r.from,r.to));
+  const f=waFacts(t);
+  const sum=[["Lidé v práci a zpracované kusy"],["Období",dayText(r.from)+" – "+dayText(r.to)],[],
+    ...WA_FACT_HEAD.map((h,i)=>[h,f[i]]),[],
+    ["Osobosměna = jeden člověk na jedné směně. Kusy jen z operací přiřazených ke skupinám; kusy na osobosměnu jen u produktivních skupin."]];
   return [
-    {name:"Souhrn",cols:[52,16],rows:sum},
-    {name:"Dny",cols:[11,4,22,...dayHead.slice(3).map(()=>12)],rows:[dayHead,...dayRows]},
-    {name:"Týdny",cols:[10,26,...weekHead.slice(2).map(()=>12)],rows:[weekHead,...weekRows]},
-    {name:"Skupiny",cols:[34,14,8,8,12,12,12,12,12,60],rows:[grpHead,...grpRows]},
-    {name:"Operace",cols:[40,30,10,12],rows:[opHead,...opRows]},
-    {name:"Operace po dnech",cols:[11,40,30,10,10,12],rows:[pcsHead,...pcsRows]},
-    {name:"Úpravy",cols:[11,40,10,10,50,20,17],rows:[editHead,...editRows,...(noteRows.length?[[],["Poznámky ke dnům"],...noteRows]:[])]},
-    {name:"Zdroje",cols:[40,14,17,20,11,11,8,8],rows:[fileHead,...fileRows]}
+    {name:"Souhrn",cols:[40,16],rows:sum},
+    {name:"Týdny",cols:[10,11,11,...WA_FACT_HEAD.map(()=>14)],rows:[["Týden","Od","Do",...WA_FACT_HEAD],...weeks.map(w=>{const wk=weekById(w.id);return [w.label,wk.from<r.wFrom?r.wFrom:wk.from,wk.to>r.to?r.to:wk.to,...waFacts(w.t)];})]},
+    {name:"Měsíce",cols:[16,...WA_FACT_HEAD.map(()=>14)],rows:[["Měsíc",...WA_FACT_HEAD],...months.map(m=>[m.label,...waFacts(m.t)])]}
   ];
 }
 

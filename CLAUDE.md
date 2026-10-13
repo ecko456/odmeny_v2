@@ -34,6 +34,25 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 10. 2026 (verze 2.17.1):
+
+- **Audit osekaný pro auditora.** Uživatel: „započítává to všechny kusy a já potřebuji jen
+  operace, které jsou zařazené do skupiny … přehled historický ohledně kapacit lidí a produkci
+  … po týdnech a měsících. Osekej to, ať tam má auditor co nejméně dat a jen fakta a graficky
+  hezky udělané s grafy.“
+  - Kusy jen z operací se skupinou (`waDay`: `on && group`). Import novou operaci nepřiřadí
+    (`group: ''`), `waGuessGroup` je jen návrh na klepnutí. V UI není přepínač Zohlednit,
+    výběr skupiny nastaví `on: true`, „— nepočítat —“ = bez skupiny.
+  - Přehled = historie (`waHistHtml`): `ui.wa.grain` week/month, `ui.wa.hist` 3/6/12/0 měsíců
+    (`waHistRange`: měsíce do posledního dne s daty, týdny od pondělí). Tři grafy (`waChart`
+    sloupce s čárkou plánu, `waLine` čára), tabulka období (klik → Dny).
+  - Záložky: Přehled, Dny (+ `waCheckHtml` Ke kontrole), Úpravy, Nastavení. Týdny a měsíce
+    a Skupiny a operace jsou pryč.
+  - PDF (`drawWorkAudit`, `pdfWaChart`): souhrn, měsíce (grafy + tabulka, jen při ≥ 2
+    měsících), týdny (grafy + tabulka ve dvou sloupcích), věta s definicemi. Excel (`waSheets`):
+    Souhrn, Týdny, Měsíce. Interní věci (dny, kontrola, úpravy, operace, soubory) jen v aplikaci.
+  - `ODM_VERSION` 2.17.1, data beze změny (verze 15).
+
 Stav k 13. 10. 2026 (verze 2.17):
 
 - **Audit: lidé v práci a zpracované kusy.** Uživatel: „modul pro audit, kde bude přehled lidí
@@ -458,27 +477,31 @@ Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 
 Výpočty v `core.js`:
 
+- **kusy se počítají jen u operací se skupinou** (`on && group`, od 2.17.1);
 - čtení: `waParseAttendance` (všechny listy, řádek s datem = den, bez čísel se přeskočí,
   `cellToDateTime` zná text, Date i sériové číslo), `waParseWork` (součet po dnech
   a operacích);
 - uložení: `waApplyAttendance` a `waApplyWork`. Dny ze souboru nahradí uložené, úpravy
   zůstanou (`was` je hodnota v době úpravy, UI ukáže „teď X“). Nové operace dostanou
-  `on: true` a skupinu přes `waGuessGroup` (`WA_GUESS`);
+  `on: true` a **žádnou skupinu**; `waGuessGroup` (`WA_GUESS`) je jen návrh v Nastavení;
 - `waVal` (úprava má přednost), `waDay` (den: lidé, plán, obsazenost, kusy po operacích
   a skupinách, produktivní lidé a kusy, `check` = součet skupin − celkem);
 - `waDays` (dny s daty + všechny pracovní dny + svátek ve všední den; víkend bez dat ne),
-  `waTotals`, `waWeeks`, `waMonths`, `waOpTotals`, `waIssues`, `waSheets` (listy Excelu);
+  `waTotals` (`avgPeople`, `avgPlan` = průměr pracovních dnů s obsazeností), `waWeeks`,
+  `waMonths`, `waOpTotals`, `waIssues`, `waHistRange`, `waFacts` a `waSheets` (Excel:
+  Souhrn, Týdny, Měsíce);
 - osobosměna = člověk na směně; kusy na osobosměnu jen u skupin bez `unprod` a `noIs`;
 - `waSetEdit` (hodnota rovná souboru nebo `undefined` = úprava pryč), `waEditList`;
 - `waChanges` → historie, klíče sloučení `wag/wan/wau/wai/wac/wao/waon/wacols/wae/wanote`.
   Změna a návrat zpět do 10 minut se v historii vyruší. Nahrání a mazání období jdou přes
   `store.note` (jeden záznam).
 
-UI v `app.js` (sekce „AUDIT“): `ui.wa` (záložka, období `month|week|custom|all`, rozpad po
-skupinách, filtr operací), `waRange`, `renderWorkAudit`, `waChart` (sloupce, čárka plánu na
-stejné ose, podbarvený víkend a svátek, tooltip `#waTip`), `waDayDialog` (povinný důvod jen
-u nové hodnoty, návrat k souboru ho nepotřebuje), `waImport`, `bindWorkAudit`,
-`exportWaXlsx`, `exportWaPdf` a `drawWorkAudit` (A4 na šířku, tabulky s opakovanou hlavičkou).
+UI v `app.js` (sekce „AUDIT“): `ui.wa` (záložka, přehled `grain` + `hist`, období Dnů
+`month|week|custom`, rozpad po skupinách, filtr operací), `waHistHtml` (přehled), `waRange`
+(Dny, Úpravy), `renderWorkAudit`, `waChart` a `waLine` (tooltip `#waTip`, popsaná jen poslední
+hodnota), `waCheckHtml`, `waDayDialog` (povinný důvod jen u nové hodnoty), `waImport` (po
+nových operacích otevře Nastavení s filtrem bez skupiny), `bindWorkAudit`, `exportWaXlsx`,
+`exportWaPdf`, `pdfWaChart` a `drawWorkAudit` (A4 na šířku, jen fakta a grafy).
 
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 

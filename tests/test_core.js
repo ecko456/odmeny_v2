@@ -1881,6 +1881,9 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
     waApplyAttendance(wa, pa, { name: 'obsazenost.xlsx', by: 'Vedoucí' });
     const ap = waApplyWork(wa, pw, { name: 'vykaz.xlsx', by: 'Vedoucí' });
     const op = name => wa.ops.find(x => x.name === name);
+    // Nová operace přijde bez skupiny a nezapočítá se (2.17.1); skupiny přiřadí uživatel (tady podle návrhu z názvu).
+    const fresh = { groups: wa.ops.map(x => x.group), pcs: waDay(wa, '2026-10-01').pcsTotal, noGroup: waDay(wa, '2026-10-01').noGroup };
+    wa.ops.forEach(x => { x.group = waGuessGroup(x.name, wa.groups); });
     op('Údržba').on = false;                       // operace se nezapočítává
     const d1 = waDay(wa, '2026-10-01');
     // Úprava s důvodem a návrat zpět.
@@ -1898,7 +1901,8 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
     const t = waTotals(wa, days);
     const weeks = waWeeks(wa, days);
     const issues = waIssues(wa, days);
-    const sheets = waSheets(wa, '2026-10-01', '2026-10-31');
+    const hr = waHistRange(wa, 0);
+    const sheets = waSheets(wa, hr);
     const sheet = name => sheets.find(x => x.name === name).rows;
     // Nastavení skupin a operací do historie.
     const b2 = JSON.parse(JSON.stringify(wa));
@@ -1921,9 +1925,8 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
         perShift: Math.round(t.perShift * 100) / 100, brus: t.group.brus, kont: t.group.kont.per },
       weeks: weeks.slice(0, 2).map(w => [w.label, w.t.shifts, w.t.pcs]),
       issues: { att: issues.missingAtt.length, work: issues.missingWork.length, mismatch: issues.mismatch, off: issues.offWorked, noGroup: issues.noGroup.map(x => x.name), skip: issues.off.map(x => [x.name, x.ks]) },
-      sheets: sheets.map(x => [x.name, x.rows.length]), dayRow: sheet('Dny')[1], dayHead: sheet('Dny')[0].length, editRows: sheet('Úpravy').slice(1),
-      souhrn: sheet('Souhrn').filter(r => /Kusy celkem|Osobosměny celkem|Ruční úpravy/.test(r[0] || '')),
-      pcsEdited: sheet('Operace po dnech').find(r => r[0] === '2026-10-02' && r[1] === 'Broušení ručně'),
+      fresh, hr, hr3: waHistRange(wa, 3), sheets: sheets.map(x => [x.name, x.rows.length]), weeksRows: sheet('Týdny'), monthRow: sheet('Měsíce')[1], souhrn: sheet('Souhrn').slice(3, 10),
+      avg: [t.avgPeople, t.avgPlan],
       log, log2, dirty: [dirty.groups.map(g => [g.id, g.am, g.pm]), dirty.ops.map(x => [x.id, x.group]), dirty.days['2026-10-01'], Object.keys(dirty.days), Object.keys(dirty.edits['2026-10-01'])],
       v: DATA_VERSION, blank: !!blank().workAudit.groups.length })`));
   assert.deepStrictEqual([out.pa.rows, out.pa.skipped, out.pa.from, out.pa.to], [4, 1, '2026-10-01', '2026-10-08'], 'prázdný den a řádek bez data se přeskočí, sériové číslo Excelu je datum');
@@ -1945,13 +1948,15 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
   assert.deepStrictEqual(out.weeks, [['T40/2026', 94, 1470], ['T41/2026', 25, null]]);
   assert.deepStrictEqual(out.issues, { att: 18, work: 19, mismatch: [{ iso: '2026-10-01', shift: 'am', diff: 1 }, { iso: '2026-10-02', shift: 'am', diff: -1 }, { iso: '2026-10-08', shift: 'am', diff: -19 }], off: [{ iso: '2026-10-03', people: 4, pcs: 80, hol: null, weekend: true }],
     noGroup: [], skip: [['Údržba', 7]] }, 'po úpravě skupiny nesedí součet ranní směny; práce v sobotu je vidět');
-  assert.deepStrictEqual(out.sheets, [['Souhrn', 28], ['Dny', 24], ['Týdny', 6], ['Skupiny', 8], ['Operace', 5], ['Operace po dnech', 7], ['Úpravy', 3], ['Zdroje', 3]]);
-  assert.strictEqual(out.dayHead, 3 + 3 + 7 + 2 + 5 + 9, 'sloupce skupin jen tam, kde má skupina písmeno');
-  assert.deepStrictEqual(out.dayRow.slice(0, 7), ['2026-10-01', 'Čt', 'pracovní den', 30, 26, 3, 7]);
-  assert.deepStrictEqual(out.dayRow.slice(-4), [1, null, 'Ranní, Brusiči', '']);
-  assert.deepStrictEqual(out.editRows.map(r => r.slice(0, 5)), [['2026-10-01', 'Ranní, Brusiči', 6, 7, 'Chyběl záznam brigádníka'], ['2026-10-02', 'Kusy – Broušení ručně', 450, 470, 'Oprava ze směnového hlášení']]);
-  assert.deepStrictEqual(out.souhrn, [['Osobosměny celkem', 119], ['Kusy celkem (započítané operace)', 1470], ['Ruční úpravy hodnot', 2]]);
-  assert.deepStrictEqual(out.pcsEdited, ['2026-10-02', 'Broušení ručně', 'Brusiči', 'ano', 470, 450]);
+  assert.deepStrictEqual(out.fresh, { groups: ['', '', '', ''], pcs: null, noGroup: 927 }, 'bez skupiny se kusy nepočítají');
+  assert.deepStrictEqual(out.hr, { from: '2026-10-01', to: '2026-10-08', wFrom: '2026-09-28' }, 'týdny začínají pondělím');
+  assert.deepStrictEqual(out.hr3, out.hr, 'posledních 3 měsíců, ale ne před prvními daty');
+  assert.deepStrictEqual(out.sheets, [['Souhrn', 12], ['Týdny', 3], ['Měsíce', 2]], 'pro auditora jen souhrn, týdny a měsíce');
+  assert.deepStrictEqual(out.weeksRows[0].length, 10);
+  assert.deepStrictEqual(out.weeksRows.slice(1), [['T40/2026', '2026-09-28', '2026-10-04', 4, 45, 50, 90, 94, 1470, 18.5], ['T41/2026', '2026-10-05', '2026-10-08', 4, 25, 30, 83.3, 25, null, null]],
+    '28. 9. je svátek, sobota 3. 10. se do průměru na pracovní den nepočítá');
+  assert.deepStrictEqual(out.monthRow.slice(1), [6, 38.3, 43.3, 88.5, 119, 1470, 17.1]);
+  assert.deepStrictEqual(out.souhrn.map(r => r[1]), [6, 38.3, 43.3, 88.5, 119, 1470, 17.1]);
   assert.deepStrictEqual(out.log, ['Audit 1. 10. 2026 – Ranní, Brusiči: 6 → 7 (Chyběl záznam brigádníka)', 'Audit 2. 10. 2026 – Kusy – Broušení ručně: 450 → 470 (Oprava ze směnového hlášení)']);
   assert.deepStrictEqual(out.log2, ['Audit – Kontrola / balení / brigadýr / školitelé, neproduktivní pozice: ano → ne', 'Audit – operace „Kontrola výstupní“, skupina: Kontrola / balení / brigadýr / školitelé → bez skupiny']);
   assert.deepStrictEqual(out.dirty, [[['ok', 'ZZ', '']], [['o1', '']], { am: { plan: 0, total: null, abs: null }, pm: { plan: null, total: null }, g: { ok: [100000, 2] } }, ['2026-10-01'], ['am.total']]);
