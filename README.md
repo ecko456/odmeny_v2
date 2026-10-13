@@ -62,6 +62,61 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.17
+
+- **Nový modul Audit: lidé v práci a zpracované kusy**, den po dni, po týdnech a měsících.
+  Je určený pro auditora, každé číslo jde dohledat a opravit s důvodem.
+- **Dva soubory z Excelu** (tlačítka Nahrát obsazenost a Nahrát výkaz práce):
+  - **obsazenost směn** od vedoucích, jeden řádek = jeden den. Datum ve sloupci **D**.
+    Ranní směna: **I** mělo dorazit, **K** brusiči, **L** brush, **M** frézování, **N** lepení
+    a značení dílů, **O** kontrola / balení / brigadýr / školitelé, **P** obsluha tryskací
+    kabiny, **R** absence, **S** projekt Daiho, **T** celkem v práci. Odpolední směna:
+    **U** požadavek, **V** skutečně v práci, **W** frézování, **X** brusiči, **Y** brush,
+    **Z** obsluha tryskací kabiny, **AA** kontrola / balení / brigadýr / školitelé;
+  - **výkaz práce z IS**: **A** datum, **H** operace, **J** počet kusů. Kusy se sečtou po dnech
+    a operacích;
+  - před nahráním je souhrn (kolik dní, víkendy, které dny se nahradí, nové operace).
+    Opakované nahrání stejného období data nahradí, **ruční úpravy zůstanou**. Řádky bez data
+    (nadpisy, součty) se přeskočí, všechny listy se projdou;
+  - písmena sloupců jdou změnit v Nastavení auditu.
+- **Skupiny (oddělení) a operace v Nastavení:**
+  - každá skupina má sloupec pro ranní a odpolední směnu a dva příznaky:
+    - **Neproduktivní pozice**: lidé se počítají do lidí v práci, ale ne do kusů na
+      osobosměnu (předvyplněno u kontroly / balení / brigadýra / školitelů);
+    - **Tento projekt není evidován v IS**: jeho práce ve výkazu není, takže lidé výkon
+      nekazí (předvyplněno u projektu Daiho);
+  - skupiny jdou přejmenovat, přidat a smazat;
+  - u každé operace z výkazu: **zohlednit ano/ne** a **skupina**. Například Pískování – hala 2
+    → Obsluha tryskací kabiny. Nové operace dostanou skupinu podle názvu, jde ji změnit.
+    Operace bez skupiny ukazuje odznak v menu.
+- **Přehled období** (měsíc, týden, vlastní období, nebo všechna data):
+  - lidé v práci (osobosměny ranní a odpolední) a průměr na pracovní den;
+  - obsazenost proti plánu, absence, zpracované kusy;
+  - kusy na osobosměnu produktivních skupin a podíl neproduktivních pozic;
+  - grafy lidí v práci (s čárkou plánu) a kusů po dnech, víkendy a svátky jsou podbarvené;
+  - **Ke kontrole**: pracovní dny bez obsazenosti nebo výkazu, dny, kdy součet skupin nesedí
+    s počtem lidí na směně, práce o víkendu a ve svátek, operace bez skupiny a nezapočítané
+    operace.
+- **Dny:** tabulka po dnech s rozpadem po skupinách. Víkendy a **státní svátky** jsou
+  podbarvené, svátek s názvem. Pracovní den bez dat je vidět, víkend bez dat ne.
+- **Úprava hodnoty:** klepnutím na den se otevře detail, kde jde opravit každé číslo
+  (obsazenost, skupiny, kusy každé operace, i chybějící kusy). **Důvod je povinný.** Původní
+  hodnota ze souboru, kdo a kdy upravil zůstanou uložené. Upravené číslo má v tabulce
+  hvězdičku a úpravu jde zrušit (záložka Úpravy). K dni jde napsat poznámku.
+- **Týdny a měsíce, Skupiny a operace:** souhrny za týden (pondělí až neděle) a měsíc,
+  osobosměny a kusy po skupinách a kusy po operacích.
+- **PDF pro auditora** (A4 na šířku), bez názvu aplikace, se zápatím HALA 2:
+  - souhrn a popis výpočtu;
+  - body ke kontrole;
+  - tabulky po týdnech, měsících a dnech;
+  - skupiny a operace;
+  - ruční úpravy s původní hodnotou a důvodem;
+  - poznámky ke dnům a zdrojové soubory.
+- **Excel:** listy Souhrn, Dny, Týdny, Skupiny, Operace, Operace po dnech, Úpravy, Zdroje.
+- Změny jsou v historii změn (filtr Audit), přibyl i filtr Protokoly.
+- Verze dat 15: stránka verze 2.16 po aktualizaci dostane výzvu k obnovení (ať Audit
+  nezahodí). Stávající data se nemění, Audit začne prázdný.
+
 ## Co je nového ve verzi 2.16
 
 - **Nový modul Protokoly: provozní deníky strojů.** Ke každému stroji:
@@ -621,6 +676,12 @@ v hlavičce každého skriptu:
   PDF na rok a na vlastní období se dvěma směnami a počitadlem s kontrolou textu, chybné
   období, kopie a smazání deníku, historie změn, záloha s fotkami a obnova ztracené fotky,
   mobil se Zpět, tmavý režim);
+- `tests/e2e_audit.js`: novinka 2.17 (Audit: Excel obsazenosti a výkazu práce vyrobený
+  v prohlížeči z vymyšlených čísel, chybný soubor, souhrn před nahráním, skupiny operací
+  podle názvu, přehled s grafy a body ke kontrole, dny s víkendem a svátkem, úprava hodnoty
+  s povinným důvodem a ručně doplněné kusy, nastavení skupin a operací, týdny a vlastní
+  období, zrušení úpravy, nové nahrání se zachováním úprav, Excel a PDF s kontrolou obsahu,
+  historie změn, telefon, tmavý režim);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -636,8 +697,9 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.16'` jde stejný test pustit na aktualizaci 2.3 → 2.16 (data verze 5 → 14);
-od 2.16 ověří i uložení a načtení šifrované fotky v aktualizované instalaci.
+S `EXPECT_VERSION='2\.17'` jde stejný test pustit na aktualizaci 2.3 → 2.17 (data verze 5 → 15);
+od 2.16 ověří i uložení a načtení šifrované fotky v aktualizované instalaci, od 2.17 prázdný
+Audit nad převzatými daty.
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)
 a `tests/e2e_upgrade22.js` pro 2.1 → 2.2 (`git archive e762813`).
 

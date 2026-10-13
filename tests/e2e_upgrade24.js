@@ -84,12 +84,17 @@ function compare(beforeJson, afterJson) {
   const same = (x, y, what) => { if (JSON.stringify(x) !== JSON.stringify(y)) out.push(`${what}: ${JSON.stringify(x).slice(0, 160)} → ${JSON.stringify(y).slice(0, 160)}`); };
   // 2.6 přidá do Top 5 jen prázdnou evidenci smazaných čísel případů (eff.nos)
   const effOld = e => { if (!e || !('nos' in e)) return e; const c = { ...e }; same(c.nos, {}, 'eff.nos'); delete c.nos; return c; };
-  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
+  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks', 'workAudit'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
   // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu,
-  // 2.16 prázdné Protokoly
+  // 2.16 prázdné Protokoly, 2.17 prázdný Audit
   if ('leadSkills' in b) same(a.leadSkills || [], b.leadSkills, 'leadSkills');
   if ('normCutDone' in b) same(a.normCutDone || {}, b.normCutDone, 'normCutDone');
   if ('logbooks' in b) same(a.logbooks || [], b.logbooks, 'logbooks');
+  // 2.17 prázdný Audit (výchozí skupiny, žádné dny ani operace)
+  if ('workAudit' in b) {
+    if (a.workAudit) same(a.workAudit, b.workAudit, 'workAudit');
+    else if (Object.keys(b.workAudit.days).length || b.workAudit.ops.length || b.workAudit.groups.length !== 7) out.push(`workAudit není prázdný: ${JSON.stringify(b.workAudit).slice(0, 160)}`);
+  }
   same(a.positions.map(p => p.id), b.positions.map(p => p.id), 'pořadí skupin');
   a.positions.forEach((p, i) => {
     const q = b.positions[i];

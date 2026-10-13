@@ -19,6 +19,7 @@ const ui = {
   kt: { tab: 'plan', week: null, range: '12', dept: '' },
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
+  wa: { tab: 'prehled', mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -371,6 +372,7 @@ function renderAll() {
   if (ui.view === 'kontroly') renderKontroly(); else renderKtBadge();
   if (ui.view === 'domu') renderHome();
   if (ui.view === 'protokoly') renderLogbooks();
+  if (ui.view === 'audit') renderWorkAudit(); else renderWaBadge();
   renderSaveState();
   renderLogBadge();
 }
@@ -387,6 +389,7 @@ function showView(name) {
   if (name === 'kontroly') renderKontroly();
   if (name === 'domu') renderHome();
   if (name === 'protokoly') renderLogbooks();
+  if (name === 'audit') renderWorkAudit();
   closeFab();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
@@ -532,7 +535,7 @@ function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm'
 function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
 function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
 function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
-const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['protokoly', 'Protokoly'], ['top5', 'Top 5'], ['matice', 'Matice'], ['dochazka', 'Docházka'], ['vyroba', 'Výroba'], ['nastaveni', 'Nastavení']];
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['protokoly', 'Protokoly'], ['top5', 'Top 5'], ['matice', 'Matice'], ['dochazka', 'Docházka'], ['vyroba', 'Výroba'], ['audit', 'Audit'], ['nastaveni', 'Nastavení']];
 
 function homeTileMeta(view, sd) {
   const p = curPeriod();
@@ -551,6 +554,7 @@ function homeTileMeta(view, sd) {
       const day = sd.day, n = books.reduce((x, b) => { const d = lbPlan(b, day, day)[0]; return x + (d ? lbRowSteps(d, 0).length : 0); }, 0);
       return n ? `${sd.today ? 'dnes' : 'v den plánu'} ${n} ${n === 1 ? 'úkon' : n <= 4 ? 'úkony' : 'úkonů'}` : `${books.length} ${books.length === 1 ? 'stroj' : books.length <= 4 ? 'stroje' : 'strojů'}`;
     }
+    case 'audit': { const sp = waSpan(S.workAudit); return sp ? `data do ${dayText(sp.to, false)}` : 'lidé v práci a kusy'; }
     default: return 'pravidla a zálohy';
   }
 }
@@ -3032,11 +3036,13 @@ const LOG_ICON = {
   settings: svg('<circle cx="12" cy="12" r="3"/><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8"/>'),
   eff: svg('<path d="M3.5 20.5h17"/><path d="M6.5 16.5v-9M11 16.5v-6M15.5 16.5v-3.5M20 16.5v-1.5"/>'),
   audit: svg('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1M8.5 11.5l2 2 4-4M8.5 17h7"/>'),
+  logbook: svg('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7.5h6M9 11h6"/>'),
+  workaudit: svg('<path d="M3.5 20.5h11M6 16.5v-5M10 16.5V8"/><circle cx="16.5" cy="10.5" r="4"/><path d="m19.4 13.4 2.6 2.6"/>'),
   data: svg('<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>'),
 };
 const LOG_FILTERS = [
   ['all', 'Vše', null],
-  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit']],
+  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit', 'logbook', 'workaudit']],
   ['people', 'Lidé a úrovně', ['person', 'level']],
   ['sanction', 'Sankce', ['sanction']],
   ['tab', 'Tabáky a výdej', ['adjust', 'issue']],
@@ -3044,6 +3050,8 @@ const LOG_FILTERS = [
   ['settings', 'Skupiny a nastavení', ['position', 'settings']],
   ['eff', 'Top 5', ['eff']],
   ['audit', 'Kontroly', ['audit']],
+  ['logbook', 'Protokoly', ['logbook']],
+  ['workaudit', 'Audit', ['workaudit']],
 ];
 
 function unseenLog() {
@@ -4835,10 +4843,10 @@ function bindTop5Events() {
    TOP 5: PDF pro auditora (týdenní report, souhrn, jeden případ)
    Vzniká v prohlížeči z dešifrovaných dat, server obsah nevidí.
    ========================================================================== */
-async function newPdf() {
+async function newPdf(orientation = 'portrait') {
   if (!window.jspdf) await OdmLock.loadScript(`app.php?f=jspdf.js&v=${document.body.dataset.privateVersion || '1'}`);
   const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
-  const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation, compress: true });
   doc.addFileToVFS('Plex-Regular.ttf', regular);
   doc.addFont('Plex-Regular.ttf', 'Plex', 'normal');
   doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
@@ -4848,7 +4856,8 @@ async function newPdf() {
 
 /** Sada kreslicích funkcí nad jsPDF. k.dry = jen měří výšku (bez kreslení a bez zalomení stránky). */
 function pdfKit(doc) {
-  const k = { doc, W: 210, H: 297, M: 16, y: 16, dry: false, onPage: null };
+  const land = doc.internal.pageSize.getWidth() > doc.internal.pageSize.getHeight();   // A4 na šířku (Audit)
+  const k = { doc, W: land ? 297 : 210, H: land ? 210 : 297, M: 16, y: 16, dry: false, onPage: null };
   k.CW = k.W - 2 * k.M;
   k.BOTTOM = k.H - 20;
   k.PAGE = k.BOTTOM - k.M;
@@ -5413,10 +5422,10 @@ function drawEffSummary(doc, single, short = false) {
 }
 
 /* ---------- export ---------- */
-async function withPdf(button, fn) {
+async function withPdf(button, fn, orientation = 'portrait') {
   if (button) button.disabled = true;
   try {
-    const doc = await newPdf();
+    const doc = await newPdf(orientation);
     return await fn(doc);
   } catch (error) {
     toast(`PDF se nepovedlo: ${error.message}`, true);
@@ -6163,6 +6172,7 @@ function bindEvents() {
   $('#logBtn').onclick = () => openLog();
   bindPhoneUi();
   bindLogbooks();
+  bindWorkAudit();
 
   // Filtry přehledu jsou osobní: pamatují se jen pro tuto kartičku.
   $('#ovSearch').addEventListener('input', renderOverview);
@@ -6921,6 +6931,922 @@ async function exportAuditResultsPdf(button) {
     drawAuditResults(doc);
     downloadFile(`kontroly-vysledky-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
   });
+}
+
+/* ==========================================================================
+   AUDIT: lidé v práci a zpracované kusy (verze 2.17)
+   Výpočty jsou v core.js (S.workAudit, waDay, waTotals, waSheets…). Tady je výběr období,
+   záložky, nahrání obou souborů, úpravy hodnot s důvodem, nastavení skupin a operací,
+   PDF a Excel pro auditora.
+   ========================================================================== */
+const WA_TABS = [['prehled', 'Přehled'], ['dny', 'Dny'], ['tydny', 'Týdny a měsíce'], ['skupiny', 'Skupiny a operace'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
+const WA_MODES = [['month', 'Měsíc'], ['week', 'Týden'], ['custom', 'Vlastní'], ['all', 'Vše']];
+const waN = (v, d = 0) => (v == null ? '—' : nf(v, d));
+const waP = v => (v == null ? '—' : `${nf(v * 100, 1)} %`);
+const osobN = n => (n === 1 ? 'osobosměna' : n >= 2 && n <= 4 ? 'osobosměny' : 'osobosměn');
+const WA_NOTE_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4.5h14a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5h-7L7.5 20v-3.5H5A1.5 1.5 0 0 1 3.5 15V6A1.5 1.5 0 0 1 5 4.5z"/><path d="M8 9h8M8 12h5"/></svg>';
+const WA_UNDO_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>';
+const denN = n => (n === 1 ? 'den' : n >= 2 && n <= 4 ? 'dny' : 'dní');
+const operaceN = n => (n >= 1 && n <= 4 ? 'operace' : 'operací');
+function waLastDay(month) {
+  const [y, m] = month.split('-').map(Number);
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+}
+function waGroupName(id) { const g = S.workAudit.groups.find(x => x.id === id); return g ? g.name : 'bez skupiny'; }
+function waKindTag(g) { return g.noIs ? '<span class="tag wa-nois">mimo IS</span>' : g.unprod ? '<span class="tag wa-unprod">neproduktivní</span>' : '<span class="tag acc">produktivní</span>'; }
+/* Typ dne jako štítek: víkend fialově (jako v docházce), svátek s názvem. */
+function waDayTag(day) {
+  if (day.hol) return `<span class="tag wk wa-hol" title="Státní svátek">${esc(day.hol)}</span>`;
+  return day.weekend ? `<span class="tag wk">${day.sat ? 'sobota' : 'neděle'}</span>` : '';
+}
+
+/* Vybrané období: měsíc, týden, vlastní rozsah, nebo všechna data. Výchozí je měsíc posledních dat. */
+function waRange() {
+  const span = waSpan(S.workAudit);
+  const last = span ? span.to : todayIso();
+  const mode = ui.wa.mode;
+  if (mode === 'week') {
+    const w = weekById(ui.wa.week) || isoWeek(last);
+    ui.wa.week = w.id;
+    return { from: w.from, to: w.to, label: `${weekName(w.id)} · ${weekRange(w)}` };
+  }
+  if (mode === 'custom') {
+    let from = WA_ISO.test(ui.wa.from) ? ui.wa.from : span ? span.from : `${last.slice(0, 7)}-01`;
+    let to = WA_ISO.test(ui.wa.to) ? ui.wa.to : last;
+    if (from > to) [from, to] = [to, from];
+    Object.assign(ui.wa, { from, to });
+    return { from, to, label: `${dayText(from)} – ${dayText(to)}` };
+  }
+  if (mode === 'all' && span) return { from: span.from, to: span.to, label: `všechna data · ${dayText(span.from)} – ${dayText(span.to)}` };
+  const month = MONTH_RE.test(ui.wa.month) ? ui.wa.month : last.slice(0, 7);
+  ui.wa.month = month;
+  return { from: `${month}-01`, to: waLastDay(month), label: monthLabel(month) };
+}
+
+function renderWaBadge() {
+  const badge = $('#navWa');
+  if (!badge || !S) return;
+  const n = S.workAudit.ops.filter(op => op.on && !op.group).length;
+  badge.hidden = !n;
+  badge.textContent = String(n);
+  badge.title = n ? `${n} ${operaceN(n)} z výkazu práce bez skupiny` : '';
+}
+
+function renderWorkAudit() {
+  const view = $('#waView');
+  if (!view || !S) return;
+  renderWaBadge();
+  const tab = WA_TABS.some(t => t[0] === ui.wa.tab) ? ui.wa.tab : 'prehled';
+  $('#waTabs').innerHTML = WA_TABS.map(([k, t]) => `<button type="button" class="chip${k === tab ? ' on' : ''}" data-watab="${k}" aria-pressed="${k === tab}">${t}</button>`).join('');
+  showActiveChip($('#waTabs'));
+  const has = !!waSpan(S.workAudit);
+  $('#waPdf').disabled = !has;
+  $('#waXlsx').disabled = !has;
+  if (tab === 'nastaveni') { view.innerHTML = waSettingsHtml(); return; }
+  if (!has) { view.innerHTML = waStartHtml(); return; }
+  const r = waRange();
+  const days = waDays(S.workAudit, r.from, r.to);
+  const body = tab === 'dny' ? waDaysHtml(days) : tab === 'tydny' ? waWeeksHtml(days) : tab === 'skupiny' ? waGroupsHtml(days)
+    : tab === 'upravy' ? waEditsHtml(r) : waOverviewHtml(days, r);
+  view.innerHTML = waPeriodHtml(r) + body;
+  setWidths(view);
+}
+
+/* ---------- začátek: co nahrát a z jakých sloupců ---------- */
+function waColList(kind) {
+  const wa = S.workAudit;
+  const list = kind === 'work'
+    ? Object.entries(wa.cols.work).map(([k, l]) => [l, WA_COL_LABEL[k]])
+    : [...Object.entries(wa.cols.att).map(([k, l]) => [l, WA_COL_LABEL[k]]),
+      ...wa.groups.flatMap(g => [[g.am, `Ranní: ${g.name}`], [g.pm, `Odpolední: ${g.name}`]])];
+  return list.filter(([l]) => l).sort((a, b) => waIndex(a[0]) - waIndex(b[0]));
+}
+function waColsTable(kind) {
+  return `<table class="wa-cols"><tbody>${waColList(kind).map(([l, t]) => `<tr><th scope="row">${esc(l)}</th><td>${esc(t)}</td></tr>`).join('')}</tbody></table>`;
+}
+function waStartHtml() {
+  return `<div class="wa-start">
+    <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">1</span><div><h3>Obsazenost směn</h3><p class="small muted">Excel vedoucích: jeden řádek = jeden den. Řádky bez data (nadpisy, součty) se přeskočí, všechny listy se projdou.</p></div></div>
+      ${waColsTable('att')}<button class="btn" type="button" data-wapick="att">Nahrát obsazenost</button></div>
+    <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">2</span><div><h3>Výkaz práce z IS</h3><p class="small muted">Každý řádek je záznam práce. Kusy se sečtou po dnech a operacích, nové operace se přiřadí skupině podle názvu (jde změnit).</p></div></div>
+      ${waColsTable('work')}<button class="btn" type="button" data-wapick="work">Nahrát výkaz práce</button></div>
+  </div>
+  <p class="hint">Písmena sloupců jsou podle zadání. Kdyby soubor vypadal jinak, změníš je v záložce <button class="link" type="button" data-watabgo="nastaveni">Nastavení</button>. Soubory se čtou jen v prohlížeči a ukládají zašifrovaně jako ostatní data.</p>`;
+}
+
+/* ---------- výběr období ---------- */
+function waMonthsList() {
+  const span = waSpan(S.workAudit);
+  const out = [];
+  let m = span.from.slice(0, 7);
+  const end = span.to.slice(0, 7);
+  for (let i = 0; m <= end && i < 240; i += 1) { out.push(m); const [y, mm] = m.split('-').map(Number); m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, '0')}`; }
+  if (!out.includes(ui.wa.month)) out.push(ui.wa.month);
+  return out.sort().reverse();
+}
+function waWeeksList() {
+  const span = waSpan(S.workAudit);
+  const out = [];
+  for (let w = isoWeek(span.from).id, i = 0; w && w <= isoWeek(span.to).id && i < 600; w = shiftWeek(w, 1), i += 1) out.push(w);
+  if (!out.includes(ui.wa.week)) out.push(ui.wa.week);
+  return out.sort().reverse();
+}
+function waPeriodHtml(r) {
+  const mode = ui.wa.mode;
+  let pick = '';
+  if (mode === 'month') {
+    pick = `<button class="icon-btn" type="button" data-wastep="-1" aria-label="Předchozí měsíc">${I.back}</button>
+      <select id="waMonth" aria-label="Měsíc">${waMonthsList().map(m => `<option value="${m}"${m === ui.wa.month ? ' selected' : ''}>${esc(monthLabel(m))}</option>`).join('')}</select>
+      <button class="icon-btn t5-next" type="button" data-wastep="1" aria-label="Další měsíc">${I.back}</button>`;
+  } else if (mode === 'week') {
+    pick = `<button class="icon-btn" type="button" data-wastep="-1" aria-label="Předchozí týden">${I.back}</button>
+      <select id="waWeek" aria-label="Týden">${waWeeksList().map(w => `<option value="${w}"${w === ui.wa.week ? ' selected' : ''}>${esc(`${weekName(w)} · ${weekRange(weekById(w))}`)}</option>`).join('')}</select>
+      <button class="icon-btn t5-next" type="button" data-wastep="1" aria-label="Další týden">${I.back}</button>`;
+  } else if (mode === 'custom') {
+    pick = `<label class="wa-date"><span>Od</span><input type="date" id="waFrom" value="${esc(r.from)}"></label><label class="wa-date"><span>Do</span><input type="date" id="waTo" value="${esc(r.to)}"></label>`;
+  }
+  return `<div class="t5-weekbar wa-period"><div class="chips" role="group" aria-label="Období">${WA_MODES.map(([k, t]) => `<button type="button" class="chip${k === mode ? ' on' : ''}" data-wamode="${k}" aria-pressed="${k === mode}">${t}</button>`).join('')}</div>
+    ${pick}${mode === 'all' ? `<span class="spacer"></span><span class="wa-range small muted">${esc(r.label)}</span>` : ''}</div>`;
+}
+
+/* ---------- přehled ---------- */
+function waOverviewHtml(days, r) {
+  const wa = S.workAudit;
+  const t = waTotals(wa, days);
+  const is = waIssues(wa, days);
+  const withAtt = days.filter(d => d.hasAtt).length;
+  const fillTone = t.fill == null ? '' : t.fill >= 0.95 ? 'good' : t.fill < 0.85 ? 'crit' : 'warn';
+  const tiles = `<div class="stats wa-stats">${[
+    statTile('Lidé v práci', `${waN(t.shifts)}<em>${osobN(t.shifts)}</em>`, `ranní ${waN(t.amShifts)} · odpolední ${waN(t.pmShifts)}`),
+    statTile('Průměrně na pracovní den', waN(t.avgPeople, 1), `${lidiN(Math.round(t.avgPeople || 0))} · ${t.workDays} ${t.workDays === 1 ? 'pracovní den' : t.workDays <= 4 ? 'pracovní dny' : 'pracovních dní'}`),
+    statTile('Obsazenost proti plánu', waP(t.fill), t.plan ? `${waN(t.shifts)} z ${waN(t.plan)} plánovaných · absence ${waN(t.abs)}` : 'plán v souboru chybí', fillTone),
+    statTile('Zpracováno', `${waN(t.pcs)}<em>ks</em>`, t.perDay != null ? `průměrně ${waN(t.perDay)} ks na den s výkazem` : 'výkaz práce chybí', 'tab'),
+    statTile('Kusy na osobosměnu', waN(t.perShift, 1), `produktivní skupiny · ${waN(t.prodShifts)} ${osobN(t.prodShifts)}`),
+    statTile('Neproduktivní pozice', waP(t.unprodShare), `${waN(t.unprodShifts)} ${osobN(t.unprodShifts)}${t.noIsShifts ? ` · mimo IS ${waN(t.noIsShifts)}` : ''}`),
+  ].join('')}</div>`;
+  const list = (isos, max = 6) => isos.slice(0, max).map(iso => `<button class="link" type="button" data-waday="${iso}">${esc(ktDay(iso))}</button>`).join(', ') + (isos.length > max ? ` a ${isos.length - max} dalších` : '');
+  const items = [];
+  if (is.missingAtt.length) items.push(['w', `<b>${is.missingAtt.length} ${is.missingAtt.length === 1 ? 'pracovní den' : is.missingAtt.length <= 4 ? 'pracovní dny' : 'pracovních dní'} bez obsazenosti:</b> ${list(is.missingAtt)}`]);
+  if (is.missingWork.length) items.push(['w', `<b>${is.missingWork.length} ${is.missingWork.length === 1 ? 'pracovní den' : is.missingWork.length <= 4 ? 'pracovní dny' : 'pracovních dní'} bez výkazu práce:</b> ${list(is.missingWork)}`]);
+  if (is.mismatch.length) items.push(['w', `<b>Součet skupin nesedí s počtem lidí na směně:</b> ${is.mismatch.slice(0, 6).map(x => `<button class="link" type="button" data-waday="${x.iso}">${esc(ktDay(x.iso))} ${x.shift === 'am' ? 'ranní' : 'odpolední'} ${x.diff > 0 ? '+' : ''}${nf(x.diff, 2)}</button>`).join(', ')}${is.mismatch.length > 6 ? ` a ${is.mismatch.length - 6} dalších` : ''}`]);
+  if (is.noGroup.length) items.push(['w', `<b>${is.noGroup.length} ${operaceN(is.noGroup.length)} bez skupiny</b> (${waN(is.noGroup.reduce((x, o) => x + o.ks, 0))} ks se nezapočítá do žádného oddělení): ${is.noGroup.slice(0, 4).map(o => esc(o.name)).join(', ')}${is.noGroup.length > 4 ? '…' : ''} <button class="link" type="button" data-watabgo="nastaveni">Přiřadit skupiny</button>`]);
+  if (is.offWorked.length) items.push(['i', `<b>Práce o víkendu nebo ve svátek:</b> ${is.offWorked.slice(0, 6).map(x => `<button class="link" type="button" data-waday="${x.iso}">${esc(ktDay(x.iso))}${x.hol ? ` (${esc(x.hol)})` : ''}</button>`).join(', ')}${is.offWorked.length > 6 ? ` a ${is.offWorked.length - 6} dalších` : ''}`]);
+  if (is.off.length) items.push(['i', `<b>Nezapočítané operace:</b> ${is.off.slice(0, 5).map(o => `${esc(o.name)} (${waN(o.ks)} ks)`).join(', ')}${is.off.length > 5 ? '…' : ''}`]);
+  if (t.edits) items.push(['i', `<b>${t.edits} ${t.edits === 1 ? 'ručně upravená hodnota' : t.edits <= 4 ? 'ručně upravené hodnoty' : 'ručně upravených hodnot'}</b> s důvodem. <button class="link" type="button" data-watabgo="upravy">Seznam úprav</button>`]);
+  const check = `<div class="card wa-check"><h3>${items.some(x => x[0] === 'w') ? I.warn : I.check}Ke kontrole</h3>${items.length
+    ? `<ul class="wa-issues">${items.map(([k, h]) => `<li class="${k}">${h}</li>`).join('')}</ul>`
+    : '<p class="small">Všechny pracovní dny mají obsazenost i výkaz, součty skupin sedí a každá operace má skupinu.</p>'}</div>`;
+  const many = days.length > 62;
+  const points = many ? waWeeks(wa, days).map(w => ({ label: `T${weekById(w.id).w}`, v: w.t.shifts, plan: w.t.plan, ks: w.t.pcs, off: false,
+    tip: `${w.label} (${w.range})`, fill: w.t.fill })) : days.map(d => ({ label: `${d.day.d}.`, v: d.people, plan: d.plan, ks: d.pcsTotal, off: !d.day.work,
+    tip: `${ktDay(d.iso)}${d.day.hol ? ` · ${d.day.hol}` : ''}`, fill: d.fill }));
+  const unit = many ? 'po týdnech' : 'po dnech';
+  const charts = withAtt || t.pcs != null ? `<div class="wa-charts" id="waCharts">
+      ${waChart({ title: `Lidé v práci ${unit}`, sub: many ? 'osobosměny za týden · čárka = plán' : 'ranní + odpolední · čárka = plán', points, value: p => p.v, ref: p => p.plan, tone: 'c-acc',
+        tip: p => `${p.tip}: ${p.v == null ? 'bez obsazenosti' : `v práci ${waN(p.v)}${p.plan ? ` z plánu ${waN(p.plan)} (${waP(p.fill)})` : ''}`}`, legend: ['v práci', 'plán'] })}
+      ${waChart({ title: `Zpracované kusy ${unit}`, sub: 'jen započítané operace', points, value: p => p.ks, tone: 'c-tab', tip: p => `${p.tip}: ${p.ks == null ? 'bez výkazu' : `${waN(p.ks)} ks`}` })}
+      <div class="chart-tip" id="waTip" hidden></div>
+    </div>` : '';
+  return `${tiles}${charts}${check}
+    <p class="hint">Období: ${esc(r.label)}. Osobosměna = jeden člověk na jedné směně. Kusy na osobosměnu počítají jen skupiny, které nejsou neproduktivní ani mimo IS. Víkendy bez dat se nezobrazují, státní svátek ve všední den ano (ať je vidět, proč data chybí).</p>`;
+}
+
+/* Sloupcový graf jedné řady (lidé nebo kusy); volitelně čárka plánu na stejné ose. Víkend a svátek
+   má podbarvený pás. Hodnoty ukazuje tooltip a tabulka Dny. */
+function waChart({ title, sub, points, value, ref = null, tone, tip, legend = null }) {
+  const W = 560, H = 190, L = 40, R = 8, T = 14, B = 24;
+  const vals = points.map(value);
+  const refs = ref ? points.map(ref) : [];
+  const present = [...vals, ...refs].filter(v => v != null);
+  if (!present.length) return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption><div class="chart-empty">V tomto období bez údajů.</div></figure>`;
+  const top = niceMax(Math.max(...present) * 1.08);
+  const plotH = H - T - B;
+  const band = (W - L - R) / points.length;
+  const bw = Math.max(2, Math.min(18, band - 3));
+  const y = v => T + plotH - (Math.min(v, top) / top) * plotH;
+  const base = T + plotH;
+  const every = Math.ceil(points.length / 16);
+  const offs = points.map((p, i) => (p.off ? `<rect class="wa-offband" x="${(L + i * band).toFixed(1)}" y="${T}" width="${band.toFixed(1)}" height="${plotH}"/>` : '')).join('');
+  const marks = points.map((p, i) => {
+    const v = vals[i];
+    const x = L + i * band + (band - bw) / 2;
+    let mark = '';
+    if (v != null && v > 0) {
+      const yy = y(v);
+      const r = Math.min(3, bw / 2, base - yy);
+      mark = `<path class="bar" d="M${x.toFixed(1)} ${base}V${(yy + r).toFixed(1)}Q${x.toFixed(1)} ${yy.toFixed(1)} ${(x + r).toFixed(1)} ${yy.toFixed(1)}H${(x + bw - r).toFixed(1)}Q${(x + bw).toFixed(1)} ${yy.toFixed(1)} ${(x + bw).toFixed(1)} ${(yy + r).toFixed(1)}V${base}Z"/>`;
+    }
+    const rv = refs[i];
+    const tick = rv != null && rv > 0 ? `<line class="wa-plan" x1="${(x - 1.5).toFixed(1)}" x2="${(x + bw + 1.5).toFixed(1)}" y1="${y(rv).toFixed(1)}" y2="${y(rv).toFixed(1)}"/>` : '';
+    const label = i % every === 0 || i === points.length - 1 ? `<text class="xl" x="${(L + i * band + band / 2).toFixed(1)}" y="${H - 8}">${esc(p.label)}</text>` : '';
+    const hit = `<rect class="hit" x="${(L + i * band).toFixed(1)}" y="${T}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" data-tip="${esc(tip(p))}"/>`;
+    return mark + tick + label + hit;
+  }).join('');
+  const grid = [0, top / 2, top].map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${L - 6}" y="${(y(v) + 3.5).toFixed(1)}">${esc(nf(v, 0))}</text>`).join('');
+  const leg = legend ? `<span class="wa-legend"><i class="sw"></i>${esc(legend[0])}<i class="tk"></i>${esc(legend[1])}${points.some(p => p.off) ? '<i class="off"></i>víkend, svátek' : ''}</span>`
+    : points.some(p => p.off) ? '<span class="wa-legend"><i class="off"></i>víkend, svátek</span>' : '';
+  return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span>${leg}</figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${offs}${grid}${marks}</svg></figure>`;
+}
+
+/* ---------- dny ---------- */
+function waCheckTags(d) {
+  const out = [];
+  if (d.day.work && !d.hasAtt) out.push('<span class="tag wa-miss">bez obsazenosti</span>');
+  if (d.day.work && !d.hasWork) out.push('<span class="tag wa-miss">bez výkazu</span>');
+  ['am', 'pm'].forEach(k => { if (d.check[k]) out.push(`<span class="tag wa-diff" title="Součet skupin minus celkem na směně">${k === 'am' ? 'R' : 'O'} ${d.check[k] > 0 ? '+' : ''}${nf(d.check[k], 2)}</span>`); });
+  return out.join('');
+}
+function waEditedMark(d, keys) {
+  return keys.some(k => d.edited.includes(k)) ? '<sup class="wa-ed" title="Ručně upraveno">*</sup>' : '';
+}
+function waDaysHtml(days) {
+  const wa = S.workAudit;
+  const groups = ui.wa.groups;
+  const G = wa.groups;
+  const t = waTotals(wa, days);
+  const gHead = groups ? G.map(g => `<th class="r wa-g" title="${esc(g.name)} · ranní + odpolední">${esc(g.name)}</th>`).join('') : '';
+  const rows = days.map(d => {
+    const off = !d.day.work;
+    const gCells = groups ? G.map(g => { const x = d.g[g.id]; return `<td class="r num wa-g" data-label="${esc(g.name)}">${x.sum == null ? '<span class="muted">—</span>' : `${waN(x.sum, 2)}${x.am != null && x.pm != null ? `<small>${waN(x.am, 2)} + ${waN(x.pm, 2)}</small>` : ''}`}${waEditedMark(d, [`g.${g.id}.am`, `g.${g.id}.pm`])}</td>`; }).join('') : '';
+    const pcsEdited = d.edited.some(k => k.startsWith('pcs.'));
+    return `<tr class="wa-row${off ? ' wa-off' : ''}${d.edited.length ? ' wa-edited' : ''}" data-waday="${d.iso}" tabindex="0">
+      <td class="name" data-label="Den"><b class="num">${esc(ktDay(d.iso))}</b>${waDayTag(d.day)}${d.note ? `<span class="wa-note" title="${esc(d.note)}">${WA_NOTE_ICON}</span>` : ''}${waCheckTags(d) ? `<div class="wa-tags">${waCheckTags(d)}</div>` : ''}</td>
+      <td class="r num" data-label="Ranní v práci / plán">${waN(d.am.total, 2)}${waEditedMark(d, ['am.total'])}<small> / ${waN(d.am.plan, 2)}${waEditedMark(d, ['am.plan'])}</small></td>
+      <td class="r num" data-label="Absence">${waN(d.am.abs, 2)}${waEditedMark(d, ['am.abs'])}</td>
+      <td class="r num" data-label="Odpolední v práci / požadavek">${waN(d.pm.total, 2)}${waEditedMark(d, ['pm.total'])}<small> / ${waN(d.pm.plan, 2)}${waEditedMark(d, ['pm.plan'])}</small></td>
+      ${gCells}
+      <td class="r num" data-label="Celkem v práci"><b>${waN(d.people, 2)}</b></td>
+      <td class="r num" data-label="Obsazenost">${waP(d.fill)}</td>
+      <td class="r num" data-label="Kusy"><b>${waN(d.pcsTotal)}</b>${pcsEdited ? '<sup class="wa-ed" title="Ručně upraveno">*</sup>' : ''}</td>
+      <td class="r num" data-label="Ks na osobosměnu">${waN(d.perProd, 1)}</td>
+    </tr>`;
+  }).join('');
+  const foot = `<tr><td><b>Celkem</b> <span class="muted small">${t.workDays} prac. ${denN(t.workDays)}</span></td>
+    <td class="r num" data-label="Ranní v práci / plán">${waN(t.amShifts, 2)}</td><td class="r num" data-label="Absence">${waN(t.abs, 2)}</td><td class="r num" data-label="Odpolední v práci">${waN(t.pmShifts, 2)}</td>
+    ${groups ? G.map(g => `<td class="r num wa-g" data-label="${esc(g.name)}">${waN(t.group[g.id].shifts, 2)}</td>`).join('') : ''}
+    <td class="r num" data-label="Celkem v práci"><b>${waN(t.shifts, 2)}</b></td><td class="r num" data-label="Obsazenost">${waP(t.fill)}</td><td class="r num" data-label="Kusy"><b>${waN(t.pcs)}</b></td>
+    <td class="r num" data-label="Ks na osobosměnu">${waN(t.perShift, 1)}</td></tr>`;
+  return `<div class="toolbar wa-tools"><label class="switch"><input type="checkbox" id="waGroups"${groups ? ' checked' : ''}><span>Rozpad po skupinách</span></label>
+      <span class="spacer"></span><span class="tiny muted">Klepnutím na den otevřeš detail a úpravy. <sup class="wa-ed">*</sup> = ručně upraveno.</span></div>
+    <div class="table-card"><table class="stack wa-days${groups ? ' with-groups' : ''}"><thead><tr><th>Den</th><th class="r">Ranní <small>v práci / plán</small></th><th class="r">Absence</th><th class="r">Odpolední <small>v práci / pož.</small></th>${gHead}
+      <th class="r">Celkem</th><th class="r">Obsazenost</th><th class="r">Kusy</th><th class="r">Ks / os.</th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="8">${emptyState('V období nejsou žádné dny', 'Vyber jiné období.')}</td></tr>`}</tbody><tfoot>${days.length ? foot : ''}</tfoot></table></div>`;
+}
+
+/* ---------- týdny a měsíce ---------- */
+function waAggRows(list, attr) {
+  return list.map(x => `<tr class="wa-row" ${attr}="${esc(x.id)}" tabindex="0">
+    <td class="name" data-label="Období"><b>${esc(x.label)}</b>${x.range ? `<span class="muted small"> ${esc(x.range)}</span>` : ''}</td>
+    <td class="r num" data-label="Pracovní dny">${x.t.workDays}${x.t.offWorked ? `<small> +${x.t.offWorked} vík.</small>` : ''}</td>
+    <td class="r num" data-label="Ranní">${waN(x.t.amShifts, 2)}</td><td class="r num" data-label="Odpolední">${waN(x.t.pmShifts, 2)}</td>
+    <td class="r num" data-label="Celkem"><b>${waN(x.t.shifts, 2)}</b></td><td class="r num" data-label="Plán">${waN(x.t.plan, 2)}</td>
+    <td class="r num" data-label="Obsazenost">${waP(x.t.fill)}</td><td class="r num" data-label="Absence">${waN(x.t.abs, 2)}</td>
+    <td class="r num" data-label="Kusy"><b>${waN(x.t.pcs)}</b></td><td class="r num" data-label="Ks na osobosměnu">${waN(x.t.perShift, 1)}</td>
+    <td class="r num" data-label="Úpravy">${x.t.edits || '<span class="muted">—</span>'}</td></tr>`).join('');
+}
+function waAggTable(title, hint, rows) {
+  return `<div class="card"><h3>${title}</h3><p class="small muted">${hint}</p><div class="table-card flat"><table class="stack wa-agg"><thead><tr><th>Období</th><th class="r">Prac. dny</th><th class="r">Ranní</th><th class="r">Odpolední</th><th class="r">Celkem</th><th class="r">Plán</th><th class="r">Obsazenost</th><th class="r">Absence</th><th class="r">Kusy</th><th class="r">Ks / os.</th><th class="r">Úpravy</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+}
+function waWeeksHtml(days) {
+  const wa = S.workAudit;
+  const weeks = waWeeks(wa, days);
+  const months = waMonths(wa, days);
+  return waAggTable('Po týdnech', 'Osobosměny ranní a odpolední, plán, obsazenost a kusy za týden (pondělí až neděle). Klepnutím otevřeš dny týdne.', waAggRows(weeks, 'data-waweek'))
+    + (months.length > 1 || ui.wa.mode !== 'month' ? waAggTable('Po měsících', 'Klepnutím otevřeš měsíc.', waAggRows(months, 'data-wamonth')) : '');
+}
+
+/* ---------- skupiny a operace ---------- */
+function waGroupsHtml(days) {
+  const wa = S.workAudit;
+  const t = waTotals(wa, days);
+  const work = Math.max(1, t.workDays);
+  const ops = waOpTotals(wa, days);
+  const rows = wa.groups.map(g => {
+    const x = t.group[g.id];
+    const n = wa.ops.filter(o => o.group === g.id).length;
+    return `<tr><td class="name" data-label="Skupina"><b>${esc(g.name)}</b> ${waKindTag(g)}</td>
+      <td class="r num" data-label="Ranní">${waN(x.am, 2)}</td><td class="r num" data-label="Odpolední">${waN(x.pm, 2)}</td>
+      <td class="r num" data-label="Celkem"><b>${waN(x.shifts, 2)}</b></td><td class="r num" data-label="Průměr na prac. den">${x.shifts == null ? '—' : nf(x.shifts / work, 1)}</td>
+      <td class="r num" data-label="Kusy">${g.noIs ? '<span class="muted">mimo IS</span>' : waN(x.pcs)}</td><td class="r num" data-label="Ks na osobosměnu">${waN(x.per, 1)}</td>
+      <td class="r num" data-label="Operace">${n || '<span class="muted">—</span>'}</td></tr>`;
+  }).join('');
+  const opRows = ops.map(o => `<tr${o.on ? '' : ' class="wa-offop"'}><td class="wrap" data-label="Operace">${esc(o.name)}</td>
+      <td data-label="Skupina">${o.group ? esc(waGroupName(o.group)) : '<span class="tag wa-miss">bez skupiny</span>'}</td>
+      <td data-label="Započítává se">${o.on ? 'ano' : '<span class="muted">ne</span>'}</td><td class="r num" data-label="Kusy"><b>${waN(o.ks)}</b></td></tr>`).join('');
+  return `<div class="card"><h3>Skupiny</h3><p class="small muted">Osobosměny podle sloupců obsazenosti a kusy operací přiřazených skupině. Neproduktivní pozice a projekty mimo IS se do kusů na osobosměnu nepočítají.</p>
+      <div class="table-card flat"><table class="stack wa-grp"><thead><tr><th>Skupina</th><th class="r">Ranní</th><th class="r">Odpolední</th><th class="r">Celkem</th><th class="r">Ø na prac. den</th><th class="r">Kusy</th><th class="r">Ks / os.</th><th class="r">Operace</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+    <div class="card"><div class="card-head"><h3>Operace v období</h3><button class="btn sec small" type="button" data-watabgo="nastaveni">Upravit operace</button></div>
+      ${ops.length ? `<div class="table-card flat"><table class="stack wa-ops"><thead><tr><th>Operace</th><th>Skupina</th><th>Započítává se</th><th class="r">Kusy</th></tr></thead><tbody>${opRows}</tbody></table></div>` : '<p class="small muted">V období není výkaz práce.</p>'}</div>`;
+}
+
+/* ---------- úpravy ---------- */
+function waEditsHtml(r) {
+  const wa = S.workAudit;
+  const all = ui.wa.allEdits;
+  const list = waEditList(wa, all ? '' : r.from, all ? '' : r.to);
+  const notes = Object.entries(wa.notes).filter(([iso]) => all || (iso >= r.from && iso <= r.to)).sort();
+  const fmt = v => (v == null ? '<span class="muted">prázdné</span>' : nf(v, 2));
+  const rows = list.map(e => `<tr><td class="num nowrap" data-label="Den"><button class="linkish" type="button" data-waday="${e.iso}">${esc(ktDay(e.iso))} ${esc(e.iso.slice(0, 4))}</button></td>
+      <td data-label="Hodnota">${esc(e.label)}</td><td class="r num" data-label="Původně">${fmt(e.was)}${e.now !== e.was ? `<small class="warn-t" title="Soubor se mezitím nahrál znovu"> (teď ${fmt(e.now)})</small>` : ''}</td>
+      <td class="r num" data-label="Nově"><b>${fmt(e.v)}</b></td><td class="wrap" data-label="Důvod">${esc(e.note || '—')}</td>
+      <td data-label="Upravil">${esc(e.by || '—')}<small class="muted"> ${esc(tsText(e.at))}</small></td>
+      <td class="actions"><button class="btn ghost small" type="button" data-waundo="${e.iso}|${esc(e.key)}">Zrušit úpravu</button></td></tr>`).join('');
+  return `<div class="toolbar"><label class="switch"><input type="checkbox" id="waAllEdits"${all ? ' checked' : ''}><span>Všechny úpravy (ne jen za období)</span></label></div>
+    <div class="card"><h3>Ručně upravené hodnoty</h3><p class="small muted">Každá úprava má důvod, kdo a kdy ji udělal a původní hodnotu ze souboru. Zrušením platí znovu hodnota ze souboru. Úpravy jsou v PDF i Excelu pro auditora.</p>
+      ${list.length ? `<div class="table-card flat"><table class="stack wa-edits"><thead><tr><th>Den</th><th>Hodnota</th><th class="r">Původně</th><th class="r">Nově</th><th>Důvod</th><th>Upravil</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : '<p class="small">Žádná ruční úprava. Hodnotu upravíš v detailu dne (záložka Dny).</p>'}</div>
+    ${notes.length ? `<div class="card"><h3>Poznámky ke dnům</h3><ul class="wa-notes">${notes.map(([iso, n]) => `<li><button class="linkish num" type="button" data-waday="${iso}">${esc(ktDay(iso))} ${esc(iso.slice(0, 4))}</button><p>${esc(n)}</p></li>`).join('')}</ul></div>` : ''}`;
+}
+
+/* ---------- nastavení ---------- */
+function waSettingsHtml() {
+  const wa = S.workAudit;
+  const tot = new Map();
+  Object.values(wa.pcs).forEach(day => Object.entries(day).forEach(([id, n]) => tot.set(id, (tot.get(id) || 0) + n)));
+  const gOpts = sel => `<option value="">— bez skupiny —</option>${wa.groups.map(g => `<option value="${esc(g.id)}"${g.id === sel ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}`;
+  const groups = wa.groups.map(g => `<div class="wa-grp-row" data-wag="${esc(g.id)}">
+      <label class="field wa-gname"><span>Název skupiny</span><input value="${esc(g.name)}" maxlength="80" data-wagf="name"></label>
+      <label class="field wa-letter"><span>Ranní</span><input value="${esc(g.am)}" maxlength="3" data-wagf="am" placeholder="—" autocapitalize="characters"></label>
+      <label class="field wa-letter"><span>Odpolední</span><input value="${esc(g.pm)}" maxlength="3" data-wagf="pm" placeholder="—" autocapitalize="characters"></label>
+      <div class="wa-flags">
+        <label class="check"><input type="checkbox" data-wagf="unprod"${g.unprod ? ' checked' : ''}><span>Neproduktivní pozice</span></label>
+        <label class="check"><input type="checkbox" data-wagf="noIs"${g.noIs ? ' checked' : ''}><span>Tento projekt není evidován v IS</span></label>
+      </div>
+      <button class="icon-btn" type="button" data-wagdel="${esc(g.id)}" aria-label="Smazat skupinu ${esc(g.name)}" title="Smazat skupinu">${I.x}</button>
+    </div>`).join('');
+  const q = norm(ui.wa.opQ || '');
+  const f = ui.wa.opFilter || 'all';
+  const ops = wa.ops.filter(o => (!q || norm(o.name).includes(q)) && (f === 'all' || (f === 'nogroup' ? o.on && !o.group : !o.on)))
+    .sort((a, b) => (tot.get(b.id) || 0) - (tot.get(a.id) || 0) || a.name.localeCompare(b.name, 'cs'));
+  const noGroup = wa.ops.filter(o => o.on && !o.group).length;
+  const opRows = ops.map(o => `<tr data-wao="${esc(o.id)}"${o.on ? '' : ' class="wa-offop"'}>
+      <td data-label="Zohlednit"><label class="switch"><input type="checkbox" data-waof="on"${o.on ? ' checked' : ''} aria-label="Zohlednit ${esc(o.name)}"><span></span></label></td>
+      <td class="wrap name" data-label="Operace"><b>${esc(o.name)}</b></td>
+      <td data-label="Skupina"><select data-waof="group" aria-label="Skupina pro ${esc(o.name)}">${gOpts(o.group)}</select></td>
+      <td class="r num" data-label="Kusy celkem">${waN(tot.get(o.id) || 0)}</td></tr>`).join('');
+  const cols = (kind, keys) => keys.map(k => `<label class="field wa-letter"><span>${esc(WA_COL_LABEL[k])}</span><input value="${esc(wa.cols[kind][k])}" maxlength="3" data-wacol="${kind}.${k}" placeholder="—" autocapitalize="characters"></label>`).join('');
+  const files = wa.files.slice().reverse();
+  return `<div class="card"><div class="card-head"><div><h3>Skupiny (oddělení)</h3><p class="small muted">Každá skupina má sloupec v souboru obsazenosti pro ranní a odpolední směnu (prázdné = skupina na směně není). <b>Neproduktivní pozice</b> se počítají do lidí v práci, ale ne do kusů na osobosměnu. <b>Projekt mimo IS</b> se ve výkazu práce neobjeví, takže se jeho lidé do výkonu nepočítají a nekazí ho.</p></div>
+      <button class="btn sec small" type="button" data-wagadd>Přidat skupinu</button></div>
+      <div class="wa-grp-list">${groups || '<p class="small muted">Žádná skupina.</p>'}</div></div>
+    <div class="card"><div class="card-head"><div><h3>Operace z výkazu práce</h3><p class="small muted">Zaškrtnuté operace se započítají do kusů. Skupina určuje, ke kterému oddělení kusy patří (třeba Pískování – hala 2 → Obsluha tryskací kabiny). Nové operace z dalšího výkazu se přidají samy a skupinu dostanou podle názvu.</p></div>
+      ${noGroup ? `<button class="btn sec small" type="button" data-waguess>Doplnit skupiny podle názvu</button>` : ''}</div>
+      ${wa.ops.length ? `<div class="toolbar"><input type="search" id="waOpQ" class="grow" placeholder="Hledat operaci…" aria-label="Hledat operaci" value="${esc(ui.wa.opQ || '')}">
+        <div class="chips">${[['all', `Vše (${wa.ops.length})`], ['nogroup', `Bez skupiny (${noGroup})`], ['off', `Nezapočítané (${wa.ops.filter(o => !o.on).length})`]].map(([k, t]) => `<button type="button" class="chip${k === f ? ' on' : ''}" data-waopf="${k}" aria-pressed="${k === f}">${t}</button>`).join('')}</div></div>
+        <div class="table-card flat"><table class="stack wa-opset"><thead><tr><th>Zohlednit</th><th>Operace</th><th>Skupina</th><th class="r">Kusy celkem</th></tr></thead><tbody>${opRows || `<tr><td colspan="4"><p class="small muted">Nic neodpovídá.</p></td></tr>`}</tbody></table></div>`
+        : '<p class="small">Operace se objeví po nahrání prvního výkazu práce.</p>'}</div>
+    <div class="grid-2">
+      <div class="card"><h3>Sloupce souboru obsazenosti</h3><p class="small muted">Písmena sloupců jako v Excelu. Sloupce skupin jsou nahoře u skupin.</p><div class="wa-colgrid">${cols('att', Object.keys(WA_COLS.att))}</div></div>
+      <div class="card"><h3>Sloupce výkazu práce</h3><p class="small muted">Datum, název operace a počet kusů.</p><div class="wa-colgrid">${cols('work', Object.keys(WA_COLS.work))}</div>
+        <button class="btn ghost small" type="button" data-wacolreset>Vrátit výchozí sloupce</button></div>
+    </div>
+    <div class="card"><h3>Nahrané soubory</h3>${files.length ? `<div class="table-card flat"><table class="stack wa-files"><thead><tr><th>Soubor</th><th>Obsah</th><th>Období</th><th class="r">Dní</th><th class="r">Řádků</th><th>Nahrál</th></tr></thead><tbody>${files.map(x => `<tr>
+        <td class="wrap name" data-label="Soubor"><b>${esc(x.name || '—')}</b></td><td data-label="Obsah">${x.kind === 'work' ? 'výkaz práce' : 'obsazenost'}</td>
+        <td data-label="Období" class="num">${x.from ? `${esc(dayText(x.from))} – ${esc(dayText(x.to))}` : '—'}</td><td class="r num" data-label="Dní">${x.days}</td><td class="r num" data-label="Řádků">${x.rows}</td>
+        <td data-label="Nahrál">${esc(x.by || '—')}<small class="muted"> ${esc(tsText(x.at))}</small></td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">Zatím nic.</p>'}
+      ${waSpan(wa) ? `<hr class="sep"><div class="row gap"><button class="btn ghost small wa-danger" type="button" data-waclear>Smazat data za ${esc(waRange().label)}…</button><span class="tiny muted">Obsazenost, kusy, úpravy a poznámky. Předchozí stav zůstane v historii verzí.</span></div>` : ''}</div>`;
+}
+
+/* ---------- detail dne: hodnoty, úpravy s důvodem, poznámka ---------- */
+function waField(wa, iso, key, label) {
+  const raw = waRaw(wa, iso, key);
+  const e = (wa.edits[iso] || {})[key];
+  const val = e ? e.v : raw;
+  return `<label class="field wa-f${e ? ' edited' : ''}" data-wakey="${esc(key)}"><span>${esc(label)}</span>
+    <span class="wa-fin"><input name="${esc(key)}" value="${val == null ? '' : esc(String(val).replace('.', ','))}" inputmode="decimal" autocomplete="off" data-raw="${raw == null ? '' : raw}">
+    <button class="icon-btn" type="button" data-warevert title="Vrátit hodnotu ze souboru" aria-label="Vrátit hodnotu ze souboru"${e ? '' : ' hidden'}>${WA_UNDO_ICON}</button></span>
+    <small class="wa-src-v">${raw == null ? 'v souboru prázdné' : `v souboru ${esc(nf(raw, 2))}`}${e ? ` · upravil ${esc(e.by || '—')}: ${esc(e.note || '')}` : ''}</small></label>`;
+}
+function waParseInput(v) {
+  const t = String(v || '').trim();
+  if (!t) return null;
+  const n = toNum(t);
+  return n == null || n < 0 || n > 100000 ? NaN : Math.round(n * 100) / 100;
+}
+async function waDayDialog(iso) {
+  const wa = S.workAudit;
+  const d = waDay(wa, iso);
+  const G = wa.groups;
+  const shiftGroups = k => G.filter(g => g[k] || waVal(wa, iso, `g.${g.id}.${k}`) != null);
+  const opIds = wa.ops.filter(o => waVal(wa, iso, `pcs.${o.id}`) != null || (wa.edits[iso] || {})[`pcs.${o.id}`]).map(o => o.id);
+  const opField = o => waField(wa, iso, `pcs.${o.id}`, `${o.name}${o.on ? '' : ' (nezapočítává se)'}${o.group ? '' : ' · bez skupiny'}`);
+  const others = wa.ops.filter(o => !opIds.includes(o.id));
+  const html = `<div class="wa-dhead">${waDayTag(d.day) || `<span class="tag">${esc(waDayType(d.day))}</span>`}${!d.hasAtt ? '<span class="tag wa-miss">obsazenost ze souboru chybí</span>' : ''}${!d.hasWork ? '<span class="tag wa-miss">výkaz práce chybí</span>' : ''}</div>
+    <fieldset class="wa-fs"><legend>${I.sun}Ranní směna</legend><div class="wa-fgrid">
+      ${waField(wa, iso, 'am.plan', 'Mělo dorazit')}${waField(wa, iso, 'am.total', 'Celkem v práci')}${waField(wa, iso, 'am.abs', 'Absence')}
+      ${shiftGroups('am').map(g => waField(wa, iso, `g.${g.id}.am`, g.name)).join('')}</div><p class="small wa-sum" data-wasum="am"></p></fieldset>
+    <fieldset class="wa-fs"><legend>${I.moon}Odpolední směna</legend><div class="wa-fgrid">
+      ${waField(wa, iso, 'pm.plan', 'Požadavek')}${waField(wa, iso, 'pm.total', 'Skutečně v práci')}
+      ${shiftGroups('pm').map(g => waField(wa, iso, `g.${g.id}.pm`, g.name)).join('')}</div><p class="small wa-sum" data-wasum="pm"></p></fieldset>
+    <fieldset class="wa-fs"><legend>${I.chart}Kusy podle operací</legend><div class="wa-fgrid wa-ops-f" id="waOpsF">${wa.ops.filter(o => opIds.includes(o.id)).map(opField).join('') || '<p class="small muted wa-noops">Ve výkazu práce za tento den nic není.</p>'}</div>
+      ${others.length ? `<div class="row gap wa-addop"><select id="waAddOp" aria-label="Přidat operaci"><option value="">Přidat kusy jiné operace…</option>${others.map(o => `<option value="${esc(o.id)}">${esc(o.name)}</option>`).join('')}</select></div>` : ''}</fieldset>
+    <label class="field"><span>Důvod úpravy <small class="muted">(povinný, když měníš hodnotu; uvidí ho auditor)</small></span><textarea name="reason" rows="2" maxlength="300" placeholder="Např. oprava podle směnového hlášení, chyběl záznam brigádníka…"></textarea></label>
+    <label class="field"><span>Poznámka ke dni</span><textarea name="note" rows="2" maxlength="600" placeholder="Např. odstávka stroje, inventura, školení…">${esc(d.note)}</textarea></label>`;
+  const values = form => {
+    const out = {};
+    $$('[data-wakey]', form).forEach(f => { out[f.dataset.wakey] = waParseInput($('input', f).value); });
+    return out;
+  };
+  const changed = form => Object.entries(values(form)).filter(([k, v]) => !Number.isNaN(v) && v !== waVal(wa, iso, k));
+  const result = await dialog({
+    title: `${dayLong(iso)} ${iso.slice(0, 4)}`, ok: 'Uložit', wide: true, html,
+    onOpen: dlg => {
+      const sums = () => ['am', 'pm'].forEach(k => {
+        const v = values(dlg);
+        const parts = G.map(g => v[`g.${g.id}.${k}`]).filter(x => x != null && !Number.isNaN(x));
+        const total = v[`${k}.total`];
+        const box = $(`[data-wasum="${k}"]`, dlg);
+        if (!parts.length || total == null || Number.isNaN(total)) { box.textContent = ''; box.className = 'small wa-sum'; return; }
+        const s = Math.round(parts.reduce((a, b) => a + b, 0) * 100) / 100;
+        box.textContent = s === total ? `Součet skupin ${nf(s, 2)} = celkem v práci.` : `Součet skupin ${nf(s, 2)}, celkem v práci ${nf(total, 2)} (rozdíl ${s > total ? '+' : ''}${nf(s - total, 2)}).`;
+        box.className = `small wa-sum ${s === total ? 'ok' : 'bad'}`;
+      });
+      const mark = f => {
+        const input = $('input', f);
+        const raw = input.dataset.raw === '' ? null : +input.dataset.raw;
+        const v = waParseInput(input.value);
+        f.classList.toggle('edited', !Number.isNaN(v) && v !== raw);
+        f.classList.toggle('bad', Number.isNaN(v));
+        $('[data-warevert]', f).hidden = !(v !== raw);
+      };
+      dlg.addEventListener('input', event => { const f = event.target.closest('[data-wakey]'); if (f) { mark(f); sums(); } });
+      dlg.addEventListener('click', event => {
+        const b = event.target.closest('[data-warevert]');
+        if (!b) return;
+        const f = b.closest('[data-wakey]');
+        const input = $('input', f);
+        input.value = input.dataset.raw === '' ? '' : String(+input.dataset.raw).replace('.', ',');
+        mark(f); sums();
+      });
+      const add = $('#waAddOp', dlg);
+      if (add) add.onchange = () => {
+        const o = wa.ops.find(x => x.id === add.value);
+        if (!o) return;
+        $('.wa-noops', dlg)?.remove();
+        $('#waOpsF', dlg).insertAdjacentHTML('beforeend', opField(o));
+        add.querySelector(`option[value="${CSS.escape(o.id)}"]`).remove();
+        add.value = '';
+        $(`[data-wakey="pcs.${CSS.escape(o.id)}"] input`, dlg).focus();
+      };
+      sums();
+    },
+    validate: form => {
+      if (Object.values(values(form)).some(v => Number.isNaN(v))) return 'Některá hodnota není číslo od 0 do 100 000.';
+      // důvod je potřeba u nové hodnoty; návrat k hodnotě ze souboru ho nepotřebuje
+      if (changed(form).some(([key, v]) => v !== waRaw(wa, iso, key)) && !form.elements.reason.value.trim()) return 'Napiš důvod úpravy. Auditor ho uvidí u každé změněné hodnoty.';
+      return '';
+    },
+  });
+  if (result.value !== 'ok') return;
+  const form = result.form;
+  const reason = form.elements.reason.value.trim();
+  const list = changed(form);
+  const now = Date.now();
+  list.forEach(([k, v]) => waSetEdit(wa, iso, k, v === waRaw(wa, iso, k) ? undefined : v, reason, ui.me.label, now));
+  const note = form.elements.note.value.trim().slice(0, 600);
+  if (note) wa.notes[iso] = note; else delete wa.notes[iso];
+  if (list.length || note !== d.note) { save(); renderWorkAudit(); toast(list.length ? `Upraveno ${list.length} ${list.length === 1 ? 'hodnota' : list.length <= 4 ? 'hodnoty' : 'hodnot'}.` : 'Poznámka uložena.'); }
+}
+
+/* ---------- nahrání souborů ---------- */
+async function waImport(kind, file) {
+  if (!file) return;
+  const wa = S.workAudit;
+  let sheets;
+  try { sheets = await readTable(file); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
+  const att = kind === 'att';
+  const parsed = att ? waParseAttendance(sheets, wa.cols.att, wa.groups) : waParseWork(sheets, wa.cols.work);
+  const isos = Object.keys(att ? parsed.days : parsed.byDay).sort();
+  const c = att ? wa.cols.att : wa.cols.work;
+  if (!isos.length) {
+    const go = await dialog({ title: 'V souboru nejsou žádná data', ok: 'Nastavit sloupce', cancel: 'Zavřít',
+      html: `<p>V souboru <b>${esc(file.name)}</b> není žádný řádek s datem ve sloupci <b>${esc(c.date)}</b>${att ? ' a s čísly obsazenosti' : `, operací ve sloupci <b>${esc(c.op)}</b> a kusy ve sloupci <b>${esc(c.ks)}</b>`}.</p>
+        <p class="small muted">Je to ${att ? 'soubor obsazenosti' : 'výkaz práce'}? Když má sloupce jinde, nastav je v Nastavení auditu.</p>` });
+    if (go.value === 'ok') { ui.wa.tab = 'nastaveni'; renderWorkAudit(); }
+    return;
+  }
+  const replace = isos.filter(iso => (att ? wa.days : wa.pcs)[iso]);
+  const keepEdits = isos.reduce((n, iso) => n + Object.keys(wa.edits[iso] || {}).filter(k => att !== k.startsWith('pcs.')).length, 0);
+  const off = isos.filter(iso => { const [y, m, dd] = iso.split('-').map(Number); return !mkDay(y, m, dd).work; });
+  let preview;
+  let fresh = [];
+  if (att) {
+    preview = `<table class="wa-prev"><thead><tr><th>Den</th><th class="r">Ranní</th><th class="r">Odpolední</th><th class="r">Součet skupin</th></tr></thead><tbody>${isos.slice(0, 8).map(iso => {
+      const x = parsed.days[iso];
+      const gs = Object.values(x.g).reduce((s, v) => s + (v[0] || 0) + (v[1] || 0), 0);
+      const [y, m, dd] = iso.split('-').map(Number);
+      return `<tr><td class="num">${esc(ktDay(iso))} ${waDayTag(mkDay(y, m, dd))}</td><td class="r num">${waN(x.am.total, 2)} / ${waN(x.am.plan, 2)}</td><td class="r num">${waN(x.pm.total, 2)} / ${waN(x.pm.plan, 2)}</td><td class="r num">${nf(gs, 2)}</td></tr>`;
+    }).join('')}</tbody></table>${isos.length > 8 ? `<p class="tiny muted">… a ${isos.length - 8} dalších dní</p>` : ''}`;
+  } else {
+    const known = new Set(wa.ops.map(o => norm(o.name)));
+    fresh = Object.keys(parsed.ops).filter(n => !known.has(norm(n)));
+    const top = Object.entries(parsed.ops).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    preview = `<table class="wa-prev"><thead><tr><th>Operace</th><th>Skupina</th><th class="r">Kusy</th></tr></thead><tbody>${top.map(([n, ks]) => {
+      const op = wa.ops.find(o => norm(o.name) === norm(n));
+      const g = op ? op.group : waGuessGroup(n, wa.groups);
+      return `<tr><td>${esc(n)}${op ? '' : ' <span class="tag acc">nová</span>'}</td><td>${g ? esc(waGroupName(g)) : '<span class="tag wa-miss">bez skupiny</span>'}</td><td class="r num">${waN(ks)}</td></tr>`;
+    }).join('')}</tbody></table>${Object.keys(parsed.ops).length > 8 ? `<p class="tiny muted">… a ${Object.keys(parsed.ops).length - 8} dalších operací</p>` : ''}`;
+  }
+  const total = att ? null : Object.values(parsed.ops).reduce((a, b) => a + b, 0);
+  const res = await dialog({
+    title: att ? 'Nahrát obsazenost' : 'Nahrát výkaz práce', ok: 'Nahrát', wide: true,
+    html: `<p><b>${esc(file.name)}</b>: ${isos.length} ${denN(isos.length)} (${esc(dayText(parsed.from))} – ${esc(dayText(parsed.to))}), ${parsed.rows} ${parsed.rows === 1 ? 'řádek' : parsed.rows <= 4 ? 'řádky' : 'řádků'}${total != null ? `, ${waN(total)} ks, ${Object.keys(parsed.ops).length} ${operaceN(Object.keys(parsed.ops).length)}` : ''}.</p>
+      <ul class="wa-imp">
+        ${off.length ? `<li>${off.length} ${denN(off.length)} ${off.length >= 2 && off.length <= 4 ? 'jsou' : 'je'} víkend nebo svátek (${off.slice(0, 4).map(i => esc(ktDay(i))).join(', ')}${off.length > 4 ? '…' : ''}).</li>` : ''}
+        ${replace.length ? `<li><b>${replace.length} ${replace.length === 1 ? 'den už je nahraný' : replace.length <= 4 ? 'dny už jsou nahrané' : 'dní už je nahraných'}</b>, nahradí se daty ze souboru.${keepEdits ? ` Ruční úpravy (${keepEdits}) zůstanou a dál platí.` : ''}</li>` : ''}
+        ${parsed.skipped ? `<li>Přeskočeno ${parsed.skipped} ${parsed.skipped === 1 ? 'řádek' : parsed.skipped <= 4 ? 'řádky' : 'řádků'} bez data${att ? ' nebo bez čísel' : ', operace nebo kusů'}.</li>` : ''}
+        ${fresh.length ? `<li><b>${fresh.length} ${fresh.length === 1 ? 'nová operace' : fresh.length <= 4 ? 'nové operace' : 'nových operací'}</b>: započítají se a skupinu dostanou podle názvu. Zkontroluj je v Nastavení.</li>` : ''}
+      </ul>${preview}
+      <p class="tiny muted">Sloupce: ${att ? `datum ${esc(c.date)}, ranní ${esc(c.amTotal || '—')} v práci / ${esc(c.amPlan || '—')} plán, odpolední ${esc(c.pmTotal || '—')} / ${esc(c.pmPlan || '—')}` : `datum ${esc(c.date)}, operace ${esc(c.op)}, kusy ${esc(c.ks)}`}. Změníš je v Nastavení.</p>`,
+  });
+  if (res.value !== 'ok') return;
+  const meta = { name: file.name, by: ui.me.label || '', at: Date.now() };
+  const r = att ? waApplyAttendance(wa, parsed, meta) : waApplyWork(wa, parsed, meta);
+  store.note = { kind: 'workaudit', text: `Audit: nahrán${att ? 'a obsazenost' : ' výkaz práce'} ${file.name} (${r.days} ${denN(r.days)}, ${dayText(parsed.from)} – ${dayText(parsed.to)}${!att && r.added.length ? `, ${r.added.length} ${r.added.length === 1 ? 'nová operace' : r.added.length <= 4 ? 'nové operace' : 'nových operací'}` : ''})` };
+  save();
+  Object.assign(ui.wa, { mode: 'month', month: parsed.to.slice(0, 7) });
+  if (ui.wa.tab === 'nastaveni') ui.wa.tab = 'prehled';
+  renderWorkAudit();
+  const ng = !att ? r.added.filter(o => !o.group).length : 0;
+  toast(att ? `Obsazenost nahrána: ${r.days} ${denN(r.days)}.` : `Výkaz práce nahrán: ${r.days} ${denN(r.days)}${ng ? `, ${ng} ${operaceN(ng)} bez skupiny` : ''}.`);
+}
+
+/* ---------- ovládání ---------- */
+function waSetGroup(id, field, value) {
+  const g = S.workAudit.groups.find(x => x.id === id);
+  if (!g) return;
+  if (field === 'name') { const v = String(value).trim().slice(0, 80); if (!v) { renderWorkAudit(); return; } g.name = v; }
+  else if (field === 'am' || field === 'pm') {
+    const v = waLetter(value);
+    if (String(value).trim() && !v) { toast('Sloupec je písmeno jako v Excelu (A až ZZZ).', true); renderWorkAudit(); return; }
+    g[field] = v;
+  } else g[field] = !!value;
+  save();
+  renderWorkAudit();
+}
+async function waAddGroup() {
+  const name = await promptBox('Nová skupina', 'Název skupiny (oddělení)', '', 'Přidat');
+  if (!name) return;
+  const wa = S.workAudit;
+  if (wa.groups.length >= 20) { toast('Skupin může být nejvýš 20.', true); return; }
+  let i = 1;
+  while (wa.groups.some(g => g.id === `g${i}`)) i += 1;
+  wa.groups.push({ id: `g${i}`, name: name.slice(0, 80), am: '', pm: '', unprod: false, noIs: false });
+  save();
+  renderWorkAudit();
+}
+async function waDelGroup(id) {
+  const wa = S.workAudit;
+  const g = wa.groups.find(x => x.id === id);
+  if (!g) return;
+  const n = wa.ops.filter(o => o.group === id).length;
+  if (!await confirmBox('Smazat skupinu?', `Skupina „${g.name}“ zmizí z přehledů${n ? ` a ${n} ${operaceN(n)} zůstane bez skupiny` : ''}. Čísla, která už jsou nahraná, se při dalším nahrání obsazenosti pro ni nenačtou.`, 'Smazat', true)) return;
+  wa.groups = wa.groups.filter(x => x.id !== id);
+  wa.ops.forEach(o => { if (o.group === id) o.group = ''; });
+  Object.values(wa.days).forEach(d => { delete d.g[id]; });
+  Object.values(wa.edits).forEach(day => Object.keys(day).forEach(k => { if (k.startsWith(`g.${id}.`)) delete day[k]; }));
+  save();
+  renderWorkAudit();
+}
+async function waClearRange() {
+  const r = waRange();
+  const wa = S.workAudit;
+  const isos = [...new Set([...Object.keys(wa.days), ...Object.keys(wa.pcs), ...Object.keys(wa.edits), ...Object.keys(wa.notes)])].filter(i => i >= r.from && i <= r.to);
+  if (!isos.length) { toast('Ve vybraném období nejsou žádná data.'); return; }
+  if (!await confirmBox('Smazat data auditu?', `Za ${r.label} se smaže obsazenost, kusy, ruční úpravy a poznámky (${isos.length} ${denN(isos.length)}). Skupiny a operace zůstanou. Předchozí stav najdeš v historii verzí v Nastavení.`, 'Smazat', true)) return;
+  isos.forEach(i => { delete wa.days[i]; delete wa.pcs[i]; delete wa.edits[i]; delete wa.notes[i]; });
+  store.note = { kind: 'workaudit', text: `Audit: smazána data za ${r.label} (${isos.length} ${denN(isos.length)})` };
+  save();
+  renderWorkAudit();
+}
+function waStep(dir) {
+  if (ui.wa.mode === 'week') ui.wa.week = shiftWeek(ui.wa.week, dir) || ui.wa.week;
+  else {
+    const [y, m] = ui.wa.month.split('-').map(Number);
+    const t = (y * 12 + m - 1) + dir;
+    ui.wa.month = `${Math.floor(t / 12)}-${String(t % 12 + 1).padStart(2, '0')}`;
+  }
+  renderWorkAudit();
+}
+
+function bindWorkAudit() {
+  const view = $('#view-audit');
+  $('#waTabs').addEventListener('click', event => {
+    const b = event.target.closest('[data-watab]');
+    if (!b) return;
+    ui.wa.tab = b.dataset.watab;
+    renderWorkAudit();
+  });
+  $('#waAtt').onclick = () => $('#waAttFile').click();
+  $('#waWork').onclick = () => $('#waWorkFile').click();
+  $('#waAttFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waImport('att', f); };
+  $('#waWorkFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waImport('work', f); };
+  $('#waXlsx').onclick = exportWaXlsx;
+  $('#waPdf').onclick = event => exportWaPdf(event.currentTarget);
+  const wv = $('#waView');
+  wv.addEventListener('click', async event => {
+    const t = event.target;
+    const pick = t.closest('[data-wapick]');
+    if (pick) { $(pick.dataset.wapick === 'att' ? '#waAttFile' : '#waWorkFile').click(); return; }
+    const mode = t.closest('[data-wamode]');
+    if (mode) { ui.wa.mode = mode.dataset.wamode; renderWorkAudit(); return; }
+    const step = t.closest('[data-wastep]');
+    if (step) { waStep(+step.dataset.wastep); return; }
+    const go = t.closest('[data-watabgo]');
+    if (go) { ui.wa.tab = go.dataset.watabgo; renderWorkAudit(); window.scrollTo({ top: 0, behavior: 'instant' }); return; }
+    const wk = t.closest('[data-waweek]');
+    if (wk) { Object.assign(ui.wa, { mode: 'week', week: wk.dataset.waweek, tab: 'dny' }); renderWorkAudit(); return; }
+    const mo = t.closest('[data-wamonth]');
+    if (mo) { Object.assign(ui.wa, { mode: 'month', month: mo.dataset.wamonth, tab: 'dny' }); renderWorkAudit(); return; }
+    const undo = t.closest('[data-waundo]');
+    if (undo) {
+      const [iso, key] = undo.dataset.waundo.split('|');
+      const e = (S.workAudit.edits[iso] || {})[key];
+      if (!e || !await confirmBox('Zrušit úpravu?', `${dayText(iso)}, ${waKeyLabel(S.workAudit, key)}: znovu bude platit hodnota ze souboru (${waRaw(S.workAudit, iso, key) == null ? 'prázdné' : nf(waRaw(S.workAudit, iso, key), 2)}).`, 'Zrušit úpravu')) return;
+      waSetEdit(S.workAudit, iso, key, undefined);
+      save();
+      renderWorkAudit();
+      return;
+    }
+    if (t.closest('[data-wagadd]')) { waAddGroup(); return; }
+    const gd = t.closest('[data-wagdel]');
+    if (gd) { waDelGroup(gd.dataset.wagdel); return; }
+    const opf = t.closest('[data-waopf]');
+    if (opf) { ui.wa.opFilter = opf.dataset.waopf; renderWorkAudit(); return; }
+    if (t.closest('[data-waguess]')) {
+      const wa = S.workAudit;
+      let n = 0;
+      wa.ops.forEach(o => { if (o.on && !o.group) { const g = waGuessGroup(o.name, wa.groups); if (g) { o.group = g; n += 1; } } });
+      if (n) { save(); renderWorkAudit(); }
+      toast(n ? `Skupina doplněna u ${n} ${operaceN(n)}.` : 'Podle názvu se žádná skupina odhadnout nedala.', !n);
+      return;
+    }
+    if (t.closest('[data-wacolreset]')) {
+      S.workAudit.cols.work = { ...WA_COLS.work };
+      S.workAudit.cols.att = { ...WA_COLS.att };
+      save();
+      renderWorkAudit();
+      return;
+    }
+    if (t.closest('[data-waclear]')) { waClearRange(); return; }
+    const day = t.closest('[data-waday]');
+    if (day && !t.closest('a, input, select')) { waDayDialog(day.dataset.waday); }
+  });
+  wv.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !event.target.matches('tr[data-waday], tr[data-waweek], tr[data-wamonth]')) return;
+    event.preventDefault();
+    event.target.click();
+  });
+  wv.addEventListener('change', event => {
+    const t = event.target;
+    if (t.id === 'waMonth') { ui.wa.month = t.value; renderWorkAudit(); return; }
+    if (t.id === 'waWeek') { ui.wa.week = t.value; renderWorkAudit(); return; }
+    if (t.id === 'waFrom' || t.id === 'waTo') { if (WA_ISO.test(t.value)) { ui.wa[t.id === 'waFrom' ? 'from' : 'to'] = t.value; renderWorkAudit(); } return; }
+    if (t.id === 'waGroups') { ui.wa.groups = t.checked; renderWorkAudit(); return; }
+    if (t.id === 'waAllEdits') { ui.wa.allEdits = t.checked; renderWorkAudit(); return; }
+    const gRow = t.closest('[data-wag]');
+    if (gRow && t.dataset.wagf) { waSetGroup(gRow.dataset.wag, t.dataset.wagf, t.type === 'checkbox' ? t.checked : t.value); return; }
+    const oRow = t.closest('[data-wao]');
+    if (oRow && t.dataset.waof) {
+      const o = S.workAudit.ops.find(x => x.id === oRow.dataset.wao);
+      if (!o) return;
+      if (t.dataset.waof === 'on') o.on = t.checked; else o.group = t.value;
+      save();
+      renderWorkAudit();
+      return;
+    }
+    if (t.dataset.wacol) {
+      const [kind, key] = t.dataset.wacol.split('.');
+      const v = waLetter(t.value);
+      if (t.value.trim() && !v) { toast('Sloupec je písmeno jako v Excelu (A až ZZZ).', true); renderWorkAudit(); return; }
+      if (!v && (key === 'date' || kind === 'work')) { toast('Tenhle sloupec musí být vyplněný.', true); renderWorkAudit(); return; }
+      S.workAudit.cols[kind][key] = v;
+      save();
+      renderWorkAudit();
+    }
+  });
+  wv.addEventListener('input', event => {
+    if (event.target.id !== 'waOpQ') return;
+    ui.wa.opQ = event.target.value;
+    const pos = event.target.selectionStart;
+    renderWorkAudit();
+    const q = $('#waOpQ');
+    if (q) { q.focus(); q.setSelectionRange(pos, pos); }
+  });
+  // Tooltip grafů (myš i klávesnice), stejně jako v profilu.
+  const showTip = hit => {
+    const tip = $('#waTip');
+    const wrap = $('#waCharts');
+    if (!tip || !wrap) return;
+    tip.textContent = hit.dataset.tip;
+    tip.hidden = false;
+    const a = hit.getBoundingClientRect();
+    const b = wrap.getBoundingClientRect();
+    tip.style.left = `${clamp(a.left - b.left + a.width / 2 - tip.offsetWidth / 2, 0, Math.max(0, b.width - tip.offsetWidth))}px`;
+    tip.style.top = `${Math.max(0, a.top - b.top - tip.offsetHeight - 6)}px`;
+    $$('.chart .hit.on', wrap).forEach(x => x.classList.remove('on'));
+    hit.classList.add('on');
+  };
+  const hideTip = () => {
+    const tip = $('#waTip');
+    if (tip) tip.hidden = true;
+    $$('#waCharts .hit.on').forEach(x => x.classList.remove('on'));
+  };
+  view.addEventListener('pointerover', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
+  view.addEventListener('pointerout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
+  view.addEventListener('focusin', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
+  view.addEventListener('focusout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
+}
+
+/* ---------- Excel ---------- */
+async function exportWaXlsx() {
+  if (!waSpan(S.workAudit)) return;
+  try {
+    const X = await xlsx();
+    const r = waRange();
+    const wb = X.utils.book_new();
+    waSheets(S.workAudit, r.from, r.to).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`audit-${r.from}-${r.to}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
+/* ---------- PDF pro auditora (A4 na šířku) ---------- */
+async function exportWaPdf(button) {
+  if (!waSpan(S.workAudit)) return;
+  const r = waRange();
+  await withPdf(button, doc => {
+    doc.setProperties({ title: `Audit obsazenosti a výroby · ${r.label}`, subject: 'Lidé v práci a zpracované kusy', creator: EXPORT_NAME });
+    drawWorkAudit(doc, r);
+    downloadFile(`audit-${r.from}-${r.to}.pdf`, doc.output('blob'), 'application/pdf');
+  }, 'landscape');
+}
+
+function drawWorkAudit(doc, r) {
+  const k = pdfKit(doc);
+  const C = k.C;
+  const wa = S.workAudit;
+  const G = wa.groups;
+  const days = waDays(wa, r.from, r.to);
+  const t = waTotals(wa, days);
+  const is = waIssues(wa, days);
+  const edits = waEditList(wa, r.from, r.to);
+  const ops = waOpTotals(wa, days);
+  const n2 = v => (v == null ? '—' : nf(v, 2));
+  const listNames = list => list.map(g => g.name).join(', ') || 'žádné';
+  /* Tabulka s opakovanou hlavičkou na každé stránce. cols: [šířka, nadpis, 'r' = vpravo, zalamovat] */
+  const table = (cols, rows, size = 7.4) => {
+    const lh = k.LH(size, 1.22);
+    const head = () => {
+      const lines = cols.map(c => k.split(c[1], c[0] - 2, 6.4, true));
+      const hh = Math.max(...lines.map(l => l.length)) * k.LH(6.4, 1.18) + 2.4;
+      k.box(C.soft, k.M, k.y, k.CW, hh, 1.2);
+      let x = k.M;
+      cols.forEach((c, i) => {
+        lines[i].forEach((ln, j) => k.text(ln, c[2] === 'r' ? x + c[0] - 1.2 : x + 1.2, k.y + 1.2 + j * k.LH(6.4, 1.18), 6.4, { bold: true, color: C.ink2, align: c[2] === 'r' ? 'right' : 'left' }));
+        x += c[0];
+      });
+      k.y += hh + 0.6;
+    };
+    k.need(24);
+    head();
+    k.onPage = head;
+    rows.forEach(row => {
+      const cells = row.cells.map((v, i) => (cols[i][3] ? k.split(v == null ? '' : v, cols[i][0] - 2.4, size) : [v == null ? '' : String(v)]));
+      const h = Math.max(...cells.map(c => c.length)) * lh + 1.5;
+      k.need(h);
+      if (row.shade) k.box(row.shade, k.M, k.y - 0.3, k.CW, h, 0);
+      let x = k.M;
+      cells.forEach((lines, i) => {
+        const c = cols[i];
+        lines.forEach((ln, j) => k.text(ln, c[2] === 'r' ? x + c[0] - 1.2 : x + 1.2, k.y + 0.55 + j * lh, size,
+          { bold: !!row.total || (row.bold || []).includes(i), color: (row.colors || {})[i] || (row.muted ? C.ink3 : C.ink), align: c[2] === 'r' ? 'right' : 'left' }));
+        x += c[0];
+      });
+      k.y += h;
+      k.hline(k.y - 0.3, row.total ? C.line2 : C.line, row.total ? 0.3 : 0.15);
+    });
+    k.onPage = null;
+    k.y += 6;
+  };
+  const ed = (d, keys) => (keys.some(x => d.edited.includes(x)) ? '*' : '');
+
+  k.header({ eyebrow: `${EXPORT_NAME} · AUDIT OBSAZENOSTI A VÝROBY`, right: `Stav k ${tsText(Date.now())}`, title: 'Lidé v práci a zpracované kusy', sub: r.label.charAt(0).toUpperCase() + r.label.slice(1),
+    meta: `Obsazenost směn podle souboru vedoucích, kusy podle výkazu práce v IS. ${t.workDays} ${t.workDays === 1 ? 'pracovní den' : t.workDays <= 4 ? 'pracovní dny' : 'pracovních dní'}${t.offWorked ? `, ${t.offWorked} ${t.offWorked === 1 ? 'víkend nebo svátek' : 'dní víkendu nebo svátku'} s prací` : ''}${edits.length ? `, ${edits.length} ${edits.length === 1 ? 'ručně upravená hodnota' : edits.length <= 4 ? 'ručně upravené hodnoty' : 'ručně upravených hodnot'} (označené *, seznam na konci)` : ', bez ručních úprav'}.` });
+  k.tiles([
+    ['Lidé v práci', `${waN(t.shifts)}`, `${osobN(t.shifts)} · R ${waN(t.amShifts)} · O ${waN(t.pmShifts)}`],
+    ['Průměr na pracovní den', waN(t.avgPeople, 1), 'lidí v práci'],
+    ['Obsazenost proti plánu', waP(t.fill), t.plan ? `z ${waN(t.plan)} plánovaných` : 'plán chybí', t.fill != null && t.fill < 0.85 ? 'crit' : ''],
+    ['Zpracováno', `${waN(t.pcs)} ks`, t.perDay != null ? `Ø ${waN(t.perDay)} ks na den` : 'výkaz chybí'],
+    ['Kusy na osobosměnu', waN(t.perShift, 1), 'produktivní skupiny'],
+    ['Neproduktivní pozice', waP(t.unprodShare), `${waN(t.unprodShifts)} ${osobN(t.unprodShifts)}`],
+  ]);
+
+  k.keep(() => {
+    k.heading('Jak se počítá', 11);
+    const ac = wa.cols.att, wc = wa.cols.work;
+    [
+      `Obsazenost: soubor vedoucích, jeden řádek = jeden den (datum ve sloupci ${ac.date}). Ranní směna: mělo dorazit ${ac.amPlan || '—'}, v práci celkem ${ac.amTotal || '—'}, absence ${ac.amAbs || '—'}. Odpolední směna: požadavek ${ac.pmPlan || '—'}, skutečně v práci ${ac.pmTotal || '—'}. Skupiny mají vlastní sloupce (tabulka Skupiny).`,
+      `Výkaz práce z IS: datum ${wc.date}, operace ${wc.op}, počet kusů ${wc.ks}. Kusy se sečtou po dnech a operacích. Započítávají se jen vybrané operace a každá patří jedné skupině (tabulka Operace).`,
+      'Osobosměna = jeden člověk na jedné směně. Lidé v práci = ranní + odpolední. Obsazenost proti plánu = lidé v práci / (mělo dorazit + požadavek).',
+      `Kusy na osobosměnu = kusy operací produktivních skupin / osobosměny těchto skupin. Neproduktivní pozice (${listNames(G.filter(g => g.unprod && !g.noIs))}) a projekty, které nejsou evidované v IS (${listNames(G.filter(g => g.noIs))}), se do výkonu nepočítají, do lidí v práci ano.`,
+      'Víkendy a státní svátky jsou v tabulce dnů podbarvené; svátek ve všední den je uvedený i bez dat. Ručně upravená hodnota má hvězdičku, původní hodnota ze souboru, důvod, kdo a kdy ji upravil jsou v tabulce Ruční úpravy.',
+    ].forEach(p => { k.para(p, k.M, k.CW * 0.9, 8.4, { color: C.ink2 }); k.y += 1.2; });
+    k.y += 4;
+  }, 40);
+
+  const checks = [];
+  if (is.missingAtt.length) checks.push(`Pracovní dny bez obsazenosti (${is.missingAtt.length}): ${is.missingAtt.map(i => dayText(i, false)).join(', ')}`);
+  if (is.missingWork.length) checks.push(`Pracovní dny bez výkazu práce (${is.missingWork.length}): ${is.missingWork.map(i => dayText(i, false)).join(', ')}`);
+  if (is.mismatch.length) checks.push(`Součet skupin se liší od počtu lidí na směně: ${is.mismatch.map(x => `${dayText(x.iso, false)} ${x.shift === 'am' ? 'ranní' : 'odpolední'} ${x.diff > 0 ? '+' : ''}${nf(x.diff, 2)}`).join(', ')}`);
+  if (is.offWorked.length) checks.push(`Práce o víkendu nebo ve svátek: ${is.offWorked.map(x => `${dayText(x.iso, false)}${x.hol ? ` (${x.hol})` : ''}${x.people ? ` ${nf(x.people, 2)} lidí` : ''}${x.pcs ? ` ${nf(x.pcs, 0)} ks` : ''}`).join(', ')}`);
+  if (is.noGroup.length) checks.push(`Operace bez skupiny (kusy se započítají jen do celku): ${is.noGroup.map(o => `${o.name} ${nf(o.ks, 0)} ks`).join(', ')}`);
+  if (is.off.length) checks.push(`Nezapočítané operace: ${is.off.map(o => `${o.name} ${nf(o.ks, 0)} ks`).join(', ')}`);
+  k.keep(() => {
+    k.heading('Ke kontrole', 11);
+    if (!checks.length) k.para('Všechny pracovní dny mají obsazenost i výkaz práce, součty skupin sedí a každá započítaná operace má skupinu.', k.M, k.CW * 0.9, 8.4);
+    checks.forEach(p => {
+      const lines = k.split(p, k.CW * 0.9 - 5, 8.2);
+      k.need(lines.length * k.LH(8.2, 1.32) + 1.5);
+      k.dot(k.M + 1.2, k.y + 1.6, 0.8, C.warn);
+      lines.forEach((ln, j) => k.text(ln, k.M + 5, k.y + j * k.LH(8.2, 1.32), 8.2));
+      k.y += lines.length * k.LH(8.2, 1.32) + 1.5;
+    });
+    k.y += 5;
+  }, 30);
+
+  // nadpis oddílu nezůstane sám na konci stránky
+  const section = (title, min = 40) => { k.need(min); k.heading(title, 11); };
+  section('Po týdnech');
+  const weeks = waWeeks(wa, days);
+  const aggCols = [[26, 'Týden'], [42, 'Období'], ...['Pracovní dny', 'Osobosměny ranní', 'Osobosměny odpolední', 'Celkem', 'Plán', 'Obsazenost', 'Absence', 'Kusy', 'Kusy na osobosměnu', 'Úpravy'].map(x => [19.7, x, 'r'])];
+  const aggRow = (label, range, x, total = false) => ({ total, cells: [label, range, `${x.workDays}${x.offWorked ? ` +${x.offWorked}` : ''}`, n2(x.amShifts), n2(x.pmShifts), n2(x.shifts), n2(x.plan), waP(x.fill), n2(x.abs), waN(x.pcs), waN(x.perShift, 1), x.edits || '—'] });
+  table(aggCols, [...weeks.map(w => aggRow(w.label, w.range, w.t)), aggRow('Celkem', `${dayText(r.from)} – ${dayText(r.to)}`, t, true)]);
+  const months = waMonths(wa, days);
+  if (months.length > 1) { section('Po měsících'); table([[68, 'Měsíc'], ...aggCols.slice(2)], [...months.map(m => ({ cells: aggRow(m.label, '', m.t).cells.filter((_, i) => i !== 1) })), { total: true, cells: aggRow('Celkem', '', t).cells.filter((_, i) => i !== 1) }]); }
+
+  section('Po dnech', 60);
+  k.para('Ranní a odpolední: v práci / plán. Skupiny: ranní + odpolední. Podbarvené řádky jsou víkend nebo státní svátek, * = ručně upraveno, červený počet celkem = součet skupin se liší od počtu lidí na směně.', k.M, k.CW, 7.8, { color: C.ink2 });
+  k.y += 2;
+  const base = [[20, 'Den'], [24, 'Typ dne', '', true], [24, 'Ranní v práci / plán', 'r'], [14, 'Absence', 'r'], [24, 'Odpolední v práci / pož.', 'r']];
+  const tail = [[17, 'Celkem', 'r'], [17, 'Obsazenost', 'r'], [20, 'Kusy', 'r'], [16, 'Ks / os.', 'r']];
+  const used = [...base, ...tail].reduce((a, c) => a + c[0], 0);
+  const gw = G.length ? Math.min(20, (k.CW - used) / G.length) : 0;
+  const dayCols = [...base, ...G.map(g => [gw, g.name, 'r']), ...tail];
+  const dayRows = days.map(d => ({
+    shade: d.day.work ? null : C.wkSoft,
+    muted: !d.hasAtt && !d.hasWork,
+    bold: [0],
+    cells: [`${DOW[d.day.dow]} ${dayText(d.iso, false)}`, d.day.work ? '' : d.day.hol ? d.day.hol : d.day.sat ? 'sobota' : 'neděle',
+      `${n2(d.am.total)}${ed(d, ['am.total'])} / ${n2(d.am.plan)}${ed(d, ['am.plan'])}`, `${n2(d.am.abs)}${ed(d, ['am.abs'])}`,
+      `${n2(d.pm.total)}${ed(d, ['pm.total'])} / ${n2(d.pm.plan)}${ed(d, ['pm.plan'])}`,
+      ...G.map(g => `${n2(d.g[g.id].sum)}${ed(d, [`g.${g.id}.am`, `g.${g.id}.pm`])}`),
+      n2(d.people), waP(d.fill), `${waN(d.pcsTotal)}${d.edited.some(x => x.startsWith('pcs.')) ? '*' : ''}`, waN(d.perProd, 1)],
+    colors: d.check.am || d.check.pm ? { [dayCols.length - 4]: C.crit } : {},
+  }));
+  dayRows.push({ total: true, cells: ['Celkem', `${t.workDays} prac. ${denN(t.workDays)}`, `${n2(t.amShifts)} / ${n2(days.reduce((a, d) => a + (d.am.plan || 0), 0))}`, n2(t.abs),
+    `${n2(t.pmShifts)} / ${n2(days.reduce((a, d) => a + (d.pm.plan || 0), 0))}`, ...G.map(g => n2(t.group[g.id].shifts)), n2(t.shifts), waP(t.fill), waN(t.pcs), waN(t.perShift, 1)] });
+  table(dayCols, dayRows, 7.2);
+  const notes = Object.entries(wa.notes).filter(([iso]) => iso >= r.from && iso <= r.to).sort();
+  if (notes.length) {
+    k.keep(() => {
+      k.heading('Poznámky ke dnům', 10.5);
+      notes.forEach(([iso, n]) => {
+        const lines = k.split(n, k.CW - 30, 8);
+        k.need(lines.length * k.LH(8, 1.3) + 1.5);
+        k.text(dayText(iso), k.M, k.y, 8, { bold: true });
+        lines.forEach((ln, j) => k.text(ln, k.M + 26, k.y + j * k.LH(8, 1.3), 8));
+        k.y += lines.length * k.LH(8, 1.3) + 1.5;
+      });
+      k.y += 5;
+    }, 24);
+  }
+
+  section('Skupiny', 60);
+  const work = Math.max(1, t.workDays);
+  table([[70, 'Skupina', '', true], [26, 'Zařazení'], [20, 'Sloupce R / O'], [20, 'Osobosměny ranní', 'r'], [22, 'Osobosměny odpolední', 'r'], [20, 'Celkem', 'r'], [20, 'Ø na pracovní den', 'r'], [22, 'Kusy', 'r'], [20, 'Kusy na osobosměnu', 'r'], [25, 'Operace', 'r']],
+    G.map(g => { const x = t.group[g.id]; return { bold: [0], cells: [g.name, waGroupKind(g), `${g.am || '—'} / ${g.pm || '—'}`, n2(x.am), n2(x.pm), n2(x.shifts), x.shifts == null ? '—' : nf(x.shifts / work, 1), g.noIs ? 'mimo IS' : waN(x.pcs), waN(x.per, 1), String(wa.ops.filter(o => o.group === g.id).length)] }; }));
+  section('Operace v období');
+  table([[120, 'Operace', '', true], [80, 'Skupina', '', true], [30, 'Započítává se'], [35, 'Kusy', 'r']],
+    ops.map(o => ({ muted: !o.on, cells: [o.name, o.group ? waGroupName(o.group) : 'bez skupiny', o.on ? 'ano' : 'ne', waN(o.ks)] })));
+
+  section('Ruční úpravy', 30);
+  if (edits.length) {
+    table([[24, 'Den'], [70, 'Hodnota', '', true], [20, 'Původně', 'r'], [20, 'Nově', 'r'], [86, 'Důvod', '', true], [45, 'Upravil, kdy', '', true]],
+      edits.map(e => ({ cells: [dayText(e.iso), e.label, e.was == null ? 'prázdné' : nf(e.was, 2), e.v == null ? 'prázdné' : nf(e.v, 2), e.note || '—', `${e.by || '—'}, ${tsText(e.at)}`], bold: [3] })));
+  } else { k.para('Žádná hodnota nebyla ručně upravena; všechna čísla jsou ze souborů.', k.M, k.CW, 8.4, { color: C.ink2 }); k.y += 5; }
+
+  const files = wa.files.filter(f => !f.from || (f.to >= r.from && f.from <= r.to)).slice().reverse();
+  if (files.length) {
+    section('Zdrojové soubory', 30);
+    table([[100, 'Soubor', '', true], [30, 'Obsah'], [50, 'Období'], [20, 'Dní', 'r'], [20, 'Řádků', 'r'], [45, 'Nahrál, kdy', '', true]],
+      files.map(f => ({ cells: [f.name || '—', f.kind === 'work' ? 'výkaz práce' : 'obsazenost', f.from ? `${dayText(f.from)} – ${dayText(f.to)}` : '—', String(f.days), String(f.rows), `${f.by || '—'}, ${tsText(f.at)}`] })));
+  }
+  k.footer(`${EXPORT_NAME} · audit obsazenosti a výroby · ${r.label}`);
 }
 
 window.OdmApp = {

@@ -29,10 +29,34 @@ nepletou, a teď má každý vlastní repozitář:
 
 Klony na serveru jsou `/root/trading_desk`, `/root/odmeny` a `/root/odmeny_v2`. Všechny
 repozitáře jsou **veřejné**. Historie Odměn je převzatá z `trading_desk`. Verze jsou commity (tagy proxy session
-nepushne): 1.0 = `db14339`, 2.0 = `9f26efa`, 2.1 = `019af97`. Hashe commitů jsou jiné
+nepushne): 1.0 = `db14339`, 2.0 = `9f26efa`, 2.1 = `019af97`, 2.16 = `2044632`. Hashe commitů jsou jiné
 než v `trading_desk`.
 
 ## Kde jsme skončili
+
+Stav k 13. 10. 2026 (verze 2.17):
+
+- **Audit: lidé v práci a zpracované kusy.** Uživatel: „modul pro audit, kde bude přehled lidí
+  v práci historicky, kolik se kdy zpracovalo ks, denně, týdně … ve sloupci D datum a pro ranní
+  směnu: I kolik mělo dorazit, K brusiči, L brush, M frézování, N lepení a značení dílů,
+  O kontrola/balení/brigadýr/školitelé, P obsluha tryskací kabiny, R absence, S projekt Daiho,
+  T celkem … odpolední: U požadavek, V skutečně, W frézování, X brusiči, Y brush, Z tryskací
+  kabina, AA kontrola/balení/brigadýr/školitelé … výkaz práce, kde A datum, H operace, J počet
+  ks … nastavení, jaké operace chci zohlednit … rozdělit do oddělení … Pískování – hala 2 …
+  obsluha tryskací kabiny … zaškrtnout ‚Neproduktivní pozice‘ nebo ‚Tento projekt není evidován
+  v IS‘ … pro auditora … pěkné a přehledné … modifikovat výsledky … víkendy a státní svátky“.
+  - Data `S.workAudit` (verze dat 15), čištění `cleanWorkAudit`, výpočty a export v `core.js`
+    (`wa*`), historie `waChanges` (kind `workaudit`). Podrobnosti v sekci Audit níže.
+  - UI: pohled `#view-audit` (`renderWorkAudit`, záložky Přehled, Dny, Týdny a měsíce, Skupiny
+    a operace, Úpravy, Nastavení), detail dne s úpravami (`waDayDialog`), nahrání se souhrnem
+    (`waImport`), PDF na šířku (`drawWorkAudit`, `newPdf('landscape')`, `pdfKit` pozná
+    orientaci), Excel (`waSheets`). Odznak `#navWa` = operace bez skupiny.
+  - Historie změn má nově filtry Protokoly a Audit (Protokoly v 2.16 filtr ani ikonu neměly).
+  - **Se skutečnými soubory to nikdo nezkoušel.** Rozložení sloupců je přesně podle zadání,
+    test běží na vymyšleném Excelu vyrobeném v prohlížeči. Od uživatele se čeká vzorek obou
+    souborů (bez osobních údajů), hlavně jestli je v obsazenosti řádek na den, v jakém tvaru
+    je datum a jestli výkaz práce nemá víc listů nebo souhrnné řádky s datem.
+- `ODM_VERSION` 2.17, `DATA_VERSION` = `CLIENT_VERSION` = `ODM_MIN_CLIENT` = 15.
 
 Stav k 12. 10. 2026 (verze 2.16):
 
@@ -417,6 +441,44 @@ Na telefonu se detail otevírá přes `syncHistory` (`sub: 'book'`), Zpět ho za
 Známá omezení: fotka smazaná v aplikaci zmizí ze serveru hned, takže starší verze dat
 z historie ji už neukáže (prázdné pole `.ph.missing`); vrátí ji jen záloha. Fotky, na které
 neodkazuje žádný stav (nahrané, ale neuložené), na serveru zůstanou; úklid zatím není.
+
+## Audit (verze 2.17)
+
+Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
+
+- `groups[≤ 20]`: `{id, name, am, pm, unprod, noIs}`, `am`/`pm` = písmeno sloupce obsazenosti
+  (prázdné = skupina na směně není). Výchozí `WA_GROUPS` podle zadání (kontrola/balení
+  `unprod`, Daiho `noIs`);
+- `cols`: `att {date, amPlan, amTotal, amAbs, pmPlan, pmTotal}`, `work {date, op, ks}`
+  (výchozí `WA_COLS`: D, I, T, R, U, V a A, H, J);
+- `days[iso] = {am: {plan, total, abs}, pm: {plan, total}, g: {skupina: [ranní, odpolední]}}`;
+- `ops[≤ 800] = {id: 'oN', name, group, on}`, `pcs[iso] = {opId: kusy}`, `seq`;
+- `edits[iso][klíč] = {v, was, note, by, at}`, klíče `am.plan|total|abs`, `pm.plan|total`,
+  `g.<skupina>.am|pm`, `pcs.<opId>` (`WA_KEY`); `notes[iso]`; `files[≤ 40]` (zdroje).
+
+Výpočty v `core.js`:
+
+- čtení: `waParseAttendance` (všechny listy, řádek s datem = den, bez čísel se přeskočí,
+  `cellToDateTime` zná text, Date i sériové číslo), `waParseWork` (součet po dnech
+  a operacích);
+- uložení: `waApplyAttendance` a `waApplyWork`. Dny ze souboru nahradí uložené, úpravy
+  zůstanou (`was` je hodnota v době úpravy, UI ukáže „teď X“). Nové operace dostanou
+  `on: true` a skupinu přes `waGuessGroup` (`WA_GUESS`);
+- `waVal` (úprava má přednost), `waDay` (den: lidé, plán, obsazenost, kusy po operacích
+  a skupinách, produktivní lidé a kusy, `check` = součet skupin − celkem);
+- `waDays` (dny s daty + všechny pracovní dny + svátek ve všední den; víkend bez dat ne),
+  `waTotals`, `waWeeks`, `waMonths`, `waOpTotals`, `waIssues`, `waSheets` (listy Excelu);
+- osobosměna = člověk na směně; kusy na osobosměnu jen u skupin bez `unprod` a `noIs`;
+- `waSetEdit` (hodnota rovná souboru nebo `undefined` = úprava pryč), `waEditList`;
+- `waChanges` → historie, klíče sloučení `wag/wan/wau/wai/wac/wao/waon/wacols/wae/wanote`.
+  Změna a návrat zpět do 10 minut se v historii vyruší. Nahrání a mazání období jdou přes
+  `store.note` (jeden záznam).
+
+UI v `app.js` (sekce „AUDIT“): `ui.wa` (záložka, období `month|week|custom|all`, rozpad po
+skupinách, filtr operací), `waRange`, `renderWorkAudit`, `waChart` (sloupce, čárka plánu na
+stejné ose, podbarvený víkend a svátek, tooltip `#waTip`), `waDayDialog` (povinný důvod jen
+u nové hodnoty, návrat k souboru ho nepotřebuje), `waImport`, `bindWorkAudit`,
+`exportWaXlsx`, `exportWaPdf` a `drawWorkAudit` (A4 na šířku, tabulky s opakovanou hlavičkou).
 
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 
@@ -925,7 +987,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 48 testů: proti původní aplikaci + opravy + 2.1 až 2.16
+node tests/test_core.js                 # 50 testů: proti původní aplikaci + opravy + 2.1 až 2.17
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -952,6 +1014,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
+  - `e2e_audit.js`: Audit (2.17); oba Excely vyrobí v prohlížeči přes SheetJS z vymyšlených
+    čísel (žádná skutečná data v repu), PDF čte přes pypdf. Po zavření dialogu dne čeká na
+    uloženou úpravu (`close` dialogu přijde až po zmizení `[open]`);
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.
