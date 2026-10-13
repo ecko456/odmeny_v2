@@ -296,13 +296,15 @@
         <div>
           <p class="eyebrow">Lidé v práci a zpracované kusy</p>
           <h1 id="waTitle">Audit</h1>
-          <p class="lede">Lidé v práci a zpracované kusy po týdnech a měsících, z obsazenosti směn od vedoucích a z výkazu práce v IS. Počítají se jen operace přiřazené ke skupině. Dny s víkendy a svátky, opravy s důvodem a nastavení jsou v dalších záložkách.</p>
+          <p class="lede">Lidé v práci proti požadavku a zpracované kusy po týdnech, z obsazenosti směn od vedoucích a z výkazu práce v IS. Výrobní plán porovná kusy k dodání s kapacitou brusičů. Dny s víkendy a svátky, opravy s důvodem a nastavení jsou v dalších záložkách.</p>
         </div>
         <div class="page-actions noprint">
           <button class="btn sec" type="button" id="waAtt">Nahrát obsazenost</button>
           <button class="btn sec" type="button" id="waWork">Nahrát výkaz práce</button>
           <input type="file" id="waAttFile" accept=".xlsx,.xls,.xlsm,.csv" hidden>
           <input type="file" id="waWorkFile" accept=".xlsx,.xls,.xlsm,.csv" hidden>
+          <input type="file" id="waPlanFile" accept=".xlsx,.xls,.xlsm,.csv" multiple hidden>
+          <input type="file" id="waPlanTplFile" accept=".xlsx,.xls,.xlsm,.csv" hidden>
         </div>
       </header>
       <div class="chips t5-tabs" id="waTabs"></div>

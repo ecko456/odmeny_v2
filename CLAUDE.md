@@ -34,6 +34,36 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 10. 2026 (verze 2.18):
+
+- Uživatel: „Obsazenost proti plánu … podíl, kolik dnů bylo dodrženo požadované množství 100 lidí
+  a více na pracovní den, a jak dlouhý zpětný dopad má výpadek lidí, než se to statisticky
+  dorovná (dva týdny chybí 3 lidi → další dva týdny 3 lidi navíc). Osobosměny odstranit, po
+  měsících ne, jen týdny. Import výrobního plánu (vždy dva listy), jeden jako vzor se sloupci
+  číslo objednávky, EAN, počet ks, index, termín dokončení a technologie; jen položky
+  s technologií ‚G2‘ nebo ‚G‘; statisíce řádků, precizní filtrace duplicit podle objednávky,
+  indexu a EAN, platí nejdelší termín; linie kusů k dodání proti kapacitě brusičů (25 ks na
+  směnu).“
+  - „100 lidí a více“ = v práci ≥ 100 % požadavku (`waReq`: pevné `wa.target` z Nastavení,
+    jinak plán ze souboru). Doslovných 100 lidí = `target` 100. **Ověřit s uživatelem.**
+  - `waTotals`: `reqDays`, `metDays`, `metShare`, `balance`, `avgReq`. `waStaffing(wa, days)`:
+    kumulovaná bilance po dnech, výpadky (od poklesu pod nulu po návrat na nulu), otevřený
+    výpadek s návrhem `extra` (Ø chybějících, zaokrouhleno nahoru) × `needDays`.
+  - Přehled jen po týdnech (`WA_HIST` 13/26/52/vše), `waHistRange` od prvního dne s daty
+    (`wFrom` = pondělí). Karta „Výpadek lidí a dorovnání“ (`waStaffHtml`, `waBalanceChart`),
+    tabulka týdnů se Splněno dní, Bilance a Kumulovaně. PDF: dlaždice, výpadek (fakta + graf
+    `pdfWaBalance`), skupiny, týdny. Excel: Souhrn, Skupiny, Výpadky, Týdny. Bez osobosměn
+    a měsíců.
+  - Výrobní plán: `wa.plan` (sekce Audit níže), záložka `plan` (`waPlanHtml`), vzor
+    (`waPlanTemplate`), import (`waPlanImport`), díly souborů (`waPlanStore`, `waPlanLoad`),
+    smazání (`waPlanClear`), kapacita `waPlanCapacity`.
+  - Data verze 16, `ODM_MIN_CLIENT` 16 (stránka 2.17 by plán a požadavek zahodila).
+  - Ověřeno: core testy, e2e Auditu (vzor, dva soubory s posunutými termíny, 120 000 řádků,
+    smazání plánu, záloha), aktualizace 2.3 → 2.18 a 2.17.2 → 2.18 na Apachi v kontejneru.
+  - **Se skutečným souborem plánu to nikdo nezkoušel.** Od uživatele se čeká vzorek plánu
+    (bez osobních údajů) a potvrzení, jestli „100 lidí“ znamená požadavek ze souboru, nebo
+    pevné číslo.
+
 Stav k 13. 10. 2026 (verze 2.17.2):
 
 - Uživatel: „HALA 2 · AUDIT v reportu přepiš na ‚HALA 2 · REPORT‘ a v přehledu udělej rozpad na
@@ -476,7 +506,7 @@ Známá omezení: fotka smazaná v aplikaci zmizí ze serveru hned, takže star�
 z historie ji už neukáže (prázdné pole `.ph.missing`); vrátí ji jen záloha. Fotky, na které
 neodkazuje žádný stav (nahrané, ale neuložené), na serveru zůstanou; úklid zatím není.
 
-## Audit (verze 2.17)
+## Audit (verze 2.17, 2.18)
 
 Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 
@@ -488,7 +518,16 @@ Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 - `days[iso] = {am: {plan, total, abs}, pm: {plan, total}, g: {skupina: [ranní, odpolední]}}`;
 - `ops[≤ 800] = {id: 'oN', name, group, on}`, `pcs[iso] = {opId: kusy}`, `seq`;
 - `edits[iso][klíč] = {v, was, note, by, at}`, klíče `am.plan|total|abs`, `pm.plan|total`,
-  `g.<skupina>.am|pm`, `pcs.<opId>` (`WA_KEY`); `notes[iso]`; `files[≤ 40]` (zdroje).
+  `g.<skupina>.am|pm`, `pcs.<opId>` (`WA_KEY`); `notes[iso]`; `files[≤ 40]` (zdroje);
+- `target` (2.18): pevný požadavek lidí na pracovní den, `null` = podle souboru (plán den po dni);
+- `plan` (2.18, `blankWaPlan`, `cleanWaPlan`):
+  - `tpl {file, at, by, sheets[≤ 2]: {name, header, cols, heads}}`: vzor, `header` = index řádku
+    s nadpisy, `cols` písmena polí `WA_PLAN_FIELDS` (order, ean, ks, index, due, tech), `heads`
+    texty nadpisů (podle nich `waPlanCols` najde posunuté sloupce);
+  - `tech {words: ['G2', 'G'], mode: 'token'|'contains'}`, `cap {group: 'brus', perShift: 25}`;
+  - `chunks[≤ 60]`: id šifrovaných souborů (`Vault.saveFile`) s položkami: JSON po sloupcích
+    `{v: 1, k, d, q}` (klíč, den od 1970, kusy), gzip (`CompressionStream`), díl ≤ 1,2 MB;
+  - `weeks {T: {ks, n}}`, `items`, `files[≤ 40]` (statistika nahrání), `at`, `by`.
 
 Výpočty v `core.js`:
 
@@ -507,16 +546,32 @@ Výpočty v `core.js`:
   Souhrn, Týdny, Měsíce);
 - osobosměna = člověk na směně; kusy na osobosměnu jen u skupin bez `unprod` a `noIs`;
 - `waSetEdit` (hodnota rovná souboru nebo `undefined` = úprava pryč), `waEditList`;
-- `waChanges` → historie, klíče sloučení `wag/wan/wau/wai/wac/wao/waon/wacols/wae/wanote`.
+- požadavek a výpadky (2.18): `waReq`, `waTotals` (`reqDays`, `metDays`, `balance`),
+  `waStaffing` (bilance, výpadky, návrh dorovnání);
+- výrobní plán (2.18): `waPlanGuess` a `waPlanHeaderRow` (vzor), `waPlanCols`, `waPlanMatch`
+  (G2/G jako samostatné označení), `waPlanMerge` (klíč objednávka|index|EAN přes `waPlanPart`,
+  platí pozdější termín, stejný termín přepíše kusy; statistika řádků), `waPlanEncode` a
+  `waPlanDecode`, `waPlanWeeks`, `waPlanCapacity` (skutečná kapacita ze směn skupiny, dny bez
+  obsazenosti odhadem z posledních 20 pracovních dnů, skluz se nepřenáší pod nulu),
+  `waPlanFileIds` (záloha);
+- `waChanges` → historie, klíče sloučení `wag/wan/wau/wai/wac/wao/waon/wacols/wae/wanote`
+  a od 2.18 `watarget/waptech/wapgrp/wapper/waptpl`.
   Změna a návrat zpět do 10 minut se v historii vyruší. Nahrání a mazání období jdou přes
   `store.note` (jeden záznam).
 
-UI v `app.js` (sekce „AUDIT“): `ui.wa` (záložka, přehled `grain` + `hist`, období Dnů
+UI v `app.js` (sekce „AUDIT“): `ui.wa` (záložka, přehled `hist` v týdnech, `planRange`, období Dnů
 `month|week|custom`, rozpad po skupinách, filtr operací), `waHistHtml` (přehled), `waRange`
 (Dny, Úpravy), `renderWorkAudit`, `waChart` a `waLine` (tooltip `#waTip`, popsaná jen poslední
 hodnota), `waCheckHtml`, `waDayDialog` (povinný důvod jen u nové hodnoty), `waImport` (po
 nových operacích otevře Nastavení s filtrem bez skupiny), `bindWorkAudit`, `exportWaXlsx`,
-`exportWaPdf`, `pdfWaChart` a `drawWorkAudit` (A4 na šířku, jen fakta a grafy).
+`exportWaPdf`, `pdfWaChart`, `pdfWaBalance` a `drawWorkAudit` (A4 na šířku, jen fakta a grafy).
+Tooltip hledá `.chart-tip` v nejbližším `.wa-charts` (přehled, bilance, plán).
+
+Výrobní plán v UI (sekce „VÝROBNÍ PLÁN“): soubory čte `waPlanBook` (SheetJS `dense`, bez
+formátování; ve 0.18 je list pole řádků, ve 0.19 `ws['!data']`), vzor jen z prvních 80 řádků
+(`sheetRows`). Import: načte uložené díly, sloučí všechny soubory, ukáže souhrn, uloží nové díly,
+stav přes `store.note`, a **staré díly smaže až po uložení stavu** (`waWaitSaved`). Chybějící díl
+(404, třeba po obnovení starší verze dat) se v souhrnu ohlásí a import pokračuje bez něj.
 
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 
@@ -653,7 +708,11 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.13 | `6d0a74f` | skener kartičky v Sankcích (kamera, čtečka), „HALA 2“ v exportech |
 | 2.14 | `655e374` | telefon jako aplikace (spodní lišta, Více, Zpět, okna zespodu), přidání na plochu |
 | 2.15 | `f21b39b` | HALA 2 a hlavní menu s obsazeností dne, rozbalovací menu vpravo dole, vyhledání člověka |
-| 2.16 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Protokoly – provozní deníky strojů s úkony, fotkami, intervaly a tiskem archů (data verze 14) |
+| 2.16 | `2044632` | Protokoly – provozní deníky strojů s úkony, fotkami, intervaly a tiskem archů (data verze 14) |
+| 2.17 | `e66c6c6` | Audit – lidé v práci a zpracované kusy pro auditora (data verze 15) |
+| 2.17.1 | `370a5d3` | Audit – kusy jen ze skupin, historie, osekané PDF a Excel |
+| 2.17.2 | `a0ec3ab` | Audit – „HALA 2 · REPORT“, rozpad po skupinách |
+| 2.18 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: obsazenost proti požadavku, výpadky a dorovnání, jen týdny, výrobní plán proti kapacitě brusičů (data verze 16) |
 
 Verze 2.1 přidala:
 
@@ -1025,7 +1084,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 50 testů: proti původní aplikaci + opravy + 2.1 až 2.17
+node tests/test_core.js                 # 53 testů: proti původní aplikaci + opravy + 2.1 až 2.18
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1052,9 +1111,11 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
-  - `e2e_audit.js`: Audit (2.17); oba Excely vyrobí v prohlížeči přes SheetJS z vymyšlených
-    čísel (žádná skutečná data v repu), PDF čte přes pypdf. Po zavření dialogu dne čeká na
-    uloženou úpravu (`close` dialogu přijde až po zmizení `[open]`);
+  - `e2e_audit.js`: Audit (2.17, 2.18); oba Excely i výrobní plán (dva listy, posunuté nadpisy,
+    120 000 řádků s duplicitami) vyrobí v prohlížeči přes SheetJS z vymyšlených čísel (žádná
+    skutečná data v repu), PDF čte přes pypdf. Po zavření dialogu dne čeká na uloženou úpravu
+    (`close` dialogu přijde až po zmizení `[open]`). Kontrola smazaných dílů plánu čeká 404
+    (`expectGone`);
   - `e2e_upgrade22.js`, `e2e_upgrade23.js`, `e2e_upgrade24.js`: aktualizace 2.1 → 2.2,
     2.2 → 2.3 a 2.3 → 2.4 na místě na lokálním Apachi (návod v hlavičce).
   - Jdou pustit i proti Apachi: `BASE=http://127.0.0.1/odmeny_v2/ TOKEN_FILE=/var/lib/odmeny_v2/setup-token.txt`.

@@ -1449,7 +1449,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=15;
+const DATA_VERSION=16;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit"];
@@ -3293,7 +3293,10 @@ const WA_COL_LABEL={date:"Datum",amPlan:"Ranní: mělo dorazit",amTotal:"Ranní:
 const WA_GUESS=[["tryska",/trysk|piskov|tryskac/],["brush",/brush|kartac/],["brus",/brus|brous/],["frez",/frez|cnc/],["lep",/lepen|znacen|lepi/],["kont",/kontrol|balen/]];
 const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am|pm)|pcs\.o\d{1,6})$/;
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
-function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0};}
+function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:null,plan:blankWaPlan()};}
+/* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
+   jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
+function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}
 function waLetter(v){const t=String(v==null?"":v).trim().toUpperCase();return /^[A-Z]{1,3}$/.test(t)?t:"";}
 function waIndex(letter){const t=waLetter(letter);if(!t)return -1;let n=0;for(const ch of t)n=n*26+(ch.charCodeAt(0)-64);return n-1;}
 function cleanWorkAudit(o){
@@ -3342,6 +3345,40 @@ function cleanWorkAudit(o){
   out.files=(Array.isArray(o.files)?o.files:[]).filter(f=>f&&typeof f==="object").slice(-40).map(f=>({
     kind:f.kind==="work"?"work":"att",name:str(f.name,160),at:Number.isFinite(+f.at)?Math.round(+f.at):0,by:str(f.by,60),
     from:WA_ISO.test(String(f.from||""))?f.from:"",to:WA_ISO.test(String(f.to||""))?f.to:"",days:Math.round(clamp(+f.days||0,0,100000)),rows:Math.round(clamp(+f.rows||0,0,10000000))}));
+  const tg=cnt(o.target);out.target=tg&&tg>=1?tg:null;
+  out.plan=cleanWaPlan(o.plan,gids);
+  return out;
+}
+const WA_PLAN_FIELDS=["order","ean","ks","index","due","tech"];
+const WA_PLAN_LABEL={order:"Číslo objednávky",ean:"EAN",ks:"Počet kusů",index:"Index",due:"Termín dokončení",tech:"Technologie"};
+const WA_WEEK=/^\d{4}-W\d{2}$/;
+function cleanWaPlan(o,gids){
+  const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const str=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g,"").slice(0,max);
+  const int=(v,max)=>Math.round(clamp(+v||0,0,max));
+  o=obj(o);
+  const out=blankWaPlan();
+  const t=obj(o.tpl);
+  if(Array.isArray(t.sheets)&&t.sheets.length){
+    out.tpl={file:str(t.file,160),at:int(t.at,1e13),by:str(t.by,60),sheets:t.sheets.slice(0,2).map(sh=>{
+      sh=obj(sh);const c=obj(sh.cols),h=obj(sh.heads),cols={},heads={};
+      WA_PLAN_FIELDS.forEach(f=>{cols[f]=waLetter(c[f]);heads[f]=str(h[f],80);});
+      return {name:str(sh.name,80),header:int(sh.header,500),cols,heads};
+    })};
+  }
+  const tech=obj(o.tech);
+  if(Array.isArray(tech.words))out.tech.words=[...new Set(tech.words.map(w=>String(w==null?"":w).toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,12)).filter(Boolean))].slice(0,12);
+  out.tech.mode=tech.mode==="contains"?"contains":"token";
+  const cap=obj(o.cap);
+  if("group" in cap)out.cap.group=gids.has(cap.group)?cap.group:"";
+  else if(!gids.has(out.cap.group))out.cap.group="";
+  const ps=+cap.perShift;if(Number.isFinite(ps)&&ps>0)out.cap.perShift=Math.round(clamp(ps,0.1,10000)*10)/10;
+  out.chunks=(Array.isArray(o.chunks)?o.chunks:[]).filter(id=>/^[a-f0-9]{32}$/.test(String(id))).slice(0,60);
+  Object.entries(obj(o.weeks)).slice(0,800).forEach(([w,v])=>{if(!WA_WEEK.test(w))return;v=obj(v);const ks=+v.ks;if(Number.isFinite(ks)&&ks>0)out.weeks[w]={ks:Math.round(clamp(ks,0,1e9)*100)/100,n:int(v.n,1e7)};});
+  out.items=int(o.items,1e7);
+  out.at=int(o.at,1e13);out.by=str(o.by,60);
+  out.files=(Array.isArray(o.files)?o.files:[]).filter(f=>f&&typeof f==="object").slice(-40).map(f=>({name:str(f.name,160),at:int(f.at,1e13),by:str(f.by,60),
+    rows:int(f.rows,1e8),matched:int(f.matched,1e8),dupes:int(f.dupes,1e8),added:int(f.added,1e8),moved:int(f.moved,1e8),items:int(f.items,1e8)}));
   return out;
 }
 
@@ -3490,8 +3527,12 @@ function waTotals(wa,days){
   const t={days:days.length,workDays:0,offDays:0,offWorked:0,missingAtt:0,missingWork:0,shifts:null,amShifts:null,pmShifts:null,plan:null,planned:null,
     abs:null,pcs:null,noGroup:null,prodShifts:null,prodPcs:null,unprodShifts:null,noIsShifts:null,edits:0,group:{}};
   wa.groups.forEach(g=>{t.group[g.id]={shifts:null,am:null,pm:null,pcs:null,work:null};});
-  let fillPeople=0,fillPlan=0,workPeople=0,workWithAtt=0,workPlan=0,workWithPlan=0;
+  let fillPeople=0,fillPlan=0,workPeople=0,workWithAtt=0,workPlan=0,workWithPlan=0,reqSum=0;
+  // Požadavek na pracovní den (2.18): pevný počet lidí z Nastavení, jinak plán ze souboru (mělo dorazit + požadavek).
+  t.reqDays=0;t.metDays=0;t.balance=null;
   days.forEach(d=>{
+    const req=d.day.work&&d.people!=null?waReq(wa,d):null;
+    if(req){t.reqDays++;reqSum+=req;if(d.people>=req)t.metDays++;t.balance=Math.round(((t.balance||0)+d.people-req)*100)/100;}
     if(d.day.work)t.workDays++;else{t.offDays++;if(d.people)t.offWorked++;}
     if(d.day.work&&!d.hasAtt)t.missingAtt++;
     if(d.day.work&&!d.hasWork)t.missingWork++;
@@ -3507,6 +3548,8 @@ function waTotals(wa,days){
   t.fill=fillPlan?fillPeople/fillPlan:null;
   t.avgPeople=workWithAtt?workPeople/workWithAtt:null;
   t.avgPlan=workWithPlan?workPlan/workWithPlan:null;
+  t.avgReq=t.reqDays?reqSum/t.reqDays:null;
+  t.metShare=t.reqDays?t.metDays/t.reqDays:null;
   t.perShift=t.prodShifts&&t.prodPcs!=null?t.prodPcs/t.prodShifts:null;
   t.perDay=t.workDays&&t.pcs!=null?t.pcs/Math.max(1,days.filter(d=>d.hasWork).length):null;
   t.unprodShare=t.shifts&&t.unprodShifts!=null?t.unprodShifts/t.shifts:null;
@@ -3571,57 +3614,227 @@ function waIssues(wa,days){
 /* Typ dne pro tabulky a exporty. */
 function waDayType(day){return day.hol?"svátek – "+day.hol:day.sat?"sobota":day.sun?"neděle":"pracovní den";}
 const waR=(v,d=2)=>v==null?null:Math.round(v*10**d)/10**d;
-/* Historický přehled (2.17.1): posledních `months` měsíců do posledního dne s daty (0 = vše).
-   Týdny začínají pondělím týdne, ve kterém začíná první měsíc, ať jsou celé. */
-function waHistRange(wa,months){
+/* Historický přehled po týdnech (2.18): posledních `weeks` týdnů do posledního dne s daty (0 = vše),
+   od pondělí, ale ne před prvním dnem s daty. */
+function waHistRange(wa,weeks){
   const span=waSpan(wa);
   if(!span)return null;
-  let first=span.from.slice(0,7);
-  if(months>0){
-    const [y,m]=span.to.split("-").map(Number);
-    const t=y*12+m-1-(months-1);
-    const fm=Math.floor(t/12)+"-"+String(t%12+1).padStart(2,"0");
-    if(fm>first)first=fm;
-  }
-  const from=first+"-01";
+  // Celé týdny zpět od týdne posledních dat, ale ne před prvním dnem s daty: dny před ním by se jinak
+  // počítaly jako pracovní dny bez obsazenosti. wFrom = pondělí prvního týdne (popisky týdnů).
+  let from=weeks>0?addDays(isoWeek(span.to).from,-7*(weeks-1)):span.from;
+  if(from<span.from)from=span.from;
   return {from,to:span.to,wFrom:isoWeek(from).from};
+}
+/* Požadavek lidí na pracovní den: pevný z Nastavení, jinak plán ze souboru. */
+function waReq(wa,d){return wa.target||d.plan||null;}
+/* Obsazenost proti požadavku (2.18): dny se splněným požadavkem, kumulovaná bilance (člověkodny)
+   a výpadky: od dne, kdy bilance klesne pod nulu, do dne, kdy se znovu dorovná. Otevřený výpadek
+   má návrh dorovnání: tolik lidí navíc, kolik průměrně chybělo, a na kolik pracovních dní. */
+function waStaffing(wa,days){
+  const rows=[];let cum=0,met=0;
+  days.forEach(d=>{
+    if(!d.day.work||d.people==null)return;
+    const req=waReq(wa,d);if(!req)return;
+    const diff=Math.round((d.people-req)*100)/100;
+    cum=Math.round((cum+diff)*100)/100;
+    if(d.people>=req)met++;
+    rows.push({iso:d.iso,people:d.people,req,diff,cum,met:d.people>=req});
+  });
+  const episodes=[];let ep=null;
+  rows.forEach(r=>{
+    if(!ep&&r.cum<0)ep={from:r.iso,to:null,days:0,worst:r.cum,short:0,shortDays:0};
+    if(ep){
+      ep.days++;ep.worst=Math.min(ep.worst,r.cum);
+      if(r.diff<0){ep.short+=-r.diff;ep.shortDays++;}
+      if(r.cum>=0){ep.to=r.iso;episodes.push(ep);ep=null;}
+    }
+  });
+  let open=null;
+  if(ep){
+    const avg=ep.shortDays?ep.short/ep.shortDays:0;
+    const extra=Math.max(1,Math.ceil(avg-1e-9));
+    const deficit=-cum;
+    open={from:ep.from,days:ep.days,worst:ep.worst,deficit,avgShort:Math.round(avg*10)/10,extra,needDays:Math.ceil(deficit/extra-1e-9)};
+    episodes.push(ep);
+  }
+  return {rows,n:rows.length,met,share:rows.length?met/rows.length:null,balance:cum,episodes:episodes.map(e=>({from:e.from,to:e.to,days:e.days,worst:e.worst})),open};
 }
 /* Čísla celku, nebo jedné skupiny (2.17.2): skupina nemá plán ani obsazenost, má podíl na lidech. */
 function waFx(t,gid){
-  if(gid){const g=t.group[gid]||{};return {workDays:t.workDays,avg:g.avg??null,plan:null,fill:null,shifts:g.shifts??null,planShifts:null,pcs:g.pcs??null,per:g.per??null,share:g.share??null};}
-  return {workDays:t.workDays,avg:t.avgPeople,plan:t.avgPlan,fill:t.fill,shifts:t.shifts,planShifts:t.plan,pcs:t.pcs,per:t.perShift,share:null};
+  if(gid){const g=t.group[gid]||{};return {workDays:t.workDays,avg:g.avg??null,plan:null,fill:null,shifts:g.shifts??null,planShifts:null,pcs:g.pcs??null,per:g.per??null,share:g.share??null,
+    req:null,reqDays:0,metDays:0,metShare:null,balance:null};}
+  return {workDays:t.workDays,avg:t.avgPeople,plan:t.avgPlan,fill:t.fill,shifts:t.shifts,planShifts:t.plan,pcs:t.pcs,per:t.perShift,share:null,
+    req:t.avgReq,reqDays:t.reqDays,metDays:t.metDays,metShare:t.metShare,balance:t.balance};
 }
 function waGroupKind(g){return g.noIs?"mimo IS":g.unprod?"neproduktivní":"produktivní";}
 const waPct=v=>v==null?null:Math.round(v*1000)/10;
-/* Řádek souhrnu za týden nebo měsíc: jen fakta pro auditora. */
-const WA_FACT_HEAD=["Pracovní dny","Ø lidí v práci na pracovní den","Ø plán na pracovní den","Obsazenost proti plánu %","Osobosměny","Zpracované kusy","Kusy na osobosměnu"];
-const WA_GFACT_HEAD=["Pracovní dny","Ø lidí v práci na pracovní den","Podíl na lidech v práci %","Osobosměny","Zpracované kusy","Kusy na osobosměnu"];
+/* Řádek souhrnu za týden: jen fakta pro auditora (2.18 bez osobosměn, se splněným požadavkem). */
+const WA_FACT_HEAD=["Pracovní dny","Ø lidí v práci na pracovní den","Ø požadavek na pracovní den","Dny se splněným požadavkem","Podíl dní se splněným požadavkem %","Bilance proti požadavku (člověkodny)","Zpracované kusy","Kusy na osobosměnu"];
+const WA_GFACT_HEAD=["Pracovní dny","Ø lidí v práci na pracovní den","Podíl na lidech v práci %","Zpracované kusy","Kusy na osobosměnu"];
 function waFacts(t,gid){
   const f=waFx(t,gid);
-  return gid?[f.workDays,waR(f.avg,1),waPct(f.share),f.shifts,f.pcs,waR(f.per,1)]:[f.workDays,waR(f.avg,1),waR(f.plan,1),waPct(f.fill),f.shifts,f.pcs,waR(f.per,1)];
+  return gid?[f.workDays,waR(f.avg,1),waPct(f.share),f.pcs,waR(f.per,1)]
+    :[f.workDays,waR(f.avg,1),waR(f.req,1),f.reqDays?f.metDays:null,waPct(f.metShare),f.balance,f.pcs,waR(f.per,1)];
 }
-/* Listy Excelu pro auditora: souhrn, skupiny, týdny a měsíce (bez dnů a interních podkladů).
-   S vybranou skupinou jen čísla té skupiny. */
+/* Listy Excelu pro auditora (2.18): souhrn, skupiny, výpadky a týdny (bez měsíců, dnů a interních
+   podkladů). S vybranou skupinou jen čísla té skupiny. */
 function waSheets(wa,r,gid){
   const g=gid?wa.groups.find(x=>x.id===gid):null;
   if(!g)gid="";
   const head=gid?WA_GFACT_HEAD:WA_FACT_HEAD;
-  const t=waTotals(wa,waDays(wa,r.from,r.to));
-  const weeks=waWeeks(wa,waDays(wa,r.wFrom,r.to));
-  const months=waMonths(wa,waDays(wa,r.from,r.to));
+  const days=waDays(wa,r.from,r.to);
+  const t=waTotals(wa,days);
+  const weeks=waWeeks(wa,days);
   const f=waFacts(t,gid);
-  const sum=[["Lidé v práci a zpracované kusy"+(g?" – "+g.name:"")],["Období",dayText(r.from)+" – "+dayText(r.to)],...(g?[["Skupina",g.name+" ("+waGroupKind(g)+")"]]:[]),[],
+  const st=gid?null:waStaffing(wa,days);
+  const sum=[["Lidé v práci a zpracované kusy"+(g?" – "+g.name:"")],["Období",dayText(r.from)+" – "+dayText(r.to)],...(g?[["Skupina",g.name+" ("+waGroupKind(g)+")"]]:[]),
+    ...(gid?[]:[["Požadavek lidí na pracovní den",wa.target?"pevně "+wa.target:"podle plánu v souboru (mělo dorazit + požadavek)"]]),[],
     ...head.map((h,i)=>[h,f[i]]),[],
-    ["Osobosměna = jeden člověk na jedné směně. Kusy jen z operací přiřazených ke skupinám; kusy na osobosměnu jen u produktivních skupin."]];
-  const out=[{name:"Souhrn",cols:[40,16],rows:sum}];
+    ["Člověkoden = jeden člověk v práci jeden den. Bilance = lidé v práci minus požadavek; záporná = chybějící lidé, které je potřeba dorovnat. Kusy jen z operací přiřazených ke skupinám; kusy na osobosměnu jen u produktivních skupin."]];
+  const out=[{name:"Souhrn",cols:[44,16],rows:sum}];
   if(!gid){
-    const gh=["Skupina","Zařazení","Ø lidí v práci na pracovní den","Podíl na lidech v práci %","Osobosměny","Zpracované kusy","Kusy na osobosměnu"];
-    out.push({name:"Skupiny",cols:[36,14,14,14,14,14,14],rows:[gh,...wa.groups.map(x=>{const v=waFx(t,x.id);return [x.name,waGroupKind(x),waR(v.avg,1),waPct(v.share),v.shifts,v.pcs,waR(v.per,1)];})]});
+    const gh=["Skupina","Zařazení","Ø lidí v práci na pracovní den","Podíl na lidech v práci %","Zpracované kusy","Kusy na osobosměnu"];
+    out.push({name:"Skupiny",cols:[36,14,14,14,14,14],rows:[gh,...wa.groups.map(x=>{const v=waFx(t,x.id);return [x.name,waGroupKind(x),waR(v.avg,1),waPct(v.share),v.pcs,waR(v.per,1)];})]});
+    if(st.episodes.length)out.push({name:"Výpadky",cols:[12,12,22,24],rows:[["Od","Dorovnáno","Pracovních dní do dorovnání","Největší ztráta (člověkodny)"],
+      ...st.episodes.map(e=>[e.from,e.to||"zatím ne",e.days,e.worst])]});
   }
-  out.push({name:"Týdny",cols:[10,11,11,...head.map(()=>14)],rows:[["Týden","Od","Do",...head],...weeks.map(w=>{const wk=weekById(w.id);return [w.label,wk.from<r.wFrom?r.wFrom:wk.from,wk.to>r.to?r.to:wk.to,...waFacts(w.t,gid)];})]});
-  out.push({name:"Měsíce",cols:[16,...head.map(()=>14)],rows:[["Měsíc",...head],...months.map(m=>[m.label,...waFacts(m.t,gid)])]});
+  let cum=0;
+  out.push({name:"Týdny",cols:[10,11,11,...head.map(()=>14),...(gid?[]:[14])],rows:[["Týden","Od","Do",...head,...(gid?[]:["Kumulovaná bilance (člověkodny)"])],...weeks.map(w=>{
+    const wk=weekById(w.id);const row=[w.label,wk.from<r.from?r.from:wk.from,wk.to>r.to?r.to:wk.to,...waFacts(w.t,gid)];
+    if(!gid){cum=Math.round((cum+(w.t.balance||0))*100)/100;row.push(w.t.reqDays?cum:null);}
+    return row;})]});
   return out;
 }
+
+/* ---------- výrobní plán (2.18) ---------- */
+/* Odhad sloupce podle nadpisu (jen předvyplnění ve vzoru). */
+const WA_PLAN_GUESS={order:/objedn|zakazk|order/,ean:/(^|[^a-z])ean([^a-z]|$)|carov|barcode/,ks:/pocet|mnozstv|(^|[^a-z])ks([^a-z]|$)|kusu|qty|quantit/,
+  index:/index|cislo dilu|artikl|material/,due:/termin|dokonc|due|deadline|datum dod/,tech:/technolog|postup|(^|[^a-z])tech([^a-z]|$)/};
+function waPlanGuess(headers){
+  const out={},used=new Set();
+  WA_PLAN_FIELDS.forEach(f=>{
+    const i=headers.findIndex((h,j)=>!used.has(j)&&WA_PLAN_GUESS[f].test(norm(h)));
+    if(i>=0){out[f]=i;used.add(i);}
+  });
+  return out;
+}
+/* Řádek s nadpisy: v prvních 40 řádcích ten s nejvíc textovými buňkami. */
+function waPlanHeaderRow(rows){
+  let best=0,score=-1;
+  rows.slice(0,40).forEach((r,i)=>{const n=(r||[]).filter(v=>typeof v==="string"&&v.trim()&&!/^\d+([.,]\d+)?$/.test(v.trim())).length;if(n>score){score=n;best=i;}});
+  return best;
+}
+/* Sloupce listu podle vzoru: najde řádek se stejnými nadpisy (soubor se mohl posunout),
+   jinak platí řádek a písmena ze vzoru. Vrací {header, idx: {pole: index sloupce}}. */
+function waPlanCols(rows,sh){
+  const fields=WA_PLAN_FIELDS.filter(f=>sh.cols[f]);
+  const want=fields.filter(f=>sh.heads[f]).map(f=>[f,norm(sh.heads[f])]);
+  if(want.length){
+    for(let i=0;i<Math.min(rows.length,60);i++){
+      const r=(rows[i]||[]).map(v=>norm(v==null?"":v));
+      const idx={};want.forEach(([f,h])=>{const c=r.indexOf(h);if(c>=0)idx[f]=c;});
+      if(Object.keys(idx).length>=Math.min(3,want.length)){
+        fields.forEach(f=>{if(!(f in idx))idx[f]=waIndex(sh.cols[f]);});
+        return {header:i,idx,found:true};
+      }
+    }
+  }
+  const idx={};fields.forEach(f=>{idx[f]=waIndex(sh.cols[f]);});
+  return {header:sh.header,idx,found:false};
+}
+/* Technologie: „G2“ nebo „G“ jako samostatné označení (G2/B, G + K), nebo kdekoli v textu. */
+function waPlanMatch(tech,cfg){
+  if(!cfg||!cfg.words||!cfg.words.length)return true;
+  const t=String(tech==null?"":tech).toUpperCase();
+  if(cfg.mode==="contains")return cfg.words.some(w=>t.includes(w));
+  const toks=t.split(/[^A-Z0-9]+/);
+  return cfg.words.some(w=>toks.includes(w));
+}
+function waPlanPart(v){
+  if(v==null)return "";
+  if(typeof v==="number")return Number.isFinite(v)?String(Number.isInteger(v)?v:+v.toFixed(6)):"";
+  return String(v).trim().replace(/\s+/g," ").toUpperCase().replace(/^(\d+)\.0+$/,"$1");
+}
+/* Sloučení řádků plánu do položek: klíč = objednávka + index + EAN. Duplicita (v souboru i proti
+   dřívějším plánům) si nechá verzi s nejpozdějším termínem; při stejném termínu platí novější.
+   rows: [objednávka, EAN, ks, index, termín, technologie] (surové buňky). map: klíč → [ISO, ks]. */
+function waPlanMerge(map,rows,cfg){
+  const st={rows:0,bad:0,notTech:0,matched:0,dupes:0,added:0,moved:0,older:0};
+  const seen=new Set(),techs=new Map();
+  rows.forEach(r=>{
+    st.rows++;
+    const tech=r[5]==null?"":String(r[5]).trim();
+    const ok=waPlanMatch(tech,cfg);
+    const tc=techs.get(tech);if(tc)tc[0]++;else if(techs.size<2000)techs.set(tech,[1,ok]);
+    if(!ok){st.notTech++;return;}
+    const ks=toNum(r[2]),dt=cellToDateTime(r[4]);
+    const key=[r[0],r[3],r[1]].map(waPlanPart).join("|");
+    if(ks==null||ks<=0||!dt||dt.y<2000||dt.y>2100||key==="||"){st.bad++;return;}
+    st.matched++;
+    const iso=dt.y+"-"+String(dt.m).padStart(2,"0")+"-"+String(dt.d).padStart(2,"0");
+    if(seen.has(key))st.dupes++;else seen.add(key);
+    const old=map.get(key);
+    if(!old){map.set(key,[iso,ks]);st.added++;return;}
+    if(iso>old[0]){map.set(key,[iso,ks]);st.moved++;}
+    else if(iso===old[0])map.set(key,[iso,ks]);
+    else st.older++;
+  });
+  st.items=map.size;
+  // nejčastější hodnoty technologie, ať je vidět, co filtr bere
+  st.techs=[...techs.entries()].sort((a,b)=>b[1][0]-a[1][0]).slice(0,12).map(([t,[n,ok]])=>({tech:t,n,ok}));
+  return st;
+}
+/* Uložení položek: sloupcově (klíče, dny od 1. 1. 1970, kusy), ať se dobře komprimuje. */
+function waPlanEncode(map){
+  const k=[],d=[],q=[];
+  map.forEach((v,key)=>{k.push(key);d.push(Math.round(utcOf(v[0])/DAY_MS));q.push(v[1]);});
+  return {v:1,k,d,q};
+}
+function waPlanDecode(o){
+  const map=new Map();
+  if(!o||o.v!==1||!Array.isArray(o.k)||!Array.isArray(o.d)||!Array.isArray(o.q))return map;
+  for(let i=0;i<o.k.length;i++){
+    const key=o.k[i],day=o.d[i],ks=o.q[i];
+    if(typeof key!=="string"||!Number.isFinite(day)||!Number.isFinite(ks)||ks<=0)continue;
+    map.set(key,[isoOf(day*DAY_MS),ks]);
+  }
+  return map;
+}
+/* Součty po týdnech termínu (do stavu). */
+function waPlanWeeks(map){
+  const out={};
+  map.forEach(([iso,ks])=>{const w=isoWeek(iso).id;const x=out[w]||(out[w]={ks:0,n:0});x.ks=Math.round((x.ks+ks)*100)/100;x.n++;});
+  return out;
+}
+/* Kapacita brusičů po týdnech: skutečná (směny skupiny podle obsazenosti × ks na směnu), pracovní
+   dny bez obsazenosti doplní odhad z průměru posledních 20 pracovních dnů s obsazeností (est = počet
+   odhadnutých dnů; actual = celý týden podle obsazenosti). Skluz = kusy, které se v týdnu nestihnou
+   a přejdou do dalšího (nevyužitá kapacita se nepřenáší, skluz neklesne pod 0). */
+function waPlanCapacity(wa,weekIds){
+  const p=wa.plan,grp=p.cap.group,per=p.cap.perShift||25;
+  const recent=Object.keys(wa.days).sort().reverse().filter(iso=>{const [y,m,d]=iso.split("-").map(Number);return mkDay(y,m,d).work;}).slice(0,20);
+  const val=(iso,k)=>waVal(wa,iso,"g."+grp+"."+k);
+  const avgGr=grp&&recent.length?recent.reduce((a,iso)=>a+(val(iso,"am")||0)+(val(iso,"pm")||0),0)/recent.length:null;
+  let cum=0;
+  return weekIds.map(id=>{
+    const w=weekById(id);const plan=(p.weeks[id]||{}).ks||0,n=(p.weeks[id]||{}).n||0;
+    let workDays=0,shifts=0,att=0,est=0;
+    for(let i=0;i<7;i++){
+      const iso=addDays(w.from,i);const [y,m,d]=iso.split("-").map(Number);
+      const work=mkDay(y,m,d).work;
+      if(work)workDays++;
+      if(!grp)continue;
+      if(wa.days[iso]){att++;shifts+=(val(iso,"am")||0)+(val(iso,"pm")||0);}
+      else if(work&&avgGr!=null){est++;shifts+=avgGr;}
+    }
+    const known=att+est>0;
+    const cap=grp&&known?Math.round(shifts*per*10)/10:null;
+    if(cap!=null)cum=Math.max(0,Math.round((cum+plan-cap)*10)/10);
+    return {id,label:weekName(id),range:weekRange(w),plan,n,workDays,cap,actual:att>0&&!est,est,grinders:known?Math.round(shifts/(att+est)*100)/100:null,
+      need:workDays&&per?plan/per/workDays:null,diff:cap==null?null:Math.round((cap-plan)*10)/10,cum:cap==null?null:cum};
+  });
+}
+function waPlanFileIds(st){return ((((st||S).workAudit||{}).plan||{}).chunks||[]).slice();}
 
 /* ---------- historie změn ---------- */
 function waChanges(A,B,add){
@@ -3643,6 +3856,13 @@ function waChanges(A,B,add){
     if(o.on!==x.on)add("workaudit","",{m:"waon:"+x.id,p:"Audit – operace „"+x.name+"“: ",v0:o.on?"započítává se":"nezapočítává se",v1:x.on?"započítává se":"nezapočítává se"});
   });
   if(JSON.stringify(A.cols)!==JSON.stringify(B.cols))add("workaudit","Audit: změněny sloupce souborů",{m:"wacols"});
+  if((A.target||null)!==(B.target||null))add("workaudit","",{m:"watarget",p:"Audit – požadavek lidí na pracovní den: ",v0:A.target?String(A.target):"podle plánu v souboru",v1:B.target?String(B.target):"podle plánu v souboru"});
+  const pa=A.plan||blankWaPlan(),pb=B.plan||blankWaPlan();
+  const techText=p=>p.tech.words.join(", ")+(p.tech.mode==="contains"?" (kdekoli v textu)":"");
+  if(techText(pa)!==techText(pb))add("workaudit","",{m:"waptech",p:"Audit – výrobní plán, technologie: ",v0:techText(pa)||"vše",v1:techText(pb)||"vše"});
+  if(pa.cap.group!==pb.cap.group)add("workaudit","",{m:"wapgrp",p:"Audit – výrobní plán, kapacita skupiny: ",v0:pa.cap.group?gname(A,pa.cap.group):"žádná",v1:pb.cap.group?gname(B,pb.cap.group):"žádná"});
+  if(pa.cap.perShift!==pb.cap.perShift)add("workaudit","",{m:"wapper",p:"Audit – výrobní plán, kusů na směnu: ",v0:nf(pa.cap.perShift,1),v1:nf(pb.cap.perShift,1)});
+  if(JSON.stringify(pa.tpl)!==JSON.stringify(pb.tpl))add("workaudit",pb.tpl?"Audit: vzor výrobního plánu podle souboru "+(pb.tpl.file||"—"):"Audit: vzor výrobního plánu smazán",{m:"waptpl"});
   const isos=new Set([...Object.keys(A.edits),...Object.keys(B.edits)]);
   const fmt=v=>v==null?"prázdné":nf(v,2);
   [...isos].sort().forEach(iso=>{

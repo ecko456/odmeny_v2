@@ -1572,6 +1572,30 @@ tr.wa-row.on td.name b { color: var(--acc); }
 .wa-guess { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 500; }
 table.wa-hist td small { color: var(--ink-3); font-size: 12px; }
 .chart .wa-plan { stroke: var(--ink); stroke-width: 2; stroke-linecap: round; }
+/* Výpadek lidí a dorovnání (2.18) */
+.wa-staff { margin-bottom: 16px; }
+.wa-staff .card-head p { margin-top: 2px; max-width: 760px; }
+.wa-staff-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 20px; align-items: start; }
+.wa-staff-now > * + * { margin-top: 8px; }
+.wa-staff-now p { font-size: 14px; line-height: 1.5; }
+.wa-staff-big { display: flex; align-items: baseline; gap: 8px; color: var(--ink-2); font-size: 14px; }
+.wa-staff-big b { font: 600 34px/1.05 var(--disp); color: var(--ink); }
+.wa-staff-big.crit b { color: var(--crit); }
+.wa-staff-big.good b { color: var(--good); }
+.wa-staff-fix { padding: 10px 12px; border-radius: 12px; background: var(--acc-soft); }
+.wa-staff-fix b { color: var(--acc); }
+.wa-staff h4 { margin-top: 16px; font: 600 13px/1.3 var(--body); color: var(--ink-2); text-transform: uppercase; letter-spacing: .04em; }
+.wa-eps { display: grid; gap: 6px; margin: 6px 0 0; padding: 0; list-style: none; font-size: 13.5px; }
+.wa-eps li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.wa-eps li span { color: var(--ink-2); font-family: var(--mono); font-size: 12.5px; text-align: right; }
+.wa-eps li em { grid-column: 1 / -1; color: var(--ink-3); font-style: normal; font-size: 12.5px; }
+.wa-eps li em.open { color: var(--crit); font-weight: 600; }
+.wa-staff .wa-charts { grid-template-columns: minmax(0, 1fr); margin-bottom: 0; }
+.wa-staff .chart { box-shadow: none; }
+.chart .wa-dot.neg { fill: var(--crit); }
+.chart .cap.wa-capl { text-anchor: end; }
+td.wa-neg { color: var(--crit); }
+.wa-ok { color: var(--good); font-weight: 600; }
 
 .wa-check h3 .icon { color: var(--warn); }
 .wa-issues { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 14px; }
@@ -1611,6 +1635,8 @@ tr.wa-offop td { color: var(--ink-3); }
 .wa-flags .check { font-size: 13.5px; }
 .wa-colgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); align-items: end; gap: 10px; }
 .wa-colgrid .field { margin: 0; }
+.wa-target { max-width: 220px; margin: 10px 0 0; }
+.wa-target input { font-family: var(--mono); }
 .btn.wa-danger { color: var(--crit); }
 table.wa-opset td:first-child { width: 72px; }
 table.wa-opset select { min-width: 200px; }
@@ -1641,8 +1667,50 @@ table.wa-prev th, table.wa-prev td { padding: 5px 8px; border-bottom: 1px solid 
 table.wa-prev th { color: var(--ink-3); font: 600 11px/1.2 var(--disp); letter-spacing: .08em; text-transform: uppercase; }
 table.wa-prev .r { text-align: right; }
 
+/* Výrobní plán (2.18) */
+.wa-imp li.w { color: var(--warn); }
+.wa-progbar { height: 8px; margin-top: 12px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.wa-progbar i { display: block; width: 0; height: 100%; border-radius: 4px; background: var(--acc); transition: width .2s; }
+#waProg { min-width: min(420px, 70vw); }
+.wa-techs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.wa-tech { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink-3); font: 500 12.5px/1.4 var(--mono); }
+.wa-tech.ok { border-color: color-mix(in srgb, var(--good) 40%, transparent); background: color-mix(in srgb, var(--good) 8%, var(--surface)); color: var(--ink); }
+.wa-tech .icon { width: 13px; height: 13px; color: var(--good); }
+.wa-tech b { font-weight: 600; }
+.wa-tech small { color: var(--ink-3); font-size: 11.5px; }
+.wa-impfile { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.wa-impfile > b { display: block; overflow-wrap: anywhere; }
+.wa-impstats { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; margin: 8px 0 0; }
+.wa-impstats div { padding: 6px 8px; border-radius: 8px; background: var(--surface-2); }
+.wa-impstats div.on { background: var(--acc-soft); }
+.wa-impstats dt { color: var(--ink-3); font-size: 11.5px; line-height: 1.25; }
+.wa-impstats dd { margin: 2px 0 0; font-weight: 600; font-size: 15px; }
+.wa-tpl-sheet { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; }
+.wa-tpl-use { font-size: 15px; }
+.wa-tpl-body { margin-top: 10px; }
+.wa-tpl-head { max-width: 160px; }
+.wa-tpl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; margin-top: 8px; }
+.wa-tpl-grid .field, .wa-tpl-head { margin: 0; }
+.wa-tpl-prev { margin-top: 10px; overflow-x: auto; }
+.wa-tpl-list { display: grid; gap: 6px; margin: 4px 0 0; padding: 0; list-style: none; font-size: 13.5px; }
+.wa-tpl-list li { display: grid; grid-template-columns: minmax(120px, auto) auto minmax(0, 1fr); gap: 4px 14px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; }
+.wa-tpl-list li span { color: var(--ink-2); }
+.wa-plan-tpl, .wa-plan-set { margin-top: 16px; }
+.wa-plan-setgrid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr) 170px; align-items: start; gap: 10px 14px; }
+.wa-plan-setgrid .field { margin: 0; }
+.wa-plan-mode { border: 0; padding: 0; margin: 0; min-width: 0; }
+.wa-plan-mode legend { padding: 0; margin-bottom: 6px; color: var(--ink-2); font-size: 13px; font-weight: 600; }
+.wa-plan-mode .check { font-size: 13.5px; }
+.chart .wa-capline { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 5 4; stroke-linecap: round; }
+.wa-legend i.dash { width: 14px; height: 0; border-top: 2px dashed var(--ink); }
+tr.wa-now td { background: var(--acc-soft); }
+tr.wa-now td.name b { color: var(--acc); }
+table.wa-plantab td small { color: var(--ink-3); font-size: 12px; }
+
 @media screen and (max-width: 900px) {
-  .wa-start, .wa-charts, .wa-charts.three { grid-template-columns: minmax(0, 1fr); }
+  .wa-start, .wa-charts, .wa-charts.three, .wa-staff-grid { grid-template-columns: minmax(0, 1fr); }
+  .wa-tpl-grid, .wa-plan-setgrid { grid-template-columns: minmax(0, 1fr); }
+  .wa-tpl-list li { grid-template-columns: minmax(0, 1fr); }
   .wa-hist-bar .chips { flex: 1 1 100%; }
   .wa-hist-bar .chips + .chips { padding-left: 0; border-left: 0; }
   .wa-hist-bar .btn { flex: 1 1 40%; }

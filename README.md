@@ -62,6 +62,36 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.18
+
+- **Obsazenost proti plánu = podíl dní se splněným požadavkem.** Den je splněný, když je v práci
+  aspoň 100 % požadavku. Požadavek se bere ze souboru obsazenosti (mělo dorazit + požadavek
+  odpolední), nebo pevné číslo z Nastavení (třeba 100 lidí na pracovní den).
+- **Výpadek lidí a dorovnání:** bilance lidí proti požadavku v člověkodnech, sčítaná den po
+  dni, s grafem po týdnech:
+  - u výpadku je vidět, kdy začal, kdy se dorovnal a za kolik pracovních dní;
+  - u výpadku, který trvá, je návrh: „Na dorovnání: +3 lidé denně po 10 pracovních dní“.
+    Když dva týdny chybí 3 lidé, je potřeba 3 lidi navíc další dva týdny.
+- **Jen týdny**, přehled za 13, 26, 52 týdnů nebo vše. Měsíce a sloupec Osobosměny zmizely
+  z přehledu, PDF i Excelu. Kusy na osobosměnu zůstaly.
+- **Výrobní plán** (nová záložka v Auditu):
+  - jeden soubor plánu se nahraje jako **vzor**. U obou listů se vybere řádek s nadpisy
+    a sloupce: číslo objednávky, EAN, počet kusů, index, termín dokončení a technologie.
+    Další soubory se čtou stejně, posunuté nadpisy se najdou podle názvu;
+  - berou se jen položky s technologií **G2 nebo G** (samostatné označení, třeba „G2/B“
+    nebo „G + K“; „GR“ ne). Filtr jde změnit;
+  - **duplicity** podle čísla objednávky, indexu a EAN, i napříč soubory. Platí verze
+    s **nejpozdějším termínem**. Souhrn před uložením ukáže řádky, duplicity, nové položky,
+    posunuté termíny a nejčastější hodnoty technologie;
+  - i soubory se statisíci řádků (120 000 řádků se v testu načte a uloží za několik sekund).
+    Položky se ukládají zašifrované po zkomprimovaných dílech, v datech jsou jen součty po
+    týdnech. Díly jsou i v záloze;
+  - **kusy k dodání po týdnech proti kapacitě brusičů:** 25 kusů na brusiče za směnu, počet
+    brusičů ze skupiny Brusiči v obsazenosti (ranní + odpolední), pro budoucí týdny odhad
+    z posledních 20 pracovních dní. Ukáže, kolik kusů chybí, skluz do dalších týdnů a kolik
+    brusičů je denně potřeba. Skupinu i kusy na směnu jde změnit.
+- Data z 2.17 zůstanou beze změny. Přibude prázdný výrobní plán a požadavek podle souboru.
+
 ## Co je nového ve verzi 2.17.2
 
 - **PDF pro auditora má nahoře „HALA 2 · REPORT“** (místo AUDIT), stejně v zápatí. Soubory se
