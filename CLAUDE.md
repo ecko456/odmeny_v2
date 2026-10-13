@@ -57,6 +57,19 @@ Stav k 12. 10. 2026 (verze 2.16):
     technických zařízení deník nenahrazuje. Totéž je v UI (`.lb-legal`) i v PDF.
   - Čeká se na zpětnou vazbu uživatele (vzhled archu, vzorové úkony, co v deníku chybí).
 - `ODM_VERSION` 2.16, `DATA_VERSION` = `CLIENT_VERSION` = `ODM_MIN_CLIENT` = 14.
+- **Návrh modulu Konstrukce (13. 10. 2026, čeká na odpovědi uživatele, nezačato).** Uživatel
+  chce „modul pro tvorbu 3D modelu … i výkres … konstrukcí různých“, např. dveře (branka) se
+  dvěma sloupy ukotvenými do země, křídlo na pantech, rám po obvodu a síť jako výplň.
+  Navrženo: sestavovač konstrukcí z ocelových profilů podle předloh (ne obecný CAD); zadání
+  rozměrů a profilů → 3D náhled (Three.js načtený jen v modulu, otevření křídel posuvníkem),
+  výkres PDF (pohledy, kóty, detaily pantu a patky, popisové pole), kusovník, nářezový plán do
+  6m tyčí, plocha pro povrchovou úpravu; volitelně kalkulace ceny a export DXF/STL. Fáze:
+  1) branka a brána, 2) další předlohy (plotové pole, zábradlí, rám, regál, přístřešek),
+  3) volný editor z prutů. Upozorněno: žádný statický výpočet, výkres je výrobní podklad.
+  Otázky na uživatele: co vyrábí nejčastěji, jaké profily mají skladem, pro koho je výkres
+  (dílna, zákazník, popisové pole s firmou), zda chce kalkulaci a DXF, vzorový výkres.
+  Výchozí, když řekne „dělej“: branka a brána z jeklů se svařovanou sítí, A3, kusovník
+  a nářezový plán.
 
 Stav k 11. 10. 2026 (verze 2.15):
 
