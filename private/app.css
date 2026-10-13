@@ -1554,6 +1554,21 @@ table.wa-cols tr:last-child th, table.wa-cols tr:last-child td { border-bottom: 
 .wa-hist-bar .chips + .chips { padding-left: 10px; border-left: 1px solid var(--line); }
 .wa-range-line { margin: -6px 0 14px; }
 .wa-hist-warn { margin-bottom: 14px; }
+.wa-hist-bar select { flex: 0 1 240px; }
+.wa-groups { margin-bottom: 16px; }
+.wa-groups .card-head p { margin-top: 2px; }
+table.wa-gtab td.name .tag { margin-left: 8px; }
+table.wa-gtab th.wa-gcol { width: 30%; }
+td.wa-gcol { min-width: 180px; }
+td.wa-gcol > * { vertical-align: middle; }
+.wa-gbar { display: inline-block; width: calc(100% - 64px); max-width: 260px; height: 8px; margin-right: 10px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.wa-gbar i { display: block; height: 100%; border-radius: 4px; }
+.wa-gbar.acc i { background: var(--ch-acc); }
+.wa-gbar.tab i { background: var(--ch-tab); }
+td.wa-gcol b.num { display: inline-block; min-width: 46px; text-align: right; }
+table.wa-gtab td.r { white-space: nowrap; }
+tr.wa-row.on td { background: var(--acc-soft); }
+tr.wa-row.on td.name b { color: var(--acc); }
 .wa-guess { display: block; margin-top: 2px; font-size: 12.5px; font-weight: 500; }
 table.wa-hist td small { color: var(--ink-3); font-size: 12px; }
 .chart .wa-plan { stroke: var(--ink); stroke-width: 2; stroke-linecap: round; }
@@ -1631,6 +1646,9 @@ table.wa-prev .r { text-align: right; }
   .wa-hist-bar .chips { flex: 1 1 100%; }
   .wa-hist-bar .chips + .chips { padding-left: 0; border-left: 0; }
   .wa-hist-bar .btn { flex: 1 1 40%; }
+  .wa-hist-bar select { flex: 1 1 100%; }
+  td.wa-gcol { min-width: 0; }
+  td.wa-gcol .wa-gbar { width: 40vw; max-width: 160px; }
   .wa-period .chips { flex: 1 1 100%; }
   .wa-period .wa-range { display: none; }
   .wa-date { flex: 1 1 40%; }

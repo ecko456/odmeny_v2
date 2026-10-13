@@ -1903,6 +1903,7 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
     const issues = waIssues(wa, days);
     const hr = waHistRange(wa, 0);
     const sheets = waSheets(wa, hr);
+    const gsheets = waSheets(wa, hr, 'brus');
     const sheet = name => sheets.find(x => x.name === name).rows;
     // Nastavení skupin a operací do historie.
     const b2 = JSON.parse(JSON.stringify(wa));
@@ -1927,6 +1928,8 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
       issues: { att: issues.missingAtt.length, work: issues.missingWork.length, mismatch: issues.mismatch, off: issues.offWorked, noGroup: issues.noGroup.map(x => x.name), skip: issues.off.map(x => [x.name, x.ks]) },
       fresh, hr, hr3: waHistRange(wa, 3), sheets: sheets.map(x => [x.name, x.rows.length]), weeksRows: sheet('Týdny'), monthRow: sheet('Měsíce')[1], souhrn: sheet('Souhrn').slice(3, 10),
       avg: [t.avgPeople, t.avgPlan],
+      skupiny: sheets.find(x => x.name === 'Skupiny').rows.slice(0, 2), gsheets: gsheets.map(x => [x.name, x.rows.length]), gmonth: gsheets.find(x => x.name === 'Měsíce').rows,
+      gsouhrn: gsheets[0].rows.slice(0, 3), fx: waFx(t, 'brus'), fxAll: waFx(t, ''),
       log, log2, dirty: [dirty.groups.map(g => [g.id, g.am, g.pm]), dirty.ops.map(x => [x.id, x.group]), dirty.days['2026-10-01'], Object.keys(dirty.days), Object.keys(dirty.edits['2026-10-01'])],
       v: DATA_VERSION, blank: !!blank().workAudit.groups.length })`));
   assert.deepStrictEqual([out.pa.rows, out.pa.skipped, out.pa.from, out.pa.to], [4, 1, '2026-10-01', '2026-10-08'], 'prázdný den a řádek bez data se přeskočí, sériové číslo Excelu je datum');
@@ -1943,7 +1946,7 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
   assert.deepStrictEqual(out.days, [['2026-10-01', true, '', true], ['2026-10-02', true, '', true], ['2026-10-03', false, '', true], ['2026-10-05', true, '', false],
     ['2026-10-06', true, '', false], ['2026-10-07', true, '', false], ['2026-10-28', false, 'Vznik ČSR', false]], 'víkend bez dat chybí, svátek a pracovní dny bez dat jsou vidět');
   assert.deepStrictEqual([out.t.workDays, out.t.offDays, out.t.offWorked, out.t.missingAtt, out.t.shifts, out.t.pcs, out.t.edits], [21, 2, 1, 18, 119, 1470, 2]);
-  assert.deepStrictEqual(out.t.brus, { shifts: 33, am: 23, pm: 10, pcs: 1050, per: 1050 / 33 });
+  assert.deepStrictEqual(out.t.brus, { shifts: 33, am: 23, pm: 10, pcs: 1050, work: 29, per: 1050 / 33, avg: 29 / 3, share: 29 / 115 }, 'průměr a podíl skupiny jen z pracovních dnů s obsazeností');
   assert.strictEqual(out.t.kont, null, 'neproduktivní skupina nemá kusy na osobosměnu');
   assert.deepStrictEqual(out.weeks, [['T40/2026', 94, 1470], ['T41/2026', 25, null]]);
   assert.deepStrictEqual(out.issues, { att: 18, work: 19, mismatch: [{ iso: '2026-10-01', shift: 'am', diff: 1 }, { iso: '2026-10-02', shift: 'am', diff: -1 }, { iso: '2026-10-08', shift: 'am', diff: -19 }], off: [{ iso: '2026-10-03', people: 4, pcs: 80, hol: null, weekend: true }],
@@ -1951,7 +1954,13 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
   assert.deepStrictEqual(out.fresh, { groups: ['', '', '', ''], pcs: null, noGroup: 927 }, 'bez skupiny se kusy nepočítají');
   assert.deepStrictEqual(out.hr, { from: '2026-10-01', to: '2026-10-08', wFrom: '2026-09-28' }, 'týdny začínají pondělím');
   assert.deepStrictEqual(out.hr3, out.hr, 'posledních 3 měsíců, ale ne před prvními daty');
-  assert.deepStrictEqual(out.sheets, [['Souhrn', 12], ['Týdny', 3], ['Měsíce', 2]], 'pro auditora jen souhrn, týdny a měsíce');
+  assert.deepStrictEqual(out.sheets, [['Souhrn', 12], ['Skupiny', 8], ['Týdny', 3], ['Měsíce', 2]], 'pro auditora jen souhrn, skupiny, týdny a měsíce');
+  assert.deepStrictEqual(out.skupiny, [['Skupina', 'Zařazení', 'Ø lidí v práci na pracovní den', 'Podíl na lidech v práci %', 'Osobosměny', 'Zpracované kusy', 'Kusy na osobosměnu'],
+    ['Brusiči', 'produktivní', 9.7, 25.2, 33, 1050, 31.8]]);
+  assert.deepStrictEqual(out.gsheets, [['Souhrn', 12], ['Týdny', 3], ['Měsíce', 2]], 'za skupinu bez listu Skupiny');
+  assert.deepStrictEqual(out.gmonth, [['Měsíc', 'Pracovní dny', 'Ø lidí v práci na pracovní den', 'Podíl na lidech v práci %', 'Osobosměny', 'Zpracované kusy', 'Kusy na osobosměnu'], ['říjen 2026', 6, 9.7, 25.2, 33, 1050, 31.8]]);
+  assert.deepStrictEqual(out.gsouhrn, [['Lidé v práci a zpracované kusy – Brusiči'], ['Období', '1. 10. 2026 – 8. 10. 2026'], ['Skupina', 'Brusiči (produktivní)']]);
+  assert.deepStrictEqual([out.fx.avg, out.fx.plan, out.fx.fill, out.fx.share, out.fxAll.share, out.fxAll.avg], [29 / 3, null, null, 29 / 115, null, 115 / 3]);
   assert.deepStrictEqual(out.weeksRows[0].length, 10);
   assert.deepStrictEqual(out.weeksRows.slice(1), [['T40/2026', '2026-09-28', '2026-10-04', 4, 45, 50, 90, 94, 1470, 18.5], ['T41/2026', '2026-10-05', '2026-10-08', 4, 25, 30, 83.3, 25, null, null]],
     '28. 9. je svátek, sobota 3. 10. se do průměru na pracovní den nepočítá');

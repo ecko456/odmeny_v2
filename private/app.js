@@ -19,7 +19,7 @@ const ui = {
   kt: { tab: 'plan', week: null, range: '12', dept: '' },
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
-  wa: { tab: 'prehled', grain: 'week', hist: 6, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all' },
+  wa: { tab: 'prehled', grain: 'week', hist: 6, group: '', mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -7087,49 +7087,71 @@ function waShortRange(x) {
 function waHistHtml() {
   const wa = S.workAudit;
   const { r, t, list, grain } = waHistData();
+  const G = wa.groups.find(g => g.id === ui.wa.group) || null;
+  const gid = G ? G.id : '';
+  const f = waFx(t, gid);
+  const fx = x => waFx(x.t, gid);
   const unit = grain === 'month' ? 'měsíc' : 'týden';
-  const withPcs = list.filter(x => x.t.pcs != null);
-  const sumPcs = withPcs.reduce((a, x) => a + x.t.pcs, 0);
-  const fillTone = t.fill == null ? '' : t.fill >= 0.95 ? 'good' : t.fill < 0.85 ? 'crit' : 'warn';
+  const withPcs = list.filter(x => fx(x).pcs != null);
+  const sumPcs = withPcs.reduce((a, x) => a + fx(x).pcs, 0);
+  const fillTone = f.fill == null ? '' : f.fill >= 0.95 ? 'good' : f.fill < 0.85 ? 'crit' : 'warn';
   const bar = `<div class="t5-weekbar wa-hist-bar">
       <div class="chips" role="group" aria-label="Rozlišení">${[['week', 'Po týdnech'], ['month', 'Po měsících']].map(([k, l]) => `<button type="button" class="chip${k === grain ? ' on' : ''}" data-wagrain="${k}" aria-pressed="${k === grain}">${l}</button>`).join('')}</div>
       <div class="chips" role="group" aria-label="Období">${WA_HIST.map(([n, l]) => `<button type="button" class="chip${n === ui.wa.hist ? ' on' : ''}" data-wahist="${n}" aria-pressed="${n === ui.wa.hist}">${l}</button>`).join('')}</div>
+      <select id="waGroup" aria-label="Skupina"><option value="">Všechny skupiny</option>${wa.groups.map(g => `<option value="${esc(g.id)}"${g.id === gid ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select>
       <span class="spacer"></span>
       <button class="btn sec" type="button" data-waxlsx>Excel</button>
       <button class="btn" type="button" data-wapdf>PDF pro auditora</button>
     </div>`;
   const ng = wa.ops.filter(o => !(o.on && o.group)).length;
   const warn = ng ? `<div class="note w wa-hist-warn">${ng} ${operaceN(ng)} z výkazu práce ${ng === 1 ? 'nemá' : 'nemají'} skupinu, ${ng === 1 ? 'její kusy' : 'jejich kusy'} se nepočítají. <button class="link" type="button" data-watabgo="nastaveni">Přiřadit skupiny</button></div>` : '';
+  const perNote = G ? (G.noIs ? 'projekt není evidován v IS' : G.unprod ? 'neproduktivní pozice, nepočítá se' : 'kusy skupiny na její osobosměnu') : 'produktivní skupiny';
   const tiles = `<div class="stats wa-stats">${[
-    statTile('Lidé v práci', `${waN(t.avgPeople, 1)}<em>Ø na den</em>`, t.avgPlan != null ? `plán Ø ${waN(t.avgPlan, 1)} · ${waN(t.shifts)} ${osobN(t.shifts)}` : `${waN(t.shifts)} ${osobN(t.shifts)}`),
-    statTile('Obsazenost proti plánu', waP(t.fill), t.plan ? `${waN(t.shifts)} z ${waN(t.plan)} plánovaných osobosměn` : 'plán v souboru chybí', fillTone),
-    statTile('Zpracováno', `${waN(t.pcs)}<em>ks</em>`, withPcs.length ? `Ø ${waN(sumPcs / withPcs.length)} ks za ${unit}` : 'výkaz práce chybí', 'tab'),
-    statTile('Kusy na osobosměnu', waN(t.perShift, 1), 'produktivní skupiny'),
+    statTile('Lidé v práci', `${waN(f.avg, 1)}<em>Ø na den</em>`, f.plan != null ? `plán Ø ${waN(f.plan, 1)} · ${waN(f.shifts)} ${osobN(f.shifts)}` : `${waN(f.shifts)} ${osobN(f.shifts)}`),
+    G ? statTile('Podíl na lidech v práci', waP(f.share), `z Ø ${waN(t.avgPeople, 1)} lidí na pracovní den`)
+      : statTile('Obsazenost proti plánu', waP(f.fill), f.planShifts ? `${waN(f.shifts)} z ${waN(f.planShifts)} plánovaných osobosměn` : 'plán v souboru chybí', fillTone),
+    statTile('Zpracováno', `${waN(f.pcs)}<em>ks</em>`, G && G.noIs ? 'projekt není evidován v IS' : withPcs.length ? `Ø ${waN(sumPcs / withPcs.length)} ks za ${unit}` : 'žádná operace se skupinou', 'tab'),
+    statTile('Kusy na osobosměnu', waN(f.per, 1), perNote),
   ].join('')}</div>`;
   const name = x => (grain === 'month' ? x.label : `${x.label} (${waShortRange(x)})`);
-  const pts = list.map((x, i) => ({ label: waAxisLabel(x, grain, i === 0), x }));
-  const per = grain === 'month' ? 'po měsících' : 'po týdnech';
+  const pts = list.map((x, i) => ({ label: waAxisLabel(x, grain, i === 0), x, v: fx(x) }));
+  const per = `${grain === 'month' ? 'po měsících' : 'po týdnech'}${G ? ` · ${G.name}` : ''}`;
   const charts = `<div class="wa-charts three" id="waCharts">
-      ${waChart({ title: 'Lidé v práci', sub: `Ø na pracovní den ${per}`, points: pts, value: p => p.x.t.avgPeople, ref: p => p.x.t.avgPlan, tone: 'c-acc', cap: v => nf(v, 1), legend: ['v práci', 'plán'],
-        tip: p => `${name(p.x)}: Ø ${waN(p.x.t.avgPeople, 1)} lidí na pracovní den${p.x.t.avgPlan != null ? ` z plánu ${waN(p.x.t.avgPlan, 1)} (${waP(p.x.t.fill)})` : ''}` })}
-      ${waChart({ title: 'Zpracované kusy', sub: `součet ${per}`, points: pts, value: p => p.x.t.pcs, tone: 'c-tab', cap: v => nf(v, 0),
-        tip: p => `${name(p.x)}: ${p.x.t.pcs == null ? 'bez výkazu práce' : `${waN(p.x.t.pcs)} ks`}` })}
-      ${waLine({ title: 'Kusy na osobosměnu', sub: `produktivní skupiny ${per}`, points: pts, value: p => p.x.t.perShift, tone: 'c-prod', cap: v => nf(v, 1),
-        tip: p => `${name(p.x)}: ${p.x.t.perShift == null ? 'bez údajů' : `${waN(p.x.t.perShift, 1)} ks na osobosměnu`}` })}
+      ${waChart({ title: 'Lidé v práci', sub: `Ø na pracovní den ${per}`, points: pts, value: p => p.v.avg, ref: G ? null : p => p.v.plan, tone: 'c-acc', cap: v => nf(v, 1), legend: G ? null : ['v práci', 'plán'],
+        tip: p => `${name(p.x)}: Ø ${waN(p.v.avg, 1)} lidí na pracovní den${G ? (p.v.share != null ? ` (${waP(p.v.share)} všech)` : '') : p.v.plan != null ? ` z plánu ${waN(p.v.plan, 1)} (${waP(p.v.fill)})` : ''}` })}
+      ${waChart({ title: 'Zpracované kusy', sub: `součet ${per}`, points: pts, value: p => p.v.pcs, tone: 'c-tab', cap: v => nf(v, 0),
+        tip: p => `${name(p.x)}: ${p.v.pcs == null ? 'bez kusů' : `${waN(p.v.pcs)} ks`}` })}
+      ${waLine({ title: 'Kusy na osobosměnu', sub: `${G ? '' : 'produktivní skupiny '}${per}`, points: pts, value: p => p.v.per, tone: 'c-prod', cap: v => nf(v, 1),
+        tip: p => `${name(p.x)}: ${p.v.per == null ? 'bez údajů' : `${waN(p.v.per, 1)} ks na osobosměnu`}` })}
       <div class="chart-tip" id="waTip" hidden></div>
     </div>`;
+  // Rozpad po skupinách za celé období (2.17.2); klepnutí na skupinu přepne grafy a tabulku na ni.
+  const gx = wa.groups.map(g => ({ g, v: waFx(t, g.id) }));
+  const maxAvg = Math.max(1e-9, ...gx.map(x => x.v.avg || 0));
+  const maxPcs = Math.max(1e-9, ...gx.map(x => x.v.pcs || 0));
+  const kind = g => (g.noIs ? '<span class="tag wa-nois">mimo IS</span>' : g.unprod ? '<span class="tag wa-unprod">neproduktivní</span>' : '');
+  const groups = `<div class="card wa-groups"><div class="card-head"><div><h3>Po skupinách</h3><p class="small muted">${esc(dayText(r.from))} – ${esc(dayText(r.to))}. Klepnutím na skupinu se grafy a tabulka přepnou na ni.</p></div>
+      ${G ? '<button class="btn sec small" type="button" data-wagrp="">Všechny skupiny</button>' : ''}</div>
+    <div class="table-card flat"><table class="stack wa-gtab"><thead><tr><th>Skupina</th><th class="wa-gcol">Ø lidí v práci na den</th><th class="r">Podíl</th><th class="wa-gcol">Zpracované kusy</th><th class="r">Ks / os.</th></tr></thead><tbody>${gx.map(({ g, v }) => `<tr class="wa-row${g.id === gid ? ' on' : ''}" data-wagrp="${esc(g.id)}" tabindex="0">
+      <td class="name" data-label="Skupina"><b>${esc(g.name)}</b>${kind(g)}</td>
+      <td class="wa-gcol" data-label="Ø lidí v práci na den"><span class="wa-gbar acc"><i data-w="${((v.avg || 0) / maxAvg * 100).toFixed(1)}"></i></span><b class="num">${waN(v.avg, 1)}</b></td>
+      <td class="r num" data-label="Podíl">${waP(v.share)}</td>
+      <td class="wa-gcol" data-label="Zpracované kusy">${g.noIs && v.pcs == null ? '<span class="muted small">mimo IS, kusy se neevidují</span>' : `<span class="wa-gbar tab"><i data-w="${((v.pcs || 0) / maxPcs * 100).toFixed(1)}"></i></span><b class="num">${waN(v.pcs)}</b>`}</td>
+      <td class="r num" data-label="Ks na osobosměnu">${waN(v.per, 1)}</td></tr>`).join('')}</tbody></table></div></div>`;
   const attr = grain === 'month' ? 'data-wamonth' : 'data-waweek';
-  const rows = list.slice().reverse().map(x => `<tr class="wa-row" ${attr}="${esc(x.id)}" tabindex="0">
+  const rows = list.slice().reverse().map(x => {
+    const v = fx(x);
+    return `<tr class="wa-row" ${attr}="${esc(x.id)}" tabindex="0">
       <td class="name" data-label="${grain === 'month' ? 'Měsíc' : 'Týden'}"><b>${esc(x.label)}</b>${grain === 'week' ? `<small> ${esc(waShortRange(x))}</small>` : ''}</td>
-      <td class="r num" data-label="Pracovní dny">${x.t.workDays}</td>
-      <td class="r num" data-label="Ø lidí v práci na den"><b>${waN(x.t.avgPeople, 1)}</b></td>
-      <td class="r num" data-label="Ø plán na den">${waN(x.t.avgPlan, 1)}</td>
-      <td class="r num" data-label="Obsazenost">${waP(x.t.fill)}</td>
-      <td class="r num" data-label="Kusy"><b>${waN(x.t.pcs)}</b></td>
-      <td class="r num" data-label="Ks na osobosměnu">${waN(x.t.perShift, 1)}</td></tr>`).join('');
-  const table = `<div class="table-card"><table class="stack wa-hist"><thead><tr><th>${grain === 'month' ? 'Měsíc' : 'Týden'}</th><th class="r">Prac. dny</th><th class="r">Ø lidí / den</th><th class="r">Ø plán / den</th><th class="r">Obsazenost</th><th class="r">Kusy</th><th class="r">Ks / os.</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-  return `${bar}<p class="wa-range-line small muted">${esc(dayText(r.from))} – ${esc(dayText(r.to))}</p>${warn}${tiles}${charts}${table}
-    <p class="hint">Ø na pracovní den = průměr pracovních dnů s obsazeností; víkendy a svátky se do průměru nepočítají, do součtů ano. Osobosměna = jeden člověk na jedné směně. Kusy jen z operací přiřazených ke skupině, kusy na osobosměnu jen u produktivních skupin. Klepnutím na řádek otevřeš jeho dny.</p>`;
+      <td class="r num" data-label="Pracovní dny">${v.workDays}</td>
+      <td class="r num" data-label="Ø lidí v práci na den"><b>${waN(v.avg, 1)}</b></td>
+      ${G ? `<td class="r num" data-label="Podíl na lidech">${waP(v.share)}</td>` : `<td class="r num" data-label="Ø plán na den">${waN(v.plan, 1)}</td><td class="r num" data-label="Obsazenost">${waP(v.fill)}</td>`}
+      <td class="r num" data-label="Kusy"><b>${waN(v.pcs)}</b></td>
+      <td class="r num" data-label="Ks na osobosměnu">${waN(v.per, 1)}</td></tr>`;
+  }).join('');
+  const table = `<div class="table-card"><table class="stack wa-hist"><thead><tr><th>${grain === 'month' ? 'Měsíc' : 'Týden'}${G ? ` · ${esc(G.name)}` : ''}</th><th class="r">Prac. dny</th><th class="r">Ø lidí / den</th>${G ? '<th class="r">Podíl</th>' : '<th class="r">Ø plán / den</th><th class="r">Obsazenost</th>'}<th class="r">Kusy</th><th class="r">Ks / os.</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  return `${bar}<p class="wa-range-line small muted">${esc(dayText(r.from))} – ${esc(dayText(r.to))}${G ? ` · skupina ${esc(G.name)}` : ''}</p>${warn}${tiles}${charts}${groups}${table}
+    <p class="hint">Ø na pracovní den = průměr pracovních dnů s obsazeností; víkendy a svátky se do průměru nepočítají, do součtů ano. Osobosměna = jeden člověk na jedné směně. Kusy jen z operací přiřazených ke skupině, kusy na osobosměnu jen u produktivních skupin. Podíl = podíl skupiny na lidech v práci. Klepnutím na řádek týdne nebo měsíce otevřeš jeho dny.</p>`;
 }
 
 /* ---------- body ke kontrole (záložka Dny, jen v aplikaci) ---------- */
@@ -7605,6 +7627,8 @@ function bindWorkAudit() {
     if (gd) { waDelGroup(gd.dataset.wagdel); return; }
     const opf = t.closest('[data-waopf]');
     if (opf) { ui.wa.opFilter = opf.dataset.waopf; renderWorkAudit(); return; }
+    const grp = t.closest('[data-wagrp]');
+    if (grp) { ui.wa.group = grp.dataset.wagrp === ui.wa.group ? '' : grp.dataset.wagrp; renderWorkAudit(); if (ui.wa.group) $('#waCharts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     const grain = t.closest('[data-wagrain]');
     if (grain) { ui.wa.grain = grain.dataset.wagrain; renderWorkAudit(); return; }
     const hist = t.closest('[data-wahist]');
@@ -7638,7 +7662,7 @@ function bindWorkAudit() {
     if (day && !t.closest('a, input, select')) { waDayDialog(day.dataset.waday); }
   });
   wv.addEventListener('keydown', event => {
-    if (event.key !== 'Enter' || !event.target.matches('tr[data-waday], tr[data-waweek], tr[data-wamonth]')) return;
+    if (event.key !== 'Enter' || !event.target.matches('tr[data-waday], tr[data-waweek], tr[data-wamonth], tr[data-wagrp]')) return;
     event.preventDefault();
     event.target.click();
   });
@@ -7648,6 +7672,7 @@ function bindWorkAudit() {
     if (t.id === 'waWeek') { ui.wa.week = t.value; renderWorkAudit(); return; }
     if (t.id === 'waFrom' || t.id === 'waTo') { if (WA_ISO.test(t.value)) { ui.wa[t.id === 'waFrom' ? 'from' : 'to'] = t.value; renderWorkAudit(); } return; }
     if (t.id === 'waGroups') { ui.wa.groups = t.checked; renderWorkAudit(); return; }
+    if (t.id === 'waGroup') { ui.wa.group = t.value; renderWorkAudit(); return; }
     if (t.id === 'waAllEdits') { ui.wa.allEdits = t.checked; renderWorkAudit(); return; }
     const gRow = t.closest('[data-wag]');
     if (gRow && t.dataset.wagf) { waSetGroup(gRow.dataset.wag, t.dataset.wagf, t.type === 'checkbox' ? t.checked : t.value); return; }
@@ -7710,24 +7735,26 @@ async function exportWaXlsx() {
   try {
     const X = await xlsx();
     const r = waHistRange(S.workAudit, ui.wa.hist);
+    const gid = S.workAudit.groups.some(g => g.id === ui.wa.group) ? ui.wa.group : '';
     const wb = X.utils.book_new();
-    waSheets(S.workAudit, r).forEach(sheet => {
+    waSheets(S.workAudit, r, gid).forEach(sheet => {
       const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
       ws['!cols'] = sheet.cols.map(wch => ({ wch }));
       X.utils.book_append_sheet(wb, ws, sheet.name);
     });
-    downloadFile(`audit-${r.from}-${r.to}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    downloadFile(`report-${r.from}-${r.to}${gid ? `-${gid}` : ''}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
 }
 
-/* ---------- PDF pro auditora (A4 na šířku): jen fakta a grafy ---------- */
+/* ---------- PDF pro auditora (A4 na šířku, „HALA 2 · REPORT“): jen fakta a grafy ---------- */
 async function exportWaPdf(button) {
   const r = waHistRange(S.workAudit, ui.wa.hist);
   if (!r) return;
+  const g = S.workAudit.groups.find(x => x.id === ui.wa.group) || null;   // vybraná skupina = report jen za ni
   await withPdf(button, doc => {
-    doc.setProperties({ title: `Lidé v práci a zpracované kusy · ${dayText(r.from)} – ${dayText(r.to)}`, creator: EXPORT_NAME });
-    drawWorkAudit(doc, r);
-    downloadFile(`audit-${r.from}-${r.to}.pdf`, doc.output('blob'), 'application/pdf');
+    doc.setProperties({ title: `Lidé v práci a zpracované kusy${g ? ` – ${g.name}` : ''} · ${dayText(r.from)} – ${dayText(r.to)}`, creator: EXPORT_NAME });
+    drawWorkAudit(doc, r, g ? g.id : '');
+    downloadFile(`report-${r.from}-${r.to}${g ? `-${g.id}` : ''}.pdf`, doc.output('blob'), 'application/pdf');
   }, 'landscape');
 }
 
@@ -7781,39 +7808,29 @@ function pdfWaChart(k, x, y, w, h, { title, sub, items, color, line = false, cap
   if (last >= 0) k.text(cap(vals[last]), cx(last), capY - 4.2, 6.8, { bold: true, align: 'center' });
 }
 
-function drawWorkAudit(doc, r) {
+function drawWorkAudit(doc, r, gid = '') {
   const k = pdfKit(doc);
   const C = k.C;
   const wa = S.workAudit;
+  const G = wa.groups.find(g => g.id === gid) || null;
+  gid = G ? G.id : '';
   const mdays = waDays(wa, r.from, r.to);
   const t = waTotals(wa, mdays);
+  const f = waFx(t, gid);
   const months = waMonths(wa, mdays);
   const weeks = waWeeks(wa, waDays(wa, r.wFrom, r.to));
   const label = `${dayText(r.from)} – ${dayText(r.to)}`;
   const COL = { people: [0, 136, 118], pcs: [176, 111, 18], per: [106, 87, 166] };   // --ch-acc, --ch-tab, --ch-prod
-  k.header({ eyebrow: `${EXPORT_NAME} · AUDIT`, right: `Stav k ${dayText(todayIso())}`, title: 'Lidé v práci a zpracované kusy', sub: label,
+  k.header({ eyebrow: `${EXPORT_NAME} · REPORT`, right: `Stav k ${dayText(todayIso())}`, title: G ? `Lidé v práci a zpracované kusy – ${G.name}` : 'Lidé v práci a zpracované kusy', sub: label,
     meta: 'Obsazenost směn podle záznamů vedoucích, zpracované kusy podle výkazu práce v IS.' });
+  const days = `${f.workDays} ${f.workDays === 1 ? 'pracovní den' : f.workDays <= 4 ? 'pracovní dny' : 'pracovních dní'}`;
   k.tiles([
-    ['Lidé v práci, Ø na pracovní den', waN(t.avgPeople, 1), t.avgPlan != null ? `plán Ø ${waN(t.avgPlan, 1)}` : ''],
-    ['Obsazenost proti plánu', waP(t.fill), t.plan ? `${waN(t.shifts)} z ${waN(t.plan)} osobosměn` : '', t.fill != null && t.fill < 0.85 ? 'crit' : ''],
-    ['Zpracované kusy', `${waN(t.pcs)} ks`, `${t.workDays} ${t.workDays === 1 ? 'pracovní den' : t.workDays <= 4 ? 'pracovní dny' : 'pracovních dní'}`],
-    ['Kusy na osobosměnu', waN(t.perShift, 1), 'produktivní skupiny'],
+    ['Lidé v práci, Ø na pracovní den', waN(f.avg, 1), f.plan != null ? `plán Ø ${waN(f.plan, 1)}` : `${waN(f.shifts)} ${osobN(f.shifts)}`],
+    G ? ['Podíl na lidech v práci', waP(f.share), `z Ø ${waN(t.avgPeople, 1)} lidí na pracovní den`]
+      : ['Obsazenost proti plánu', waP(f.fill), f.planShifts ? `${waN(f.shifts)} z ${waN(f.planShifts)} osobosměn` : '', f.fill != null && f.fill < 0.85 ? 'crit' : ''],
+    ['Zpracované kusy', `${waN(f.pcs)} ks`, G && G.noIs ? 'projekt není evidován v IS' : days],
+    ['Kusy na osobosměnu', waN(f.per, 1), G ? (G.noIs ? 'mimo IS' : G.unprod ? 'neproduktivní pozice' : G.name) : 'produktivní skupiny'],
   ]);
-  const charts = (list, grain) => {
-    const items = list.map((x, i) => ({ label: waAxisLabel(x, grain, i === 0), t: x.t }));
-    const gap = 9;
-    const w = (k.CW - 2 * gap) / 3;
-    const h = 58;
-    const y0 = k.y;
-    const per = grain === 'month' ? 'po měsících' : 'po týdnech';
-    pdfWaChart(k, k.M, y0, w, h, { title: 'Lidé v práci', sub: `Ø na pracovní den ${per} · čárka = plán`, color: COL.people, cap: v => nf(v, 1),
-      items: items.map(i => ({ label: i.label, v: i.t.avgPeople, ref: i.t.avgPlan })) });
-    pdfWaChart(k, k.M + w + gap, y0, w, h, { title: 'Zpracované kusy', sub: `součet ${per}`, color: COL.pcs,
-      items: items.map(i => ({ label: i.label, v: i.t.pcs })) });
-    pdfWaChart(k, k.M + 2 * (w + gap), y0, w, h, { title: 'Kusy na osobosměnu', sub: `produktivní skupiny ${per}`, color: COL.per, line: true, cap: v => nf(v, 1),
-      items: items.map(i => ({ label: i.label, v: i.t.perShift })) });
-    k.y = y0 + h + 7;
-  };
   const head = (cols, x0, w, size = 6.4) => {
     const lines = cols.map(c => k.split(c[1], c[0] - 2, size, true));
     const hh = Math.max(...lines.map(l => l.length)) * k.LH(size, 1.18) + 2.6;
@@ -7833,16 +7850,69 @@ function drawWorkAudit(doc, r) {
       x += c[0];
     });
   };
-  const facts = x => [String(x.workDays), waN(x.avgPeople, 1), waN(x.avgPlan, 1), waP(x.fill), waN(x.shifts), waN(x.pcs), waN(x.perShift, 1)];
+  // Rozpad po skupinách (jen v reportu za všechny skupiny): čísla a pruhy.
+  if (!G) {
+    k.need(70);
+    k.heading('Po skupinách', 11);
+    const gx = wa.groups.map(g => ({ g, v: waFx(t, g.id) }));
+    const maxAvg = Math.max(1e-9, ...gx.map(x => x.v.avg || 0));
+    const maxPcs = Math.max(1e-9, ...gx.map(x => x.v.pcs || 0));
+    const cols = [[70, 'Skupina'], [26, 'Zařazení'], [56, 'Ø lidí v práci na pracovní den'], [22, 'Podíl', 'r'], [24, 'Osobosměny', 'r'], [44, 'Zpracované kusy'], [23, 'Ks / os.', 'r']];
+    const rh = k.LH(7.4, 1.25) + 2.2;
+    k.y += head(cols, k.M, k.CW) + 0.6;
+    gx.forEach(({ g, v }) => {
+      if (k.need(rh)) k.y += head(cols, k.M, k.CW) + 0.6;
+      let x = k.M;
+      k.text(g.name, x + 1.4, k.y + 0.6, 7.4, { bold: true }); x += cols[0][0];
+      k.text(waGroupKind(g), x + 1.4, k.y + 0.6, 7, { color: g.unprod || g.noIs ? C.ink3 : C.ink2 }); x += cols[1][0];
+      const bar = (val, max, color, w) => {
+        const bw = w - 18;
+        k.box(C.soft3, x + 1.4, k.y + 1.4, bw, 2.4, 1.2);
+        if (val) k.box(color, x + 1.4, k.y + 1.4, Math.max(1.2, bw * val / max), 2.4, 1.2);
+      };
+      bar(v.avg || 0, maxAvg, COL.people, cols[2][0]);
+      k.text(waN(v.avg, 1), x + cols[2][0] - 1.4, k.y + 0.6, 7.4, { bold: true, align: 'right' }); x += cols[2][0];
+      k.text(waP(v.share), x + cols[3][0] - 1.4, k.y + 0.6, 7.4, { align: 'right' }); x += cols[3][0];
+      k.text(waN(v.shifts), x + cols[4][0] - 1.4, k.y + 0.6, 7.4, { align: 'right' }); x += cols[4][0];
+      if (g.noIs && v.pcs == null) k.text('mimo IS', x + 1.4, k.y + 0.6, 7, { color: C.ink3 });
+      else { bar(v.pcs || 0, maxPcs, COL.pcs, cols[5][0]); k.text(waN(v.pcs), x + cols[5][0] - 1.4, k.y + 0.6, 7.4, { bold: true, align: 'right' }); }
+      x += cols[5][0];
+      k.text(waN(v.per, 1), x + cols[6][0] - 1.4, k.y + 0.6, 7.4, { align: 'right' });
+      k.y += rh;
+      k.hline(k.y - 0.4, C.line, 0.15);
+    });
+    k.y += 7;
+  }
+  const charts = (list, grain) => {
+    const items = list.map((x, i) => ({ label: waAxisLabel(x, grain, i === 0), v: waFx(x.t, gid) }));
+    const gap = 9;
+    const w = (k.CW - 2 * gap) / 3;
+    const h = 58;
+    const y0 = k.y;
+    const per = grain === 'month' ? 'po měsících' : 'po týdnech';
+    pdfWaChart(k, k.M, y0, w, h, { title: 'Lidé v práci', sub: `Ø na pracovní den ${per}${G ? '' : ' · čárka = plán'}`, color: COL.people, cap: v => nf(v, 1),
+      items: items.map(i => ({ label: i.label, v: i.v.avg, ref: i.v.plan })) });
+    pdfWaChart(k, k.M + w + gap, y0, w, h, { title: 'Zpracované kusy', sub: `součet ${per}`, color: COL.pcs,
+      items: items.map(i => ({ label: i.label, v: i.v.pcs })) });
+    pdfWaChart(k, k.M + 2 * (w + gap), y0, w, h, { title: 'Kusy na osobosměnu', sub: `${G ? '' : 'produktivní skupiny '}${per}`, color: COL.per, line: true, cap: v => nf(v, 1),
+      items: items.map(i => ({ label: i.label, v: i.v.per })) });
+    k.y = y0 + h + 7;
+  };
+  const facts = x => {
+    const v = waFx(x, gid);
+    return G ? [String(v.workDays), waN(v.avg, 1), waP(v.share), waN(v.shifts), waN(v.pcs), waN(v.per, 1)]
+      : [String(v.workDays), waN(v.avg, 1), waN(v.plan, 1), waP(v.fill), waN(v.shifts), waN(v.pcs), waN(v.per, 1)];
+  };
   // Měsíce: graf a tabulka přes celou šířku (jen když je období delší než měsíc).
   if (months.length >= 2) {
     k.need(105);
     k.heading('Po měsících', 11);
     charts(months, 'month');
-    const cols = [[45, 'Měsíc'], [27, 'Pracovní dny', 'r'], [33, 'Ø lidí v práci na den', 'r'], [30, 'Ø plán na den', 'r'], [30, 'Obsazenost', 'r'], [30, 'Osobosměny', 'r'], [35, 'Zpracované kusy', 'r'], [35, 'Kusy na osobosměnu', 'r']];
+    const cols = G
+      ? [[55, 'Měsíc'], [30, 'Pracovní dny', 'r'], [40, 'Ø lidí v práci na den', 'r'], [35, 'Podíl na lidech', 'r'], [30, 'Osobosměny', 'r'], [37, 'Zpracované kusy', 'r'], [38, 'Kusy na osobosměnu', 'r']]
+      : [[45, 'Měsíc'], [27, 'Pracovní dny', 'r'], [33, 'Ø lidí v práci na den', 'r'], [30, 'Ø plán na den', 'r'], [30, 'Obsazenost', 'r'], [30, 'Osobosměny', 'r'], [35, 'Zpracované kusy', 'r'], [35, 'Kusy na osobosměnu', 'r']];
     const rh = k.LH(7.4, 1.25) + 1.8;
-    const hh = head(cols, k.M, k.CW);
-    k.y += hh + 0.6;
+    k.y += head(cols, k.M, k.CW) + 0.6;
     [...months.map(m => [m.label, m.t, false]), ['Celkem', t, true]].forEach(([name, x, total]) => {
       if (k.need(rh)) k.y += head(cols, k.M, k.CW) + 0.6;
       if (total) k.hline(k.y - 0.4, C.line2, 0.3);
@@ -7856,11 +7926,16 @@ function drawWorkAudit(doc, r) {
   k.need(100);
   k.heading('Po týdnech', 11);
   charts(weeks, 'week');
-  const wc = [[16, 'Týden'], [25, 'Datum'], [11, 'Dny', 'r'], [15, 'Ø lidí', 'r'], [15, 'Ø plán', 'r'], [16, 'Obsaz.', 'r'], [17, 'Kusy', 'r'], [14, 'Ks / os.', 'r']];
+  const wc = G
+    ? [[16, 'Týden'], [26, 'Datum'], [11, 'Dny', 'r'], [16, 'Ø lidí', 'r'], [16, 'Podíl', 'r'], [21, 'Kusy', 'r'], [16, 'Ks / os.', 'r']]
+    : [[16, 'Týden'], [25, 'Datum'], [11, 'Dny', 'r'], [15, 'Ø lidí', 'r'], [15, 'Ø plán', 'r'], [16, 'Obsaz.', 'r'], [17, 'Kusy', 'r'], [14, 'Ks / os.', 'r']];
   const cw = wc.reduce((a, c) => a + c[0], 0);
   const gap = k.CW - 2 * cw;
   const rh = k.LH(6.9, 1.25) + 1.6;
-  const wrows = weeks.map(w => [w.label.replace(/\/\d+$/, ''), waShortRange(w), String(w.t.workDays), waN(w.t.avgPeople, 1), waN(w.t.avgPlan, 1), waP(w.t.fill), waN(w.t.pcs), waN(w.t.perShift, 1)]);
+  const wrows = weeks.map(w => {
+    const v = waFx(w.t, gid);
+    return [w.label.replace(/\/\d+$/, ''), waShortRange(w), String(v.workDays), waN(v.avg, 1), ...(G ? [waP(v.share)] : [waN(v.plan, 1), waP(v.fill)]), waN(v.pcs), waN(v.per, 1)];
+  });
   let i = 0;
   while (i < wrows.length) {
     k.need(rh * 4 + 8);
@@ -7884,8 +7959,8 @@ function drawWorkAudit(doc, r) {
   }
   k.y += 5;
   k.need(14);
-  k.para('Ø na pracovní den = průměr pracovních dnů s obsazeností; víkendy a státní svátky se do průměru nepočítají, do součtů ano. Osobosměna = jeden člověk na jedné směně. Kusy jen z operací přiřazených ke skupinám; kusy na osobosměnu jen u produktivních skupin.', k.M, k.CW, 7, { color: C.ink3 });
-  k.footer(`${EXPORT_NAME} · audit · ${label}`);
+  k.para(`Ø na pracovní den = průměr pracovních dnů s obsazeností; víkendy a státní svátky se do průměru nepočítají, do součtů ano. Osobosměna = jeden člověk na jedné směně. Kusy jen z operací přiřazených ke skupinám; kusy na osobosměnu jen u produktivních skupin.${G ? '' : ' Podíl = podíl skupiny na lidech v práci.'}`, k.M, k.CW, 7, { color: C.ink3 });
+  k.footer(`${EXPORT_NAME} · report · ${label}${G ? ` · ${G.name}` : ''}`);
 }
 
 window.OdmApp = {

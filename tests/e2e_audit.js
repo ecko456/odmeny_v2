@@ -403,28 +403,54 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   const range = await page.evaluate(() => waHistRange(S.workAudit, ui.wa.hist));
   check(range.from === '2026-10-01' && range.to === '2026-11-30' && range.wFrom === '2026-09-28', `rozsah přehledu: ${JSON.stringify(range)}`);
 
-  // Excel pro auditora: jen souhrn, týdny a měsíce.
-  const xl = await download(page, '[data-waxlsx]', 'audit-test.xlsx');
-  check(xl.name === 'audit-2026-10-01-2026-11-30.xlsx' && xl.head.startsWith('PK'), `Excel: ${xl.name}`);
+  // Rozpad po skupinách: tabulka všech skupin, klepnutí přepne grafy a tabulku na skupinu.
+  const gRows = await page.$$eval('table.wa-gtab tbody tr', els => els.map(e => [e.dataset.wagrp, e.textContent.replace(/\s+/g, ' ').trim()]));
+  check(gRows.length === 7 && /neproduktivní/.test(gRows[4][1]) && /mimo IS/.test(gRows[6][1]), `skupiny v přehledu: ${JSON.stringify(gRows)}`);
+  const gExp = await page.evaluate(() => { const r = waHistRange(S.workAudit, ui.wa.hist); const v = waFx(waTotals(S.workAudit, waDays(S.workAudit, r.from, r.to)), 'brus'); return [nf(v.avg, 1), `${nf(v.share * 100, 1)} %`, nf(v.pcs, 0)].map(x => x.replace(/\s+/g, ' ')); });
+  check(gExp.every(x => gRows[0][1].includes(x)), `Brusiči v rozpadu: ${gRows[0][1]} ${gExp}`);
+  check(await page.$$eval('table.wa-gtab .wa-gbar i', els => els.filter(e => parseFloat(e.style.width) > 0).length) === 13, 'pruhy lidí a kusů (Daiho bez kusů)');
+  check(await page.$$eval('table.wa-gtab .wa-gbar', els => els.length) === 13, 'Daiho mimo IS bez pruhu kusů');
+  await page.screenshot({ path: path.join(shots, '08b-skupiny.png'), fullPage: true });
+  await page.click('tr[data-wagrp="brus"]');
+  await page.waitForFunction(() => ui.wa.group === 'brus');
+  check(await page.inputValue('#waGroup') === 'brus' && /Podíl na lidech v práci/.test(await page.textContent('#waView .wa-stats')), 'skupina vybraná, dlaždice skupiny');
+  check((await page.$$('#waCharts .wa-plan')).length === 0 && /Brusiči/.test(await page.textContent('#waCharts')), 'grafy skupiny bez plánu');
+  check(/Podíl/.test(await page.textContent('table.wa-hist thead')) && await page.$eval('tr[data-wagrp="brus"]', e => e.classList.contains('on')), 'tabulka období pro skupinu');
+  await page.screenshot({ path: path.join(shots, '08c-brusici.png'), fullPage: true });
+  const gpdf = await download(page, '[data-wapdf]', 'report-brus.pdf');
+  check(gpdf.name === 'report-2026-10-01-2026-11-30-brus.pdf' && gpdf.head === '%PDF-', `PDF skupiny: ${gpdf.name}`);
+  const ginfo = pdfInfo(gpdf.path);
+  if (ginfo) check(ginfo.text.includes('Lidé v práci a zpracované kusy – Brusiči') && !ginfo.text.includes('Po skupinách') && ginfo.text.includes('Podíl'), `PDF skupiny: ${ginfo.text.slice(0, 300)}`);
+  const gxl = await download(page, '[data-waxlsx]', 'report-brus.xlsx');
+  const gbook = await page.evaluate(async b64 => { const X = await xlsx(); const wb = X.read(Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { type: 'array' }); return [wb.SheetNames, X.utils.sheet_to_json(wb.Sheets.Souhrn, { header: 1 })[0][0]]; }, fs.readFileSync(gxl.path).toString('base64'));
+  check(gxl.name === 'report-2026-10-01-2026-11-30-brus.xlsx' && gbook[0].join(',') === 'Souhrn,Týdny,Měsíce' && /– Brusiči$/.test(gbook[1]), `Excel skupiny: ${gxl.name} ${JSON.stringify(gbook)}`);
+  await page.selectOption('#waGroup', '');
+  await page.waitForFunction(() => ui.wa.group === '');
+
+  // Excel pro auditora: souhrn, skupiny, týdny a měsíce.
+  const xl = await download(page, '[data-waxlsx]', 'report-test.xlsx');
+  check(xl.name === 'report-2026-10-01-2026-11-30.xlsx' && xl.head.startsWith('PK'), `Excel: ${xl.name}`);
   const book = await page.evaluate(async b64 => {
     const X = await xlsx();
     const wb = X.read(Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { type: 'array' });
     const rows = n => X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: null });
     const t40 = waTotals(S.workAudit, waDays(S.workAudit, '2026-09-28', '2026-10-04'));
-    return { names: wb.SheetNames, weeks: rows('Týdny'), months: rows('Měsíce'), t40: [t40.workDays, Math.round(t40.avgPeople * 10) / 10, t40.pcs] };
+    return { names: wb.SheetNames, weeks: rows('Týdny'), months: rows('Měsíce'), groups: rows('Skupiny'), t40: [t40.workDays, Math.round(t40.avgPeople * 10) / 10, t40.pcs] };
   }, fs.readFileSync(xl.path).toString('base64'));
-  check(book.names.join(',') === 'Souhrn,Týdny,Měsíce', `listy: ${book.names}`);
+  check(book.names.join(',') === 'Souhrn,Skupiny,Týdny,Měsíce', `listy: ${book.names}`);
+  check(book.groups.length === 8 && book.groups[1][0] === 'Brusiči' && book.groups[5][1] === 'neproduktivní', `skupiny v Excelu: ${JSON.stringify(book.groups.slice(0, 2))}`);
   check(book.weeks.length === 1 + 10 && book.weeks[1][0] === 'T40/2026' && book.weeks[1][1] === '2026-09-28', `týdny v Excelu: ${JSON.stringify(book.weeks.slice(0, 2))}`);
   check(book.weeks[1][3] === book.t40[0] && book.weeks[1][4] === book.t40[1] && book.weeks[1][8] === book.t40[2], `T40 v Excelu sedí s výpočtem: ${JSON.stringify(book.weeks[1])} ${JSON.stringify(book.t40)}`);
   check(book.months.length === 3 && book.months[1][0] === 'říjen 2026' && book.months[2][0] === 'listopad 2026', `měsíce v Excelu: ${JSON.stringify(book.months)}`);
 
   // PDF pro auditora (A4 na šířku): fakta a grafy, nic interního.
-  const pdf = await download(page, '[data-wapdf]', 'audit-test.pdf');
-  check(pdf.name === 'audit-2026-10-01-2026-11-30.pdf' && pdf.head === '%PDF-', `PDF: ${pdf.name}`);
+  const pdf = await download(page, '[data-wapdf]', 'report-test.pdf');
+  check(pdf.name === 'report-2026-10-01-2026-11-30.pdf' && pdf.head === '%PDF-', `PDF: ${pdf.name}`);
   const info = pdfInfo(pdf.path);
   if (info) {
     check(info.pages >= 1 && info.pages <= 3, `stran PDF: ${info.pages}`);
-    ['Lidé v práci a zpracované kusy', 'Po měsících', 'Po týdnech', 'Kusy na osobosměnu', 'říjen 2026', 'listopad 2026', 'T40', 'T49', 'Strana 1 /'].forEach(x => check(info.text.includes(x), `PDF bez „${x}“`));
+    ['Lidé v práci a zpracované kusy', 'Po skupinách', 'Brusiči', 'Obsluha tryskací kabiny', 'Po měsících', 'Po týdnech', 'Kusy na osobosměnu', 'říjen 2026', 'listopad 2026', 'T40', 'T49', 'Strana 1 /'].forEach(x => check(info.text.includes(x), `PDF bez „${x}“`));
+    check(info.text.replace(/\s/g, '').includes('HALA2·REPORT') && !/audit/i.test(info.text.replace(/\s/g, '')), 'PDF: HALA 2 · REPORT, nikde „audit“');
     ['Ke kontrole', 'Ruční úpravy', 'Brigádník', 'Návštěva', 'obsazenost-rijen', 'Údržba', 'Po dnech', 'Odměny'].forEach(x => check(!info.text.includes(x), `PDF obsahuje interní „${x}“`));
   } else console.log('(pypdf ani pymupdf nejsou, text PDF se nekontroluje)');
   const orient = await page.evaluate(async () => {

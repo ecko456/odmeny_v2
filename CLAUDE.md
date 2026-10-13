@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 10. 2026 (verze 2.17.2):
+
+- Uživatel: „HALA 2 · AUDIT v reportu přepiš na ‚HALA 2 · REPORT‘ a v přehledu udělej rozpad na
+  jednotlivé skupiny.“
+  - PDF: hlavička `HALA 2 · REPORT`, zápatí „report“, soubory `report-…` (PDF i Excel). Slovo
+    audit v exportech není (hlídá e2e).
+  - `waTotals` u skupiny: `work` (součet na pracovních dnech s obsazeností), `avg` a `share`
+    (podíl na lidech v práci). `waFx(t, gid)` sjednotí čísla celku a skupiny (skupina nemá
+    plán ani obsazenost). `waSheets(wa, r, gid)`: bez skupiny listy Souhrn, Skupiny, Týdny,
+    Měsíce; se skupinou jen její Souhrn, Týdny, Měsíce.
+  - Přehled: `ui.wa.group` (výběr `#waGroup`, nebo klepnutí na řádek `[data-wagrp]`), karta
+    Po skupinách (`.wa-gtab`, pruhy `.wa-gbar` přes `data-w`), dlaždice, grafy a tabulka
+    období pro skupinu. PDF (`drawWorkAudit(doc, r, gid)`) a Excel podle výběru.
+  - `ODM_VERSION` 2.17.2, data beze změny.
+
 Stav k 13. 10. 2026 (verze 2.17.1):
 
 - **Audit osekaný pro auditora.** Uživatel: „započítává to všechny kusy a já potřebuji jen

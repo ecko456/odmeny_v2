@@ -3489,7 +3489,7 @@ function waTotals(wa,days){
   const add=(a,b)=>b==null?a:(a||0)+b;
   const t={days:days.length,workDays:0,offDays:0,offWorked:0,missingAtt:0,missingWork:0,shifts:null,amShifts:null,pmShifts:null,plan:null,planned:null,
     abs:null,pcs:null,noGroup:null,prodShifts:null,prodPcs:null,unprodShifts:null,noIsShifts:null,edits:0,group:{}};
-  wa.groups.forEach(g=>{t.group[g.id]={shifts:null,am:null,pm:null,pcs:null};});
+  wa.groups.forEach(g=>{t.group[g.id]={shifts:null,am:null,pm:null,pcs:null,work:null};});
   let fillPeople=0,fillPlan=0,workPeople=0,workWithAtt=0,workPlan=0,workWithPlan=0;
   days.forEach(d=>{
     if(d.day.work)t.workDays++;else{t.offDays++;if(d.people)t.offWorked++;}
@@ -3501,7 +3501,8 @@ function waTotals(wa,days){
     if(d.people!=null&&d.plan){fillPeople+=d.people;fillPlan+=d.plan;}
     if(d.day.work&&d.people!=null){workPeople+=d.people;workWithAtt++;if(d.plan){workPlan+=d.plan;workWithPlan++;}}
     t.edits+=d.edited.length;
-    wa.groups.forEach(g=>{const x=t.group[g.id],y=d.g[g.id];x.shifts=add(x.shifts,y.sum);x.am=add(x.am,y.am);x.pm=add(x.pm,y.pm);x.pcs=add(x.pcs,d.groupPcs[g.id]);});
+    wa.groups.forEach(g=>{const x=t.group[g.id],y=d.g[g.id];x.shifts=add(x.shifts,y.sum);x.am=add(x.am,y.am);x.pm=add(x.pm,y.pm);x.pcs=add(x.pcs,d.groupPcs[g.id]);
+      if(d.day.work&&d.people!=null)x.work=add(x.work,y.sum);});
   });
   t.fill=fillPlan?fillPeople/fillPlan:null;
   t.avgPeople=workWithAtt?workPeople/workWithAtt:null;
@@ -3509,7 +3510,9 @@ function waTotals(wa,days){
   t.perShift=t.prodShifts&&t.prodPcs!=null?t.prodPcs/t.prodShifts:null;
   t.perDay=t.workDays&&t.pcs!=null?t.pcs/Math.max(1,days.filter(d=>d.hasWork).length):null;
   t.unprodShare=t.shifts&&t.unprodShifts!=null?t.unprodShifts/t.shifts:null;
-  wa.groups.forEach(g=>{const x=t.group[g.id];x.per=!g.unprod&&!g.noIs&&x.shifts&&x.pcs!=null?x.pcs/x.shifts:null;});
+  // skupina: průměr na pracovní den s obsazeností a podíl na lidech v práci (2.17.2)
+  wa.groups.forEach(g=>{const x=t.group[g.id];x.per=!g.unprod&&!g.noIs&&x.shifts&&x.pcs!=null?x.pcs/x.shifts:null;
+    x.avg=workWithAtt&&x.work!=null?x.work/workWithAtt:null;x.share=workPeople&&x.work!=null?x.work/workPeople:null;});
   return t;
 }
 /* Týdny (ISO, od pondělí) a měsíce období. */
@@ -3583,23 +3586,41 @@ function waHistRange(wa,months){
   const from=first+"-01";
   return {from,to:span.to,wFrom:isoWeek(from).from};
 }
+/* Čísla celku, nebo jedné skupiny (2.17.2): skupina nemá plán ani obsazenost, má podíl na lidech. */
+function waFx(t,gid){
+  if(gid){const g=t.group[gid]||{};return {workDays:t.workDays,avg:g.avg??null,plan:null,fill:null,shifts:g.shifts??null,planShifts:null,pcs:g.pcs??null,per:g.per??null,share:g.share??null};}
+  return {workDays:t.workDays,avg:t.avgPeople,plan:t.avgPlan,fill:t.fill,shifts:t.shifts,planShifts:t.plan,pcs:t.pcs,per:t.perShift,share:null};
+}
+function waGroupKind(g){return g.noIs?"mimo IS":g.unprod?"neproduktivní":"produktivní";}
+const waPct=v=>v==null?null:Math.round(v*1000)/10;
 /* Řádek souhrnu za týden nebo měsíc: jen fakta pro auditora. */
 const WA_FACT_HEAD=["Pracovní dny","Ø lidí v práci na pracovní den","Ø plán na pracovní den","Obsazenost proti plánu %","Osobosměny","Zpracované kusy","Kusy na osobosměnu"];
-function waFacts(t){return [t.workDays,waR(t.avgPeople,1),waR(t.avgPlan,1),t.fill==null?null:Math.round(t.fill*1000)/10,t.shifts,t.pcs,waR(t.perShift,1)];}
-/* Listy Excelu pro auditora: souhrn, týdny a měsíce (bez dnů a interních podkladů). */
-function waSheets(wa,r){
+const WA_GFACT_HEAD=["Pracovní dny","Ø lidí v práci na pracovní den","Podíl na lidech v práci %","Osobosměny","Zpracované kusy","Kusy na osobosměnu"];
+function waFacts(t,gid){
+  const f=waFx(t,gid);
+  return gid?[f.workDays,waR(f.avg,1),waPct(f.share),f.shifts,f.pcs,waR(f.per,1)]:[f.workDays,waR(f.avg,1),waR(f.plan,1),waPct(f.fill),f.shifts,f.pcs,waR(f.per,1)];
+}
+/* Listy Excelu pro auditora: souhrn, skupiny, týdny a měsíce (bez dnů a interních podkladů).
+   S vybranou skupinou jen čísla té skupiny. */
+function waSheets(wa,r,gid){
+  const g=gid?wa.groups.find(x=>x.id===gid):null;
+  if(!g)gid="";
+  const head=gid?WA_GFACT_HEAD:WA_FACT_HEAD;
   const t=waTotals(wa,waDays(wa,r.from,r.to));
   const weeks=waWeeks(wa,waDays(wa,r.wFrom,r.to));
   const months=waMonths(wa,waDays(wa,r.from,r.to));
-  const f=waFacts(t);
-  const sum=[["Lidé v práci a zpracované kusy"],["Období",dayText(r.from)+" – "+dayText(r.to)],[],
-    ...WA_FACT_HEAD.map((h,i)=>[h,f[i]]),[],
+  const f=waFacts(t,gid);
+  const sum=[["Lidé v práci a zpracované kusy"+(g?" – "+g.name:"")],["Období",dayText(r.from)+" – "+dayText(r.to)],...(g?[["Skupina",g.name+" ("+waGroupKind(g)+")"]]:[]),[],
+    ...head.map((h,i)=>[h,f[i]]),[],
     ["Osobosměna = jeden člověk na jedné směně. Kusy jen z operací přiřazených ke skupinám; kusy na osobosměnu jen u produktivních skupin."]];
-  return [
-    {name:"Souhrn",cols:[40,16],rows:sum},
-    {name:"Týdny",cols:[10,11,11,...WA_FACT_HEAD.map(()=>14)],rows:[["Týden","Od","Do",...WA_FACT_HEAD],...weeks.map(w=>{const wk=weekById(w.id);return [w.label,wk.from<r.wFrom?r.wFrom:wk.from,wk.to>r.to?r.to:wk.to,...waFacts(w.t)];})]},
-    {name:"Měsíce",cols:[16,...WA_FACT_HEAD.map(()=>14)],rows:[["Měsíc",...WA_FACT_HEAD],...months.map(m=>[m.label,...waFacts(m.t)])]}
-  ];
+  const out=[{name:"Souhrn",cols:[40,16],rows:sum}];
+  if(!gid){
+    const gh=["Skupina","Zařazení","Ø lidí v práci na pracovní den","Podíl na lidech v práci %","Osobosměny","Zpracované kusy","Kusy na osobosměnu"];
+    out.push({name:"Skupiny",cols:[36,14,14,14,14,14,14],rows:[gh,...wa.groups.map(x=>{const v=waFx(t,x.id);return [x.name,waGroupKind(x),waR(v.avg,1),waPct(v.share),v.shifts,v.pcs,waR(v.per,1)];})]});
+  }
+  out.push({name:"Týdny",cols:[10,11,11,...head.map(()=>14)],rows:[["Týden","Od","Do",...head],...weeks.map(w=>{const wk=weekById(w.id);return [w.label,wk.from<r.wFrom?r.wFrom:wk.from,wk.to>r.to?r.to:wk.to,...waFacts(w.t,gid)];})]});
+  out.push({name:"Měsíce",cols:[16,...head.map(()=>14)],rows:[["Měsíc",...head],...months.map(m=>[m.label,...waFacts(m.t,gid)])]});
+  return out;
 }
 
 /* ---------- historie změn ---------- */

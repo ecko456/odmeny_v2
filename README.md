@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.17.2
+
+- **PDF pro auditora má nahoře „HALA 2 · REPORT“** (místo AUDIT), stejně v zápatí. Soubory se
+  jmenují `report-<od>-<do>.pdf` a `.xlsx`.
+- **Rozpad na jednotlivé skupiny v přehledu:** tabulka všech skupin za vybrané období. U každé
+  skupiny je Ø lidí v práci na pracovní den a jejich podíl na všech lidech v práci,
+  zpracované kusy a kusy na osobosměnu, s pruhy pro rychlé srovnání. Neproduktivní pozice
+  a projekt mimo IS jsou označené.
+- **Klepnutím na skupinu** (nebo výběrem nahoře) se dlaždice, grafy a tabulka týdnů a měsíců
+  přepnou na tu skupinu. Místo plánu a obsazenosti se ukáže podíl skupiny na lidech v práci.
+- PDF a Excel: rozpad po skupinách (PDF tabulka s pruhy, Excel list Skupiny). S vybranou
+  skupinou je report jen za ni (`report-…-<skupina>.pdf`).
+
 ## Co je nového ve verzi 2.17.1
 
 - **Kusy jen z operací přiřazených ke skupině.** Operace bez skupiny se nepočítají nikde
@@ -695,10 +708,10 @@ v hlavičce každého skriptu:
   PDF na rok a na vlastní období se dvěma směnami a počitadlem s kontrolou textu, chybné
   období, kopie a smazání deníku, historie změn, záloha s fotkami a obnova ztracené fotky,
   mobil se Zpět, tmavý režim);
-- `tests/e2e_audit.js`: novinky 2.17 a 2.17.1 (Audit: Excel obsazenosti a výkazu práce za dva
+- `tests/e2e_audit.js`: novinky 2.17 až 2.17.2 (Audit: Excel obsazenosti a výkazu práce za dva
   měsíce vyrobený v prohlížeči z vymyšlených čísel, chybný soubor, souhrn před nahráním, nové
   operace bez skupiny a nepočítané, návrh skupiny po klepnutí, historický přehled po týdnech
-  a měsících s grafy, dny s víkendem, svátkem a body ke kontrole, úprava hodnoty s povinným
+  a měsících s grafy, rozpad po skupinách a report za skupinu, dny s víkendem, svátkem a body ke kontrole, úprava hodnoty s povinným
   důvodem a ručně doplněné kusy, nastavení skupin a operací, vlastní období, zrušení úpravy,
   nové nahrání se zachováním úprav, osekaný Excel a PDF bez interních údajů, historie změn,
   telefon, tmavý režim);
