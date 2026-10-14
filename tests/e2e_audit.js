@@ -513,6 +513,37 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.screenshot({ path: path.join(shots, '08-tydny.png'), fullPage: true });
   const range = await page.evaluate(() => waHistRange(S.workAudit, ui.wa.hist));
   check(range.from === '2026-10-01' && range.to === '2026-11-30' && range.wFrom === '2026-09-28', `rozsah přehledu: ${JSON.stringify(range)}`);
+  // Vlastní období od–do (2.19.1): krajní týdny jen zčásti, PDF a Excel za stejné období.
+  await page.click('[data-wahist="custom"]');
+  await page.waitForSelector('#waHFrom');
+  check(await page.inputValue('#waHFrom') === '2026-10-01' && await page.inputValue('#waHTo') === '2026-11-30', 'vlastní období začne tím, co bylo vidět');
+  await page.fill('#waHFrom', '2026-10-14');
+  await page.dispatchEvent('#waHFrom', 'change');
+  await page.fill('#waHTo', '2026-10-27');
+  await page.dispatchEvent('#waHTo', 'change');
+  await page.waitForFunction(() => ui.wa.hFrom === '2026-10-14' && ui.wa.hTo === '2026-10-27');
+  const cw = await page.$$eval('table.wa-hist tbody tr', els => els.map(e => e.querySelector('td.name').textContent.replace(/\s+/g, ' ').trim()));
+  check(JSON.stringify(cw) === JSON.stringify(['T44/2026 26. 10.–27. 10.', 'T43/2026 19. 10.–25. 10.', 'T42/2026 14. 10.–18. 10.']), `týdny vlastního období: ${JSON.stringify(cw)}`);
+  const cAvg = await page.evaluate(() => nf(waTotals(S.workAudit, waDays(S.workAudit, '2026-10-14', '2026-10-27')).avgPeople, 1).replace(/\s+/g, ' '));
+  check((await page.textContent('#waView .wa-stats')).replace(/\s+/g, ' ').includes(`${cAvg}Ø na den`) && /14\. 10\. 2026 – 27\. 10\. 2026/.test(await page.textContent('.wa-range-line')), `dlaždice a období: ${cAvg}`);
+  await page.screenshot({ path: path.join(shots, '08a-vlastni-obdobi.png'), fullPage: true });
+  const cx = await download(page, '[data-waxlsx]', 'report-vlastni.xlsx');
+  const cp = await download(page, '[data-wapdf]', 'report-vlastni.pdf');
+  check(cx.name === 'report-2026-10-14-2026-10-27.xlsx' && cp.name === 'report-2026-10-14-2026-10-27.pdf', `exporty vlastního období: ${cx.name} ${cp.name}`);
+  const cpInfo = pdfInfo(cp.path);
+  if (cpInfo) check(cpInfo.text.includes('14. 10. 2026 – 27. 10. 2026') && cpInfo.text.includes('T42') && !cpInfo.text.includes('T41'), 'PDF za vlastní období');
+  await page.fill('#waHFrom', '2026-11-20');
+  await page.dispatchEvent('#waHFrom', 'change');
+  await page.fill('#waHTo', '2026-12-31');
+  await page.dispatchEvent('#waHTo', 'change');
+  await page.waitForFunction(() => ui.wa.hTo === '2026-12-31');
+  check(/20\. 11\. 2026 – 30\. 11\. 2026 \(zvoleno 20\. 11\. 2026 – 31\. 12\. 2026, data jsou jen za tyto dny\)/.test((await page.textContent('.wa-range-line')).replace(/\s+/g, ' ')), `období přes konec dat se ořízne: ${(await page.textContent('.wa-range-line')).replace(/\s+/g, ' ')}`);
+  await page.fill('#waHFrom', '2026-12-01');
+  await page.dispatchEvent('#waHFrom', 'change');
+  await page.waitForFunction(() => ui.wa.hFrom === '2026-12-01');
+  check(/V tomto období nejsou data/.test(await page.textContent('#waView')) && await page.isDisabled('[data-wapdf]') && await page.isDisabled('[data-waxlsx]'), 'období bez dat: prázdný stav, exporty vypnuté');
+  await page.click('[data-wahist="26"]');
+  await page.waitForFunction(() => ui.wa.hist === 26);
   // Pevný požadavek z Nastavení (doslovně „100 lidí a více“): přepočte splněné dny i bilanci.
   await page.click('#waTabs [data-watab="nastaveni"]');
   await page.fill('#waTarget', '40');
@@ -736,6 +767,18 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   check(/ks k dodání .* kapacita/.test(await page.textContent('#waTip3')), `tooltip plánu: ${await page.textContent('#waTip3')}`);
   await page.mouse.move(5, 5);
   await page.screenshot({ path: path.join(shots, '17-plan.png'), fullPage: true });
+  // Vlastní období plánu: celé týdny, do kterých data spadají.
+  await page.click('[data-waplanrange="custom"]');
+  await page.waitForSelector('#waPlanFrom');
+  await page.fill('#waPlanFrom', '2026-11-04');
+  await page.dispatchEvent('#waPlanFrom', 'change');
+  await page.fill('#waPlanTo', '2026-11-12');
+  await page.dispatchEvent('#waPlanTo', 'change');
+  await page.waitForFunction(() => ui.wa.pFrom === '2026-11-04' && ui.wa.pTo === '2026-11-12');
+  const pw = await page.$$eval('table.wa-plantab tbody tr td.name b', els => els.map(e => e.textContent));
+  check(JSON.stringify(pw) === JSON.stringify(['T45/2026', 'T46/2026']) && /2\. 11\. 2026 – 15\. 11\. 2026, celé týdny/.test(await page.textContent('.wa-range-line')), `plán za vlastní období: ${JSON.stringify(pw)}`);
+  await page.click('[data-waplanrange="all"]');
+  await page.waitForFunction(() => ui.wa.planRange === 'all');
   // Nastavení kapacity: kusy za směnu a skupina.
   await page.fill('#waPlanPer', '30');
   await page.press('#waPlanPer', 'Tab');
@@ -793,6 +836,13 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
     check(await overflow(page) <= 0, `telefon ${tab}: přetečení ${await overflow(page)} px`);
     await page.screenshot({ path: path.join(shots, `m-${tab}.png`), fullPage: true });
   }
+  for (const tab of ['prehled', 'plan']) {
+    await page.evaluate(t => { Object.assign(ui.wa, { tab: t, hist: 'custom', hFrom: '2026-10-14', hTo: '2026-10-27', planRange: 'custom', pFrom: '2026-11-04', pTo: '2026-11-12' }); renderWorkAudit(); }, tab);
+    await page.waitForTimeout(150);
+    check(await overflow(page) <= 0 && await page.$(tab === 'plan' ? '#waPlanFrom' : '#waHFrom'), `telefon ${tab} s vlastním obdobím: přetečení ${await overflow(page)} px`);
+    await page.screenshot({ path: path.join(shots, `m-${tab}-vlastni.png`) });
+  }
+  await page.evaluate(() => { Object.assign(ui.wa, { hist: 26, planRange: 'all' }); });
   await page.evaluate(() => { ui.wa.tab = 'dny'; renderWorkAudit(); });
   await page.click('tr[data-waday="2026-10-01"]');
   await page.waitForSelector('#dlg[open] .wa-fgrid');

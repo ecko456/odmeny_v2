@@ -62,6 +62,20 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.19.1
+
+- **Audit: vlastní období od–do.** V přehledu je vedle 13, 26 a 52 týdnů a Vše volba
+  **Vlastní** se dvěma daty Od a Do. Přehled, tabulka týdnů, výpadek lidí, PDF i Excel jsou pak
+  přesně za zvolené dny; první a poslední týden může být jen zčásti a u týdne je vidět, které
+  dny se počítají (např. „T42/2026 14. 10.–18. 10.“). Soubory PDF a Excel mají v názvu obě data.
+- Část období bez dat se nepočítá jako pracovní dny bez lidí: období se ořízne na dny s daty
+  a u data je poznámka „(zvoleno …, data jsou jen za tyto dny)“. Období úplně bez dat ukáže
+  prázdný stav a exporty se vypnou.
+- Datum Od za datem Do posune Do na stejný den (a naopak).
+- **Výrobní plán** má stejnou volbu **Vlastní**: týdny, do kterých zvolené dny spadají (plán
+  i kapacita se počítají po celých týdnech).
+- Data beze změny (verze 18).
+
 ## Co je nového ve verzi 2.19
 
 - **Top 5: komentáře o vývoji případu.** V detailu případu je nahoře karta **Vývoj případu**:

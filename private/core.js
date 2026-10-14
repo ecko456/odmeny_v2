@@ -3663,6 +3663,19 @@ function waHistRange(wa,weeks){
   if(from<span.from)from=span.from;
   return {from,to:span.to,wFrom:isoWeek(from).from};
 }
+/* Vlastní období přehledu (2.19.1): od–do podle uživatele, oříznuté na dny s daty (dny mimo data
+   by se počítaly jako pracovní dny bez obsazenosti). want = zadané období; empty = v něm nejsou data. */
+function waCustomRange(wa,from,to){
+  const span=waSpan(wa);
+  if(!span)return null;
+  if(!WA_ISO.test(String(from)))from=span.from;
+  if(!WA_ISO.test(String(to)))to=span.to;
+  if(from>to)[from,to]=[to,from];
+  const want={from,to};
+  const f=from<span.from?span.from:from,t=to>span.to?span.to:to;
+  if(f>t)return {from,to,wFrom:isoWeek(from).from,want,empty:true};
+  return {from:f,to:t,wFrom:isoWeek(f).from,want,clipped:f!==from||t!==to};
+}
 /* Požadavek lidí na pracovní den: pevný z Nastavení, jinak plán ze souboru. */
 function waReq(wa,d){return wa.target||d.plan||null;}
 /* Obsazenost proti požadavku (2.18): dny se splněným požadavkem, kumulovaná bilance (člověkodny)

@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 14. 10. 2026 (verze 2.19.1):
+
+- Uživatel: „Udělej ještě v Audit možnost vybrat od do podle sebe ne fixní týdny.“
+  - Core: `waCustomRange(wa, from, to)` vrací `{from, to, wFrom, want, clipped}` oříznuté na dny
+    s daty (`waSpan`), nebo `{…, empty: true}`; obrácené meze prohodí. Dny mimo data by se jinak
+    počítaly jako pracovní dny bez lidí (stejný důvod jako u `waHistRange`).
+  - UI: `ui.wa.hist = 'custom'` (čip Vlastní v `WA_HIST`), `ui.wa.hFrom/hTo`, vstupy `#waHFrom`,
+    `#waHTo`; při přepnutí se předvyplní aktuálně viděné období. `waOverviewRange()` je jediný
+    zdroj období pro přehled, PDF i Excel (názvy souborů `report-OD-DO`). `waShortRange(x, r)`
+    u vlastního období (`r.want`) ukazuje jen dny týdne v období; u pevných voleb celé týdny
+    jako dřív. Od za Do posune druhou mez (`waSetRange` v obsluze `change`).
+  - Výrobní plán: `WA_PLAN_RANGES` má `custom` (`ui.wa.pFrom/pTo`, `#waPlanFrom`, `#waPlanTo`),
+    bere celé ISO týdny, do kterých dny spadají.
+  - `ODM_VERSION` 2.19.1, data beze změny (verze 18), `ODM_MIN_CLIENT` 18.
+
 Stav k 14. 10. 2026 (verze 2.19):
 
 - Uživatel: „přidat do TOP5 možnost přidání komentáře o vývoji ke každému případu pro lepší
@@ -765,7 +780,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.18 | `0c9912a` | obsazenost proti požadavku, výpadky a dorovnání, jen týdny, výrobní plán proti kapacitě brusičů (data verze 16) |
 | 2.18.1 | `ef847ad` | požadavek lidí pevně 100 na pracovní den (data verze 17) |
 | 2.18.2 | `7783c11` | fronta souborů výrobního plánu, rychlé čtení xlsx, nadpisy na 2. řádku |
-| 2.19 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Top 5 – komentáře o vývoji případu (data verze 18) |
+| 2.19 | `5b70d7e` | Top 5 – komentáře o vývoji případu (data verze 18) |
+| 2.19.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – vlastní období od–do v přehledu a výrobním plánu |
 
 Verze 2.1 přidala:
 
@@ -1139,7 +1155,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 54 testů: proti původní aplikaci + opravy + 2.1 až 2.19
+node tests/test_core.js                 # 55 testů: proti původní aplikaci + opravy + 2.1 až 2.19.1
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1166,9 +1182,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
-  - `e2e_audit.js`: Audit (2.17 až 2.18.2); oba Excely i výrobní plán (dva listy, nadpisy na
-    2. řádku, vložený sloupec, fronta, zrušení čtení, 120 000 řádků s duplicitami, rychlé čtení
-    xlsx proti SheetJS) vyrobí v prohlížeči přes SheetJS z vymyšlených čísel (žádná
+  - `e2e_audit.js`: Audit (2.17 až 2.19.1, vlastní období od–do i na telefonu); oba Excely
+    i výrobní plán (dva listy, nadpisy na 2. řádku, vložený sloupec, fronta, zrušení čtení,
+    120 000 řádků s duplicitami, rychlé čtení xlsx proti SheetJS) vyrobí v prohlížeči přes SheetJS z vymyšlených čísel (žádná
     skutečná data v repu), PDF čte přes pypdf. Po zavření dialogu dne čeká na uloženou úpravu
     (`close` dialogu přijde až po zmizení `[open]`). Kontrola smazaných dílů plánu čeká 404
     (`expectGone`);

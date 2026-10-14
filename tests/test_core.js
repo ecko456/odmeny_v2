@@ -2168,6 +2168,28 @@ test('Top 5 (2.19): komentáře o vývoji případu – přidání, úprava, sma
   return null;
 });
 
+test('Audit (2.19.1): vlastní období od–do, oříznuté na dny s daty', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(demoData());
+    const wa = S.workAudit;
+    ['2026-10-05', '2026-10-20', '2026-11-04'].forEach(iso => { wa.days[iso] = { am: { plan: 30, total: 28 }, pm: { plan: 20, total: 20 }, g: {} }; });
+    JSON.stringify({
+      inside: waCustomRange(wa, '2026-10-12', '2026-10-25'),
+      swap: waCustomRange(wa, '2026-10-25', '2026-10-12'),
+      clip: waCustomRange(wa, '2026-09-01', '2026-12-31'),
+      empty: waCustomRange(wa, '2026-12-01', '2026-12-31'),
+      bad: waCustomRange(wa, 'x', ''),
+      none: waCustomRange(blankWorkAudit(), '2026-10-01', '2026-10-31') })`));
+  assert.deepStrictEqual(out.inside, { from: '2026-10-12', to: '2026-10-25', wFrom: '2026-10-12', want: { from: '2026-10-12', to: '2026-10-25' }, clipped: false });
+  assert.deepStrictEqual([out.swap.from, out.swap.to], ['2026-10-12', '2026-10-25'], 'prohozené od a do');
+  assert.deepStrictEqual([out.clip.from, out.clip.to, out.clip.wFrom, out.clip.clipped], ['2026-10-05', '2026-11-04', '2026-10-05', true], 'oříznuto na dny s daty');
+  assert.ok(out.empty.empty && out.empty.want.from === '2026-12-01', 'období bez dat');
+  assert.deepStrictEqual([out.bad.from, out.bad.to, out.bad.clipped], ['2026-10-05', '2026-11-04', false], 'neplatné datum = celé období dat');
+  assert.strictEqual(out.none, null);
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {
