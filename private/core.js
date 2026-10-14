@@ -3728,23 +3728,28 @@ function waPlanHeaderRow(rows){
   rows.slice(0,40).forEach((r,i)=>{const n=(r||[]).filter(v=>typeof v==="string"&&v.trim()&&!/^\d+([.,]\d+)?$/.test(v.trim())).length;if(n>score){score=n;best=i;}});
   return best;
 }
-/* Sloupce listu podle vzoru: najde řádek se stejnými nadpisy (soubor se mohl posunout),
-   jinak platí řádek a písmena ze vzoru. Vrací {header, idx: {pole: index sloupce}}. */
+/* Sloupce listu podle vzoru: nadpisy hledá nejdřív na řádku ze vzoru (plán je má na 2. řádku),
+   pak v prvních 60 řádcích (soubor se mohl posunout). Sloupec podle názvu; když je stejný název
+   víckrát, má přednost sloupec se stejným písmenem jako ve vzoru. Nenalezené pole se čte podle
+   písmene ze vzoru a je v `missing`. Vrací {header, idx: {pole: index sloupce}, found, missing}. */
 function waPlanCols(rows,sh){
   const fields=WA_PLAN_FIELDS.filter(f=>sh.cols[f]);
-  const want=fields.filter(f=>sh.heads[f]).map(f=>[f,norm(sh.heads[f])]);
+  const want=fields.filter(f=>sh.heads[f]).map(f=>[f,norm(sh.heads[f]),waIndex(sh.cols[f])]);
   if(want.length){
-    for(let i=0;i<Math.min(rows.length,60);i++){
-      const r=(rows[i]||[]).map(v=>norm(v==null?"":v));
-      const idx={};want.forEach(([f,h])=>{const c=r.indexOf(h);if(c>=0)idx[f]=c;});
+    const n=Math.min(rows.length,60);
+    const order=[sh.header,...Array.from({length:n},(_,i)=>i).filter(i=>i!==sh.header)].filter(i=>i<rows.length);
+    for(const i of order){
+      const r=Array.from(rows[i]||[],v=>norm(v==null?"":v));
+      const idx={};want.forEach(([f,h,c])=>{const j=r[c]===h?c:r.indexOf(h);if(j>=0)idx[f]=j;});
       if(Object.keys(idx).length>=Math.min(3,want.length)){
-        fields.forEach(f=>{if(!(f in idx))idx[f]=waIndex(sh.cols[f]);});
-        return {header:i,idx,found:true};
+        const missing=fields.filter(f=>!(f in idx));
+        missing.forEach(f=>{idx[f]=waIndex(sh.cols[f]);});
+        return {header:i,idx,found:true,missing};
       }
     }
   }
   const idx={};fields.forEach(f=>{idx[f]=waIndex(sh.cols[f]);});
-  return {header:sh.header,idx,found:false};
+  return {header:sh.header,idx,found:false,missing:[]};
 }
 /* Technologie: „G2“ nebo „G“ jako samostatné označení (G2/B, G + K), nebo kdekoli v textu. */
 function waPlanMatch(tech,cfg){
@@ -3761,14 +3766,15 @@ function waPlanPart(v){
 }
 /* Sloučení řádků plánu do položek: klíč = objednávka + index + EAN. Duplicita (v souboru i proti
    dřívějším plánům) si nechá verzi s nejpozdějším termínem; při stejném termínu platí novější.
-   rows: [objednávka, EAN, ks, index, termín, technologie] (surové buňky). map: klíč → [ISO, ks]. */
+   rows: [objednávka, EAN, ks, index, termín, technologie] (surové buňky); sedmá hodnota 1 = list bez
+   sloupce technologie, řádek se bere bez filtru. map: klíč → [ISO, ks]. */
 function waPlanMerge(map,rows,cfg){
-  const st={rows:0,bad:0,notTech:0,matched:0,dupes:0,added:0,moved:0,older:0};
+  const st={rows:0,bad:0,notTech:0,matched:0,dupes:0,added:0,moved:0,older:0,same:0};
   const seen=new Set(),techs=new Map();
   rows.forEach(r=>{
     st.rows++;
     const tech=r[5]==null?"":String(r[5]).trim();
-    const ok=waPlanMatch(tech,cfg);
+    const ok=r[6]===1||waPlanMatch(tech,cfg);
     const tc=techs.get(tech);if(tc)tc[0]++;else if(techs.size<2000)techs.set(tech,[1,ok]);
     if(!ok){st.notTech++;return;}
     const ks=toNum(r[2]),dt=cellToDateTime(r[4]);
@@ -3780,12 +3786,26 @@ function waPlanMerge(map,rows,cfg){
     const old=map.get(key);
     if(!old){map.set(key,[iso,ks]);st.added++;return;}
     if(iso>old[0]){map.set(key,[iso,ks]);st.moved++;}
-    else if(iso===old[0])map.set(key,[iso,ks]);
+    else if(iso===old[0]){map.set(key,[iso,ks]);st.same++;}
     else st.older++;
   });
   st.items=map.size;
   // nejčastější hodnoty technologie, ať je vidět, co filtr bere
   st.techs=[...techs.entries()].sort((a,b)=>b[1][0]-a[1][0]).slice(0,12).map(([t,[n,ok]])=>({tech:t,n,ok}));
+  return st;
+}
+/* Fronta souborů do uloženého plánu (2.18.2): stejné pravidlo jako waPlanMerge (pozdější termín
+   vyhrává, při stejném termínu platí fronta). Statistika je proti uloženému plánu. */
+function waPlanMergeMap(map,src){
+  const st={added:0,moved:0,older:0,same:0};
+  src.forEach((v,k)=>{
+    const o=map.get(k);
+    if(!o){map.set(k,v);st.added++;}
+    else if(v[0]>o[0]){map.set(k,v);st.moved++;}
+    else if(v[0]===o[0]){map.set(k,v);st.same++;}
+    else st.older++;
+  });
+  st.items=map.size;
   return st;
 }
 /* Uložení položek: sloupcově (klíče, dny od 1. 1. 1970, kusy), ať se dobře komprimuje. */

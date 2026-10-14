@@ -114,9 +114,10 @@ async function makeFiles(page, variant = 1, month = 10) {
     work: { name: `vykaz-prace-${m}.xlsx`, mimeType: type, buffer: Buffer.from(out.work, 'base64') },
   };
 }
-/* Vymyšlený výrobní plán se dvěma listy (Zakázky: nadpisy na 3. řádku, Díly: jiné pořadí sloupců
-   na 1. řádku). A: vzor a první plán, B: posunuté nadpisy o řádek a sloupec a posunuté termíny,
-   BIG: 2 × 60 000 řádků s polovinou duplicit ve druhém listu (očekávané počty spočítané zvlášť). */
+/* Vymyšlený výrobní plán se dvěma listy, nadpisy na 2. řádku (Díly mají jiné pořadí sloupců).
+   A: vzor a první plán (sdílené texty jako z Excelu), B: vložený sloupec, list Díly s nadpisy
+   o řádek níž a posunuté termíny (texty přímo v buňkách), BIG: 2 × 60 000 řádků s polovinou
+   duplicit ve druhém listu (očekávané počty spočítané zvlášť). */
 async function makePlan(page, variant) {
   const out = await page.evaluate(async variant => {
     const X = await xlsx();
@@ -126,7 +127,7 @@ async function makePlan(page, variant) {
     let s1, s2, name, meta = null;
     if (variant === 'A') {
       name = 'plan-tyden-45.xlsx';
-      s1 = [['Výrobní plán – hala 2'], ['stav k 2. 11. 2026'], head1,
+      s1 = [['Výrobní plán – hala 2, stav k 2. 11. 2026'], head1,
         [4500100, 'Z1', 8590000000001, 120, 'IX-100', D(11, 4), 'G2', ''],
         [4500101, 'Z1', 8590000000002, 80, 'IX-101', D(11, 5), 'B1/G', ''],
         [4500102, 'Z2', 8590000000003, 60, 'IX-102', D(11, 11), 'GR', ''],
@@ -134,17 +135,17 @@ async function makePlan(page, variant) {
         [4500100, 'Z1', 8590000000001, 120, 'IX-100', D(11, 2), 'G2', 'starší verze'],
         [4500104, 'Z3', 8590000000005, 0, 'IX-104', D(11, 12), 'G2', 'bez kusů'],
         [4500105, 'Z3', 8590000000006, 200, 'IX-105', D(11, 18), 'G + K', '']];
-      s2 = [head2,
+      s2 = [['Díly'], head2,
         ['IX-200', 4500200, 8590000000100, 'G2', D(11, 25), 300],
         ['IX-201', 4500201, 8590000000101, 'G', D(12, 2), 150],
         ['ix-100', '4500100', '8590000000001', 'G2', D(11, 9), 130]];
     } else if (variant === 'B') {
       name = 'plan-tyden-46.xlsx';
-      s1 = [['Výrobní plán – hala 2'], ['stav k 9. 11. 2026'], [], ['Poř.', ...head1],
+      s1 = [['Výrobní plán – hala 2, stav k 9. 11. 2026'], ['Poř.', ...head1],
         [1, 4500101, 'Z1', 8590000000002, 80, 'IX-101', D(11, 12), 'B1/G', 'posunuto'],
         [2, 4500105, 'Z3', 8590000000006, 200, 'IX-105', D(11, 16), 'G + K', 'starší než dřív'],
         [3, 4500300, 'Z4', 8590000000200, 90, 'IX-300', D(11, 26), 'G2', '']];
-      s2 = [head2, ['IX-200', 4500200, 8590000000100, 'G2', D(11, 25), 300]];
+      s2 = [['Díly'], ['export z IS'], head2, ['IX-200', 4500200, 8590000000100, 'G2', D(11, 25), 300]];
     } else {
       name = 'plan-velky.xlsx';
       const N = 60000;
@@ -162,8 +163,8 @@ async function makePlan(page, variant) {
         const o = exp.get(key);
         if (!o || iso(dt) >= o[0]) exp.set(key, [iso(dt), ks]);
       };
-      s1 = [['Výrobní plán – velký'], [''], head1];
-      s2 = [head2];
+      s1 = [['Výrobní plán – velký'], head1];
+      s2 = [['Díly'], head2];
       const due1 = [];
       for (let i = 0; i < N; i += 1) {
         const dt = new Date(Date.UTC(2026, 9, 12 + (i % 70), 12));
@@ -189,7 +190,7 @@ async function makePlan(page, variant) {
     const wb = X.utils.book_new();
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(s1), 'Zakázky');
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet(s2), 'Díly');
-    const bytes = new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array', compression: true }));
+    const bytes = new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array', compression: true, bookSST: variant !== 'B' }));
     let b = '';
     for (let i = 0; i < bytes.length; i += 0x8000) b += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
     return { name, b64: btoa(b), meta };
@@ -599,10 +600,34 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   check(/G2 nebo G/.test(await page.textContent('#waView')) && await page.inputValue('#waPlanWords') === 'G2, G', 'výchozí filtr G2 a G');
   await page.screenshot({ path: path.join(shots, '14-plan-start.png'), fullPage: true });
   const planA = await makePlan(page, 'A');
+  const planB = await makePlan(page, 'B');
+  // Rychlé čtení xlsx (2.18.2) dá stejné hodnoty jako SheetJS: se sdílenými texty (A) i bez nich (B).
+  await page.evaluate(() => { const i = document.createElement('input'); i.type = 'file'; i.multiple = true; i.id = 'cmpIn'; i.hidden = true; document.body.append(i); });
+  await page.setInputFiles('#cmpIn', [planA, planB]);
+  const same = await page.evaluate(async () => {
+    const X = await xlsx();
+    const out = [];
+    for (const file of document.getElementById('cmpIn').files) {
+      const b = new Uint8Array(await file.arrayBuffer());
+      const fast = await waXlsxOpen(b);
+      const wb = X.read(b, { type: 'array', dense: true });
+      for (const [si, sh] of fast.entries()) {
+        const ws = wb.Sheets[wb.SheetNames[si]];
+        const data = Array.isArray(ws) ? ws : ws['!data'];
+        const width = Math.max(...data.map(r => (r ? r.length : 0)));
+        const got = [];
+        await sh.read({ top: 1, pick: () => Array.from({ length: width }, (_, c) => c), onRow: (i, v) => { got[i] = v; } });
+        const want = data.map(r => Array.from({ length: width }, (_, c) => { const x = r && r[c] ? waCellV(r[c]) : null; return x === undefined ? null : x; }));
+        out.push([file.name, sh.name === wb.SheetNames[si], JSON.stringify(got.map(r => r || Array(width).fill(null))) === JSON.stringify(want), got.length]);
+      }
+    }
+    return out;
+  });
+  check(same.length === 4 && same.every(x => x[1] && x[2]), `rychlé čtení xlsx = SheetJS: ${JSON.stringify(same)}`);
   await page.setInputFiles('#waPlanTplFile', planA);
   await page.waitForSelector('#dlg[open] .wa-tpl-sheet');
   const tplSel = await page.$$eval('#dlg .wa-tpl-sheet', els => els.map(e => [e.querySelector('[data-tplhead]').value, ...[...e.querySelectorAll('[data-tplf]')].map(x => `${x.dataset.tplf}:${x.value}`)]));
-  check(JSON.stringify(tplSel) === JSON.stringify([['3', 'order:0', 'ean:2', 'ks:3', 'index:4', 'due:5', 'tech:6'], ['1', 'order:1', 'ean:2', 'ks:5', 'index:0', 'due:4', 'tech:3']]), `vzor: nadpisy a sloupce podle názvů: ${JSON.stringify(tplSel)}`);
+  check(JSON.stringify(tplSel) === JSON.stringify([['2', 'order:0', 'ean:2', 'ks:3', 'index:4', 'due:5', 'tech:6'], ['2', 'order:1', 'ean:2', 'ks:5', 'index:0', 'due:4', 'tech:3']]), `vzor: nadpisy na 2. řádku a sloupce podle názvů: ${JSON.stringify(tplSel)}`);
   check((await page.$$('#dlg .wa-tpl-sheet table.wa-prev tbody tr')).length === 7 && /4\. 11\. 2026/.test(await page.textContent('#dlg .wa-tpl-sheet')), 'náhled prvních řádků s termínem jako datem');
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(shots, '15-plan-vzor.png') });
@@ -617,40 +642,59 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   check(/List Díly: chybí sloupec počtu kusů nebo termínu/.test(await page.textContent('#dlgBody')), 'vzor bez termínu neprojde');
   await page.selectOption('#dlg [data-tplsh="1"] [data-tplf="due"]', '4');
   await page.click('#dlgOk');
-  await page.waitForSelector('#dlg[open] #dlgOk:has-text("Nahrát do plánu")');
+  await page.waitForSelector('#dlg[open] #dlgOk:has-text("Přidat do fronty")');
   w = await wa(page);
-  check(JSON.stringify(w.plan.tpl.sheets.map(x => [x.name, x.header, Object.values(x.cols).join('')])) === JSON.stringify([['Zakázky', 2, 'ACDEFG'], ['Díly', 0, 'BCFAED']]) && w.plan.tpl.sheets[0].heads.due === 'Termín dokončení', `uložený vzor: ${JSON.stringify(w.plan.tpl)}`);
+  check(JSON.stringify(w.plan.tpl.sheets.map(x => [x.name, x.header, Object.values(x.cols).join('')])) === JSON.stringify([['Zakázky', 1, 'ACDEFG'], ['Díly', 1, 'BCFAED']]) && w.plan.tpl.sheets[0].heads.due === 'Termín dokončení', `uložený vzor: ${JSON.stringify(w.plan.tpl)}`);
+  // Fronta: soubor se hned přečte, do plánu se uloží až po Zpracovat soubory.
   await page.click('#dlgOk');
-  await page.waitForSelector('#dlg[open] .wa-impfile', { timeout: 60000 });
+  await page.waitForSelector('#waView .wa-queue table.wa-qfiles', { timeout: 60000 });
+  const qRows = () => page.$$eval('table.wa-qfiles tbody tr', els => els.map(e => [...e.querySelectorAll('td')].map((td, i) => (i ? td.textContent.replace(/\s+/g, '') : td.querySelector('b').textContent)).filter((x, i) => i !== 1).join(' ')));
+  check(JSON.stringify(await qRows()) === JSON.stringify(['plan-tyden-45.xlsx 10 7 2 1 2']), `fronta po vzoru (řádků, G2/G, jiná, neplatné, duplicity): ${JSON.stringify(await qRows())}`);
+  check(/Ve frontě 5 položek z 1 souboru/.test((await page.textContent('.wa-queue-foot')).replace(/\s+/g, ' ')) && (await wa(page)).plan.items === 0, 'položky jsou jen ve frontě');
+  await page.screenshot({ path: path.join(shots, '15b-plan-fronta.png'), fullPage: true });
+  await page.click('[data-waplanrun]');
+  await page.waitForSelector('#dlg[open] .wa-imptotal', { timeout: 60000 });
+  const tot = () => page.$$eval('#dlg .wa-imptotal dd', els => els.map(e => e.textContent.replace(/\s+/g, '')).join(' '));
   const impA = (await page.textContent('#dlgBody')).replace(/\s+/g, ' ');
-  const impRows = () => page.$$eval('#dlg .wa-impfile', els => els.map(e => [e.querySelector('b').textContent, ...[...e.querySelectorAll('dd')].map(d => d.textContent.replace(/\s+/g, ''))].join(' ')));
-  const rowA = (await impRows())[0];
-  check(rowA === 'plan-tyden-45.xlsx 10 7 2 1 2 5 1 1', `souhrn plánu A (řádků, G2/G, jiná, neplatné, duplicity, nové, posunuté, starší): ${rowA}`);
+  check(await tot() === '1 10 7 2 1 2 5 0 0 0', `souhrn A (souborů, řádků, G2/G, jiná, neplatné, sloučené duplicity, nové, posunuté, starší, beze změny): ${await tot()}`);
   check(/Položek v plánu: 5/.test(impA) && /T45\/2026 až T49\/2026/.test(impA), `položky a týdny: ${impA.slice(0, 700)}`);
   const chips = await page.$$eval('#dlg .wa-tech', els => els.map(e => `${e.classList.contains('ok') ? '+' : '-'}${e.textContent.replace(/\s+/g, '')}`).join(' '));
   check(chips === '+G25 +B1/G1 -✕GR1 -✕B11 +G+K1 +G1', `technologie v souborech s označením, co se bere: ${chips}`);
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(shots, '16-plan-souhrn.png') });
   await confirm(page);
-  await page.waitForFunction(() => S.workAudit.plan.items === 5 && !ui.wa.planBusy, null, { timeout: 30000 });
+  await page.waitForFunction(() => S.workAudit.plan.items === 5 && !ui.wa.planBusy && !ui.wa.planQ, null, { timeout: 30000 });
   await saved(page);
   w = await wa(page);
   const sortedWeeks = o => JSON.stringify(Object.keys(o).sort().map(k => [k, o[k].ks, o[k].n]));
   check(w.plan.chunks.length === 1 && sortedWeeks(w.plan.weeks) === JSON.stringify([['2026-W45', 80, 1], ['2026-W46', 130, 1], ['2026-W47', 200, 1], ['2026-W48', 300, 1], ['2026-W49', 150, 1]])
-    && w.plan.files.length === 1 && w.plan.files[0].matched === 7, `plán po prvním souboru: ${JSON.stringify([w.plan.weeks, w.plan.files])}`);
+    && w.plan.files.length === 1 && w.plan.files[0].matched === 7 && !(await page.$('.wa-queue')), `plán po prvním souboru: ${JSON.stringify([w.plan.weeks, w.plan.files])}`);
   const chunks1 = w.plan.chunks.slice();
-  // Druhý soubor (posunuté nadpisy a sloupce, posunuté termíny) a velký soubor najednou.
-  const planB = await makePlan(page, 'B');
+  // Postupně po souborech: B (vložený sloupec, nadpisy Dílů o řádek níž, posunuté termíny), pak velký soubor.
   const big = await makePlan(page, 'BIG');
+  await page.setInputFiles('#waPlanFile', planB);
+  await page.waitForFunction(() => ui.wa.planQ && ui.wa.planQ.files.length === 1 && !ui.wa.planBusy);
+  await page.setInputFiles('#waPlanFile', planB);   // stejný soubor podruhé se nepřidá
+  await page.waitForFunction(() => !ui.wa.planBusy && /už ve frontě byl/.test(document.querySelector('#toast').textContent));
+  // Zrušení čtení velkého souboru: fronta zůstane, jak byla.
+  await page.setInputFiles('#waPlanFile', big.file);
+  await page.waitForSelector('#dlg[open] #dlgCancel:has-text("Zrušit")');
+  await page.click('#dlgCancel');
+  await page.waitForFunction(() => !ui.wa.planBusy, null, { timeout: 60000 });
+  check(/Čtení zrušeno/.test(await page.textContent('#toast')) && await page.evaluate(() => ui.wa.planQ.files.length) === 1, 'zrušené čtení nic nepřidá');
   const t0 = Date.now();
-  await page.setInputFiles('#waPlanFile', [planB, big.file]);
-  await page.waitForSelector('#dlg[open] .wa-impfile', { timeout: 180000 });
+  await page.setInputFiles('#waPlanFile', big.file);
+  await page.waitForFunction(() => ui.wa.planQ.files.length === 2 && !ui.wa.planBusy, null, { timeout: 180000 });
   const tRead = Date.now() - t0;
-  const impB = await impRows();
-  check(impB[0] === 'plan-tyden-46.xlsx 4 4 0 0 0 1 1 1', `souhrn plánu B: ${impB[0]}`);
-  const bigRow = impB[1].split(' ');
-  check(bigRow[0] === 'plan-velky.xlsx' && +bigRow[1] === big.rows && +bigRow[2] === big.matched && +bigRow[5] === big.dupes && +bigRow[6] === big.items, `velký soubor: ${impB[1]} (čekáno ${JSON.stringify({ ...big, weeks: 0, file: 0 })})`);
-  check(/nadpisy ze vzoru se nenašly/.test(await page.textContent('#dlgBody')) === false, 'posunuté nadpisy se našly podle názvu');
+  const qB = await qRows();
+  check(qB[0] === 'plan-tyden-46.xlsx 4 4 0 0 0', `fronta B: ${qB[0]}`);
+  const bigRow = qB[1].split(' ');
+  check(bigRow[0] === 'plan-velky.xlsx' && +bigRow[1] === big.rows && +bigRow[2] === big.matched && +bigRow[5] === big.dupes, `velký soubor ve frontě: ${qB[1]} (čekáno ${JSON.stringify({ ...big, weeks: 0, file: 0 })})`);
+  check(!/nenašly|nenašlo/.test(await page.textContent('.wa-queue')), 'vložený sloupec a nadpisy o řádek níž se našly podle názvu');
+  await page.click('[data-waplanrun]');
+  await page.waitForSelector('#dlg[open] .wa-imptotal', { timeout: 120000 });
+  const totB = (await tot()).split(' ').map(Number);
+  check(totB[0] === 2 && totB[6] === 1 + big.items && totB[7] === 1 && totB[8] === 1 && totB[9] === 1, `souhrn B + velký (nové, posunuté, starší, beze změny proti uloženému): ${totB}`);
   await page.click('#dlgOk');
   await page.waitForFunction(() => !ui.wa.planBusy && S.workAudit.plan.files.length === 3 && !document.querySelector('#dlg[open]'), null, { timeout: 180000 });
   await saved(page);
@@ -659,7 +703,7 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   const expItems = 6 + big.items;
   check(w.plan.items === expItems && w.plan.chunks.length >= 2, `položky po velkém souboru: ${w.plan.items} (čekáno ${expItems}), dílů ${w.plan.chunks.length}`);
   check(w.plan.weeks['2026-W46'].ks === 130 + 80 + (big.weeks['2026-W46'] || 0) && w.plan.weeks['2026-W48'].ks === 300 + 90 + (big.weeks['2026-W48'] || 0), `posunuté termíny a kusy po týdnech: ${JSON.stringify(w.plan.weeks)}`);
-  console.log(`výrobní plán: ${big.rows} řádků velkého souboru načteno za ${(tRead / 1000).toFixed(1)} s, uloženo za ${(tAll / 1000).toFixed(1)} s, ${w.plan.chunks.length} dílů`);
+  console.log(`výrobní plán: ${big.rows} řádků velkého souboru přečteno za ${(tRead / 1000).toFixed(1)} s, se zpracováním a uložením ${(tAll / 1000).toFixed(1)} s, ${w.plan.chunks.length} dílů`);
   check(tAll < 120000, `velký plán trval ${tAll} ms`);
   // Staré díly se po uložení smažou, nové jdou načíst a obsahují všechny položky.
   await page.waitForTimeout(800);
@@ -735,8 +779,8 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   check(/operace „Pískování - hala 2“, skupina: bez skupiny → Obsluha tryskací kabiny/.test(log), 'přiřazení skupiny v historii');
   check(!/operace „Údržba stroje“/.test(log) && !/Lepení a značení dílů, neproduktivní pozice/.test(log), 'změna a návrat zpět se v historii vyruší');
   check(/Audit: smazána skupina „Expedice“/.test(log), 'smazaná skupina v historii');
-  check(/Audit: vzor výrobního plánu podle souboru plan-tyden-45\.xlsx/.test(log) && /Audit: nahrán výrobní plán plan-tyden-45\.xlsx \(7 řádků G2 nebo G/.test(log.replace(/\s+/g, ' '))
-    && /Audit: nahrán výrobní plán plan-tyden-46\.xlsx, plan-velky\.xlsx/.test(log), `výrobní plán v historii: ${log.slice(0, 900)}`);
+  check(/Audit: vzor výrobního plánu podle souboru plan-tyden-45\.xlsx/.test(log) && /Audit: zpracován výrobní plán plan-tyden-45\.xlsx \(7 řádků G2 nebo G, 5 nových položek/.test(log.replace(/\s+/g, ' '))
+    && /Audit: zpracován výrobní plán plan-tyden-46\.xlsx, plan-velky\.xlsx/.test(log), `výrobní plán v historii: ${log.slice(0, 900)}`);
   await page.screenshot({ path: path.join(shots, '11-historie.png') });
   await page.click('#dlgCancel');
 

@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.18.2
+
+- **Výrobní plán po souborech do fronty.** Soubory se přidávají postupně (po jednom nebo víc
+  najednou) tlačítkem **Přidat soubory**. Každý se hned přečte a ve frontě je vidět, kolik má
+  řádků, kolik se bere (G2/G) a kolik je duplicit. Tlačítko **Zpracovat soubory** pak frontu
+  jednou sloučí s uloženým plánem, ukáže souhrn (nové položky, posunuté termíny) a uloží.
+  Stejný soubor se do fronty nepřidá dvakrát (pozná se podle obsahu). Čtení jde zrušit.
+- **Názvy sloupců na 2. řádku:** vzor má nadpisy výchozí ve 2. řádku obou listů; další soubory se
+  čtou podle názvů (i když přibude sloupec). Když se nějaký název nenajde, fronta na to upozorní.
+- **Rychlé čtení velkých souborů:** xlsx se čte po kouscích a jen vybrané sloupce. Soubor 7 MB
+  (56 000 řádků) se přečte asi za 2 s místo 6 s a s třetinou paměti; 30 takových souborů zhruba
+  za minutu. Soubory xls dál čte SheetJS.
+- List bez sloupce technologie ve vzoru bere všechny řádky (s upozorněním).
+- Data beze změny.
+
 ## Co je nového ve verzi 2.18.1
 
 - **Požadavek lidí je pevných 100 na pracovní den.** Den má požadavek splněný, když je v práci

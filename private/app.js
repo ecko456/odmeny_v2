@@ -7660,7 +7660,7 @@ function bindWorkAudit() {
   $('#waWork').onclick = () => $('#waWorkFile').click();
   $('#waAttFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waImport('att', f); };
   $('#waWorkFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waImport('work', f); };
-  $('#waPlanFile').onchange = event => { const f = [...event.target.files]; event.target.value = ''; waPlanImport(f); };
+  $('#waPlanFile').onchange = event => { const f = [...event.target.files]; event.target.value = ''; waPlanQueueAdd(f); };
   $('#waPlanTplFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waPlanTemplate(f); };
   const wv = $('#waView');
   wv.addEventListener('click', async event => {
@@ -7698,6 +7698,11 @@ function bindWorkAudit() {
     if (t.closest('[data-waplanpick]')) { $('#waPlanFile').click(); return; }
     if (t.closest('[data-waplantpl]')) { $('#waPlanTplFile').click(); return; }
     if (t.closest('[data-waplanclear]')) { waPlanClear(); return; }
+    if (t.closest('[data-waplanrun]')) { waPlanProcess(); return; }
+    if (t.closest('[data-waplanqclear]')) {
+      if (await confirmBox('Vyprázdnit frontu?', 'Přečtené soubory z fronty zmizí, uložený plán zůstane beze změny.', 'Vyprázdnit')) waPlanQueueClear();
+      return;
+    }
     const pr = t.closest('[data-waplanrange]');
     if (pr) { ui.wa.planRange = pr.dataset.waplanrange; renderWorkAudit(); return; }
     const pdfBtn = t.closest('[data-wapdf]');
@@ -7848,40 +7853,234 @@ async function waWaitSaved(ms = 60000) {
   return !store.dirty && !store.saving && !store.conflict && !store.error;
 }
 
-/* Listy sešitu jako řádky buněk. Bez formátování a stylů (dense), ať se i soubor se statisíci
-   řádků přečte rychle; rows > 0 přečte jen začátek listů (vzor). */
-async function waPlanBook(file, rows = 0) {
-  const buffer = await file.arrayBuffer();
+/* ---------- čtení souborů plánu (2.18.2) ----------
+   Soubor xlsx (zip) se čte sám po kouscích: rozbalí se jen workbook, sdílené texty a listy
+   (DecompressionStream), z řádků se berou jen sloupce ze vzoru. I soubor se statisíci řádků
+   tak nezabere stovky MB paměti. Jiné soubory (xls, neobvyklý zip, starý prohlížeč) přečte SheetJS,
+   CSV parseCSV. Každý list: {name, read({top, pick, onRow})} → {head, total}:
+   - head = prvních `top` řádků celých (hodnoty), total = počet řádků listu;
+   - bez `pick` se čtení po prvních řádcích zastaví (vzor);
+   - s `pick(head)` → indexy sloupců; onRow(index řádku, hodnoty těch sloupců) pro všechny řádky. */
+const WA_XML_ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" };
+const waXml = t => (t.indexOf('&') < 0 ? t : t.replace(/&(#x[0-9a-fA-F]+|#\d+|amp|lt|gt|quot|apos);/g, (m, e) => (e[0] === '#' ? String.fromCodePoint(e[1] === 'x' ? parseInt(e.slice(2), 16) : +e.slice(1)) : WA_XML_ENT[e])));
+const waAttr = (a, name) => { const m = new RegExp(`(?:^|\\s)${name}="([^"]*)"`).exec(a); return m ? waXml(m[1]) : ''; };
+function waZip(b) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let e = -1;
+  for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i -= 1) if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error('zip bez adresáře');
+  const n = dv.getUint16(e + 10, true);
+  let p = dv.getUint32(e + 16, true);
+  if (p === 0xffffffff || n === 0xffff) throw new Error('zip64');
+  const dec = new TextDecoder();
+  const map = new Map();
+  for (let i = 0; i < n; i += 1) {
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error('poškozený zip');
+    const nl = dv.getUint16(p + 28, true);
+    const name = dec.decode(b.subarray(p + 46, p + 46 + nl)).replace(/^\/+/, '').toLowerCase();
+    map.set(name, { method: dv.getUint16(p + 10, true), csize: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) });
+    p += 46 + nl + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+  }
+  return map;
+}
+/* Čtečka textu jednoho souboru ze zipu (po kouscích). */
+function waZipReader(b, ent) {
+  const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  if (!ent || dv.getUint32(ent.off, true) !== 0x04034b50) throw new Error('poškozený zip');
+  const start = ent.off + 30 + dv.getUint16(ent.off + 26, true) + dv.getUint16(ent.off + 28, true);
+  let s = new Blob([b.subarray(start, start + ent.csize)]).stream();
+  if (ent.method === 8) s = s.pipeThrough(new DecompressionStream('deflate-raw'));
+  else if (ent.method !== 0) throw new Error('nepodporovaná komprese');
+  return s.pipeThrough(new TextDecoderStream()).getReader();
+}
+async function waZipText(b, ent) {
+  const r = waZipReader(b, ent);
+  let t = '';
+  for (;;) { const { done, value } = await r.read(); if (done) return t; t += value; }
+}
+/* Konec posledního celého prvku `tag` (např. row, si) v textu, nebo -1. */
+function waTagEnd(t, tag) {
+  let k = t.length;
+  while ((k = t.lastIndexOf(`${tag}>`, k - 1)) > 0) {
+    const s = t.lastIndexOf('<', k);
+    if (t[s + 1] === '/') return k + tag.length + 1;
+  }
+  return -1;
+}
+const WA_SI = /<(?:\w+:)?si\b[^>]*>([\s\S]*?)<\/(?:\w+:)?si>/g;
+const WA_T = /<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g;
+const waRichText = x => { let out = ''; let m; const s = x.replace(/<(?:\w+:)?rPh\b[\s\S]*?<\/(?:\w+:)?rPh>/g, ''); WA_T.lastIndex = 0; while ((m = WA_T.exec(s))) out += m[1]; return waXml(out); };
+async function waXlsxSst(b, ent) {
+  const out = [];
+  if (!ent) return out;
+  const r = waZipReader(b, ent);
+  let buf = '';
+  const take = block => { let m; WA_SI.lastIndex = 0; while ((m = WA_SI.exec(block))) out.push(waRichText(m[1])); };
+  for (;;) {
+    const { done, value } = await r.read();
+    if (done) break;
+    buf += value;
+    const cut = waTagEnd(buf, 'si');
+    if (cut > 0) { take(buf.slice(0, cut)); buf = buf.slice(cut); }
+  }
+  take(buf);
+  return out;
+}
+const WA_ROW = /<(?:\w+:)?row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?row>)/g;
+const WA_C = /<(?:\w+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:\w+:)?c>)/g;
+const WA_V = /<(?:\w+:)?v>([\s\S]*?)<\/(?:\w+:)?v>/;
+const WA_REF = /(?:^|\s)r="([A-Z]{1,3})\d*"/;
+const WA_TYPE = /(?:^|\s)t="(\w+)"/;
+function waXlsxCells(inner, sst, want) {
+  const out = [];
+  if (!inner) return out;
+  let col = -1;
+  let m;
+  WA_C.lastIndex = 0;
+  while ((m = WA_C.exec(inner))) {
+    const a = m[1];
+    const ref = WA_REF.exec(a);
+    col = ref ? waIndex(ref[1]) : col + 1;
+    if (want && !want.has(col)) continue;
+    const x = m[2] || '';
+    const t = (WA_TYPE.exec(a) || [])[1] || 'n';
+    if (t === 'inlineStr') { out[col] = waRichText(x); continue; }
+    const v = WA_V.exec(x);
+    if (!v) continue;
+    if (t === 's') out[col] = sst[+v[1]] ?? null;
+    else if (t === 'str' || t === 'd') out[col] = waXml(v[1]);
+    else if (t === 'b') out[col] = v[1] === '1';
+    else if (t !== 'e') { const n = Number(v[1]); out[col] = v[1] !== '' && Number.isFinite(n) ? n : waXml(v[1]); }
+  }
+  return out;
+}
+const waDense = r => Array.from(r || [], v => (v === undefined ? null : v));
+async function waXlsxRead(b, ent, sst, { top = 60, pick = null, onRow = null, progress = null } = {}) {
+  const r = waZipReader(b, ent);
+  const head = [];
+  let cols = null;
+  let want = null;
+  let total = 0;
+  let last = -1;
+  let stop = false;
+  let n = 0;
+  const emit = (i, cells) => onRow(i, cols.map(c => (c < 0 ? null : cells[c] ?? null)));
+  const start = () => { cols = pick(head.map(waDense)); want = new Set(cols.filter(c => c >= 0)); head.forEach((cells, i) => { if (cells) emit(i, cells); }); };
+  const take = block => {
+    let m;
+    WA_ROW.lastIndex = 0;
+    while ((m = WA_ROW.exec(block))) {
+      const rr = +waAttr(m[1], 'r');
+      const i = rr > 0 ? rr - 1 : last + 1;
+      last = i;
+      if (!cols) {
+        if (i < top) { head[i] = waXlsxCells(m[2], sst, null); continue; }
+        if (!pick) { stop = true; return; }
+        start();
+      }
+      emit(i, waXlsxCells(m[2], sst, want));
+      n += 1;
+    }
+  };
+  let buf = '';
+  let ended = false;
+  try {
+    for (;;) {
+      const { done, value } = await r.read();
+      if (done) { ended = true; break; }
+      buf += value;
+      if (!total) { const d = /<(?:\w+:)?dimension\b[^>]*?ref="[A-Z]+\d+(?::[A-Z]+(\d+))?"/.exec(buf); if (d) total = +(d[1] || 1); }
+      const cut = waTagEnd(buf, 'row');
+      if (cut > 0) { take(buf.slice(0, cut)); buf = buf.slice(cut); }
+      if (stop) break;
+      if (progress) await progress(n);   // může vyhodit chybu (zrušeno) a čtení skončí
+    }
+  } finally { if (!ended) r.cancel().catch(() => {}); }
+  if (!stop) take(buf);
+  if (pick && !cols) start();
+  for (let i = 0; i < Math.min(top, last + 1); i += 1) if (!head[i]) head[i] = [];
+  return { head: head.map(waDense), total: Math.max(total, last + 1) };
+}
+async function waXlsxOpen(b) {
+  const zip = waZip(b);
+  const rels = {};
+  const relXml = await waZipText(b, zip.get('xl/_rels/workbook.xml.rels'));
+  for (const m of relXml.matchAll(/<(?:\w+:)?Relationship\b([^>]*?)\/?>/g)) rels[waAttr(m[1], 'Id')] = waAttr(m[1], 'Target');
+  const wb = await waZipText(b, zip.get('xl/workbook.xml'));
+  const sheets = [...wb.matchAll(/<(?:\w+:)?sheet\b([^>]*?)\/?>/g)].map(m => {
+    const id = (/\s\w+:id="([^"]+)"/.exec(m[1]) || [])[1];
+    const target = String(rels[id] || '');
+    const path = (target.startsWith('/') ? target.slice(1) : `xl/${target}`).replace(/\/\.\//g, '/').toLowerCase();
+    return { name: waAttr(m[1], 'name'), ent: zip.get(path) };
+  });
+  if (!sheets.length || sheets.some(s => !s.ent)) throw new Error('listy nenalezeny');
+  const sst = await waXlsxSst(b, zip.get('xl/sharedstrings.xml'));
+  return sheets.map(s => ({ name: s.name, read: o => waXlsxRead(b, s.ent, sst, o) }));
+}
+/* List v paměti (CSV, SheetJS): stejné rozhraní jako waXlsxRead. */
+function waMemSheet(name, data, cell = v => v) {
+  return {
+    name,
+    async read({ top = 60, pick = null, onRow = null } = {}) {
+      const row = i => Array.from(data[i] || [], v => { const x = cell(v); return x === undefined ? null : x; });
+      const head = [];
+      for (let i = 0; i < Math.min(top, data.length); i += 1) head.push(row(i));
+      if (pick) {
+        const cols = pick(head);
+        for (let i = 0; i < data.length; i += 1) {
+          const r = data[i];
+          if (!r) continue;
+          onRow(i, cols.map(c => { if (c < 0) return null; const x = cell(r[c]); return x === undefined ? null : x; }));
+          if (i % 20000 === 19999) await new Promise(res => setTimeout(res, 0));
+        }
+      }
+      return { head, total: data.length };
+    },
+  };
+}
+const waDeflateRaw = (() => { try { new DecompressionStream('deflate-raw'); return typeof TextDecoderStream === 'function'; } catch (error) { return false; } })();
+async function waPlanOpen(file, { quick = false, buffer = null } = {}) {
+  buffer = buffer || await file.arrayBuffer();
   const lower = file.name.toLowerCase();
-  if (lower.endsWith('.csv') || lower.endsWith('.txt')) {
-    const aoa = parseCSV(decodeText(buffer));
-    return [{ name: file.name, data: rows ? aoa.slice(0, rows) : aoa, total: aoa.length }];
+  if (lower.endsWith('.csv') || lower.endsWith('.txt')) return [waMemSheet(file.name, parseCSV(decodeText(buffer)))];
+  const b = new Uint8Array(buffer);
+  if (b[0] === 0x50 && b[1] === 0x4b && waDeflateRaw) {
+    try { return await waXlsxOpen(b); } catch (error) { console.warn('Plán: rychlé čtení nevyšlo, čte SheetJS', error); }
   }
   const X = await xlsx();
-  const wb = X.read(new Uint8Array(buffer), { type: 'array', dense: true, cellHTML: false, cellText: false, cellNF: false, cellStyles: false, ...(rows ? { sheetRows: rows } : {}) });
+  const wb = X.read(b, { type: 'array', dense: true, cellHTML: false, cellText: false, cellNF: false, cellStyles: false, ...(quick ? { sheetRows: 80 } : {}) });
   return wb.SheetNames.map(name => {
     const ws = wb.Sheets[name] || [];
-    const data = Array.isArray(ws) ? ws : ws['!data'] || [];
-    let total = data.length;
+    const sheet = waMemSheet(name, Array.isArray(ws) ? ws : ws['!data'] || [], waCellV);
+    let total = 0;
     try { total = X.utils.decode_range(ws['!fullref'] || ws['!ref'] || 'A1').e.r + 1; } catch (error) { /* necháme délku dat */ }
-    return { name, data, total };
+    const read = sheet.read;
+    sheet.read = async o => { const r = await read(o); return { ...r, total: Math.max(total, r.total) }; };
+    return sheet;
   });
 }
-const waPlanRow = (sheet, i) => (sheet.data[i] ? Array.from(sheet.data[i], waCellV) : []);
 
 /* ---------- vzor: které sloupce v každém listu nás zajímají ---------- */
 async function waPlanTemplate(file) {
   if (!file) return;
-  let book;
-  try { book = await waPlanBook(file, 80); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
+  let sheets;
+  try {
+    const book = await waPlanOpen(file, { quick: true });
+    sheets = [];
+    for (const sh of book) { const { head, total } = await sh.read({ top: 80 }); sheets.push({ name: sh.name, total, rows: head }); }
+  } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
   const prev = S.workAudit.plan.tpl;
-  const sheets = book.map(sh => ({ name: sh.name, total: sh.total, rows: sh.data.slice(0, 80).map((r, i) => waPlanRow(sh, i)) }))
-    .filter(sh => sh.rows.some(r => r.some(v => v != null && v !== '')));
+  sheets = sheets.filter(sh => sh.rows.some(r => r.some(v => v != null && v !== '')));
   if (!sheets.length) { toast('V souboru není žádný list s daty.', true); return; }
   sheets.forEach((sh, i) => {
     const old = prev && prev.sheets.find(x => x.name === sh.name);
     if (old) { const c = waPlanCols(sh.rows, old); sh.header = c.header; sh.cols = { ...c.idx }; }
-    else { sh.header = waPlanHeaderRow(sh.rows); sh.cols = waPlanGuess((sh.rows[sh.header] || []).map(v => (v == null ? '' : String(v)))); }
+    else {
+      // Názvy sloupců jsou v plánu na 2. řádku; jinak řádek s nejvíc texty.
+      const texts = r => (r || []).filter(v => typeof v === 'string' && v.trim()).length;
+      sh.header = texts(sh.rows[1]) >= 2 ? 1 : waPlanHeaderRow(sh.rows);
+      sh.cols = waPlanGuess((sh.rows[sh.header] || []).map(v => (v == null ? '' : String(v))));
+    }
     sh.use = prev ? !!old || (!prev.sheets.some(x => sheets.some(s => s.name === x.name)) && i < 2) : i < 2;
     sh.width = Math.min(200, Math.max(1, ...sh.rows.map(r => r.length)));
   });
@@ -7956,9 +8155,9 @@ async function waPlanTemplate(file) {
   flushSave();   // vzor jde do historie samostatně, ne až s nahráním plánu
   ui.wa.tab = 'plan';
   renderWorkAudit();
-  const go = await dialog({ title: 'Vzor uložen', ok: 'Nahrát do plánu', cancel: 'Teď ne',
-    html: `<p>Nahrát data z <b>${esc(file.name)}</b> do výrobního plánu? Další soubory nahraješ tlačítkem <b>Nahrát plán</b>, klidně víc najednou.</p>` });
-  if (go.value === 'ok') waPlanImport([file]);
+  const go = await dialog({ title: 'Vzor uložen', ok: 'Přidat do fronty', cancel: 'Teď ne',
+    html: `<p>Přidat <b>${esc(file.name)}</b> do fronty souborů plánu? Další soubory přidáš tlačítkem <b>Přidat soubory</b> (po jednom nebo víc najednou) a nakonec je zpracuješ tlačítkem <b>Zpracovat soubory</b>.</p>` });
+  if (go.value === 'ok') waPlanQueueAdd([file]);
 }
 
 /* ---------- uložený plán: načtení a uložení po dílech ---------- */
@@ -7996,118 +8195,171 @@ async function waPlanStore(map, step) {
   return ids;
 }
 
-/* ---------- import souborů plánu ---------- */
-async function waPlanImport(files) {
+/* ---------- fronta souborů plánu (2.18.2) ----------
+   Soubory se přidávají po jednom nebo po několika. Každý se hned přečte (jen sloupce ze vzoru,
+   jen technologie podle filtru) a jeho položky se sloučí do fronty v paměti tohoto okna.
+   Zpracování pak frontu jednou sloučí s uloženým plánem (pozdější termín vyhrává) a uloží. */
+const waMb = n => (n < 1048576 ? `${nf(Math.max(1, Math.round(n / 1024)))} kB` : `${nf(n / 1048576, 1)} MB`);
+function waPlanQueue() { return ui.wa.planQ || (ui.wa.planQ = { files: [], map: new Map(), techs: new Map() }); }
+/* Okno s průběhem. S tlačítkem Zrušit: další step() po zrušení vyhodí chybu {aborted}. */
+function waProgress(title, text, cancel = '') {
+  let dlg = null;
+  let closing = false;
+  let aborted = false;
+  let last = 0;
+  const shown = dialog({ title, ok: '', cancel, html: `<p id="waProg">${esc(text)}</p><div class="wa-progbar"><i id="waProgBar"></i></div>`, onOpen: d => { dlg = d; if (closing) d.close(); } });
+  shown.then(() => { if (!closing) aborted = true; });
+  return {
+    get aborted() { return aborted; },
+    async step(t, frac = null, force = false) {
+      if (aborted) throw Object.assign(new Error('Zrušeno.'), { aborted: true });
+      if (!force && Date.now() - last < 120) return;
+      last = Date.now();
+      const el = $('#waProg');
+      if (el && t) el.textContent = t;
+      const bar = $('#waProgBar');
+      if (bar && frac != null) bar.style.width = `${Math.round(clamp(frac, 0, 1) * 100)}%`;
+      await new Promise(r => setTimeout(r, 0));
+    },
+    async close() { closing = true; if (dlg && dlg.open) dlg.close(); if (dlg) await shown; },
+  };
+}
+/* Jeden soubor plánu podle vzoru: řádky [objednávka, EAN, ks, index, termín, technologie(, 1)]. */
+async function waPlanReadFile(file, tpl, progress, buffer = null) {
+  const book = await waPlanOpen(file, { buffer });
+  const rows = [];
+  const warns = [];
+  for (const [si, sh] of tpl.sheets.entries()) {
+    const sheet = book.find(b => b.name === sh.name) || (book.length === tpl.sheets.length || book.length === 1 ? book[si] : null);
+    if (!sheet) { warns.push(`chybí list ${sh.name}`); continue; }
+    const noTech = !sh.cols.tech;
+    let info = null;
+    await sheet.read({
+      top: 60,
+      pick: head => { info = waPlanCols(head, sh); return WA_PLAN_FIELDS.map(f => (f in info.idx ? info.idx[f] : -1)); },
+      onRow: (r, v) => {
+        if (r <= info.header || v.every(x => x == null || x === '')) return;
+        if (noTech) v.push(1);
+        rows.push(v);
+      },
+      progress: () => progress(rows.length, si / tpl.sheets.length),
+    });
+    if (!info.found) warns.push(`list ${sheet.name}: nadpisy ze vzoru se nenašly, čte se podle písmen sloupců`);
+    else if (info.missing.length) warns.push(`list ${sheet.name}: ${info.missing.map(f => WA_PLAN_LABEL[f]).join(', ')} se podle názvu nenašlo, čte se podle písmene ze vzoru`);
+    if (sheet.name !== sh.name) warns.push(`list ${sh.name} se jmenuje ${sheet.name}`);
+    if (noTech) warns.push(`list ${sheet.name} nemá ve vzoru sloupec technologie, berou se všechny řádky`);
+  }
+  return { rows, warns };
+}
+async function waPlanQueueAdd(files) {
   files = [...(files || [])].filter(Boolean);
-  const wa = S.workAudit;
-  const p = wa.plan;
+  const p = S.workAudit.plan;
   if (!files.length) return;
   if (!p.tpl) { toast('Nejdřív nastav vzor ze souboru plánu.', true); return; }
-  if (ui.wa.planBusy) { toast('Plán se právě nahrává.', true); return; }
+  if (ui.wa.planBusy) { toast('Plán se právě zpracovává.', true); return; }
   ui.wa.planBusy = true;
-  let dlg = null;
-  const shown = dialog({ title: 'Výrobní plán', ok: '', cancel: '', html: '<p id="waProg">Připravuji…</p><div class="wa-progbar"><i id="waProgBar"></i></div>', onOpen: d => { dlg = d; } });
-  const step = async (text, frac = null) => {
-    const el = $('#waProg');
-    if (el) el.textContent = text;
-    const bar = $('#waProgBar');
-    if (bar && frac != null) bar.style.width = `${Math.round(clamp(frac, 0, 1) * 100)}%`;
-    await new Promise(r => setTimeout(r, 0));
-  };
-  const close = async () => { if (dlg && dlg.open) dlg.close(); await shown; };
+  const q = waPlanQueue();
+  const prog = waProgress('Přidávám soubory do fronty', 'Připravuji…', 'Zrušit');
+  let added = 0;
+  let same = 0;
+  let failed = 0;
   try {
-    await new Promise(r => setTimeout(r, 0));
-    const { map, lost } = await waPlanLoad(p, step);
-    const before = map.size;
-    const stats = [];
     for (const [i, file] of files.entries()) {
-      await step(`Čtu ${file.name} (${i + 1} z ${files.length})…`, i / files.length);
-      let book;
-      try { book = await waPlanBook(file); } catch (error) { stats.push({ name: file.name, error: error.message }); continue; }
-      const rows = [];
-      const sheets = [];
-      p.tpl.sheets.forEach((sh, si) => {
-        const sheet = book.find(b => b.name === sh.name) || (book.length === p.tpl.sheets.length || book.length === 1 ? book[si] : null);
-        if (!sheet) { sheets.push({ name: sh.name, missing: true }); return; }
-        const top = [];
-        for (let r = 0; r < Math.min(sheet.data.length, 60); r += 1) top.push(waPlanRow(sheet, r));
-        const c = waPlanCols(top, sh);
-        const ix = WA_PLAN_FIELDS.map(f => (f in c.idx ? c.idx[f] : -1));
-        let n = 0;
-        for (let r = c.header + 1; r < sheet.data.length; r += 1) {
-          const row = sheet.data[r];
-          if (!row) continue;
-          const v = ix.map(j => (j < 0 ? null : waCellV(row[j])));
-          if (v.every(x => x == null || x === '')) continue;
-          rows.push(v);
-          n += 1;
-        }
-        sheets.push({ name: sheet.name, want: sh.name, rows: n, found: c.found });
-      });
-      book = null;
-      await step(`Hledám duplicity v ${nf(rows.length)} řádcích (${file.name})…`, (i + 0.6) / files.length);
-      stats.push({ name: file.name, sheets, ...waPlanMerge(map, rows, p.tech) });
+      await prog.step(`Čtu ${file.name} (${i + 1} z ${files.length}, ${waMb(file.size)})…`, i / files.length, true);
+      // Stejný soubor se pozná podle obsahu (otisk SHA-256), ne podle názvu nebo data.
+      const buffer = await file.arrayBuffer();
+      const key = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', buffer)), x => x.toString(16).padStart(2, '0')).join('');
+      if (q.files.some(f => f.key === key)) { same += 1; continue; }
+      let res;
+      try { res = await waPlanReadFile(file, p.tpl, (n, f) => prog.step(`Čtu ${file.name} (${i + 1} z ${files.length}): ${nf(n)} řádků…`, (i + f) / files.length), buffer); }
+      catch (error) {
+        if (error.aborted) throw error;
+        q.files.push({ key, name: file.name, size: file.size, error: error.message });
+        failed += 1;
+        continue;
+      }
+      await prog.step(`Hledám duplicity v ${nf(res.rows.length)} řádcích (${file.name})…`, (i + 0.9) / files.length, true);
+      const st = waPlanMerge(q.map, res.rows, p.tech);
+      st.techs.forEach(x => { const t = q.techs.get(x.tech) || { n: 0, ok: x.ok }; t.n += x.n; q.techs.set(x.tech, t); });
+      q.files.push({ key, name: file.name, size: file.size, rows: st.rows, matched: st.matched, notTech: st.notTech, bad: st.bad, dupes: st.dupes, warns: res.warns });
+      added += 1;
     }
-    await close();
-    const ok = stats.filter(s => !s.error);
-    const sum = k => ok.reduce((a, s) => a + (s[k] || 0), 0);
-    const techs = new Map();
-    ok.forEach(s => s.techs.forEach(x => { const t = techs.get(x.tech) || { n: 0, ok: x.ok }; t.n += x.n; techs.set(x.tech, t); }));
+  } catch (error) {
+    if (!error.aborted) toast(`Soubor se nepodařilo přečíst: ${error.message}`, true);
+  } finally {
+    await prog.close();
+    ui.wa.planBusy = false;
+  }
+  ui.wa.tab = 'plan';
+  renderWorkAudit();
+  if (prog.aborted) toast('Čtení zrušeno. Soubory přečtené předtím ve frontě zůstaly.', true);
+  else if (added || same || failed) toast(`${added ? `Do fronty ${added === 1 ? 'přidán 1 soubor' : `přidáno ${added} ${added <= 4 ? 'soubory' : 'souborů'}`}. ` : ''}${same ? `${same} už ve frontě ${same === 1 ? 'byl' : 'byly'}. ` : ''}${failed ? `${failed} se nepodařilo přečíst. ` : ''}Ve frontě ${nf(q.map.size)} ${polozkaN(q.map.size)}.`, !!failed);
+}
+function waPlanQueueClear() {
+  ui.wa.planQ = null;
+  renderWorkAudit();
+}
+/* Zpracování fronty: sloučit s uloženým plánem, ukázat souhrn, uložit díly a stav. */
+async function waPlanProcess() {
+  const q = ui.wa.planQ;
+  const wa = S.workAudit;
+  const p = wa.plan;
+  if (!q || !q.map.size) { toast('Ve frontě nejsou žádné položky k uložení.', true); return; }
+  if (ui.wa.planBusy) { toast('Plán se právě zpracovává.', true); return; }
+  ui.wa.planBusy = true;
+  let prog = waProgress('Výrobní plán', 'Načítám uložený plán…');
+  try {
+    const { map, lost } = await waPlanLoad(p, prog.step);
+    const before = map.size;
+    await prog.step('Slučuji frontu s uloženým plánem…', 1, true);
+    const st = waPlanMergeMap(map, q.map);
+    await prog.close();
+    const ok = q.files.filter(f => !f.error);
+    const sum = k => ok.reduce((a, f) => a + (f[k] || 0), 0);
     const words = p.tech.words.length ? p.tech.words.join(' nebo ') : '';
-    const warn = [];
-    if (lost.length) warn.push(`Na serveru chybí ${lost.length} z ${p.chunks.length} dílů dřív uloženého plánu (třeba po obnovení starší verze dat). Položky z nich v plánu nebudou, dokud ty soubory nenahraješ znovu.`);
-    stats.filter(s => s.error).forEach(s => warn.push(`${s.name}: soubor se nepodařilo otevřít (${s.error}).`));
-    ok.forEach(s => s.sheets.forEach(sh => {
-      if (sh.missing) warn.push(`${s.name}: chybí list ${sh.name}.`);
-      else if (!sh.found) warn.push(`${s.name}, list ${sh.name}: nadpisy ze vzoru se nenašly, čte se podle písmen sloupců. Zkontroluj čísla níž.`);
-      else if (sh.want !== sh.name) warn.push(`${s.name}: list ${sh.want} se jmenuje ${sh.name}, nadpisy sedí.`);
-    }));
-    if (!sum('matched')) {
-      await dialog({ title: 'V souborech není nic k plánu', ok: 'Zavřít', cancel: '', wide: true,
-        html: `<p>Nenašel se žádný řádek${words ? ` s technologií ${esc(words)}` : ''}, počtem kusů a termínem dokončení.</p>${warn.length ? `<ul class="wa-imp">${warn.map(w => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}${waPlanTechHtml(techs)}
-          <p class="small muted">Zkontroluj vzor (sloupce) a filtr technologie v záložce Výrobní plán.</p>` });
-      return;
-    }
     const weeks = waPlanWeeks(map);
     const wk = Object.keys(weeks).sort();
+    const warns = [];
+    if (lost.length) warns.push(`Na serveru chybí ${lost.length} z ${p.chunks.length} dílů dřív uloženého plánu (třeba po obnovení starší verze dat). Položky z nich v plánu nebudou, dokud ty soubory nezpracuješ znovu.`);
+    q.files.forEach(f => { if (f.error) warns.push(`${f.name}: soubor se nepodařilo přečíst (${f.error}).`); (f.warns || []).forEach(w => warns.push(`${f.name}: ${w}.`)); });
+    const tiles = [['Souborů', ok.length], ['Řádků', sum('rows')], [words || 'Bráno', sum('matched'), 'on'], ['Jiná technologie', sum('notTech')], ['Neplatné', sum('bad')], ['Sloučené duplicity', sum('matched') - q.map.size],
+      ['Nové položky', st.added, 'on'], ['Posunutý termín', st.moved], ['Starší verze', st.older], ['Termín beze změny', st.same]];
     const res = await dialog({
-      title: 'Nahrát výrobní plán', ok: 'Uložit plán', wide: true,
-      html: `<p>${ok.length} ${ok.length === 1 ? 'soubor' : ok.length <= 4 ? 'soubory' : 'souborů'}, ${nf(sum('rows'))} ${radekN(sum('rows'))}. ${words ? `S technologií <b>${esc(words)}</b>` : 'Bez filtru technologie'}: <b>${nf(sum('matched'))}</b> ${radekN(sum('matched'))}.</p>
-        ${ok.map(s => `<div class="wa-impfile"><b>${esc(s.name)}</b><dl class="wa-impstats">${[['Řádků', s.rows], [words || 'Bráno', s.matched, 'on'], ['Jiná technologie', s.notTech], ['Neplatné', s.bad], ['Duplicity v souboru', s.dupes], ['Nové položky', s.added, 'on'], ['Posunutý termín', s.moved], ['Starší verze', s.older]]
-          .map(([l, v, on]) => `<div${on ? ' class="on"' : ''}><dt>${esc(l)}</dt><dd class="num">${nf(v)}</dd></div>`).join('')}</dl></div>`).join('')}
+      title: 'Zpracovat výrobní plán', ok: 'Uložit plán', wide: true,
+      html: `<p>Fronta: ${nf(q.map.size)} ${polozkaN(q.map.size)} z ${ok.length} ${ok.length === 1 ? 'souboru' : 'souborů'}. Proti uloženému plánu:</p>
+        <dl class="wa-impstats wa-imptotal">${tiles.map(([l, v, on]) => `<div${on ? ' class="on"' : ''}><dt>${esc(l)}</dt><dd class="num">${nf(v)}</dd></div>`).join('')}</dl>
         <ul class="wa-imp">
-          <li>Položek v plánu: <b>${nf(map.size)}</b>${before ? ` (předtím ${nf(before)}, nových ${nf(map.size - before)})` : ''}, termíny ${wk.length ? `${esc(weekName(wk[0]))} až ${esc(weekName(wk[wk.length - 1]))}` : '—'}, celkem ${nf(Object.values(weeks).reduce((a, x) => a + x.ks, 0))} ks.</li>
-          <li>Duplicita = stejné číslo objednávky, index a EAN. Platí verze s <b>nejpozdějším termínem</b>; posunutý termín přepíše i počet kusů, starší verze se nebere.</li>
-          ${sum('bad') ? `<li>Neplatné řádky (bez kusů, termínu nebo klíče) se přeskočí: ${nf(sum('bad'))}.</li>` : ''}
-          ${warn.map(w => `<li class="w">${esc(w)}</li>`).join('')}
-        </ul>${waPlanTechHtml(techs)}`,
+          <li>Položek v plánu: <b>${nf(map.size)}</b>${before ? ` (předtím ${nf(before)})` : ''}, termíny ${wk.length ? `${esc(weekName(wk[0]))} až ${esc(weekName(wk[wk.length - 1]))}` : '—'}, celkem ${nf(Object.values(weeks).reduce((a, x) => a + x.ks, 0))} ks.</li>
+          <li>Duplicita = stejné číslo objednávky, index a EAN (ve frontě i proti uloženému plánu). Platí verze s <b>nejpozdějším termínem</b>; posunutý termín přepíše i počet kusů, starší verze se nebere.</li>
+          ${warns.slice(0, 12).map(w => `<li class="w">${esc(w)}</li>`).join('')}${warns.length > 12 ? `<li class="w">… a ${warns.length - 12} dalších upozornění</li>` : ''}
+        </ul>${waPlanTechHtml(q.techs)}`,
     });
     if (res.value !== 'ok') return;
-    ui.wa.planBusy = true;
-    const busy2 = dialog({ title: 'Výrobní plán', ok: '', cancel: '', html: '<p id="waProg">Šifruji a ukládám plán…</p><div class="wa-progbar"><i id="waProgBar"></i></div>', onOpen: d => { dlg = d; } });
+    prog = waProgress('Výrobní plán', 'Šifruji a ukládám plán…');
     let ids;
-    try { ids = await waPlanStore(map, step); }
-    catch (error) { if (dlg && dlg.open) dlg.close(); await busy2; toast(`Plán se nepodařilo uložit: ${error.message}`, true); return; }
+    try { ids = await waPlanStore(map, prog.step); }
+    catch (error) { await prog.close(); toast(`Plán se nepodařilo uložit: ${error.message}`, true); return; }
     const old = p.chunks.slice();
     const at = Date.now();
     const by = ui.me.label || '';
     Object.assign(p, { chunks: ids, weeks, items: map.size, at, by });
-    ok.forEach(s => p.files.push({ name: s.name.slice(0, 160), at, by, rows: s.rows, matched: s.matched, dupes: s.dupes, added: s.added, moved: s.moved, items: map.size }));
+    ok.forEach(f => p.files.push({ name: f.name.slice(0, 160), at, by, rows: f.rows, matched: f.matched, dupes: f.dupes, added: 0, moved: 0, items: map.size }));
     p.files = p.files.slice(-40);
-    store.note = { kind: 'workaudit', text: `Audit: nahrán výrobní plán ${ok.map(s => s.name).join(', ')} (${nf(sum('matched'))} ${radekN(sum('matched'))}${words ? ` ${words}` : ''}, ${nf(sum('added'))} nových ${polozkaN(sum('added'))}, ${nf(sum('moved'))} s posunutým termínem; v plánu ${nf(map.size)} ${polozkaN(map.size)})` };
+    const names = ok.slice(0, 3).map(f => f.name).join(', ') + (ok.length > 3 ? ` a ${ok.length - 3} dalších` : '');
+    store.note = { kind: 'workaudit', text: `Audit: zpracován výrobní plán ${names} (${nf(sum('matched'))} ${radekN(sum('matched'))}${words ? ` ${words}` : ''}, ${nf(st.added)} nových ${polozkaN(st.added)}, ${nf(st.moved)} s posunutým termínem; v plánu ${nf(map.size)} ${polozkaN(map.size)})` };
     save();
-    await step('Ukládám…', 1);
+    await prog.step('Ukládám…', 1, true);
     const saved = await waWaitSaved();
-    if (dlg && dlg.open) dlg.close();
-    await busy2;
+    await prog.close();
     // Staré díly se smažou až po uložení stavu, který na ně už neodkazuje.
     if (saved && (store.base?.workAudit?.plan?.chunks || []).join() === ids.join()) old.filter(id => !ids.includes(id)).forEach(id => Vault.deleteFile(id).catch(() => {}));
+    ui.wa.planQ = null;
     ui.wa.tab = 'plan';
     renderWorkAudit();
     toast(`Výrobní plán uložen: ${nf(map.size)} ${polozkaN(map.size)}.`);
   } catch (error) {
-    await close();
-    toast(`Plán se nepodařilo nahrát: ${error.message}`, true);
+    await prog.close();
+    toast(`Plán se nepodařilo zpracovat: ${error.message}`, true);
   } finally {
     ui.wa.planBusy = false;
   }
@@ -8182,7 +8434,17 @@ function waPlanHtml() {
   const words = p.tech.words.length ? p.tech.words.join(' nebo ') : 'všechny technologie';
   const G = wa.groups.find(g => g.id === p.cap.group) || null;
   const tplBtn = `<button class="btn sec" type="button" data-waplantpl>${p.tpl ? 'Nastavit vzor znovu' : 'Nahrát vzor plánu'}</button>`;
-  const impBtn = `<button class="btn" type="button" data-waplanpick${p.tpl ? '' : ' disabled'}>Nahrát plán</button>`;
+  const q = ui.wa.planQ && ui.wa.planQ.files.length ? ui.wa.planQ : null;
+  const impBtn = `<button class="btn${q ? ' sec' : ''}" type="button" data-waplanpick${p.tpl ? '' : ' disabled'}>Přidat soubory</button>`;
+  // Fronta: přečtené soubory čekají na zpracování (jen v tomto okně, do uložení).
+  const queue = q ? `<div class="card wa-queue"><div class="card-head"><div><h3>Fronta ke zpracování</h3><p class="small muted">Soubory jsou přečtené jen v tomto okně. Do plánu se uloží až tlačítkem Zpracovat soubory; zavřením nebo obnovením stránky se fronta ztratí.</p></div>
+      <button class="btn ghost small" type="button" data-waplanqclear>Vyprázdnit frontu</button></div>
+    <div class="table-card flat"><table class="stack wa-qfiles"><thead><tr><th>Soubor</th><th class="r">Velikost</th><th class="r">Řádků</th><th class="r">${esc(p.tech.words.join('/') || 'Bráno')}</th><th class="r">Jiná technologie</th><th class="r">Neplatné</th><th class="r">Duplicity</th></tr></thead><tbody>${q.files.map(f => `<tr${f.error ? ' class="wa-qerr"' : ''}>
+      <td class="wrap name" data-label="Soubor"><b>${esc(f.name)}</b>${f.error ? `<small class="crit">nejde přečíst: ${esc(f.error)}</small>` : (f.warns || []).map(w => `<small class="wa-qwarn">${esc(w)}</small>`).join('')}</td>
+      <td class="r num" data-label="Velikost">${waMb(f.size)}</td>
+      ${f.error ? '<td colspan="5" class="muted">—</td>' : `<td class="r num" data-label="Řádků">${nf(f.rows)}</td><td class="r num" data-label="Bráno"><b>${nf(f.matched)}</b></td><td class="r num" data-label="Jiná technologie">${nf(f.notTech)}</td><td class="r num" data-label="Neplatné">${nf(f.bad)}</td><td class="r num" data-label="Duplicity">${nf(f.dupes)}</td>`}</tr>`).join('')}</tbody></table></div>
+    <div class="wa-queue-foot"><span>Ve frontě <b>${nf(q.map.size)}</b> ${polozkaN(q.map.size)} z ${q.files.filter(f => !f.error).length} ${q.files.filter(f => !f.error).length === 1 ? 'souboru' : 'souborů'} (duplicity už sloučené).</span>
+      <span class="spacer"></span><button class="btn sec" type="button" data-waplanpick>Přidat další</button><button class="btn" type="button" data-waplanrun${q.map.size ? '' : ' disabled'}>Zpracovat soubory</button></div></div>` : '';
   const settings = `<div class="card wa-plan-set"><h3>Filtr a kapacita</h3>
       <div class="wa-plan-setgrid">
         <label class="field"><span>Technologie (klíčová písmena)</span><input id="waPlanWords" value="${esc(p.tech.words.join(', '))}" placeholder="prázdné = všechny" autocapitalize="characters" autocomplete="off"></label>
@@ -8192,25 +8454,25 @@ function waPlanHtml() {
         <label class="field"><span>Skupina brusičů</span><select id="waPlanGroup"><option value="">— žádná —</option>${wa.groups.map(g => `<option value="${esc(g.id)}"${g.id === p.cap.group ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select></label>
         <label class="field wa-plan-per"><span>Kusů na brusiče za směnu</span><input id="waPlanPer" inputmode="decimal" value="${esc(String(p.cap.perShift).replace('.', ','))}" autocomplete="off"></label>
       </div>
-      <p class="small muted">Filtr technologie platí pro další nahrání; už uložený plán se nepřepočítá (smaž ho a nahraj soubory znovu). Kapacita = brusiči na ranní a odpolední směně podle obsazenosti × kusy za směnu; pro týdny bez obsazenosti odhad z průměru posledních 20 pracovních dnů.</p></div>`;
+      <p class="small muted">Filtr technologie platí pro další přidané soubory; soubory ve frontě ani uložený plán se nepřepočítají (smaž je a přidej soubory znovu). Kapacita = brusiči na ranní a odpolední směně podle obsazenosti × kusy za směnu; pro týdny bez obsazenosti odhad z průměru posledních 20 pracovních dnů.</p></div>`;
   const tplCard = p.tpl ? `<div class="card wa-plan-tpl"><div class="card-head"><div><h3>Vzor plánu</h3><p class="small muted">Ze souboru ${esc(p.tpl.file || '—')}${p.tpl.by ? `, nastavil ${esc(p.tpl.by)}` : ''} ${esc(tsText(p.tpl.at))}.</p></div>${tplBtn}</div>
       <ul class="wa-tpl-list">${p.tpl.sheets.map(sh => `<li><b>List ${esc(sh.name)}</b><span>nadpisy na ${sh.header + 1}. řádku</span><span>${WA_PLAN_FIELDS.filter(f => sh.cols[f]).map(f => `${esc(WA_PLAN_LABEL[f])} <b class="num">${esc(sh.cols[f])}</b>`).join(' · ')}</span></li>`).join('')}</ul></div>` : '';
   const files = p.files.slice().reverse();
-  const filesCard = `<div class="card"><h3>Nahrané soubory plánu</h3>${files.length ? `<div class="table-card flat"><table class="stack wa-files"><thead><tr><th>Soubor</th><th class="r">Řádků</th><th class="r">${esc(p.tech.words.join('/') || 'Bráno')}</th><th class="r">Duplicity</th><th class="r">Nové</th><th class="r">Posunuté</th><th>Nahrál</th></tr></thead><tbody>${files.map(x => `<tr>
+  const filesCard = `<div class="card"><h3>Zpracované soubory plánu</h3>${files.length ? `<div class="table-card flat"><table class="stack wa-files"><thead><tr><th>Soubor</th><th class="r">Řádků</th><th class="r">${esc(p.tech.words.join('/') || 'Bráno')}</th><th class="r">Duplicity</th><th>Zpracoval</th></tr></thead><tbody>${files.map(x => `<tr>
       <td class="wrap name" data-label="Soubor"><b>${esc(x.name || '—')}</b></td><td class="r num" data-label="Řádků">${nf(x.rows)}</td><td class="r num" data-label="Bráno">${nf(x.matched)}</td>
-      <td class="r num" data-label="Duplicity">${nf(x.dupes)}</td><td class="r num" data-label="Nové">${nf(x.added)}</td><td class="r num" data-label="Posunuté">${nf(x.moved)}</td>
-      <td data-label="Nahrál">${esc(x.by || '—')}<small class="muted"> ${esc(tsText(x.at))}</small></td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">Zatím nic.</p>'}
+      <td class="r num" data-label="Duplicity">${nf(x.dupes)}</td>
+      <td data-label="Zpracoval">${esc(x.by || '—')}<small class="muted"> ${esc(tsText(x.at))}</small></td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">Zatím nic.</p>'}
     ${p.items || p.chunks.length ? `<hr class="sep"><div class="row gap"><button class="btn ghost small wa-danger" type="button" data-waplanclear>Smazat výrobní plán…</button><span class="tiny muted">Položky a seznam souborů; vzor a nastavení zůstanou.</span></div>` : ''}</div>`;
   if (!p.tpl) {
     return `<div class="wa-start">
-      <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">1</span><div><h3>Vzor plánu</h3><p class="small muted">Nahraj jeden soubor výrobního plánu jako vzor. U obou listů vybereš, kde jsou nadpisy a které sloupce se čtou: číslo objednávky, EAN, počet kusů, index, termín dokončení a technologie.</p></div></div>${tplBtn}</div>
-      <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">2</span><div><h3>Nahrání plánu</h3><p class="small muted">Pak nahraješ libovolně souborů (i se statisíci řádků). Vezmou se jen položky s technologií ${esc(words)}, duplicity podle objednávky, indexu a EAN se sloučí a platí nejpozdější termín.</p></div></div>${impBtn}</div>
+      <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">1</span><div><h3>Vzor plánu</h3><p class="small muted">Nahraj jeden soubor výrobního plánu jako vzor. U obou listů vybereš sloupce podle názvů na 2. řádku: číslo objednávky, EAN, index, počet kusů, termín dokončení a technologie. Další soubory se čtou podle stejných názvů.</p></div></div>${tplBtn}</div>
+      <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">2</span><div><h3>Fronta a zpracování</h3><p class="small muted">Soubory přidáváš do fronty po jednom nebo víc najednou (i se statisíci řádků) a nakonec je zpracuješ. Vezmou se jen položky s technologií ${esc(words)}, duplicity podle objednávky, indexu a EAN se sloučí a platí nejpozdější termín.</p></div></div>${impBtn}</div>
     </div>${settings}`;
   }
   const bar = `<div class="t5-weekbar wa-hist-bar">
       <div class="chips" role="group" aria-label="Období plánu">${WA_PLAN_RANGES.map(([k, l]) => `<button type="button" class="chip${k === (ui.wa.planRange || 'f13') ? ' on' : ''}" data-waplanrange="${k}" aria-pressed="${k === (ui.wa.planRange || 'f13')}">${l}</button>`).join('')}</div>
       <span class="spacer"></span>${impBtn}</div>`;
-  if (!p.items) return `${bar}<div class="card">${emptyState('Plán je prázdný', `Nahraj soubory výrobního plánu. Vezmou se položky s technologií ${esc(words)}.`)}</div>${tplCard}${settings}${filesCard}`;
+  if (!p.items) return `${bar}${queue}${q ? '' : `<div class="card">${emptyState('Plán je prázdný', `Přidej soubory výrobního plánu do fronty a zpracuj je. Vezmou se položky s technologií ${esc(words)}.`)}</div>`}${tplCard}${settings}${filesCard}`;
   const ids = waPlanWeekIds();
   const cap = waPlanCapacity(wa, ids);
   const now = isoWeek(todayIso()).id;
@@ -8259,7 +8521,7 @@ function waPlanHtml() {
       <td class="r num${w.need != null && w.grinders != null && w.need > w.grinders ? ' wa-neg' : ''}" data-label="Potřeba brusičů na den">${waN(w.need, 1)}</td>
       <td class="r num" data-label="Zpracováno">${waN(done[i])}</td></tr>`).join('');
   const table = `<div class="table-card"><table class="stack wa-hist wa-plantab"><thead><tr><th>Týden termínu</th><th class="r">K dodání ks</th><th class="r">Položek</th><th class="r">Prac. dny</th><th class="r">Brusičů Ø</th><th class="r">Kapacita ks</th><th class="r">Rezerva / chybí</th><th class="r">Skluz</th><th class="r">Potřeba brusičů</th><th class="r">Zpracováno${G ? ` · ${esc(G.name)}` : ''}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-  return `${bar}<p class="wa-range-line small muted">${esc(weekName(ids[0]))} – ${esc(weekName(ids[ids.length - 1]))} · v plánu celkem ${nf(p.items)} ${polozkaN(p.items)}, nahráno ${esc(tsText(p.at))}</p>${tiles}${charts}${table}
+  return `${bar}${queue}<p class="wa-range-line small muted">${esc(weekName(ids[0]))} – ${esc(weekName(ids[ids.length - 1]))} · v plánu celkem ${nf(p.items)} ${polozkaN(p.items)}, nahráno ${esc(tsText(p.at))}</p>${tiles}${charts}${table}
     <p class="hint">Kusy k dodání = součet položek s termínem dokončení v týdnu (${esc(words)}). Rezerva / chybí = kapacita minus kusy k dodání. Skluz = kusy, které se nestihnou a přejdou do dalšího týdne (nevyužitá kapacita se nepřenáší). Potřeba brusičů = kusy k dodání ÷ ${nf(p.cap.perShift, 1)} ks za směnu ÷ pracovní dny. Zpracováno = kusy z výkazu práce u operací skupiny ${esc(G ? G.name : '—')}.</p>
     ${tplCard}${settings}${filesCard}`;
 }

@@ -2059,6 +2059,11 @@ test('výrobní plán (2.18): sloupce podle vzoru, filtr G2/G, duplicity s nejpo
       heads: { order: 'Číslo objednávky', ean: 'EAN', ks: 'Počet ks', index: 'Index', due: 'Termín dokončení', tech: 'Technologie' } };
     const moved = waPlanCols([[], [], ['Plán'], ['Index', 'Číslo objednávky', 'EAN', 'Počet ks', 'Termín dokončení', 'Technologie']], sh);
     const fallback = waPlanCols([['nic']], sh);
+    // 2.18.2: nadpisy na 2. řádku, stejný název dvakrát (platí sloupec se stejným písmenem), chybějící technologie
+    const sh2 = { name: 'Plan', header: 1, cols: { order: 'A', ean: 'B', ks: 'C', index: 'D', due: 'F', tech: 'G' },
+      heads: { order: 'Objednávka', ean: 'EAN', ks: 'Ks', index: 'Index', due: 'Termín', tech: 'Technologie' } };
+    const row2 = waPlanCols([['Plán'], ['Objednávka', 'EAN', 'Ks', 'Index', 'Termín', 'Termín', 'Bez technologie'], ['Objednávka', 'EAN', 'Ks', 'Index', 'Termín']], sh2);
+    const shifted = waPlanCols([['Plán'], ['Poř.', 'Objednávka', 'EAN', 'Ks', 'Index', 'Termín', 'Technologie']], sh2);
     const match = [waPlanMatch('B1/G2', wa.plan.tech), waPlanMatch('G + K', wa.plan.tech), waPlanMatch('GR', wa.plan.tech), waPlanMatch('BG2X', wa.plan.tech),
       waPlanMatch('BG2X', { words: ['G2'], mode: 'contains' }), waPlanMatch('cokoli', { words: [], mode: 'token' })];
     const map = new Map();
@@ -2071,6 +2076,7 @@ test('výrobní plán (2.18): sloupce podle vzoru, filtr G2/G, duplicity s nejpo
       [4500004, 8591234567893, 0, 'IDX-4', '2026-11-12', 'G2'],        // nula kusů
       ['', '', 10, '', '2026-11-12', 'G2'],                            // bez klíče
     ], wa.plan.tech);
+    const noTech = waPlanMerge(new Map(), [[1, 2, 5, 'X', '2026-11-12', null, 1], [3, 4, 5, 'Y', '2026-11-12', null]], wa.plan.tech);
     const b = waPlanMerge(map, [
       ['4500001', '8591234567890', 120, 'idx-1', '2026-11-17', 'G2'],  // posunutý termín (text a malá písmena = stejná položka)
       [4500002, 8591234567891, 50, 'IDX-2', '2026-11-02', 'G'],        // starší verze, nechá se pozdější
@@ -2089,14 +2095,24 @@ test('výrobní plán (2.18): sloupce podle vzoru, filtr G2/G, duplicity s nejpo
     const full = waPlanCapacity(wa, ['2026-W45']);
     const clean = cleanWaPlan({ tpl: { sheets: [{ name: 'x', header: 9999, cols: { order: 'zz', ks: '1' }, heads: { order: 'Obj' } }, {}, {}] }, tech: { words: ['g2', ' g ', 'g', '<b>'], mode: 'x' },
       cap: { group: 'nic', perShift: -3 }, chunks: ['abc', 'a'.repeat(32)], weeks: { '2026-W45': { ks: 10, n: 2 }, 'x': {}, '2026-W46': { ks: -1 } }, items: 'x' }, new Set(['brus']));
-    JSON.stringify({ guess, moved, fallback, match, a, b, items: [...map.entries()], dec: [...dec.entries()], weeks: wa.plan.weeks, cap, slow, full, clean })`));
+    // fronta do uloženého plánu: pozdější termín vyhrává, stejný termín přepíše kusy
+    const saved = new Map([['K1', ['2026-11-10', 5]], ['K2', ['2026-11-10', 5]], ['K3', ['2026-11-10', 5]]]);
+    const queue = new Map([['K1', ['2026-11-17', 6]], ['K2', ['2026-11-03', 7]], ['K3', ['2026-11-10', 8]], ['K4', ['2026-11-11', 9]]]);
+    const mm = waPlanMergeMap(saved, queue);
+    JSON.stringify({ guess, moved, fallback, row2, shifted, noTech, mm, mmItems: [...saved.entries()], match, a, b, items: [...map.entries()], dec: [...dec.entries()], weeks: wa.plan.weeks, cap, slow, full, clean })`));
   assert.deepStrictEqual(out.guess, { order: 0, ean: 1, ks: 2, index: 3, due: 4, tech: 5 });
-  assert.deepStrictEqual(out.moved, { header: 3, idx: { index: 0, order: 1, ean: 2, ks: 3, due: 4, tech: 5 }, found: true }, 'sloupce podle nadpisů, i když se posunuly');
-  assert.deepStrictEqual(out.fallback, { header: 2, idx: { order: 0, ean: 1, ks: 2, index: 3, due: 4, tech: 5 }, found: false });
+  assert.deepStrictEqual(out.moved, { header: 3, idx: { index: 0, order: 1, ean: 2, ks: 3, due: 4, tech: 5 }, found: true, missing: [] }, 'sloupce podle nadpisů, i když se posunuly');
+  assert.deepStrictEqual(out.fallback, { header: 2, idx: { order: 0, ean: 1, ks: 2, index: 3, due: 4, tech: 5 }, found: false, missing: [] });
+  assert.deepStrictEqual(out.row2, { header: 1, idx: { order: 0, ean: 1, ks: 2, index: 3, due: 5, tech: 6 }, found: true, missing: ['tech'] },
+    'nadpisy na 2. řádku; Termín dvakrát → sloupec F jako ve vzoru; technologie chybí a čte se podle písmene');
+  assert.deepStrictEqual(out.shifted.idx, { order: 1, ean: 2, ks: 3, index: 4, due: 5, tech: 6 }, 'vložený sloupec: názvy se najdou o sloupec dál');
   assert.deepStrictEqual(out.match, [true, true, false, false, true, true], 'G2 i G jako samostatné označení, ne GR ani BG2X');
   assert.deepStrictEqual([out.a.rows, out.a.notTech, out.a.bad, out.a.matched, out.a.dupes, out.a.added, out.a.moved, out.a.older, out.a.items], [6, 1, 2, 3, 1, 2, 0, 1, 2]);
   assert.deepStrictEqual(out.a.techs, [{ tech: 'G2', n: 4, ok: true }, { tech: 'B1/G', n: 1, ok: true }, { tech: 'B1', n: 1, ok: false }]);
-  assert.deepStrictEqual([out.b.matched, out.b.dupes, out.b.added, out.b.moved, out.b.older, out.b.items], [3, 0, 1, 1, 1, 3]);
+  assert.deepStrictEqual([out.b.matched, out.b.dupes, out.b.added, out.b.moved, out.b.older, out.b.same, out.b.items], [3, 0, 1, 1, 1, 0, 3]);
+  assert.deepStrictEqual([out.noTech.matched, out.noTech.notTech], [1, 1], 'list bez sloupce technologie se bere bez filtru');
+  assert.deepStrictEqual(out.mm, { added: 1, moved: 1, older: 1, same: 1, items: 4 });
+  assert.deepStrictEqual(out.mmItems, [['K1', ['2026-11-17', 6]], ['K2', ['2026-11-10', 5]], ['K3', ['2026-11-10', 8]], ['K4', ['2026-11-11', 9]]]);
   assert.deepStrictEqual(out.items, [['4500001|IDX-1|8591234567890', ['2026-11-17', 120]], ['4500002|IDX-2|8591234567891', ['2026-11-05', 50]], ['4500005|IDX-5|8591234567894', ['2026-11-18', 75]]],
     'nejpozdější termín vyhrává, posun termínu přepíše kusy');
   assert.deepStrictEqual(out.dec, out.items, 'uložení a načtení položek beze ztráty');

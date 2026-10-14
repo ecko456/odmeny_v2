@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 14. 10. 2026 (verze 2.18.2):
+
+- Uživatel: „výrobní plán má vždy dva listy … identifikovat sloupce vždy podle druhého řádku, kde
+  jsou názvy … jeden má až 7 MB a bude jich třeba 30 … klidně bych to nahrával postupně
+  jednotlivě po souboru a pak jen dal zpracovat soubory.“
+  - **Fronta** (`ui.wa.planQ` jen v paměti okna): `waPlanQueueAdd` přečte soubor
+    (`waPlanReadFile`), sloučí řádky do `q.map` (`waPlanMerge`, statistika po souborech),
+    duplicitní soubor pozná podle SHA-256 obsahu. `waPlanProcess` načte uložené díly,
+    `waPlanMergeMap` (core, statistika proti uloženému plánu), souhrn, uložení jako dřív.
+    Průběh `waProgress` (u čtení tlačítko Zrušit → chyba `{aborted}` z `step`).
+  - **Rychlé čtení xlsx** (`waZip`, `waZipReader` s `DecompressionStream('deflate-raw')`,
+    `waXlsxSst`, `waXlsxRead`, `waXlsxOpen`; `waPlanOpen` jednotné rozhraní listů
+    `read({top, pick, onRow, progress})`, záloha SheetJS a CSV přes `waMemSheet`). Změřeno
+    v Chromiu: 7 MB / 56 000 řádků 2,0 s a 79 MB paměti (SheetJS 5,6 s, 241 MB); 25 MB / 200 000
+    řádků 5,6 s (SheetJS 15,8 s). e2e porovnává hodnoty se SheetJS (sdílené texty i inline).
+  - Vzor: nadpisy výchozí na 2. řádku (když má aspoň dva texty). `waPlanCols` zkouší nejdřív
+    řádek ze vzoru, při stejném názvu víckrát bere sloupec se stejným písmenem jako ve vzoru,
+    nenalezená pole vrací v `missing` (fronta upozorní). List bez sloupce technologie: řádky
+    mají sedmou hodnotu 1 a filtr se na ně nepoužije.
+  - `ODM_VERSION` 2.18.2, data beze změny (verze 17).
+  - Pořád se čeká na vzorek skutečného souboru plánu.
+
 Stav k 14. 10. 2026 (verze 2.18.1):
 
 - Uživatel potvrdil: „100 je pevné číslo.“ Požadavek lidí na pracovní den je výchozí pevných
@@ -579,11 +601,12 @@ nových operacích otevře Nastavení s filtrem bez skupiny), `bindWorkAudit`, `
 `exportWaPdf`, `pdfWaChart`, `pdfWaBalance` a `drawWorkAudit` (A4 na šířku, jen fakta a grafy).
 Tooltip hledá `.chart-tip` v nejbližším `.wa-charts` (přehled, bilance, plán).
 
-Výrobní plán v UI (sekce „VÝROBNÍ PLÁN“): soubory čte `waPlanBook` (SheetJS `dense`, bez
-formátování; ve 0.18 je list pole řádků, ve 0.19 `ws['!data']`), vzor jen z prvních 80 řádků
-(`sheetRows`). Import: načte uložené díly, sloučí všechny soubory, ukáže souhrn, uloží nové díly,
-stav přes `store.note`, a **staré díly smaže až po uložení stavu** (`waWaitSaved`). Chybějící díl
-(404, třeba po obnovení starší verze dat) se v souhrnu ohlásí a import pokračuje bez něj.
+Výrobní plán v UI (sekce „VÝROBNÍ PLÁN“): soubory čte `waPlanOpen` (od 2.18.2 vlastní čtení
+xlsx po kouscích, jen vybrané sloupce; záloha SheetJS `dense`, kde je list ve 0.18 pole řádků
+a ve 0.19 `ws['!data']`). Soubory jdou do fronty (`waPlanQueueAdd`), zpracování (`waPlanProcess`)
+načte uložené díly, sloučí frontu, ukáže souhrn, uloží nové díly, stav přes `store.note`,
+a **staré díly smaže až po uložení stavu** (`waWaitSaved`). Chybějící díl (404, třeba po
+obnovení starší verze dat) se v souhrnu ohlásí a zpracování pokračuje bez něj.
 
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 
@@ -725,7 +748,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.17.1 | `370a5d3` | Audit – kusy jen ze skupin, historie, osekané PDF a Excel |
 | 2.17.2 | `a0ec3ab` | Audit – „HALA 2 · REPORT“, rozpad po skupinách |
 | 2.18 | `0c9912a` | obsazenost proti požadavku, výpadky a dorovnání, jen týdny, výrobní plán proti kapacitě brusičů (data verze 16) |
-| 2.18.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: požadavek lidí pevně 100 na pracovní den (data verze 17) |
+| 2.18.1 | `ef847ad` | požadavek lidí pevně 100 na pracovní den (data verze 17) |
+| 2.18.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: fronta souborů výrobního plánu, rychlé čtení xlsx, nadpisy na 2. řádku |
 
 Verze 2.1 přidala:
 
@@ -1124,8 +1148,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
-  - `e2e_audit.js`: Audit (2.17, 2.18); oba Excely i výrobní plán (dva listy, posunuté nadpisy,
-    120 000 řádků s duplicitami) vyrobí v prohlížeči přes SheetJS z vymyšlených čísel (žádná
+  - `e2e_audit.js`: Audit (2.17 až 2.18.2); oba Excely i výrobní plán (dva listy, nadpisy na
+    2. řádku, vložený sloupec, fronta, zrušení čtení, 120 000 řádků s duplicitami, rychlé čtení
+    xlsx proti SheetJS) vyrobí v prohlížeči přes SheetJS z vymyšlených čísel (žádná
     skutečná data v repu), PDF čte přes pypdf. Po zavření dialogu dne čeká na uloženou úpravu
     (`close` dialogu přijde až po zmizení `[open]`). Kontrola smazaných dílů plánu čeká 404
     (`expectGone`);
