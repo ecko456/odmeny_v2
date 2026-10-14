@@ -1449,7 +1449,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=16;
+const DATA_VERSION=17;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit"];
@@ -1744,6 +1744,8 @@ function sanitizeState(input){
   out.logbooks=cleanLogbooks(o.logbooks);
   /* Audit – lidé v práci a zpracované kusy (2.17): starší data ho nemají, začíná prázdný */
   out.workAudit=cleanWorkAudit(o.workAudit);
+  // data před 2.18.1: požadavek lidí je pevných 100 (zadání), dřív se bral jen ze souboru
+  if(!(+o.v>=17)&&out.workAudit.target==null)out.workAudit.target=WA_TARGET;
   out.v=DATA_VERSION;
   return out;
 }
@@ -3293,7 +3295,9 @@ const WA_COL_LABEL={date:"Datum",amPlan:"Ranní: mělo dorazit",amTotal:"Ranní:
 const WA_GUESS=[["tryska",/trysk|piskov|tryskac/],["brush",/brush|kartac/],["brus",/brus|brous/],["frez",/frez|cnc/],["lep",/lepen|znacen|lepi/],["kont",/kontrol|balen/]];
 const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am|pm)|pcs\.o\d{1,6})$/;
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
-function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:null,plan:blankWaPlan()};}
+/* Požadavek lidí na pracovní den (2.18.1): pevně 100 lidí, null = podle plánu v souboru obsazenosti. */
+const WA_TARGET=100;
+function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan()};}
 /* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
    jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
 function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}

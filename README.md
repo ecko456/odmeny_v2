@@ -62,6 +62,14 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.18.1
+
+- **Požadavek lidí je pevných 100 na pracovní den.** Den má požadavek splněný, když je v práci
+  aspoň 100 lidí; z toho se počítá obsazenost proti plánu, bilance a výpadky. Platí pro nová
+  i stávající data; vlastní číslo z Nastavení zůstane. V Nastavení Auditu jde číslo změnit, nebo
+  pole vyprázdnit a brát požadavek ze souboru obsazenosti (mělo dorazit + požadavek).
+- Ostatní data beze změny.
+
 ## Co je nového ve verzi 2.18
 
 - **Obsazenost proti plánu = podíl dní se splněným požadavkem.** Den je splněný, když je v práci

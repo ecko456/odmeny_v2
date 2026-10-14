@@ -302,7 +302,24 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   check(await pcsOf() === before && await page.textContent('#navWa') === '1', '„nepočítat“ kusy zase vyřadí');
   await saved(page);
 
-  // Přehled: historie po týdnech a měsících.
+  // Výchozí požadavek (2.18.1): pevných 100 lidí na pracovní den.
+  check(await page.evaluate(() => S.workAudit.target) === 100, 'výchozí požadavek 100 lidí');
+  await page.click('#waTabs [data-watab="prehled"]');
+  await page.waitForSelector('#waView .wa-stats');
+  const t100 = await tiles(page);
+  const avg100 = await page.evaluate(() => { const r = waHistRange(S.workAudit, ui.wa.hist); const t = waTotals(S.workAudit, waDays(S.workAudit, r.from, r.to)); return waP(t.avgPeople / 100).replace(/\s+/g, ' '); });
+  check(/^Obsazenost proti plánu: 0 %$/.test(t100[1]) && (await page.textContent('#waView .wa-stats')).replace(/\s+/g, ' ').includes(`Ø ${avg100} požadavku`) && /požadavek Ø 100 \(pevný\)/.test((await page.textContent('#waView .wa-stats')).replace(/\s+/g, ' '))
+    && /pevně 100 lidí/.test(await page.textContent('#waCharts2')) && /Požadavek = pevně 100 lidí na pracovní den/.test((await page.textContent('#waView .hint')).replace(/\s+/g, ' ')), `přehled s požadavkem 100: ${t100}`);
+  await page.screenshot({ path: path.join(shots, '04a-pozadavek-100.png'), fullPage: true });
+  // Dál test počítá s požadavkem ze souboru: pole v Nastavení vyprázdnit.
+  await page.click('#waTabs [data-watab="nastaveni"]');
+  check(await page.inputValue('#waTarget') === '100', 'Nastavení ukazuje požadavek 100');
+  await page.fill('#waTarget', '');
+  await page.press('#waTarget', 'Tab');
+  await page.waitForFunction(() => S.workAudit.target === null);
+  await saved(page);
+
+  // Přehled: historie po týdnech, požadavek ze souboru.
   await page.click('#waTabs [data-watab="prehled"]');
   await page.waitForSelector('#waView .wa-stats');
   const t1 = await tiles(page);

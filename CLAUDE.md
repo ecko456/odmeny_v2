@@ -34,6 +34,18 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 14. 10. 2026 (verze 2.18.1):
+
+- Uživatel potvrdil: „100 je pevné číslo.“ Požadavek lidí na pracovní den je výchozí pevných
+  100 (`WA_TARGET` v `core.js`, `blankWorkAudit`). Data verze 17: `sanitizeState` u dat starších
+  než 17 nastaví `target` 100, když není vlastní číslo (2.18 ukládala `null` = podle souboru).
+  Od verze 17 je `null` volba uživatele (prázdné pole v Nastavení) a zůstane.
+  - `CLIENT_VERSION` = `ODM_MIN_CLIENT` = 17, `ODM_VERSION` 2.18.1.
+  - Ověřeno: core testy (nová data 100, z 2.18 100, vlastní číslo zůstane, null od 17 zůstane),
+    e2e Auditu (výchozí 100 v přehledu a Nastavení), aktualizace 2.3, 2.17.2 a 2.18 → 2.18.1
+    na Apachi v kontejneru (u 2.18 i s uloženým výrobním plánem).
+  - Pořád se čeká na vzorek souboru výrobního plánu.
+
 Stav k 13. 10. 2026 (verze 2.18):
 
 - Uživatel: „Obsazenost proti plánu … podíl, kolik dnů bylo dodrženo požadované množství 100 lidí
@@ -45,7 +57,7 @@ Stav k 13. 10. 2026 (verze 2.18):
   indexu a EAN, platí nejdelší termín; linie kusů k dodání proti kapacitě brusičů (25 ks na
   směnu).“
   - „100 lidí a více“ = v práci ≥ 100 % požadavku (`waReq`: pevné `wa.target` z Nastavení,
-    jinak plán ze souboru). Doslovných 100 lidí = `target` 100. **Ověřit s uživatelem.**
+    jinak plán ze souboru). Uživatel pak potvrdil pevných 100 lidí → 2.18.1.
   - `waTotals`: `reqDays`, `metDays`, `metShare`, `balance`, `avgReq`. `waStaffing(wa, days)`:
     kumulovaná bilance po dnech, výpadky (od poklesu pod nulu po návrat na nulu), otevřený
     výpadek s návrhem `extra` (Ø chybějících, zaokrouhleno nahoru) × `needDays`.
@@ -61,8 +73,7 @@ Stav k 13. 10. 2026 (verze 2.18):
   - Ověřeno: core testy, e2e Auditu (vzor, dva soubory s posunutými termíny, 120 000 řádků,
     smazání plánu, záloha), aktualizace 2.3 → 2.18 a 2.17.2 → 2.18 na Apachi v kontejneru.
   - **Se skutečným souborem plánu to nikdo nezkoušel.** Od uživatele se čeká vzorek plánu
-    (bez osobních údajů) a potvrzení, jestli „100 lidí“ znamená požadavek ze souboru, nebo
-    pevné číslo.
+    (bez osobních údajů).
 
 Stav k 13. 10. 2026 (verze 2.17.2):
 
@@ -519,7 +530,8 @@ Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 - `ops[≤ 800] = {id: 'oN', name, group, on}`, `pcs[iso] = {opId: kusy}`, `seq`;
 - `edits[iso][klíč] = {v, was, note, by, at}`, klíče `am.plan|total|abs`, `pm.plan|total`,
   `g.<skupina>.am|pm`, `pcs.<opId>` (`WA_KEY`); `notes[iso]`; `files[≤ 40]` (zdroje);
-- `target` (2.18): pevný požadavek lidí na pracovní den, `null` = podle souboru (plán den po dni);
+- `target` (2.18): pevný požadavek lidí na pracovní den, výchozí `WA_TARGET` = 100 (2.18.1),
+  `null` = podle souboru (plán den po dni);
 - `plan` (2.18, `blankWaPlan`, `cleanWaPlan`):
   - `tpl {file, at, by, sheets[≤ 2]: {name, header, cols, heads}}`: vzor, `header` = index řádku
     s nadpisy, `cols` písmena polí `WA_PLAN_FIELDS` (order, ean, ks, index, due, tech), `heads`
@@ -712,7 +724,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.17 | `e66c6c6` | Audit – lidé v práci a zpracované kusy pro auditora (data verze 15) |
 | 2.17.1 | `370a5d3` | Audit – kusy jen ze skupin, historie, osekané PDF a Excel |
 | 2.17.2 | `a0ec3ab` | Audit – „HALA 2 · REPORT“, rozpad po skupinách |
-| 2.18 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: obsazenost proti požadavku, výpadky a dorovnání, jen týdny, výrobní plán proti kapacitě brusičů (data verze 16) |
+| 2.18 | `0c9912a` | obsazenost proti požadavku, výpadky a dorovnání, jen týdny, výrobní plán proti kapacitě brusičů (data verze 16) |
+| 2.18.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: požadavek lidí pevně 100 na pracovní den (data verze 17) |
 
 Verze 2.1 přidala:
 
@@ -1084,7 +1097,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 53 testů: proti původní aplikaci + opravy + 2.1 až 2.18
+node tests/test_core.js                 # 53 testů: proti původní aplikaci + opravy + 2.1 až 2.18.1
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

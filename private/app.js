@@ -7165,7 +7165,7 @@ function waHistHtml() {
   const tiles = `<div class="stats wa-stats">${[
     statTile('Lidé v práci', `${waN(f.avg, 1)}<em>Ø na den</em>`, f.req != null ? `požadavek Ø ${waN(f.req, 1)}${wa.target ? ' (pevný)' : ''}` : G ? esc(G.name) : 'požadavek v souboru chybí'),
     G ? statTile('Podíl na lidech v práci', waP(f.share), `z Ø ${waN(t.avgPeople, 1)} lidí na pracovní den`)
-      : statTile('Obsazenost proti plánu', waP(f.metShare), f.reqDays ? `${f.metDays} z ${f.reqDays} ${pracDnyN(f.reqDays)} s požadavkem splněným (≥ 100 %) · Ø ${waP(t.fill)}` : 'požadavek v souboru chybí', metTone),
+      : statTile('Obsazenost proti plánu', waP(f.metShare), f.reqDays ? `${f.metDays} z ${f.reqDays} ${pracDnyN(f.reqDays)} s požadavkem splněným (≥ 100 %) · Ø ${waP(f.req ? f.avg / f.req : t.fill)} požadavku` : 'požadavek v souboru chybí', metTone),
     statTile('Zpracováno', `${waN(f.pcs)}<em>ks</em>`, G && G.noIs ? 'projekt není evidován v IS' : withPcs.length ? `Ø ${waN(sumPcs / withPcs.length)} ks za týden` : 'žádná operace se skupinou', 'tab'),
     statTile('Kusy na osobosměnu', waN(f.per, 1), perNote),
   ].join('')}</div>`;
@@ -7410,7 +7410,7 @@ function waSettingsHtml() {
         <div class="chips">${[['all', `Vše (${wa.ops.length})`], ['nogroup', `Bez skupiny (${noGroup})`], ['on', `Počítají se (${wa.ops.length - noGroup})`]].map(([k, t]) => `<button type="button" class="chip${k === f ? ' on' : ''}" data-waopf="${k}" aria-pressed="${k === f}">${t}</button>`).join('')}</div></div>
         <div class="table-card flat"><table class="stack wa-opset"><thead><tr><th>Operace</th><th>Skupina</th><th class="r">Kusy celkem</th></tr></thead><tbody>${opRows || `<tr><td colspan="3"><p class="small muted">Nic neodpovídá.</p></td></tr>`}</tbody></table></div>`
         : '<p class="small">Operace se objeví po nahrání prvního výkazu práce.</p>'}</div>
-    <div class="card wa-target-card"><h3>Požadavek lidí na pracovní den</h3><p class="small muted">Prázdné = podle souboru obsazenosti (mělo dorazit + požadavek), den po dni. Číslo = pevný požadavek pro všechny pracovní dny, třeba 100. Den má požadavek splněný, když je v práci aspoň tolik lidí; z toho se počítá obsazenost proti plánu a výpadky.</p>
+    <div class="card wa-target-card"><h3>Požadavek lidí na pracovní den</h3><p class="small muted">Pevný požadavek pro všechny pracovní dny, výchozí je ${WA_TARGET} lidí. Den má požadavek splněný, když je v práci aspoň tolik lidí; z toho se počítá obsazenost proti plánu a výpadky. Prázdné pole = požadavek podle souboru obsazenosti (mělo dorazit + požadavek), den po dni.</p>
       <label class="field wa-target"><span>Pevný požadavek (lidí)</span><input id="waTarget" inputmode="numeric" maxlength="5" autocomplete="off" value="${wa.target == null ? '' : wa.target}" placeholder="podle souboru"></label></div>
     <div class="grid-2">
       <div class="card"><h3>Sloupce souboru obsazenosti</h3><p class="small muted">Písmena sloupců jako v Excelu. Sloupce skupin jsou nahoře u skupin.</p><div class="wa-colgrid">${cols('att', Object.keys(WA_COLS.att))}</div></div>

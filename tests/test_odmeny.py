@@ -81,7 +81,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "16", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "17", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -192,8 +192,8 @@ class OdmenyHttpTests(unittest.TestCase):
         # větší než 1,5 MB po zašifrování: fotky zmenšuje prohlížeč, víc server nevezme
         self.assertIn(self.client.api("POST", "file", {"blob": b64(1536 * 1024 + 1)}, query=f"&id={secrets.token_hex(16)}")[0], (413, 422))
         # stará stránka fotky nezapisuje ani nemaže
-        self.assertEqual(self.client.api("POST", "file", {"blob": b64(400)}, {"X-Odmeny-Client": "15"}, query=f"&id={secrets.token_hex(16)}")[0], 426)
-        self.assertEqual(self.client.api("DELETE", "file", headers={"X-Odmeny-Client": "15"}, query=f"&id={fid}")[0], 426)
+        self.assertEqual(self.client.api("POST", "file", {"blob": b64(400)}, {"X-Odmeny-Client": "16"}, query=f"&id={secrets.token_hex(16)}")[0], 426)
+        self.assertEqual(self.client.api("DELETE", "file", headers={"X-Odmeny-Client": "16"}, query=f"&id={fid}")[0], 426)
         status, _ = self.client.api("DELETE", "file", query=f"&id={fid}")
         self.assertEqual(status, 200)
         self.assertEqual(self.client.api("GET", "file", query=f"&id={fid}")[0], 404)
@@ -347,8 +347,8 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.11 by zahodila srážky za neproduktivitu z verze 2.12.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "12"})
         self.assertEqual(status, 426)
-        # Stránka verze 2.17 by zahodila výrobní plán a požadavek lidí z verze 2.18.
-        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "15"})
+        # Stránka verze 2.18 ukládá data verze 16 (požadavek bez převodu na pevných 100 lidí).
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "16"})
         self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
@@ -362,7 +362,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.18")
+        self.assertEqual(result["version"], "2.18.1")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
