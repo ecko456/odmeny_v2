@@ -1449,7 +1449,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=17;
+const DATA_VERSION=18;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit"];
@@ -2602,12 +2602,43 @@ function createCase(ean,weekId,meta){
   const at=(meta&&meta.at)||Date.now(),m={...meta,at};
   const base=weekMetrics(ean,weekId);
   const c={id:uid("c"),no:nextCaseNo(at),ean,name:effItemName(ean),at,by:String(m.by||"").slice(0,60),
-    week:weekById(weekId)?weekId:"",base,cancelled:null,rounds:[],log:[]};
+    week:weekById(weekId)?weekId:"",base,cancelled:null,rounds:[],log:[],comments:[]};
   c.rounds.push(newRound(1,m,{week:c.week,base}));
   effNote(c,m,"Případ založen"+(c.week?" z Top 5 "+weekName(c.week)+(base&&base.eff!=null?", plnění "+nf(base.eff,1)+" %":""):""));
   S.eff.cases.push(c);
   return c;
 }
+/* Komentáře o vývoji případu (2.19): co se děje, co se domluvilo, na co se čeká. Každý zápis
+   jde i do historie případu (a odtud do historie změn). round = kolo, ke kterému komentář patří. */
+const CASE_COMMENT_MAX=2000;
+function commentShort(t){t=String(t).replace(/\s+/g," ").trim();return t.length>120?t.slice(0,117)+"…":t;}
+function addCaseComment(c,text,meta){
+  const t=String(text==null?"":text).trim().slice(0,CASE_COMMENT_MAX);
+  if(!t)return null;
+  const at=(meta&&meta.at)||Date.now();
+  const x={id:uid("k"),at,by:String((meta&&meta.by)||"").slice(0,60),text:t,round:curRound(c).n,ed:null};
+  c.comments.push(x);
+  if(c.comments.length>500)c.comments.splice(0,c.comments.length-500);
+  effNote(c,{...meta,at},"Komentář: „"+commentShort(t)+"“");
+  return x;
+}
+function editCaseComment(c,id,text,meta){
+  const x=c.comments.find(k=>k.id===id);
+  const t=String(text==null?"":text).trim().slice(0,CASE_COMMENT_MAX);
+  if(!x||!t||t===x.text)return false;
+  const at=(meta&&meta.at)||Date.now();
+  x.text=t;x.ed={at,by:String((meta&&meta.by)||"").slice(0,60)};
+  effNote(c,{...meta,at},"Upraven komentář z "+dayText(todayIso(x.at))+": „"+commentShort(t)+"“");
+  return true;
+}
+function deleteCaseComment(c,id,meta){
+  const x=c.comments.find(k=>k.id===id);
+  if(!x)return false;
+  c.comments=c.comments.filter(k=>k!==x);
+  effNote(c,meta,"Smazán komentář z "+dayText(todayIso(x.at))+": „"+commentShort(x.text)+"“");
+  return true;
+}
+function lastComment(c){return c.comments&&c.comments.length?c.comments[c.comments.length-1]:null;}
 /* Nové kolo v témž případu: původní řešení nestačilo (nebo se položka vrátila do Top 5). */
 function reopenCase(c,reason,weekId,meta){
   const at=(meta&&meta.at)||Date.now(),m={...meta,at};
@@ -2739,7 +2770,7 @@ function effSummary(today){
     late:effDeadlines(today).filter(x=>x.late).length};
 }
 /* Kopie případu do vydaného reportu (bez historie, ta je v případu). */
-function caseCopy(c){const x=JSON.parse(JSON.stringify(c));delete x.log;return x;}
+function caseCopy(c){const x=JSON.parse(JSON.stringify(c));delete x.log;delete x.comments;return x;}
 /* Obsah týdenního reportu: žebříček, ukazatele a stav řešení k okamžiku vydání. */
 function weekReportData(id,today){
   today=today||todayIso();
@@ -2818,7 +2849,10 @@ function cleanEff(input){
     const cc=c.cancelled&&typeof c.cancelled==="object"?{at:num(c.cancelled.at,0,0,1e15),by:str(c.cancelled.by,60),reason:str(c.cancelled.reason,500)}:null;
     return {id:typeof c.id==="string"&&SAFE_ID.test(c.id)?c.id:uid("c"),no:String(c.no),ean,name:str(c.name,120),
       at:num(c.at,0,0,1e15),by:str(c.by,60),week:week(c.week),base:metrics(c.base),cancelled:cc,rounds,
-      log:arr(c.log).filter(e=>e&&typeof e==="object"&&typeof e.t==="string").slice(-500).map(e=>({at:num(e.at,0,0,1e15),by:str(e.by,60),t:str(e.t,500)}))};
+      log:arr(c.log).filter(e=>e&&typeof e==="object"&&typeof e.t==="string").slice(-500).map(e=>({at:num(e.at,0,0,1e15),by:str(e.by,60),t:str(e.t,500)})),
+      comments:arr(c.comments).filter(k=>k&&typeof k==="object"&&typeof k.text==="string"&&k.text.trim()).slice(-500).map(k=>({
+        id:typeof k.id==="string"&&SAFE_ID.test(k.id)?k.id:uid("k"),at:num(k.at,0,0,1e15),by:str(k.by,60),text:str(k.text,CASE_COMMENT_MAX).trim(),
+        round:int(k.round,1,1,50),ed:k.ed&&typeof k.ed==="object"?{at:num(k.ed.at,0,0,1e15),by:str(k.ed.by,60)}:null}))};
   };
   const cases=[],seenId=new Set(),seenNo=new Set();
   arr(o.cases).slice(0,5000).forEach(c=>{
@@ -2840,7 +2874,7 @@ function cleanEff(input){
       at:num(r.at,0,0,1e15),by:str(r.by,60),data:{week:r.week,src:d.src==="manual"||d.src==="import"?d.src:"",items:optInt(d.items),under:optInt(d.under),small:optInt(d.small),
         tot:{eff:tot.eff==null||!Number.isFinite(Number(tot.eff))?null:Math.round(num(tot.eff,0,0,1000)*10)/10,norm:num(tot.norm,0,0,1e12),
           nspent:num(tot.nspent,0,0,1e12),lost:num(tot.lost,0,0,1e12),ks:num(tot.ks,0,0,1e12)},
-        top,cases:arr(d.cases).slice(0,EFF_TOP).map(kase).filter(Boolean).map(c=>{delete c.log;return c;}),
+        top,cases:arr(d.cases).slice(0,EFF_TOP).map(kase).filter(Boolean).map(c=>{delete c.log;delete c.comments;return c;}),
         settings:{min:int(obj(d.settings).min,EFF_DEFAULTS.min,0,6000),target:int(obj(d.settings).target,EFF_DEFAULTS.target,1,200),
           d1:int(obj(d.settings).d1,EFF_DEFAULTS.d1,1,365),d2:int(obj(d.settings).d2,EFF_DEFAULTS.d2,1,365),unit:obj(d.settings).unit==="min"?"min":"h"},
         deadlines:arr(d.deadlines).slice(0,200).map(x=>{x=obj(x);return {date:day(x.date),kind:["v1","v2","now","process"].includes(x.kind)?x.kind:"now",

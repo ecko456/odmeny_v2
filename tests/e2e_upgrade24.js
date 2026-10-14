@@ -82,8 +82,15 @@ function compare(beforeJson, afterJson) {
   const a = JSON.parse(beforeJson), b = JSON.parse(afterJson);
   const out = [];
   const same = (x, y, what) => { if (JSON.stringify(x) !== JSON.stringify(y)) out.push(`${what}: ${JSON.stringify(x).slice(0, 160)} → ${JSON.stringify(y).slice(0, 160)}`); };
-  // 2.6 přidá do Top 5 jen prázdnou evidenci smazaných čísel případů (eff.nos)
-  const effOld = e => { if (!e || !('nos' in e)) return e; const c = { ...e }; same(c.nos, {}, 'eff.nos'); delete c.nos; return c; };
+  // 2.6 přidá do Top 5 jen prázdnou evidenci smazaných čísel případů (eff.nos),
+  // 2.19 k případům prázdný seznam komentářů o vývoji
+  const effOld = e => {
+    if (!e) return e;
+    const c = { ...e };
+    if ('nos' in c) { same(c.nos, {}, 'eff.nos'); delete c.nos; }
+    if (Array.isArray(c.cases)) c.cases = c.cases.map(x => { if (!('comments' in x)) return x; const y = { ...x }; same(y.comments, [], `komentáře ${y.no}`); delete y.comments; return y; });
+    return c;
+  };
   Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks', 'workAudit'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
   // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu,
   // 2.16 prázdné Protokoly, 2.17 prázdný Audit

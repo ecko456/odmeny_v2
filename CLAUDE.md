@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 14. 10. 2026 (verze 2.19):
+
+- Uživatel: „přidat do TOP5 možnost přidání komentáře o vývoji ke každému případu pro lepší
+  přehlednost co se děje.“
+  - Data: `case.comments[≤ 500] = {id 'k…', at, by, text ≤ 2000, round, ed {at, by} | null}`
+    (`cleanEff`, `CASE_COMMENT_MAX`). `addCaseComment`, `editCaseComment`, `deleteCaseComment`
+    píšou i `effNote` (historie případu → `S.log`, kind `eff`); `lastComment`, `commentShort`.
+    `caseCopy` a vydané reporty komentáře nekopírují.
+  - UI: `t5CommentsHtml` (karta Vývoj případu nahoře v detailu, koncept `ui.t5.cdraft`,
+    Ctrl+Enter), úprava v dialogu s textarea, smazání s potvrzením; seznam případů má sloupec
+    Vývoj (poslední komentář) a hledání v něm. PDF: `pdfCaseDetail` oddíl „Vývoj případu
+    (komentáře)“ jen v plné verzi.
+  - Data verze 18, `CLIENT_VERSION` = `ODM_MIN_CLIENT` = 18 (stránka 2.18.x by komentáře
+    zahodila), `ODM_VERSION` 2.19.
+
 Stav k 14. 10. 2026 (verze 2.18.2):
 
 - Uživatel: „výrobní plán má vždy dva listy … identifikovat sloupce vždy podle druhého řádku, kde
@@ -749,7 +764,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.17.2 | `a0ec3ab` | Audit – „HALA 2 · REPORT“, rozpad po skupinách |
 | 2.18 | `0c9912a` | obsazenost proti požadavku, výpadky a dorovnání, jen týdny, výrobní plán proti kapacitě brusičů (data verze 16) |
 | 2.18.1 | `ef847ad` | požadavek lidí pevně 100 na pracovní den (data verze 17) |
-| 2.18.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: fronta souborů výrobního plánu, rychlé čtení xlsx, nadpisy na 2. řádku |
+| 2.18.2 | `7783c11` | fronta souborů výrobního plánu, rychlé čtení xlsx, nadpisy na 2. řádku |
+| 2.19 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Top 5 – komentáře o vývoji případu (data verze 18) |
 
 Verze 2.1 přidala:
 
@@ -1059,7 +1075,9 @@ Data `S.eff` (`blankEff`, čištění `cleanEff` v `core.js`):
 - `weeks{YYYY-Www: {items[≤5]: {id, ean, name, spent, norm}, at, by}}`: ruční zápis týdne,
   čas v **minutách** (jednotka h/min je jen zobrazení, `settings.unit`). Rozepsané řádky bez EAN
   se drží. Týden = ISO týden pondělí až neděle (`isoWeek`, `weekById`, `shiftWeek`).
-- `cases[]`: `{id, no "RRRR-NNN", ean, name, at, by, week, base, cancelled, rounds[], log[]}`.
+- `cases[]`: `{id, no "RRRR-NNN", ean, name, at, by, week, base, cancelled, rounds[], log[], comments[]}`.
+  - Komentáře o vývoji (2.19): `{id, at, by, text, round, ed}`, přidání, úprava i smazání jdou
+    do `log` přes `effNote`.
   - Kolo: `{n, reason, week, base, cat, cause, options, actions[{id, kind now|process, text,
     owner, due, done}], v[≤2], d1, d2, p1, p2, p1why, p2why}`.
   - Ověření `v`: `{done, result ok|fail, note, from, to, plan, eff, nspent, norm, src manual|import}`.
@@ -1121,7 +1139,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 53 testů: proti původní aplikaci + opravy + 2.1 až 2.18.1
+node tests/test_core.js                 # 54 testů: proti původní aplikaci + opravy + 2.1 až 2.19
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1135,7 +1153,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_browser.js`: celá aplikace;
   - `e2e_v2.js`: novinky 2.0;
   - `e2e_v21.js`: novinky 2.1;
-  - `e2e_top5.js`: Top 5 (2.2);
+  - `e2e_top5.js`: Top 5 (2.2, komentáře o vývoji 2.19);
   - `e2e_kontroly.js`: Kontroly (2.3); o víkendu ověří, že plán tohoto týdne nevznikne (v týdnu
     nezbývá pracovní den), jinak odznak nezapsaných kontrol;
   - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4);

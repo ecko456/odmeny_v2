@@ -15,7 +15,7 @@ const ui = {
   sanDraft: { key: '', period: '', reason: '', other: '', pct: 10, wage: false, note: '' }, sanFilter: '',
   lastAoa: null, lastFile: '', locking: false,
   me: { cardId: '', label: '', device: '' }, profileKey: null, prevView: 'lide',
-  t5: { tab: 'week', week: null, caseId: null, filter: 'active', q: '' },
+  t5: { tab: 'week', week: null, caseId: null, filter: 'active', q: '', cdraft: null },
   kt: { tab: 'plan', week: null, range: '12', dept: '' },
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
@@ -4163,21 +4163,22 @@ function t5CasesHtml() {
   const filter = T5_FILTERS.find(f => f[0] === ui.t5.filter) || T5_FILTERS[0];
   const q = norm(ui.t5.q);
   const all = S.eff.cases.map(c => ({ c, s: caseState(c), ba: caseBeforeAfter(c) }));
-  const list = all.filter(x => filter[2](x.s) && (!q || norm(`${caseLabel(x.c)} ${x.c.ean} ${x.c.name}`).includes(q)))
+  const list = all.filter(x => filter[2](x.s) && (!q || norm(`${caseLabel(x.c)} ${x.c.ean} ${x.c.name} ${(lastComment(x.c) || {}).text || ''}`).includes(q)))
     .sort((a, b) => (a.s.late === b.s.late ? 0 : a.s.late ? -1 : 1) || (a.s.due || '9999') .localeCompare(b.s.due || '9999') || b.c.at - a.c.at);
   const del = filter[0] === 'zrus';   // zrušené jde smazat natrvalo přímo ze seznamu
   const chips = T5_FILTERS.map(([k, t, fn]) => `<button type="button" class="chip${k === filter[0] ? ' on' : ''}" data-t5filter="${k}" aria-pressed="${k === filter[0]}">${t} <em class="t5-count">${all.filter(x => fn(x.s)).length}</em></button>`).join('');
   return `<div class="toolbar t5-casebar"><div class="chips">${chips}</div><span class="spacer"></span>
-      <input type="search" id="t5Q" value="${esc(ui.t5.q)}" placeholder="Hledat EAN, název nebo případ…" aria-label="Hledat případ">
+      <input type="search" id="t5Q" value="${esc(ui.t5.q)}" placeholder="Hledat díl, případ nebo komentář…" aria-label="Hledat případ">
       <button class="btn sec" type="button" data-t5manual>Nový případ</button></div>
-    ${list.length ? `<div class="table-card"><table class="stack t5-table"><thead><tr><th>Případ</th><th>Položka</th><th>Stav</th><th class="r">Kolo</th><th>Zjištěno</th><th>Další termín</th><th class="r" title="Plnění při zjištění → poslední ověření">Plnění před → po</th>${del ? '<th class="r" aria-label="Smazat"></th>' : ''}</tr></thead><tbody>${list.map(({ c, s, ba }) => `<tr class="t5-row" data-t5open="${esc(c.id)}" tabindex="0">
+    ${list.length ? `<div class="table-card"><table class="stack t5-table"><thead><tr><th>Případ</th><th>Položka</th><th>Stav</th><th class="r">Kolo</th><th>Zjištěno</th><th>Další termín</th><th class="r" title="Plnění při zjištění → poslední ověření">Plnění před → po</th><th class="t5-lastc">Vývoj</th>${del ? '<th class="r" aria-label="Smazat"></th>' : ''}</tr></thead><tbody>${list.map(({ c, s, ba }) => `<tr class="t5-row" data-t5open="${esc(c.id)}" tabindex="0">
         <td class="name" data-label="Případ"><b>${esc(caseLabel(c))}</b></td>
         <td data-label="Položka"><div class="who"><b class="t5-ean">${esc(c.ean)}</b><span class="pos">${esc(c.name || 'bez názvu')}</span></div></td>
         <td data-label="Stav">${stateChip(s)}</td>
         <td class="r num" data-label="Kolo">${s.round}</td>
         <td class="num" data-label="Zjištěno">${c.week ? esc(weekName(c.week)) : esc(dayText(todayIso(c.at)))}</td>
         <td class="num" data-label="Další termín">${s.due ? esc(dayText(s.due)) : s.closed ? `<span class="muted">${esc(dayText(s.closed))}</span>` : '<span class="muted">—</span>'}</td>
-        <td class="r num" data-label="Plnění před → po">${effPct(ba.before)} → ${ba.after == null ? '<span class="muted">—</span>' : `<b>${effPct(ba.after)}</b>`}</td>${del ? `<td class="r t5-del" data-label=""><button class="btn ghost small t5-delbtn" type="button" data-t5delete="${esc(c.id)}">Smazat natrvalo</button></td>` : ''}</tr>`).join('')}</tbody></table></div>`
+        <td class="r num" data-label="Plnění před → po">${effPct(ba.before)} → ${ba.after == null ? '<span class="muted">—</span>' : `<b>${effPct(ba.after)}</b>`}</td>
+        <td class="t5-lastc" data-label="Vývoj">${(k => (k ? `<span class="t5-lc"><small class="num">${esc(dayText(todayIso(k.at), false))}${c.comments.length > 1 ? ` · ${c.comments.length}×` : ''}</small>${esc(commentShort(k.text))}</span>` : '<span class="muted">—</span>'))(lastComment(c))}</td>${del ? `<td class="r t5-del" data-label=""><button class="btn ghost small t5-delbtn" type="button" data-t5delete="${esc(c.id)}">Smazat natrvalo</button></td>` : ''}</tr>`).join('')}</tbody></table></div>`
       : `<div class="card">${emptyState(S.eff.cases.length ? 'Nic neodpovídá' : 'Zatím žádný případ', S.eff.cases.length ? 'Zkus jiný filtr nebo hledání.' : 'Případ se zakládá z týdenního žebříčku (tlačítko Založit případ), nebo ručně tlačítkem Nový případ.')}</div>`}
     <p class="hint">Jedna položka = jeden případ. Když se problém vrátí, otevře se v témž případu nové kolo a předchozí řešení zůstane v historii, ať se neopakuje.${del ? ' Zrušený případ jde smazat natrvalo: zmizí ze všech přehledů, termínů, PDF i vydaných reportů a nikde se už nepočítá.' : ''}</p>`;
 }
@@ -4376,6 +4377,7 @@ function t5CaseHtml(c) {
   ${banner}
   <div class="t5-detail">
     <div class="stack">
+      ${t5CommentsHtml(c)}
       <div class="card"><h3>Kolo ${r.n}${c.rounds.length > 1 ? ` z ${c.rounds.length}` : ''}${editable ? '' : ' <span class="muted small">(uzavřené, jen pro čtení)</span>'}</h3>${t5RoundHtml(c, r, editable)}</div>
       ${prev.length ? `<div class="card"><h3>Předchozí kola</h3><p class="small muted">Co se už zkoušelo, ať se stejné řešení neopakuje.</p>${prev.map(p => `<details class="t5-prev"><summary><b>Kolo ${p.n}</b> · ${esc(dayText(todayIso(p.at)))} · ${p.v.some(v => v.result === 'fail') ? '<span class="t5-state s-fail">neúčinné</span>' : p.v[1] && p.v[1].result === 'ok' ? '<span class="t5-state s-ok">účinné</span>' : '<span class="t5-state">nedokončené</span>'}${p.cat ? ` · ${esc(effCatLabel(p.cat))}` : ''}</summary>${t5RoundHtml(c, p, false)}</details>`).join('')}</div>` : ''}
     </div>
@@ -4385,6 +4387,31 @@ function t5CaseHtml(c) {
       <div class="card"><h3>Historie případu</h3><div class="t5-timeline">${c.log.slice().reverse().map(e => `<div class="t5-tl"><span class="num">${esc(tsText(e.at))}</span><p>${esc(e.t)}</p><small>${esc(e.by || 'neznámá kartička')}</small></div>`).join('') || '<p class="small muted">Zatím nic.</p>'}</div></div>
     </div>
   </div>`;
+}
+
+/* Vývoj případu (2.19): průběžné komentáře, nejnovější nahoře. Rozepsaný text přežije překreslení. */
+const T5_EDIT_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>';
+function t5CommentsHtml(c) {
+  const draft = ui.t5.cdraft && ui.t5.cdraft.id === c.id ? ui.t5.cdraft.text : '';
+  const list = c.comments.slice().reverse();
+  return `<div class="card t5-comments"><div class="card-head"><div><h3>Vývoj případu</h3><p class="small muted">Průběžné komentáře: co se děje, co se domluvilo, na co se čeká. Nejnovější nahoře.</p></div>
+      ${list.length ? `<span class="t5-ccount">${list.length} ${list.length === 1 ? 'komentář' : list.length <= 4 ? 'komentáře' : 'komentářů'}</span>` : ''}</div>
+    <div class="t5-cnew"><textarea id="t5Comment" rows="2" maxlength="${CASE_COMMENT_MAX}" placeholder="Co je v případu nového…" aria-label="Nový komentář k vývoji případu">${esc(draft)}</textarea>
+      <div class="t5-cbar"><span class="tiny muted">Ctrl+Enter přidá komentář</span><button class="btn small" type="button" data-t5cadd>Přidat komentář</button></div></div>
+    ${list.length ? `<ol class="t5-clist">${list.map(k => `<li data-t5c="${esc(k.id)}">
+      <div class="t5-chead"><b>${esc(k.by || 'neznámá kartička')}</b><span class="num">${esc(tsText(k.at))}</span>${c.rounds.length > 1 ? `<span class="tag">kolo ${k.round}</span>` : ''}${k.ed ? `<span class="tiny muted" title="${esc(`Upravil ${k.ed.by || '—'} ${tsText(k.ed.at)}`)}">upraveno</span>` : ''}
+        <span class="t5-cact"><button class="icon-btn" type="button" data-t5cedit aria-label="Upravit komentář" title="Upravit">${T5_EDIT_ICON}</button><button class="icon-btn" type="button" data-t5cdel aria-label="Smazat komentář" title="Smazat">${I.x}</button></span></div>
+      <p>${esc(k.text)}</p></li>`).join('')}</ol>` : ''}</div>`;
+}
+function t5AddComment(c) {
+  const box = $('#t5Comment');
+  const text = box ? box.value.trim() : '';
+  if (!text) { toast('Napiš, co je v případu nového.', true); if (box) box.focus(); return; }
+  addCaseComment(c, text, effMeta());
+  ui.t5.cdraft = null;
+  save();
+  renderTop5();
+  toast('Komentář přidán.');
 }
 
 /* ---------- akce ---------- */
@@ -4670,6 +4697,27 @@ async function t5CaseClick(event) {
   const r = curRound(c);
   const meta = effMeta();
   if (t.closest('[data-t5back]')) { navBack(prev => prev.odmView === 'top5' && !prev.sub, () => { ui.t5.caseId = null; renderTop5(); }); return true; }
+  if (t.closest('[data-t5cadd]')) { t5AddComment(c); return true; }
+  const ce = t.closest('[data-t5cedit]');
+  if (ce) {
+    const k = c.comments.find(x => x.id === ce.closest('[data-t5c]').dataset.t5c);
+    if (!k) return true;
+    const res = await dialog({ title: 'Upravit komentář', ok: 'Uložit', wide: true,
+      html: `<p class="small muted">${esc(k.by || 'neznámá kartička')}, ${esc(tsText(k.at))}. Úprava se zapíše do historie případu.</p><label class="field"><span>Komentář</span><textarea name="text" rows="5" maxlength="${CASE_COMMENT_MAX}" autofocus>${esc(k.text)}</textarea></label>`,
+      validate: form => (form.elements.namedItem('text').value.trim() ? null : 'Komentář nemůže být prázdný. Když už neplatí, smaž ho.') });
+    if (res.value !== 'ok') return true;
+    if (editCaseComment(c, k.id, res.form.elements.namedItem('text').value, effMeta())) { save(); renderTop5(); }
+    return true;
+  }
+  const cd = t.closest('[data-t5cdel]');
+  if (cd) {
+    const k = c.comments.find(x => x.id === cd.closest('[data-t5c]').dataset.t5c);
+    if (!k || !(await confirmBox('Smazat komentář?', `„${commentShort(k.text)}“ (${k.by || '—'}, ${tsText(k.at)}) zmizí z vývoje případu. V historii případu zůstane záznam.`, 'Smazat', true))) return true;
+    deleteCaseComment(c, k.id, effMeta());
+    save();
+    renderTop5();
+    return true;
+  }
   const add = t.closest('[data-actadd]');
   if (add) {
     const a = { id: uid('a'), kind: add.dataset.actadd === 'process' ? 'process' : 'now', text: '', owner: '', due: '', done: '', note: '' };
@@ -4794,6 +4842,12 @@ function bindTop5Events() {
     if (open && !t.closest('button:not([data-t5open]), a, input, select, textarea')) t5Open(open.dataset.t5open);
   });
   view.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && event.target.id === 't5Comment') {
+      event.preventDefault();
+      const c = ui.t5.caseId && effCase(ui.t5.caseId);
+      if (c) t5AddComment(c);
+      return;
+    }
     if ((event.key === 'Enter' || event.key === ' ') && event.target.matches('tr[data-t5open]')) { event.preventDefault(); t5Open(event.target.dataset.t5open); }
   });
   view.addEventListener('change', event => {
@@ -4810,6 +4864,7 @@ function bindTop5Events() {
       if (q) { q.focus(); q.setSelectionRange(pos, pos); }
       return;
     }
+    if (event.target.id === 't5Comment') { ui.t5.cdraft = { id: ui.t5.caseId, text: event.target.value }; return; }
     const vi = event.target.dataset.verspent || event.target.dataset.vernorm;
     if (vi != null) { t5VerifyLive(vi); return; }
     t5CaseInput(event);
@@ -5291,6 +5346,23 @@ function pdfCaseDetail(k, c, today, short = false) {
     k.y += 5.5;
     pdfRound(k, c, r, today);
   });
+  if (!short && c.comments && c.comments.length) {
+    k.need(14);
+    k.text('Vývoj případu (komentáře)', k.M, k.y, 9, { bold: true, color: k.C.acc });
+    k.y += 5.5;
+    c.comments.forEach(e => {
+      // komentář má nejvýš 2000 znaků (asi 20 řádků), vejde se na stránku vcelku
+      const lines = k.split(e.text, k.CW - 30 - 32, 8.4);
+      const h = Math.max(lines.length * k.LH(8.4, 1.32), c.rounds.length > 1 ? 7.4 : 0) + 1.8;
+      k.need(h);
+      k.text(tsText(e.at), k.M, k.y, 7.6, { color: k.C.ink3 });
+      if (c.rounds.length > 1) k.text(`kolo ${e.round}`, k.M, k.y + 3.6, 7, { color: k.C.ink3 });
+      lines.forEach((line, i) => k.text(line, k.M + 30, k.y + i * k.LH(8.4, 1.32), 8.4));
+      k.text(k.split(e.by || '—', 30, 7.6)[0], k.M + k.CW, k.y, 7.6, { color: k.C.ink3, align: 'right' });
+      k.y += h;
+    });
+    k.y += 2;
+  }
   if (!short && c.log && c.log.length) {
     k.need(14);
     k.text('Historie případu', k.M, k.y, 9, { bold: true, color: k.C.acc });
@@ -5320,7 +5392,7 @@ function drawEffSummary(doc, single, short = false) {
   if (single) {
     k.header({ eyebrow: T5_EYEBROW, plain: true, right, title: `Případ ${caseLabel(single)}`, sub: `${single.ean}${single.name ? ` · ${single.name}` : ''}`,
       meta: short ? 'Záznam případu: všechna kola řešení, opatření a ověření účinnosti.'
-        : 'Kompletní záznam případu: všechna kola řešení, opatření, ověření účinnosti a historie změn s tím, kdo a kdy je udělal.' });
+        : 'Kompletní záznam případu: všechna kola řešení, opatření, ověření účinnosti, komentáře o vývoji a historie změn s tím, kdo a kdy je udělal.' });
     pdfCaseDetail(k, single, today, short);
     k.footer(`Top 5 nejméně efektivně · případ ${caseLabel(single)} · stav k ${dayText(today)}`);
     return;

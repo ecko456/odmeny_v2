@@ -90,7 +90,7 @@ except ImportError:
   const r = require('child_process').spawnSync('python3', ['-c', py, file], { encoding: 'utf8' });
   return r.status === 0 ? r.stdout : null;
 }
-function checkT5Pdf(file, label, { history }) {
+function checkT5Pdf(file, label, { history, comments = null }) {
   const text = pdfText(file);
   if (text == null) return;
   const flat = text.replace(/\s+/g, ' ');
@@ -100,6 +100,7 @@ function checkT5Pdf(file, label, { history }) {
   // jde auditorovi: v PDF ani v jeho vlastnostech nesmí být, že je osekané
   check(!/osekan|bez historie/i.test(flat), `${label}: bez zmínky o osekané verzi`);
   if (history != null) check(/Historie případu/.test(flat) === history, `${label}: historie případu ${history ? 'je' : 'není'} vidět`);
+  if (comments != null) check((/Vývoj případu \(komentáře\)/.test(flat) && /Zkouška proběhla, plnění vypadá lépe\./.test(flat)) === comments, `${label}: komentáře o vývoji ${comments ? 'jsou' : 'nejsou'} vidět`);
   if (history != null) check(/Stav k \d{1,2}\. \d{1,2}\. \d{4}(?! \d)/.test(flat) && !/Stav k [^·]*\d{1,2}:\d{2}/.test(flat), `${label}: stav jen s datem`);
 }
 async function goWeek(page, k) {
@@ -300,16 +301,66 @@ async function markDone(page, id, date) {
   check((await page.$$('#t5View tbody tr')).length === 1, 'jeden vydaný report');
   await download(page, '#t5View [data-t5pdf="rep"]', 'top5-tyden-z-archivu.pdf');
   await page.screenshot({ path: `${shots}/08-reports.png`, fullPage: true });
+  // Vývoj případu (2.19): komentáře, rozepsaný text přežije překreslení, Ctrl+Enter, úprava, smazání,
+  // záznamy v historii případu, poslední komentář v seznamu a hledání v něm.
+  await page.click('#t5Tabs [data-t5tab="cases"]');
+  await page.click('#t5View tbody tr >> nth=0');
+  await page.waitForSelector('#t5Comment');
+  const cid = await page.evaluate(() => ui.t5.caseId);
+  const draftText = 'Čekáme na nový přípravek od nástrojárny.\nDodání příští týden.';
+  await page.fill('#t5Comment', draftText);
+  await page.evaluate(() => renderTop5());
+  check(await page.inputValue('#t5Comment') === draftText, 'rozepsaný komentář přežije překreslení');
+  await page.click('[data-t5cadd]');
+  await page.waitForFunction(id => effCase(id).comments.length === 1, cid);
+  await saved(page);
+  check(await page.inputValue('#t5Comment') === '' && /Čekáme na nový přípravek od nástrojárny\.\s*Dodání příští týden\./.test(await page.textContent('.t5-clist li')), 'komentář přidán, pole prázdné');
+  await page.fill('#t5Comment', 'Přípravek dorazil, zkouška ve středu.');
+  await page.press('#t5Comment', 'Control+Enter');
+  await page.waitForFunction(id => effCase(id).comments.length === 2, cid);
+  await saved(page);
+  check(/Přípravek dorazil/.test(await page.textContent('.t5-clist li:first-child')) && /2 komentáře/.test(await page.textContent('.t5-ccount')), 'Ctrl+Enter přidá komentář, nejnovější nahoře');
+  await page.click('[data-t5cadd]');
+  check(/Napiš, co je v případu nového/.test(await page.textContent('#toast')), 'prázdný komentář nejde přidat');
+  await page.click('.t5-clist li:nth-child(2) [data-t5cedit]');
+  await page.waitForSelector('#dlg[open] [name="text"]');
+  await page.fill('#dlg [name="text"]', 'Čekáme na přípravek, dodání posunuto o týden.');
+  await page.click('#dlgOk');
+  await page.waitForFunction(id => effCase(id).comments[0].ed && /posunuto/.test(effCase(id).comments[0].text), cid);
+  await saved(page);
+  check(/upraveno/.test(await page.textContent('.t5-clist li:nth-child(2)')), 'upravený komentář je označený');
+  await page.click('.t5-clist li:first-child [data-t5cdel]');
+  await page.waitForSelector('#dlg[open]');
+  await page.click('#dlgOk');
+  await page.waitForFunction(id => effCase(id).comments.length === 1, cid);
+  await saved(page);
+  await page.fill('#t5Comment', 'Zkouška proběhla, plnění vypadá lépe.');
+  await page.click('[data-t5cadd]');
+  await page.waitForFunction(id => effCase(id).comments.length === 2, cid);
+  await saved(page);
+  const tl = (await page.textContent('.t5-timeline')).replace(/\s+/g, ' ');
+  check(/Komentář: „Čekáme na nový přípravek/.test(tl) && /Upraven komentář z/.test(tl) && /Smazán komentář z .*„Přípravek dorazil/.test(tl), `komentáře v historii případu: ${tl.slice(0, 400)}`);
+  await page.screenshot({ path: `${shots}/07c-komentare.png`, fullPage: true });
+  await page.click('[data-t5back]');
+  await page.waitForSelector('#t5View tbody tr');
+  const rowText = (await page.textContent(`#t5View tr[data-t5open="${cid}"]`)).replace(/\s+/g, ' ');
+  check(/Zkouška proběhla, plnění vypadá lépe\./.test(rowText) && /2×/.test(rowText), `poslední komentář v seznamu případů: ${rowText}`);
+  await page.fill('#t5Q', 'zkouska probehla');
+  await page.waitForTimeout(150);
+  check((await page.$$('#t5View tbody tr')).length === 1, 'hledání najde případ podle komentáře');
+  await page.fill('#t5Q', '');
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: `${shots}/07d-pripady-vyvoj.png`, fullPage: true });
   const sumFull = await downloadVariant(page, '#t5SummaryPdf', 'full', 'top5-souhrn.pdf');
   check(/^top5-souhrn-\d{4}-\d{2}-\d{2}\.pdf$/.test(sumFull.name), `název souhrnu: ${sumFull.name}`);
-  checkT5Pdf(sumFull.path, 'souhrn kompletní', { history: true });
+  checkT5Pdf(sumFull.path, 'souhrn kompletní', { history: true, comments: true });
   await page.click('#t5SummaryPdf');
   await page.waitForSelector('#dlg[open] .variant-pick');
   await page.screenshot({ path: `${shots}/08b-pdf-variant.png` });
   await page.click('#dlgCancel');
   const sumShort = await downloadVariant(page, '#t5SummaryPdf', 'short', 'top5-souhrn-osekana.pdf');
   check(/^top5-souhrn-\d{4}-\d{2}-\d{2}\.pdf$/.test(sumShort.name), `název osekaného souhrnu neprozradí verzi: ${sumShort.name}`);
-  checkT5Pdf(sumShort.path, 'souhrn osekaný', { history: false });
+  checkT5Pdf(sumShort.path, 'souhrn osekaný', { history: false, comments: false });
   await page.click('#t5Tabs [data-t5tab="cases"]');
   await page.click('#t5View tbody tr >> nth=0');
   // poslední volba se pamatuje: dialog nabídne osekanou verzi
@@ -318,10 +369,10 @@ async function markDone(page, id, date) {
   check(await page.isChecked('#dlg [name="variant"][value="short"]'), 'pamatuje si poslední verzi PDF');
   await page.click('#dlgCancel');
   const caseFull = await downloadVariant(page, '[data-t5pdf="case"]', 'full', 'top5-pripad.pdf');
-  checkT5Pdf(caseFull.path, 'případ kompletní', { history: true });
+  checkT5Pdf(caseFull.path, 'případ kompletní', { history: true, comments: true });
   const caseShort = await downloadVariant(page, '[data-t5pdf="case"]', 'short', 'top5-pripad-osekana.pdf');
   check(/^top5-pripad-P-\d{4}-\d{3}\.pdf$/.test(caseShort.name), `název osekaného případu neprozradí verzi: ${caseShort.name}`);
-  checkT5Pdf(caseShort.path, 'případ osekaný', { history: false });
+  checkT5Pdf(caseShort.path, 'případ osekaný', { history: false, comments: false });
   await page.click('[data-t5back]');
 
   // Nastavení: čas v minutách. Uložené hodnoty se nemění, jen zobrazení a zadávání.

@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.19
+
+- **Top 5: komentáře o vývoji případu.** V detailu případu je nahoře karta **Vývoj případu**:
+  krátké průběžné komentáře, co se děje, co se domluvilo a na co se čeká. Nejnovější nahoře,
+  u každého kdo a kdy, u případu s více koly i číslo kola. Komentář jde upravit (označí se
+  „upraveno“) nebo smazat; přidání, úprava i smazání se zapíšou do historie případu a do
+  historie změn. Ctrl+Enter komentář rovnou přidá, rozepsaný text se neztratí.
+- V seznamu případů je nový sloupec **Vývoj** s posledním komentářem (datum a počet) a hledání
+  prohledává i poslední komentář.
+- Kompletní PDF případu i souhrnu má oddíl **Vývoj případu (komentáře)**. Osekaná verze pro
+  auditora komentáře neobsahuje, stejně jako historii změn.
+- Data verze 18: stávající případy dostanou prázdný seznam komentářů, nic jiného se nemění.
+
 ## Co je nového ve verzi 2.18.2
 
 - **Výrobní plán po souborech do fronty.** Soubory se přidávají postupně (po jednom nebo víc
