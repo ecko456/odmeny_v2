@@ -34,6 +34,24 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 15. 10. 2026 (verze 2.19.2):
+
+- Uživatel po nasazení 2.19.1: „stále v přehledu u Audit nemohu vybrat od jakého data do jakého
+  data“. Příčina: `<input type="date">` v Chrome posílá `change` (i `input`) po **každé napsané
+  číslici**, jakmile je datum platné. Překreslení na `change` pole nahradilo novým, fokus zmizel
+  a datum nešlo dopsat (výběr z kalendáře fungoval). Stejná chyba byla u vlastního období v Dnech.
+  **Pole s datem nikdy nepřekreslovat na `change`.**
+  - `waDatesHtml(id, v)` (pole Od, Do a tlačítko Zobrazit, `data-wadates`, `data-wadate`,
+    `data-waapply`), `waDatesMark` (změněné období zvýrazní tlačítko), `waApplyDates(id)` (obě
+    data povinná, obrácené prohodí; `waH` → `hist: 'custom'`, `waPlan` → `planRange: 'custom'`,
+    `wa` → `mode: 'custom'`). Enter v poli = Zobrazit.
+  - Pole jsou v přehledu a plánu vidět vždy (předvyplněná viděným obdobím), čipy Vlastní zmizely
+    z `WA_HIST` a `WA_PLAN_RANGES`; `waPlanWeekIds` bere `custom` zvlášť.
+  - e2e píše datum z klávesnice (`keyboard.type('10142026')`, formát mm/dd/yyyy headless
+    Chromia) a hlídá, že pole zůstane ve stránce s fokusem. Zrušení čtení velkého plánu kliká
+    přes `evaluate`: `page.click` čeká na snímky vykreslení a při rychlém čtení (2 s) klikl pozdě.
+  - `ODM_VERSION` 2.19.2, data beze změny (verze 18).
+
 Stav k 14. 10. 2026 (verze 2.19.1):
 
 - Uživatel: „Udělej ještě v Audit možnost vybrat od do podle sebe ne fixní týdny.“
@@ -781,7 +799,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.18.1 | `ef847ad` | požadavek lidí pevně 100 na pracovní den (data verze 17) |
 | 2.18.2 | `7783c11` | fronta souborů výrobního plánu, rychlé čtení xlsx, nadpisy na 2. řádku |
 | 2.19 | `5b70d7e` | Top 5 – komentáře o vývoji případu (data verze 18) |
-| 2.19.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – vlastní období od–do v přehledu a výrobním plánu |
+| 2.19.1 | `7f76bb1` | Audit – vlastní období od–do v přehledu a výrobním plánu |
+| 2.19.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – pole od–do vždy vidět, použití tlačítkem Zobrazit (psaní data z klávesnice) |
 
 Verze 2.1 přidala:
 
@@ -1182,7 +1201,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
-  - `e2e_audit.js`: Audit (2.17 až 2.19.1, vlastní období od–do i na telefonu); oba Excely
+  - `e2e_audit.js`: Audit (2.17 až 2.19.2, vlastní období od–do z klávesnice i na telefonu); oba Excely
     i výrobní plán (dva listy, nadpisy na 2. řádku, vložený sloupec, fronta, zrušení čtení,
     120 000 řádků s duplicitami, rychlé čtení xlsx proti SheetJS) vyrobí v prohlížeči přes SheetJS z vymyšlených čísel (žádná
     skutečná data v repu), PDF čte přes pypdf. Po zavření dialogu dne čeká na uloženou úpravu

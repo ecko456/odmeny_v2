@@ -1573,6 +1573,7 @@ table.wa-cols tr:last-child th, table.wa-cols tr:last-child td { border-bottom: 
 .wa-hist-warn { margin-bottom: 14px; }
 .wa-hist-bar select { flex: 0 1 240px; }
 .wa-custom { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wa-custom .btn { min-height: 36px; }
 .wa-groups { margin-bottom: 16px; }
 .wa-groups .card-head p { margin-top: 2px; }
 table.wa-gtab td.name .tag { margin-left: 8px; }
@@ -1736,8 +1737,9 @@ table.wa-plantab td small { color: var(--ink-3); font-size: 12px; }
   .wa-tpl-list li { grid-template-columns: minmax(0, 1fr); }
   .wa-hist-bar .chips { flex: 1 1 100%; }
   .wa-custom { flex: 1 1 100%; }
-  .wa-custom .wa-date { flex: 1 1 40%; }
+  .wa-custom .wa-date { flex: 1 1 0; min-width: 0; }
   .wa-custom .wa-date input { flex: 1; min-width: 0; }
+  .wa-custom .btn[data-waapply] { flex: 1 1 100%; }
   .wa-hist-bar .chips + .chips { padding-left: 0; border-left: 0; }
   .wa-hist-bar .btn { flex: 1 1 40%; }
   .wa-hist-bar select { flex: 1 1 100%; }

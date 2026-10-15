@@ -461,9 +461,9 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   check(await page.evaluate(() => ui.wa.week === '2026-W43'), 'další týden');
   await page.click('[data-wamode="custom"]');
   await page.fill('#waFrom', '2026-10-05');
-  await page.dispatchEvent('#waFrom', 'change');
   await page.fill('#waTo', '2026-10-09');
-  await page.dispatchEvent('#waTo', 'change');
+  await page.click('[data-waapply="wa"]');
+  await page.waitForFunction(() => ui.wa.from === '2026-10-05' && ui.wa.to === '2026-10-09');
   check((await page.$$('table.wa-days tbody tr')).length === 5, 'vlastní období 5.–9. 10.');
   await page.click('[data-wamode="month"]');
 
@@ -513,14 +513,22 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.screenshot({ path: path.join(shots, '08-tydny.png'), fullPage: true });
   const range = await page.evaluate(() => waHistRange(S.workAudit, ui.wa.hist));
   check(range.from === '2026-10-01' && range.to === '2026-11-30' && range.wFrom === '2026-09-28', `rozsah přehledu: ${JSON.stringify(range)}`);
-  // Vlastní období od–do (2.19.1): krajní týdny jen zčásti, PDF a Excel za stejné období.
-  await page.click('[data-wahist="custom"]');
-  await page.waitForSelector('#waHFrom');
-  check(await page.inputValue('#waHFrom') === '2026-10-01' && await page.inputValue('#waHTo') === '2026-11-30', 'vlastní období začne tím, co bylo vidět');
-  await page.fill('#waHFrom', '2026-10-14');
-  await page.dispatchEvent('#waHFrom', 'change');
-  await page.fill('#waHTo', '2026-10-27');
-  await page.dispatchEvent('#waHTo', 'change');
+  // Vlastní období od–do (2.19.1, 2.19.2): pole jsou vidět hned s viděným obdobím, období se použije
+  // tlačítkem Zobrazit nebo Enterem; krajní týdny jen zčásti, PDF a Excel za stejné období.
+  check(await page.inputValue('#waHFrom') === '2026-10-01' && await page.inputValue('#waHTo') === '2026-11-30' && await page.isVisible('[data-waapply="waH"]'), 'pole od–do ukazují viděné období');
+  // Psaní z klávesnice: Chrome posílá change po každé číslici, pole se nesmí překreslit pod rukama.
+  const hFrom = await page.$('#waHFrom');
+  await page.click('#waHFrom', { position: { x: 12, y: 12 } });
+  await page.keyboard.type('10142026');
+  check(await hFrom.evaluate(e => e.isConnected && e.value === '2026-10-14' && document.activeElement === e), `datum se dá napsat z klávesnice: ${await page.inputValue('#waHFrom')}`);
+  check(await page.evaluate(() => ui.wa.hist === 26 && !document.querySelector('[data-waapply="waH"]').classList.contains('sec')), 'změněné období zvýrazní Zobrazit, přehled zatím beze změny');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => ui.wa.hist === 'custom' && ui.wa.hFrom === '2026-10-14' && ui.wa.hTo === '2026-11-30');
+  check(!(await page.$('[data-wahist].on')) && await page.inputValue('#waHFrom') === '2026-10-14', 'Enter použije období, žádný pevný čip není zapnutý');
+  // obrácené meze se prohodí
+  await page.fill('#waHFrom', '2026-10-27');
+  await page.fill('#waHTo', '2026-10-14');
+  await page.click('[data-waapply="waH"]');
   await page.waitForFunction(() => ui.wa.hFrom === '2026-10-14' && ui.wa.hTo === '2026-10-27');
   const cw = await page.$$eval('table.wa-hist tbody tr', els => els.map(e => e.querySelector('td.name').textContent.replace(/\s+/g, ' ').trim()));
   check(JSON.stringify(cw) === JSON.stringify(['T44/2026 26. 10.–27. 10.', 'T43/2026 19. 10.–25. 10.', 'T42/2026 14. 10.–18. 10.']), `týdny vlastního období: ${JSON.stringify(cw)}`);
@@ -533,17 +541,17 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   const cpInfo = pdfInfo(cp.path);
   if (cpInfo) check(cpInfo.text.includes('14. 10. 2026 – 27. 10. 2026') && cpInfo.text.includes('T42') && !cpInfo.text.includes('T41'), 'PDF za vlastní období');
   await page.fill('#waHFrom', '2026-11-20');
-  await page.dispatchEvent('#waHFrom', 'change');
   await page.fill('#waHTo', '2026-12-31');
-  await page.dispatchEvent('#waHTo', 'change');
+  await page.click('[data-waapply="waH"]');
   await page.waitForFunction(() => ui.wa.hTo === '2026-12-31');
   check(/20\. 11\. 2026 – 30\. 11\. 2026 \(zvoleno 20\. 11\. 2026 – 31\. 12\. 2026, data jsou jen za tyto dny\)/.test((await page.textContent('.wa-range-line')).replace(/\s+/g, ' ')), `období přes konec dat se ořízne: ${(await page.textContent('.wa-range-line')).replace(/\s+/g, ' ')}`);
   await page.fill('#waHFrom', '2026-12-01');
-  await page.dispatchEvent('#waHFrom', 'change');
+  await page.click('[data-waapply="waH"]');
   await page.waitForFunction(() => ui.wa.hFrom === '2026-12-01');
   check(/V tomto období nejsou data/.test(await page.textContent('#waView')) && await page.isDisabled('[data-wapdf]') && await page.isDisabled('[data-waxlsx]'), 'období bez dat: prázdný stav, exporty vypnuté');
   await page.click('[data-wahist="26"]');
   await page.waitForFunction(() => ui.wa.hist === 26);
+  check(await page.inputValue('#waHFrom') === '2026-10-01' && await page.inputValue('#waHTo') === '2026-11-30', 'po pevném čipu pole ukazují jeho období');
   // Pevný požadavek z Nastavení (doslovně „100 lidí a více“): přepočte splněné dny i bilanci.
   await page.click('#waTabs [data-watab="nastaveni"]');
   await page.fill('#waTarget', '40');
@@ -710,9 +718,11 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   // Zrušení čtení velkého souboru: fronta zůstane, jak byla.
   await page.setInputFiles('#waPlanFile', big.file);
   await page.waitForSelector('#dlg[open] #dlgCancel:has-text("Zrušit")');
-  await page.click('#dlgCancel');
+  // Klik přímo ve stránce: page.click čeká na několik snímků vykreslení a čtení velkého souboru
+  // pouští vykreslování jen jednou za 120 ms, takže při rychlém čtení (2 s) by klik přišel až po něm.
+  await page.evaluate(() => document.querySelector('#dlgCancel').click());
   await page.waitForFunction(() => !ui.wa.planBusy, null, { timeout: 60000 });
-  check(/Čtení zrušeno/.test(await page.textContent('#toast')) && await page.evaluate(() => ui.wa.planQ.files.length) === 1, 'zrušené čtení nic nepřidá');
+  check(/Čtení zrušeno/.test(await page.textContent('#toast')) && await page.evaluate(() => ui.wa.planQ.files.length) === 1, `zrušené čtení nic nepřidá: ${await page.textContent('#toast')} · ${await page.evaluate(() => ui.wa.planQ.files.length)}`);
   const t0 = Date.now();
   await page.setInputFiles('#waPlanFile', big.file);
   await page.waitForFunction(() => ui.wa.planQ.files.length === 2 && !ui.wa.planBusy, null, { timeout: 180000 });
@@ -768,13 +778,10 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.mouse.move(5, 5);
   await page.screenshot({ path: path.join(shots, '17-plan.png'), fullPage: true });
   // Vlastní období plánu: celé týdny, do kterých data spadají.
-  await page.click('[data-waplanrange="custom"]');
-  await page.waitForSelector('#waPlanFrom');
   await page.fill('#waPlanFrom', '2026-11-04');
-  await page.dispatchEvent('#waPlanFrom', 'change');
   await page.fill('#waPlanTo', '2026-11-12');
-  await page.dispatchEvent('#waPlanTo', 'change');
-  await page.waitForFunction(() => ui.wa.pFrom === '2026-11-04' && ui.wa.pTo === '2026-11-12');
+  await page.click('[data-waapply="waPlan"]');
+  await page.waitForFunction(() => ui.wa.planRange === 'custom' && ui.wa.pFrom === '2026-11-04' && ui.wa.pTo === '2026-11-12');
   const pw = await page.$$eval('table.wa-plantab tbody tr td.name b', els => els.map(e => e.textContent));
   check(JSON.stringify(pw) === JSON.stringify(['T45/2026', 'T46/2026']) && /2\. 11\. 2026 – 15\. 11\. 2026, celé týdny/.test(await page.textContent('.wa-range-line')), `plán za vlastní období: ${JSON.stringify(pw)}`);
   await page.click('[data-waplanrange="all"]');

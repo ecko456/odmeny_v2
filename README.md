@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.19.2
+
+- **Audit: období od–do jde zadat i z klávesnice.** Ve verzi 2.19.1 se přehled překreslil už po
+  první napsané číslici (Chrome hlásí změnu data po každé číslici), pole zmizelo a datum nešlo
+  dopsat. Teď se data jen vyplní a přehled se přepočítá tlačítkem **Zobrazit** nebo klávesou
+  Enter. Změněné období tlačítko zvýrazní.
+- Pole **Od** a **Do** jsou v přehledu vidět pořád, předvyplněná obdobím, které je zrovna vidět.
+  Čip Vlastní zmizel, pevné volby 13, 26, 52 týdnů a Vše zůstaly.
+- Stejně to funguje ve výrobním plánu a u vlastního období v záložce Dny.
+- Data beze změny (verze 18).
+
 ## Co je nového ve verzi 2.19.1
 
 - **Audit: vlastní období od–do.** V přehledu je vedle 13, 26 a 52 týdnů a Vše volba

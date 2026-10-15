@@ -7013,7 +7013,7 @@ async function exportAuditResultsPdf(button) {
    ========================================================================== */
 const WA_TABS = [['prehled', 'Přehled'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
 const WA_MODES = [['month', 'Měsíc'], ['week', 'Týden'], ['custom', 'Vlastní']];
-const WA_HIST = [[13, '13 týdnů'], [26, '26 týdnů'], [52, '52 týdnů'], [0, 'Vše'], ['custom', 'Vlastní']];
+const WA_HIST = [[13, '13 týdnů'], [26, '26 týdnů'], [52, '52 týdnů'], [0, 'Vše']];
 const waN = (v, d = 0) => (v == null ? '—' : nf(v, d));
 const waP = v => (v == null ? '—' : `${nf(v * 100, 1)} %`);
 const osobN = n => (n === 1 ? 'osobosměna' : n >= 2 && n <= 4 ? 'osobosměny' : 'osobosměn');
@@ -7132,7 +7132,7 @@ function waPeriodHtml(r) {
       <select id="waWeek" aria-label="Týden">${waWeeksList().map(w => `<option value="${w}"${w === ui.wa.week ? ' selected' : ''}>${esc(`${weekName(w)} · ${weekRange(weekById(w))}`)}</option>`).join('')}</select>
       <button class="icon-btn t5-next" type="button" data-wastep="1" aria-label="Další týden">${I.back}</button>`;
   } else if (mode === 'custom') {
-    pick = `<label class="wa-date"><span>Od</span><input type="date" id="waFrom" value="${esc(r.from)}"></label><label class="wa-date"><span>Do</span><input type="date" id="waTo" value="${esc(r.to)}"></label>`;
+    pick = waDatesHtml('wa', r);
   }
   return `<div class="t5-weekbar wa-period"><div class="chips" role="group" aria-label="Období">${WA_MODES.map(([k, t]) => `<button type="button" class="chip${k === mode ? ' on' : ''}" data-wamode="${k}" aria-pressed="${k === mode}">${t}</button>`).join('')}</div>
     ${pick}</div>`;
@@ -7154,6 +7154,33 @@ function waHistData() {
   const t = waTotals(wa, days);
   const list = waWeeks(wa, days);
   return { r, t, list, days, grain: 'week' };
+}
+/* Pole Od a Do vlastního období s tlačítkem Zobrazit (2.19.2). Chrome posílá change už při psaní
+   každé číslice, překreslení by pole zničilo uprostřed psaní: období se proto použije až tlačítkem
+   nebo Enterem. id: 'waH' přehled, 'waPlan' výrobní plán, 'wa' záložka Dny. */
+function waDatesHtml(id, v) {
+  return `<span class="wa-custom" role="group" aria-label="Období od–do" data-wadates="${id}" data-from="${esc(v.from)}" data-to="${esc(v.to)}">
+    <label class="wa-date"><span>Od</span><input type="date" id="${id}From" value="${esc(v.from)}" data-wadate></label>
+    <label class="wa-date"><span>Do</span><input type="date" id="${id}To" value="${esc(v.to)}" data-wadate></label>
+    <button class="btn sec small" type="button" data-waapply="${id}">Zobrazit</button></span>`;
+}
+/* Data od–do se jen vyplňují; změněné období zvýrazní tlačítko Zobrazit. */
+function waDatesMark(input) {
+  const g = input.closest('[data-wadates]');
+  const id = g.dataset.wadates;
+  const changed = $(`#${id}From`).value !== g.dataset.from || $(`#${id}To`).value !== g.dataset.to;
+  g.querySelector('[data-waapply]').classList.toggle('sec', !changed);
+}
+/* Použije vyplněné období (obrácené meze prohodí). */
+function waApplyDates(id) {
+  let from = ($(`#${id}From`) || {}).value || '';
+  let to = ($(`#${id}To`) || {}).value || '';
+  if (!WA_ISO.test(from) || !WA_ISO.test(to)) { toast('Vyplň obě data, od i do.', true); return; }
+  if (from > to) [from, to] = [to, from];
+  if (id === 'waH') Object.assign(ui.wa, { hist: 'custom', hFrom: from, hTo: to });
+  else if (id === 'waPlan') Object.assign(ui.wa, { planRange: 'custom', pFrom: from, pTo: to });
+  else Object.assign(ui.wa, { mode: 'custom', from, to });
+  renderWorkAudit();
 }
 /* Popisek osy: týden T40. */
 function waAxisLabel(x) { return `T${weekById(x.id).w}`; }
@@ -7239,7 +7266,7 @@ function waHistHtml() {
   const metTone = f.metShare == null ? '' : f.metShare >= 0.9 ? 'good' : f.metShare < 0.6 ? 'crit' : 'warn';
   const bar = `<div class="t5-weekbar wa-hist-bar">
       <div class="chips" role="group" aria-label="Období">${WA_HIST.map(([n, l]) => `<button type="button" class="chip${n === ui.wa.hist ? ' on' : ''}" data-wahist="${n}" aria-pressed="${n === ui.wa.hist}">${l}</button>`).join('')}</div>
-      ${ui.wa.hist === 'custom' ? `<span class="wa-custom"><label class="wa-date"><span>Od</span><input type="date" id="waHFrom" value="${esc(ui.wa.hFrom)}"></label><label class="wa-date"><span>Do</span><input type="date" id="waHTo" value="${esc(ui.wa.hTo)}"></label></span>` : ''}
+      ${waDatesHtml('waH', r.want || r)}
       <select id="waGroup" aria-label="Skupina"><option value="">Všechny skupiny</option>${wa.groups.map(g => `<option value="${esc(g.id)}"${g.id === gid ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}</select>
       <span class="spacer"></span>
       <button class="btn sec" type="button" data-waxlsx${r.empty ? ' disabled' : ''}>Excel</button>
@@ -7783,15 +7810,9 @@ function bindWorkAudit() {
     const grp = t.closest('[data-wagrp]');
     if (grp) { ui.wa.group = grp.dataset.wagrp === ui.wa.group ? '' : grp.dataset.wagrp; renderWorkAudit(); if (ui.wa.group) $('#waCharts')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
     const hist = t.closest('[data-wahist]');
-    if (hist) {
-      if (hist.dataset.wahist === 'custom') {
-        // vlastní období začne tím, co je právě vidět
-        if (ui.wa.hist !== 'custom') { const cur = waHistRange(S.workAudit, ui.wa.hist); if (cur) Object.assign(ui.wa, { hFrom: cur.from, hTo: cur.to }); }
-        ui.wa.hist = 'custom';
-      } else ui.wa.hist = +hist.dataset.wahist;
-      renderWorkAudit();
-      return;
-    }
+    if (hist) { ui.wa.hist = +hist.dataset.wahist; renderWorkAudit(); return; }
+    const apply = t.closest('[data-waapply]');
+    if (apply) { waApplyDates(apply.dataset.waapply); return; }
     if (t.closest('[data-waxlsx]')) { exportWaXlsx(); return; }
     if (t.closest('[data-waplanpick]')) { $('#waPlanFile').click(); return; }
     if (t.closest('[data-waplantpl]')) { $('#waPlanTplFile').click(); return; }
@@ -7802,15 +7823,7 @@ function bindWorkAudit() {
       return;
     }
     const pr = t.closest('[data-waplanrange]');
-    if (pr) {
-      if (pr.dataset.waplanrange === 'custom' && ui.wa.planRange !== 'custom') {
-        const ids = waPlanWeekIds();
-        Object.assign(ui.wa, { pFrom: weekById(ids[0]).from, pTo: weekById(ids[ids.length - 1]).to });
-      }
-      ui.wa.planRange = pr.dataset.waplanrange;
-      renderWorkAudit();
-      return;
-    }
+    if (pr) { ui.wa.planRange = pr.dataset.waplanrange; renderWorkAudit(); return; }
     const pdfBtn = t.closest('[data-wapdf]');
     if (pdfBtn) { exportWaPdf(pdfBtn); return; }
     const ogs = t.closest('[data-waogs]');
@@ -7839,6 +7852,7 @@ function bindWorkAudit() {
     if (day && !t.closest('a, input, select')) { waDayDialog(day.dataset.waday); }
   });
   wv.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && event.target.matches('[data-wadate]')) { event.preventDefault(); waApplyDates(event.target.closest('[data-wadates]').dataset.wadates); return; }
     if (event.key !== 'Enter' || !event.target.matches('tr[data-waday], tr[data-waweek], tr[data-wagrp]')) return;
     event.preventDefault();
     event.target.click();
@@ -7847,19 +7861,9 @@ function bindWorkAudit() {
     const t = event.target;
     if (t.id === 'waMonth') { ui.wa.month = t.value; renderWorkAudit(); return; }
     if (t.id === 'waWeek') { ui.wa.week = t.value; renderWorkAudit(); return; }
-    if (t.id === 'waFrom' || t.id === 'waTo') { if (WA_ISO.test(t.value)) { ui.wa[t.id === 'waFrom' ? 'from' : 'to'] = t.value; renderWorkAudit(); } return; }
     if (t.id === 'waGroups') { ui.wa.groups = t.checked; renderWorkAudit(); return; }
     if (t.id === 'waGroup') { ui.wa.group = t.value; renderWorkAudit(); return; }
-    // Od za Do (nebo Do před Od) posune druhou mez na stejný den.
-    const waSetRange = (fk, tk, isFrom) => {
-      if (!WA_ISO.test(t.value)) return;
-      ui.wa[isFrom ? fk : tk] = t.value;
-      if (isFrom && WA_ISO.test(ui.wa[tk]) && ui.wa[tk] < t.value) ui.wa[tk] = t.value;
-      if (!isFrom && WA_ISO.test(ui.wa[fk]) && ui.wa[fk] > t.value) ui.wa[fk] = t.value;
-      renderWorkAudit();
-    };
-    if (t.id === 'waHFrom' || t.id === 'waHTo') { waSetRange('hFrom', 'hTo', t.id === 'waHFrom'); return; }
-    if (t.id === 'waPlanFrom' || t.id === 'waPlanTo') { waSetRange('pFrom', 'pTo', t.id === 'waPlanFrom'); return; }
+    if (t.matches('[data-wadate]')) { waDatesMark(t); return; }
     if (t.id === 'waAllEdits') { ui.wa.allEdits = t.checked; renderWorkAudit(); return; }
     if (t.id === 'waPlanWords') {
       const words = [...new Set(t.value.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean).map(w => w.slice(0, 12)))].slice(0, 12);
@@ -7912,6 +7916,7 @@ function bindWorkAudit() {
     }
   });
   wv.addEventListener('input', event => {
+    if (event.target.matches('[data-wadate]')) { waDatesMark(event.target); return; }
     if (event.target.id !== 'waOpQ') return;
     ui.wa.opQ = event.target.value;
     const pos = event.target.selectionStart;
@@ -7950,7 +7955,7 @@ function bindWorkAudit() {
    ve stavu jsou jen součty po týdnech termínu. Klíč položky = objednávka + index + EAN, platí
    verze s nejpozdějším termínem (waPlanMerge v core.js).
    ========================================================================== */
-const WA_PLAN_RANGES = [['b13', '13 týdnů zpět'], ['f13', '13 týdnů dopředu'], ['f26', '26 týdnů dopředu'], ['all', 'Vše'], ['custom', 'Vlastní']];
+const WA_PLAN_RANGES = [['b13', '13 týdnů zpět'], ['f13', '13 týdnů dopředu'], ['f26', '26 týdnů dopředu'], ['all', 'Vše']];
 const WA_PLAN_CHUNK = 1200 * 1024;
 const polozkaN = n => (n === 1 ? 'položka' : n >= 2 && n <= 4 ? 'položky' : 'položek');
 const radekN = n => (n === 1 ? 'řádek' : n >= 2 && n <= 4 ? 'řádky' : 'řádků');
@@ -8505,7 +8510,7 @@ function waPlanWeekIds() {
   const p = S.workAudit.plan;
   const now = isoWeek(todayIso()).id;
   const ids = Object.keys(p.weeks).sort();
-  const mode = WA_PLAN_RANGES.some(x => x[0] === ui.wa.planRange) ? ui.wa.planRange : 'f13';
+  const mode = ui.wa.planRange === 'custom' || WA_PLAN_RANGES.some(x => x[0] === ui.wa.planRange) ? ui.wa.planRange : 'f13';
   let from = now;
   let to = shiftWeek(now, 12);
   if (mode === 'b13') { from = shiftWeek(now, -12); to = now; }
@@ -8590,12 +8595,13 @@ function waPlanHtml() {
       <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">2</span><div><h3>Fronta a zpracování</h3><p class="small muted">Soubory přidáváš do fronty po jednom nebo víc najednou (i se statisíci řádků) a nakonec je zpracuješ. Vezmou se jen položky s technologií ${esc(words)}, duplicity podle objednávky, indexu a EAN se sloučí a platí nejpozdější termín.</p></div></div>${impBtn}</div>
     </div>${settings}`;
   }
+  const ids0 = waPlanWeekIds();
   const bar = `<div class="t5-weekbar wa-hist-bar">
       <div class="chips" role="group" aria-label="Období plánu">${WA_PLAN_RANGES.map(([k, l]) => `<button type="button" class="chip${k === (ui.wa.planRange || 'f13') ? ' on' : ''}" data-waplanrange="${k}" aria-pressed="${k === (ui.wa.planRange || 'f13')}">${l}</button>`).join('')}</div>
-      ${ui.wa.planRange === 'custom' ? `<span class="wa-custom"><label class="wa-date"><span>Od</span><input type="date" id="waPlanFrom" value="${esc(ui.wa.pFrom)}"></label><label class="wa-date"><span>Do</span><input type="date" id="waPlanTo" value="${esc(ui.wa.pTo)}"></label></span>` : ''}
+      ${p.items ? waDatesHtml('waPlan', ui.wa.planRange === 'custom' ? { from: ui.wa.pFrom, to: ui.wa.pTo } : { from: weekById(ids0[0]).from, to: weekById(ids0[ids0.length - 1]).to }) : ''}
       <span class="spacer"></span>${impBtn}</div>`;
   if (!p.items) return `${bar}${queue}${q ? '' : `<div class="card">${emptyState('Plán je prázdný', `Přidej soubory výrobního plánu do fronty a zpracuj je. Vezmou se položky s technologií ${esc(words)}.`)}</div>`}${tplCard}${settings}${filesCard}`;
-  const ids = waPlanWeekIds();
+  const ids = ids0;
   const cap = waPlanCapacity(wa, ids);
   const now = isoWeek(todayIso()).id;
   const done = cap.map(w => {
