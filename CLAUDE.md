@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 15. 10. 2026 (verze 2.20):
+
+- Uživatel: „export v matici dovednosti, že report PDF nebude obsahovat jména, ale jen ID
+  v evidenci práce … report do PDF z MATICE … ať se nezohledňují vyřazení lidé a je maximálně
+  vidět, že někteří jsou aktuálně nemocní, ať je jen povědomí, ale aktuálně se nepočítá do
+  kapacity“.
+  - Core: `skillGrid(groupId, shift, dept, byId)`: `byId` řadí uvnitř skupiny podle ID
+    (`widCmp`, čísla podle hodnoty, bez ID na konci); pokrytí (`coverage`) počítá jen lidi bez
+    `sick`, výsledek má `sick` (počet nemocných v řádcích). Excel (`matrixSheets`) má řádek
+    „V nemoci: N“. Vyřazené vynechává `matrixPeople` jako dřív.
+  - UI: přepínač `#matrixIds` (pref `P.matrixIds`, `cleanPrefs`), `mxWho`/`mxWhoHtml` (jméno,
+    nebo `ID x` / „bez ID“) v řádcích, aria-label a u vedoucích v hlavičce oddělení; KPI
+    „v nemoci“, součty „bez nemocných“, legenda se štítkem nemoc.
+  - PDF: `drawMatrix(doc)` (A4 na šířku, filtr z Matice, vždy jen ID), `pdfIluo` (čtvrtinový
+    kruh přes `doc.lines`), svislé názvy dovedností (`angle: 90`, výška podle nejdelšího,
+    nejvýš 36 mm, delší na dva řádky), skupiny nad sloupci, víc než ~27 dovedností = víc
+    tabulek, hlavička se opakuje na nové stránce, řádek směny drží s prvním člověkem a poslední
+    řádek se součty. `exportMatrixPdf` (tlačítko `#btnMatrixPdf`) upozorní na lidi bez ID.
+  - Testy: core „matice (2.20)“, e2e_matice (ID na obrazovce, PDF bez jmen a bez vyřazeného,
+    nemoc, pokrytí bez nemocných; po kontrole vrátí ID, nemoc a vyřazení zpátky).
+  - `ODM_VERSION` 2.20, data beze změny (verze 18).
+
 Stav k 15. 10. 2026 (verze 2.19.2):
 
 - Uživatel po nasazení 2.19.1: „stále v přehledu u Audit nemohu vybrat od jakého data do jakého
@@ -800,7 +822,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.18.2 | `7783c11` | fronta souborů výrobního plánu, rychlé čtení xlsx, nadpisy na 2. řádku |
 | 2.19 | `5b70d7e` | Top 5 – komentáře o vývoji případu (data verze 18) |
 | 2.19.1 | `7f76bb1` | Audit – vlastní období od–do v přehledu a výrobním plánu |
-| 2.19.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – pole od–do vždy vidět, použití tlačítkem Zobrazit (psaní data z klávesnice) |
+| 2.19.2 | `a1ffc39` | Audit – pole od–do vždy vidět, použití tlačítkem Zobrazit (psaní data z klávesnice) |
+| 2.20 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Matice – report do PDF jen s ID zaměstnanců, přepínač Jen ID, nemocní mimo počty úrovní |
 
 Verze 2.1 přidala:
 
@@ -1069,7 +1092,8 @@ UI v `app.js`:
   (delegované události na `#posEditor`);
 - sekce matice: `renderMatrix` (záložky `ui.mxTab`), `renderMatrixGrid` (klik na buňku
   zvýší úroveň o 1, po 4 je 0), `renderCapacity`, `capRisks`, `drawCapacity` (PDF),
-  `exportMatrix` (Excel z `matrixSheets`);
+  `exportMatrix` (Excel z `matrixSheets`), `drawMatrix`/`exportMatrixPdf` (PDF matice jen
+  s ID, 2.20), přepínač `#matrixIds` a `mxWho`;
 - u člověka (`renderPersonDetail`): skupina, směna, `legacyCard` + `legacyCompare` (tabáky
   dřív a teď), hodnocení `rateRows`, zaučení v dalších skupinách, prémie `tierHtml`
   s „označit nesplněno“ (`data-mark`).
@@ -1174,7 +1198,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 55 testů: proti původní aplikaci + opravy + 2.1 až 2.19.1
+node tests/test_core.js                 # 56 testů: proti původní aplikaci + opravy + 2.1 až 2.20
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1191,7 +1215,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_top5.js`: Top 5 (2.2, komentáře o vývoji 2.19);
   - `e2e_kontroly.js`: Kontroly (2.3); o víkendu ověří, že plán tohoto týdne nevznikne (v týdnu
     nezbývá pracovní den), jinak odznak nezapsaných kontrol;
-  - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4);
+  - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4), PDF matice jen s ID (2.20);
   - `e2e_ai.js`: ✦ Přeformulovat (2.5); sám spustí náhradní API na 127.0.0.1:8598, server
     musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
   - `e2e_vedouci.js`: vedoucí pracovníci (2.7) a jejich dovednosti (2.10);

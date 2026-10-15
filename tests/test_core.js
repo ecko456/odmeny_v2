@@ -1395,6 +1395,28 @@ test('aktualizace 2.6 → 2.7: data zůstanou beze změny, nikdo není vedoucí'
   return null;
 });
 
+test('matice (2.20): nemocní jsou v řádcích, do pokrytí se nepočítají; vyřazení chybí; řazení podle ID', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState({ positions: [{ id: 'G', name: 'G', maxTab: 8, skillset: [{ id: 's1', name: 'A' }], tiers: [] }],
+      employees: {
+        'a|a': { first: 'A', last: 'A', positionId: 'G', shift: 'R', rate: { s1: 4 }, wid: '20' },
+        'b|b': { first: 'B', last: 'B', positionId: 'G', shift: 'R', rate: { s1: 3 }, wid: '3', sick: '2026-10-10' },
+        'c|c': { first: 'C', last: 'C', positionId: 'G', shift: 'R', rate: { s1: 3 } },
+        'd|d': { first: 'D', last: 'D', positionId: 'G', shift: 'R', rate: { s1: 4 }, wid: '100', excluded: true } } });
+    const byName = skillGrid('G', '*'), byId = skillGrid('G', '*', null, true);
+    const sheet = matrixSheets()[0].rows.map(x => x[0]).filter(t => /V nemoci/.test(t));
+    JSON.stringify({ name: byName.rows.map(r => r.e.key), id: byId.rows.map(r => r.e.key), cov: byId.coverage[0], sick: byId.sick, sheet,
+      cap: capacity(['G'], 3, []).groups[0].skills[0].total })`));
+  assert.deepStrictEqual(out.name, ['a|a', 'b|b', 'c|c'], 'vyřazený v matici není');
+  assert.deepStrictEqual(out.id, ['b|b', 'a|a', 'c|c'], 'podle ID číselně (3 < 20), bez ID na konci');
+  assert.deepStrictEqual([out.cov.ready, out.cov.trained, out.cov.by.R.ready], [2, 2, 2], 'nemocný se do pokrytí nepočítá');
+  assert.strictEqual(out.sick, 1);
+  assert.strictEqual(out.cap, 2, 'stejně jako kapacita směn');
+  assert.deepStrictEqual(out.sheet, ['V nemoci: 1 (do počtů úrovní se dočasně nepočítají)']);
+  return null;
+});
+
 test('stálá odpolední směna (2.8): odpoledne v obou variantách, matice, import a Excel', () => {
   const core = loadCore();
   const out = JSON.parse(run(core, `

@@ -922,21 +922,29 @@ function leadsFollowDept(before,after){
 }
 /* Kdo se v matici ukazuje: nevyřazení (a ne vedoucí) se skupinou nebo s nějakým hodnocením. */
 function matrixPeople(){return Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&(e.positionId||(e.rate&&Object.keys(e.rate).length)));}
+/* ID z evidence práce (2.20): řazení čísel podle hodnoty, lidé bez ID na konci. */
+function widCmp(a,b){
+  const x=a.wid!=null?String(a.wid):"",y=b.wid!=null?String(b.wid):"";
+  if(!x!==!y)return x?-1:1;
+  return x.localeCompare(y,"cs",{numeric:true});
+}
 /* Matice: lidé × dovednosti (všech skupin, jedné skupiny, nebo jednoho oddělení). Řádky = lidé
    těch skupin a lidé odjinud, kteří mají některou z dovedností ohodnocenou (zaučení).
-   Řazení podle směny, vlastní skupiny, pořadí skupin a jména. */
-function skillGrid(groupId,shift,dept){
+   Řazení podle směny, vlastní skupiny, pořadí skupin a jména (byId: podle ID z evidence práce).
+   Nemocní v řádcích jsou, do pokrytí úrovní se dočasně nepočítají (2.20, stejně jako kapacita). */
+function skillGrid(groupId,shift,dept,byId){
   const groups=S.positions.filter(p=>isGroup(p)&&groupSkills(p).length&&(!groupId||p.id===groupId)&&(!dept||deptOf(p)===dept));
   const cols=groups.flatMap(p=>groupSkills(p).map(s=>({p,s})));
   const order=new Map(S.positions.map((p,i)=>[p.id,i])),so=k=>{const i=SHIFT_KEYS.indexOf(k);return i<0?9:i;};
   const all=!groupId&&!dept,ids=new Set(groups.map(p=>p.id));
   const rows=matrixPeople().filter(e=>(shift==null||shift==="*"||shiftOf(e)===shift)&&(all||ids.has(e.positionId)||cols.some(c=>rateOf(e,c.s.id)>0)))
     .map(e=>{const pos=posOf(e);return {e,pos,shift:shiftOf(e),home:all||ids.has(e.positionId),pct:isGroup(pos)?skillPct(e,pos):null,cells:cols.map(c=>rateOf(e,c.s.id))};})
-    .sort((x,y)=>so(x.shift)-so(y.shift)||(y.home-x.home)||((order.get(x.e.positionId)??999)-(order.get(y.e.positionId)??999))||norm(x.e.last+" "+x.e.first).localeCompare(norm(y.e.last+" "+y.e.first),"cs"));
+    .sort((x,y)=>so(x.shift)-so(y.shift)||(y.home-x.home)||((order.get(x.e.positionId)??999)-(order.get(y.e.positionId)??999))||(byId?widCmp(x.e,y.e):0)||norm(x.e.last+" "+x.e.first).localeCompare(norm(y.e.last+" "+y.e.first),"cs"));
+  const live=rows.filter(r=>!r.e.sick);
   const coverage=cols.map((c,j)=>{const by={};[...SHIFT_KEYS,""].forEach(k=>{by[k]={ready:0,trained:0};});
-    rows.forEach(r=>{const v=r.cells[j];if(v>=1)by[r.shift].trained++;if(v>=3)by[r.shift].ready++;});
-    return {by,ready:rows.filter(r=>r.cells[j]>=3).length,trained:rows.filter(r=>r.cells[j]>=1).length};});
-  return {groups,cols,rows,coverage};
+    live.forEach(r=>{const v=r.cells[j];if(v>=1)by[r.shift].trained++;if(v>=3)by[r.shift].ready++;});
+    return {by,ready:live.filter(r=>r.cells[j]>=3).length,trained:live.filter(r=>r.cells[j]>=1).length};});
+  return {groups,cols,rows,coverage,sick:rows.length-live.length};
 }
 /* Kapacita dovedností po směnách: kolik lidí dovednost zvládá aspoň na úrovni thr a součet úrovní.
    Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají:
@@ -2246,6 +2254,7 @@ function matrixSheets(){
     [...SHIFT_KEYS,""].forEach(k=>{if(m.rows.some(r=>r.shift===k))rows.push(["Úroveň 3–4: "+shiftName(k),"","","","",...m.coverage.map(c=>c.by[k].ready)]);});
     rows.push(["Úroveň 3–4 celkem","","","","",...m.coverage.map(c=>c.ready)]);
     rows.push(["Hodnoceno 1–4 celkem","","","","",...m.coverage.map(c=>c.trained)]);
+    if(m.sick)rows.push(["V nemoci: "+m.sick+" (do počtů úrovní se dočasně nepočítají)"]);
     rows.push([]);
     rows.push(["Úrovně: "+STD_SCALE.map((l,i)=>i+" "+l.name).join(" · ")]);
     return rows;

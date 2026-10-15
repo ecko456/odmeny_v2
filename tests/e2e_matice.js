@@ -203,6 +203,41 @@ async function nav(page, view) {
   await xl.saveAs(path.join(S, 'matice.xlsx'));
   check(fs.statSync(path.join(S, 'matice.xlsx')).size > 4000, 'Excel matice je podezřele malý');
 
+  // PDF matice jen s ID (2.20): ID místo jmen, vyřazený chybí, nemocný je označený a do počtů úrovní se nepočítá.
+  await page.click('[data-mxtab="matrix"]');
+  const who = await page.evaluate(() => {
+    const ppl = matrixPeople().filter(e => e.positionId).sort((a, b) => a.key.localeCompare(b.key));
+    const [a, b, c, , x] = ppl;
+    setWid(a.key, '1001'); setWid(b.key, '1002'); setWid(c.key, '77'); setWid(x.key, '9999');
+    c.sick = todayIso();
+    setExcluded(x.key, true);
+    return { keys: [a, b, c, x].map(e => e.key), names: ppl.filter(e => e !== x).map(e => e.last), ex: x.last };
+  });
+  await saved(page);
+  await page.check('#matrixIds');
+  await page.waitForFunction(() => P.matrixIds === true && /ID 1001/.test(document.querySelector('#matrixView').textContent));
+  const mxText = await page.textContent('#matrixView');
+  check(!who.names.some(n => mxText.includes(n)) && /bez ID/.test(mxText) && /ID zaměstnance/.test(mxText) && !mxText.includes('9999'), `matice jen s ID, bez vyřazeného: ${who.names.filter(n => mxText.includes(n))}`);
+  check(/v nemoci, do počtů úrovní se nepočítá/.test(mxText) && /bez nemocných/.test(mxText) && /nemoc/.test(await page.textContent('#matrixLegend')), 'nemocný v souhrnu oddělení, součty bez nemocných, legenda');
+  const cov = await page.evaluate(() => { const m = skillGrid(null, '*', null, true); return { sick: m.rows.filter(r => r.e.sick).length, ok: m.coverage.every((c, j) => c.ready === m.rows.filter(r => !r.e.sick && r.cells[j] >= 3).length) }; });
+  check(cov.sick === 1 && cov.ok, `pokrytí bez nemocných: ${JSON.stringify(cov)}`);
+  const idOrder = await page.$$eval('#matrixView .mx-sec[data-mxdept] tbody th.mx-name', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+  check(idOrder.some(t => /^ID 1001/.test(t)) && idOrder.some(t => /^ID 77 nemoc/.test(t)), `řádky s ID a štítkem nemoc: ${JSON.stringify(idOrder.slice(0, 6))}`);
+  await page.screenshot({ path: `${shots}/03b-matrix-ids.png`, fullPage: true });
+  const mxPdf = await download(page, '#btnMatrixPdf', 'matice-ids.pdf');
+  check(mxPdf.pdf && /^matice-dovednosti-\d{4}-\d{2}-\d{2}\.pdf$/.test(mxPdf.name), `PDF matice: ${mxPdf.name}`);
+  await page.waitForFunction(() => /bez ID/.test(document.querySelector('#toast').textContent));
+  const mxPdfText = pdfText(mxPdf.path);
+  if (mxPdfText != null) {
+    check(/MATICE DOVEDNOSTÍ/i.test(mxPdfText) && /1001/.test(mxPdfText) && /1002/.test(mxPdfText) && /nemoc/.test(mxPdfText) && /bez ID/.test(mxPdfText) && /HALA 2/.test(mxPdfText), `PDF matice obsahuje ID a nemoc: ${mxPdfText.slice(0, 400)}`);
+    check(!who.names.some(n => mxPdfText.includes(n)) && !mxPdfText.includes(who.ex) && !mxPdfText.includes('9999'), `PDF matice bez jmen a bez vyřazeného: ${who.names.filter(n => mxPdfText.includes(n))}`);
+  }
+  await page.uncheck('#matrixIds');
+  await page.waitForFunction(() => P.matrixIds === false && /Dvořák|Novák/.test(document.querySelector('#matrixView').textContent));
+  // zpátky, ať další části testu počítají se stejnými lidmi
+  await page.evaluate(keys => { keys.forEach(k => { delete S.employees[k].wid; delete S.employees[k].sick; }); setExcluded(keys[3], false); }, who.keys);
+  await saved(page);
+
   // Směny a kapacita: práh, vyřazená dovednost, závěr a PDF.
   await page.click('[data-mxtab="cap"]');
   await page.waitForSelector('#capThr');

@@ -62,6 +62,24 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.20
+
+- **Matice dovedností: report do PDF jen s ID zaměstnanců.** V záložce Matice je tlačítko
+  **Report do PDF**. Report je na šířku A4 podle zvoleného oddělení (nebo skupiny) a směny.
+  Lidé jsou v něm jen jako **ID z evidence práce**, jména ani příjmení v něm nejsou. Kdo ID
+  nemá, je v reportu jako „bez ID“ a aplikace na to po stažení upozorní (ID doplníš v části
+  Lidé).
+- V reportu jsou dlaždice (lidé, nemoc, dovednosti, slabé dovednosti, bez ID), po odděleních
+  tabulka se symboly úrovní 0–4, řádky podle směn a součty „Úroveň 3–4“ a „Hodnoceno 1–4“.
+  Dovednosti s víc než asi 27 sloupci se rozdělí do víc tabulek, dlouhé názvy se zalomí.
+- **Jen ID zaměstnanců i na obrazovce:** přepínač v Matici ukáže místo jmen jen ID (pamatuje
+  si ho každá kartička zvlášť). Hodí se, když se na matici dívá někdo další.
+- **Vyřazení lidé** v matici ani v reportu nejsou (jako dosud).
+- **Nemoc:** člověk v nemoci je v matici i v reportu vidět se štítkem „nemoc“, jen pro přehled.
+  Do počtů úrovní (Úroveň 3–4, Hodnoceno 1–4, slabé dovednosti) se dočasně nepočítá, stejně
+  jako do kapacity směn. Platí to i pro Excel matice (řádek „V nemoci“).
+- Data beze změny (verze 18).
+
 ## Co je nového ve verzi 2.19.2
 
 - **Audit: období od–do jde zadat i z klávesnice.** Ve verzi 2.19.1 se přehled překreslil už po

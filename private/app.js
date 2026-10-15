@@ -31,7 +31,7 @@ const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, f
 const PREF_DEFAULTS = {
   period: null, sort: { k: 'score', dir: -1 }, pos: '', onlyImported: true, onlyOpen: false, hiddenCols: [],
   sanFilter: '', lockMinutes: 15, logSeen: 0, matrixDept: '', matrixShift: '*', mxTab: 'matrix', profileRange: '12', profileFrom: '', profileTo: '',
-  t5PdfShort: false,
+  t5PdfShort: false, matrixIds: false,
 };
 let P = { ...PREF_DEFAULTS };
 const prefStore = { timer: null, saving: false, dirty: false };
@@ -58,6 +58,7 @@ function cleanPrefs(input) {
     profileFrom: MONTH_RE.test(String(x.profileFrom)) ? x.profileFrom : '',
     profileTo: MONTH_RE.test(String(x.profileTo)) ? x.profileTo : '',
     t5PdfShort: x.t5PdfShort === true,
+    matrixIds: x.matrixIds === true,   // matice jen s ID z evidence práce místo jmen (2.20)
   };
 }
 
@@ -3209,6 +3210,10 @@ function mxFilterOptions(groups, f) {
   }).join('');
 }
 
+/* Člověk v matici: jméno, nebo jen ID z evidence práce (2.20, přepínač Jen ID zaměstnanců). */
+function mxWho(e, ids = P.matrixIds) { return ids ? (e.wid ? `ID ${e.wid}` : 'bez ID') : `${e.last} ${e.first}`; }
+function mxWhoHtml(e) { return P.matrixIds && !e.wid ? '<span class="muted">bez ID</span>' : esc(mxWho(e)); }
+
 /* Jedno oddělení v matici (2.10.1): hlavička s vedoucími a souhrnem, tabulka jen s dovednostmi
    oddělení (lidé jeho skupin a zaučení odjinud) a dole pokrytí úrovní 3–4 po směnách. */
 function mxSectionHtml(dept, m, shift) {
@@ -3223,10 +3228,11 @@ function mxSectionHtml(dept, m, shift) {
   const head = `<div class="mx-sec-head">
     <div class="mx-sec-title"><p class="eyebrow">Oddělení</p><h3>${esc(dept)}</h3>
       ${m.groups.length > 1 || names[0] !== dept ? `<p class="small muted">${m.groups.length > 1 ? 'Skupiny' : 'Skupina'} ${names.map(esc).join(', ')}</p>` : ''}
-      ${leads ? `<p class="mx-sec-lead">Vedoucí: ${leads.length ? leads.map(e => `<button class="linkish" type="button" data-mxperson="${esc(e.key)}">${esc(e.last)} ${esc(e.first)}</button>`).join(', ') : '<span class="muted">bez vedoucího</span>'}</p>` : ''}</div>
+      ${leads ? `<p class="mx-sec-lead">Vedoucí: ${leads.length ? leads.map(e => `<button class="linkish" type="button" data-mxperson="${esc(e.key)}">${mxWhoHtml(e)}</button>`).join(', ') : '<span class="muted">bez vedoucího</span>'}</p>` : ''}</div>
     <div class="mx-kpis">
       ${kpi(home.length, home.length === 1 ? 'člověk' : home.length >= 2 && home.length <= 4 ? 'lidé' : 'lidí')}
       ${guests ? kpi(`+${guests}`, 'zaučení odjinud') : ''}
+      ${m.sick ? kpi(m.sick, 'v nemoci, do počtů úrovní se nepočítá', ' warn') : ''}
       ${kpi(avg != null ? `${nf(avg, 0)} %` : '—', 'průměr dovedností')}
       ${m.rows.length ? kpi(`${weak}<small> z ${m.cols.length}</small>`, weak ? `${m.cols.length === 1 ? 'dovednosti' : 'dovedností'} má na úrovni 3–4 méně než 2 lidi` : 'každou dovednost umí na úrovni 3–4 aspoň 2 lidé', weak ? ' warn' : ' ok')
         : kpi(m.cols.length, m.cols.length === 1 ? 'dovednost' : m.cols.length >= 2 && m.cols.length <= 4 ? 'dovednosti' : 'dovedností')}
@@ -3238,7 +3244,7 @@ function mxSectionHtml(dept, m, shift) {
     const c = m.cols[j];
     const own = r.e.positionId === c.p.id;
     const next = (v + 1) % 5;
-    return `<td class="mx-cell${own ? ' is-main' : ''}"><button type="button" class="mx-btn" data-mxr="${esc(r.e.key)}" data-skill="${esc(c.s.id)}" data-lvl="${v}" title="${esc(`${c.s.name}: ${rateTitle(c.s, v)}. Kliknutím ${next ? `na ${next}` : 'na 0'}.`)}" aria-label="${esc(`${r.e.last} ${r.e.first}, ${c.s.name}: ${v}`)}">${iluo(v, own)}<b>${v || ''}</b></button></td>`;
+    return `<td class="mx-cell${own ? ' is-main' : ''}"><button type="button" class="mx-btn" data-mxr="${esc(r.e.key)}" data-skill="${esc(c.s.id)}" data-lvl="${v}" title="${esc(`${c.s.name}: ${rateTitle(c.s, v)}. Kliknutím ${next ? `na ${next}` : 'na 0'}.`)}" aria-label="${esc(`${mxWho(r.e)}, ${c.s.name}: ${v}`)}">${iluo(v, own)}<b>${v || ''}</b></button></td>`;
   };
   const n = m.cols.length + 4;   // + prázdný sloupec do plné šířky (sloupce oddělení jsou pod sebou zarovnané)
   const fill = '<td class="mx-fill"></td>';
@@ -3248,7 +3254,7 @@ function mxSectionHtml(dept, m, shift) {
     const rows = m.rows.filter(r => r.shift === k);
     body += `<tr class="mx-sep"><td colspan="${n}">${esc(shiftName(k))} · ${peopleCount(rows.length)}</td></tr>`;
     body += rows.map(r => `<tr${r.home ? '' : ' class="mx-guest"'}>
-      <th class="mx-name" scope="row"><button class="linkish" type="button" data-mxperson="${esc(r.e.key)}">${esc(r.e.last)} ${esc(r.e.first)}</button>${r.e.sick ? ' <span class="tag warn" title="Dočasně se nepočítá do kapacit směn">nemoc</span>' : ''}</th>
+      <th class="mx-name" scope="row"><button class="linkish" type="button" data-mxperson="${esc(r.e.key)}">${mxWhoHtml(r.e)}</button>${r.e.sick ? ' <span class="tag warn" title="Dočasně se nepočítá do kapacit směn ani do počtů úrovní">nemoc</span>' : ''}</th>
       <td class="mx-main">${r.pos ? esc(r.pos.name) : '<span class="muted">—</span>'}${r.home ? '' : ' <span class="tag" title="Patří do jiné skupiny, tady je zaučený">zaučení</span>'}</td>
       <td class="mx-pct num">${r.pct != null ? `${nf(r.pct, 0)} %` : '<span class="muted">—</span>'}</td>
       ${r.cells.map((v, j) => cell(r, v, j)).join('')}${fill}</tr>`).join('');
@@ -3258,10 +3264,10 @@ function mxSectionHtml(dept, m, shift) {
   return `<section class="card mx-sec" data-mxdept="${esc(dept)}">${head}
     <div class="table-card flat matrix-card mx-sec-table"><table class="matrix skills">
       <thead>${m.groups.length > 1 ? `<tr class="mx-depts"><th colspan="3"></th>${spans.map(g => `<th colspan="${g.n}" class="mx-dept">${esc(g.p.name || '')}</th>`).join('')}<th class="mx-fill"></th></tr>` : ''}
-        <tr><th class="mx-name">Zaměstnanec</th><th class="mx-main">Skupina</th><th class="mx-pct">%</th>${m.cols.map(c => `<th class="mx-col" title="${esc(`${c.p.name}: ${c.s.name}${c.s.desc ? ` – ${c.s.desc}` : ''}`)}"><span>${esc(c.s.name)}</span></th>`).join('')}<th class="mx-fill"></th></tr></thead>
+        <tr><th class="mx-name">${P.matrixIds ? 'ID zaměstnance' : 'Zaměstnanec'}</th><th class="mx-main">Skupina</th><th class="mx-pct">%</th>${m.cols.map(c => `<th class="mx-col" title="${esc(`${c.p.name}: ${c.s.name}${c.s.desc ? ` – ${c.s.desc}` : ''}`)}"><span>${esc(c.s.name)}</span></th>`).join('')}<th class="mx-fill"></th></tr></thead>
       <tbody>${body}</tbody>
-      <tfoot><tr><th colspan="3">Úroveň 3–4 celkem</th>${m.coverage.map(c => `<td class="${c.ready < 2 ? 'mx-risk' : ''}">${c.ready}</td>`).join('')}${fill}</tr>
-        <tr><th colspan="3">Hodnoceno 1–4 celkem</th>${m.coverage.map(c => `<td>${c.trained}</td>`).join('')}${fill}</tr></tfoot>
+      <tfoot><tr><th colspan="3">Úroveň 3–4 celkem${m.sick ? '<small> bez nemocných</small>' : ''}</th>${m.coverage.map(c => `<td class="${c.ready < 2 ? 'mx-risk' : ''}">${c.ready}</td>`).join('')}${fill}</tr>
+        <tr><th colspan="3">Hodnoceno 1–4 celkem${m.sick ? '<small> bez nemocných</small>' : ''}</th>${m.coverage.map(c => `<td>${c.trained}</td>`).join('')}${fill}</tr></tfoot>
     </table></div></section>`;
 }
 
@@ -3272,13 +3278,14 @@ function renderMatrixGrid() {
   const shift = ['*', ...SHIFT_ORDER].includes(P.matrixShift) ? P.matrixShift : '*';
   $('#matrixGroup').innerHTML = mxFilterOptions(groups, f);
   $('#matrixShift').innerHTML = `<option value="*">Všechny směny</option>${SHIFT_ORDER.map(k => `<option value="${k}"${k === shift ? ' selected' : ''}>${esc(shiftName(k))}</option>`).join('')}`;
-  $('#matrixLegend').innerHTML = `${STD_SCALE.map((l, i) => `<span>${iluo(i)} ${i} ${esc(l.name.replace(' úroveň', ''))}</span>`).join('')}<span>${iluo(3, true)} dovednost vlastní skupiny</span><span><i class="mx-risk-dot"></i> na směně nikdo na úrovni 3–4</span>`;
+  $('#matrixIds').checked = !!P.matrixIds;
+  $('#matrixLegend').innerHTML = `${STD_SCALE.map((l, i) => `<span>${iluo(i)} ${i} ${esc(l.name.replace(' úroveň', ''))}</span>`).join('')}<span>${iluo(3, true)} dovednost vlastní skupiny</span><span><i class="mx-risk-dot"></i> na směně nikdo na úrovni 3–4</span><span><span class="tag warn">nemoc</span> je vidět, do počtů úrovní se dočasně nepočítá</span>`;
   if (!groups.length) {
     box.innerHTML = `<div class="card">${emptyState('Žádné dovednosti', 'Nejdřív založ skupiny a jejich dovednosti v záložce Skupiny a pravidla.', '<button class="btn" type="button" data-mxtab="groups">Skupiny a pravidla</button>')}</div>`;
     return;
   }
   const deps = f.group ? [deptOf(f.group)] : f.dept ? [f.dept] : [...new Set(groups.map(deptOf))];
-  const secs = deps.map(d => ({ d, m: f.group ? skillGrid(f.group.id, shift) : skillGrid(null, shift, d) }));
+  const secs = deps.map(d => ({ d, m: f.group ? skillGrid(f.group.id, shift, null, P.matrixIds) : skillGrid(null, shift, d, P.matrixIds) }));
   // s filtrem směny jen oddělení, kde na směně někdo je
   const shown = shift === '*' || deps.length === 1 ? secs : secs.filter(x => x.m.rows.length);
   box.innerHTML = shown.length ? shown.map(x => mxSectionHtml(x.d, x.m, shift)).join('')
@@ -3545,6 +3552,206 @@ async function exportCapacityPdf(button) {
   });
 }
 
+/* ---------- PDF matice (2.20): lidé jen jako ID z evidence práce, bez jmen ---------- */
+/** Symbol úrovně 0–4 do PDF (čtvrtinový kruh jako v matici). */
+function pdfIluo(k, cx, cy, r, n, color) {
+  if (k.dry) return;
+  const doc = k.doc;
+  doc.setLineWidth(0.25);
+  doc.setDrawColor(...(n ? color : k.C.line2));
+  if (n >= 4) { doc.setFillColor(...color); doc.circle(cx, cy, r, 'FD'); return; }
+  if (n > 0) {
+    const pts = [[cx, cy]];
+    const steps = n * 8;
+    for (let i = 0; i <= steps; i += 1) { const a = (i / steps) * n * Math.PI / 2; pts.push([cx + r * Math.sin(a), cy - r * Math.cos(a)]); }
+    doc.setFillColor(...color);
+    doc.lines(pts.slice(1).map((pt, i) => [pt[0] - pts[i][0], pt[1] - pts[i][1]]), cx, cy, [1, 1], 'F', true);
+  }
+  doc.circle(cx, cy, r, 'S');
+}
+/** Matice podle filtru v záložce Matice (oddělení nebo skupina, směna). Vrací počet lidí bez ID. */
+function drawMatrix(doc) {
+  const k = pdfKit(doc);
+  const C = k.C;
+  const groups = S.positions.filter(p => isGroup(p) && groupSkills(p).length);
+  const f = mxFilter(groups);
+  const shift = ['*', ...SHIFT_ORDER].includes(P.matrixShift) ? P.matrixShift : '*';
+  const deps = f.group ? [deptOf(f.group)] : f.dept ? [f.dept] : [...new Set(groups.map(deptOf))];
+  const secs = deps.map(d => ({ d, m: f.group ? skillGrid(f.group.id, shift, null, true) : skillGrid(null, shift, d, true) })).filter(x => x.m.rows.length);
+  const people = new Map();
+  secs.forEach(x => x.m.rows.forEach(r => people.set(r.e.key, r.e)));
+  const home = secs.flatMap(x => x.m.rows.filter(r => r.home).map(r => r.e));
+  const sick = home.filter(e => e.sick).length;
+  const noId = [...people.values()].filter(e => !e.wid).length;
+  const nSkills = secs.reduce((a, x) => a + x.m.cols.length, 0);
+  const weak = secs.reduce((a, x) => a + x.m.coverage.filter(c => c.ready < 2).length, 0);
+  const scope = f.group ? `Skupina ${f.group.name || '(bez názvu)'}${deptOf(f.group) !== f.group.name ? ` (${deptOf(f.group)})` : ''}` : f.dept ? `Oddělení ${f.dept}` : 'Všechna oddělení';
+  k.header({ eyebrow: `${EXPORT_NAME} · MATICE DOVEDNOSTÍ`, right: `Stav k ${dayText(todayIso())}`, title: 'Matice dovedností',
+    sub: `${scope} · ${shift === '*' ? 'všechny směny' : shiftName(shift).toLowerCase()}`,
+    meta: 'Zaměstnanci jsou uvedení jen číslem z evidence práce (ID), bez jmen. Vyřazení lidé a vedoucí pracovníci v reportu nejsou. Lidé v nemoci jsou označení, do počtů úrovní a kapacity se dočasně nepočítají. Úroveň 0–4, každá úroveň je 25 % dovednosti.' });
+  k.tiles([['Lidé v matici', String(home.length), 'bez zaučených odjinud'], ['Nemoc', String(sick), sick ? 'jen pro přehled, nepočítají se' : 'nikdo', sick ? 'crit' : ''],
+    ['Dovednosti', String(nSkills), `${secs.length} oddělení`],
+    ['Slabé dovednosti', String(weak), 'úroveň 3–4 má méně než 2 lidi', weak ? 'crit' : 'good'],
+    ...(noId ? [['Bez ID', String(noId), 'doplň ID v části Lidé', 'crit']] : [])]);
+  if (!secs.length) { k.para('Ve vybraném oddělení a směně nikdo není.', k.M, k.CW, 10, { color: C.ink2 }); }
+  const ID_W = 34, GRP_W = 40, PCT_W = 12, FIX = ID_W + GRP_W + PCT_W, RH = 5.6, HEAD = 36, GH = 5;
+  const maxCols = Math.max(1, Math.floor((k.CW - FIX) / 7));
+  secs.forEach(({ d, m }) => {
+    const leads = leadPeople().length ? leadsOf(d) : null;
+    const homeRows = m.rows.filter(r => r.home);
+    const pcts = homeRows.map(r => r.pct).filter(v => v != null);
+    const avg = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
+    const secWeak = m.coverage.filter(c => c.ready < 2).length;
+    const info = [`${peopleCount(homeRows.length)}${m.sick ? ` (v nemoci ${m.sick})` : ''}`, m.rows.length - homeRows.length ? `+${m.rows.length - homeRows.length} zaučení odjinud` : '',
+      `průměr dovedností ${avg != null ? `${nf(avg, 0)} %` : '—'}`, `${secWeak} z ${m.cols.length} ${m.cols.length === 1 ? 'dovednosti' : 'dovedností'} má na úrovni 3–4 méně než 2 lidi`].filter(Boolean).join(' · ');
+    const chunks = [];
+    for (let i = 0; i < m.cols.length; i += maxCols) chunks.push(i);
+    chunks.forEach((start, ci) => {
+      const cols = m.cols.slice(start, start + maxCols);
+      const idx = cols.map((_, j) => start + j);
+      const cw = Math.min(12, (k.CW - FIX) / cols.length);
+      const multi = new Set(cols.map(c => c.p.id)).size > 1 || m.groups.length > 1;
+      // výška hlavičky podle nejdelšího názvu dovednosti (svisle), nejvýš HEAD; delší název do dvou řádků
+      const hh = clamp(Math.max(...cols.map(c => k.width(c.s.name, 7))) + 3, 14, HEAD);
+      const label = name => {
+        if (k.width(name, 7) <= hh - 3) return { size: 7, lines: [name] };
+        const all = k.split(name, hh - 3, 6.4);
+        const lines = all.slice(0, 2);
+        if (all.length > 2) { let t = lines[1]; while (t.length > 1 && k.width(`${t}…`, 6.4) > hh - 3) t = t.slice(0, -1); lines[1] = `${t.trimEnd()}…`; }
+        return { size: 6.4, lines };
+      };
+      const headH = hh + (multi ? GH : 0);
+      const drawHead = () => {
+        const top = k.y;
+        if (multi) {
+          let x = k.M + FIX;
+          const spans = [];
+          cols.forEach(c => { const last = spans[spans.length - 1]; if (last && last.p === c.p) last.n += 1; else spans.push({ p: c.p, n: 1 }); });
+          spans.forEach(g => {
+            const w = g.n * cw;
+            k.box(C.soft, x + 0.3, top, w - 0.6, GH - 0.8, 1);
+            k.mid(k.split(g.p.name || '', w - 2, 6.8, true)[0], x + w / 2, top + (GH - 0.8) / 2, 6.8, { bold: true, color: C.ink2, align: 'center' });
+            x += w;
+          });
+        }
+        const base = top + headH - 1.2;
+        k.text('ID zaměstnance', k.M, base - k.mm(7.4) * 1.1, 7.4, { bold: true, color: C.ink2 });
+        k.text('Skupina', k.M + ID_W, base - k.mm(7.4) * 1.1, 7.4, { bold: true, color: C.ink2 });
+        k.text('%', k.M + FIX - 1.5, base - k.mm(7.4) * 1.1, 7.4, { bold: true, color: C.ink2, align: 'right' });
+        if (!k.dry) {
+          cols.forEach((c, j) => {
+            const { size, lines } = label(c.s.name);
+            const cx = k.M + FIX + j * cw + cw / 2 + k.mm(size) * 0.35;
+            const lh = k.mm(size) * 1.15;
+            k.font(size, false, C.ink);
+            // svislý text: první řádek vlevo, druhý vpravo
+            lines.forEach((t, li) => doc.text(t, cx + (li - (lines.length - 1) / 2) * lh, base, { angle: 90 }));
+          });
+        }
+        k.y = top + headH;
+        k.hline(k.y, C.line2, 0.3);
+        k.y += 0.6;
+      };
+      const row = (label, vals, o = {}) => {
+        if (k.need(RH)) drawHead();
+        if (o.bg) k.box(o.bg, k.M, k.y, k.CW, RH);
+        k.mid(label, k.M + 1, k.y + RH / 2, 7.4, { bold: true, color: C.ink2 });
+        vals.forEach((v, j) => k.mid(String(v), k.M + FIX + j * cw + cw / 2, k.y + RH / 2, 7.6, { align: 'center', bold: !!o.risk && o.risk(v), color: o.risk && o.risk(v) ? C.crit : C.ink }));
+        k.y += RH;
+        k.hline(k.y, C.line, 0.15);
+      };
+      // nadpis oddělení s hlavičkou tabulky a aspoň třemi řádky na stejné straně
+      const need = k.mm(12.5) * 1.25 + 2.4 + (ci ? 0 : 2 * k.LH(8.4, 1.3) + 2) + headH + 3 * RH;
+      if (k.y + need > k.BOTTOM) k.newPage();
+      k.heading(`${d}${chunks.length > 1 ? ` · dovednosti ${start + 1}–${start + cols.length} z ${m.cols.length}` : ''}`, 12.5);
+      if (!ci) {
+        const sub = [`${m.groups.length > 1 ? 'Skupiny' : 'Skupina'} ${m.groups.map(p => p.name || '(bez názvu)').join(', ')}`,
+          leads ? `vedoucí: ${leads.length ? leads.map(e => (e.wid ? `ID ${e.wid}` : 'bez ID')).join(', ') : 'bez vedoucího'}` : ''].filter(Boolean).join(' · ');
+        k.split(sub, k.CW, 8.4).forEach(line => { k.text(line, k.M, k.y - 1, 8.4, { color: C.ink2 }); k.y += k.LH(8.4, 1.3); });
+        k.split(info, k.CW, 8.4).forEach(line => { k.text(line, k.M, k.y - 1, 8.4, { color: secWeak ? C.crit : C.ink2 }); k.y += k.LH(8.4, 1.3); });
+        k.y += 2;
+      }
+      drawHead();
+      const blocks = SHIFT_ORDER.filter(sh => m.rows.some(r => r.shift === sh));
+      blocks.forEach(sh => {
+        const rows = m.rows.filter(r => r.shift === sh);
+        // poslední řádek tabulky drží se součty, řádek směny s prvním člověkem (nezůstanou samotné na nové stránce)
+        const tailOf = ri => (ri === rows.length - 1 ? (blocks.length > 1 ? 1 : 0) + (sh === blocks[blocks.length - 1] ? 2 : 0) : 0);
+        if (blocks.length > 1 || shift === '*') {
+          if (k.need(RH * (2 + tailOf(0)))) drawHead();
+          k.box(C.soft3, k.M, k.y, k.CW, RH - 0.6, 1);
+          k.mid(`${shiftName(sh)} · ${peopleCount(rows.length)}`, k.M + 1.5, k.y + (RH - 0.6) / 2, 7.4, { bold: true, color: C.ink2 });
+          k.y += RH;
+        }
+        rows.forEach((r, ri) => {
+          if (k.need(RH * (1 + tailOf(ri)))) drawHead();
+          const cy = k.y + RH / 2;
+          const sickRow = !!r.e.sick;
+          if (sickRow) k.box(C.warnSoft, k.M, k.y, k.CW, RH);
+          const id = r.e.wid ? String(r.e.wid) : 'bez ID';
+          k.mid(k.split(id, ID_W - 14, 8, true)[0], k.M + 1, cy, 8, { bold: !!r.e.wid, color: r.e.wid ? C.ink : C.crit });
+          if (sickRow) k.pill('nemoc', k.M + ID_W - 1.5, cy, 'none', 6.4, 'right');
+          const grp = `${r.pos ? r.pos.name || '(bez názvu)' : '—'}${r.home ? '' : ' · zaučení'}`;
+          k.mid(k.split(grp, GRP_W - 2, 7.6)[0], k.M + ID_W, cy, 7.6, { color: r.home ? C.ink : C.ink2 });
+          k.mid(r.pct != null ? `${nf(r.pct, 0)} %` : '—', k.M + FIX - 1.5, cy, 7.6, { align: 'right', color: C.ink2 });
+          idx.forEach((jj, j) => {
+            const c = m.cols[jj];
+            const v = r.cells[jj];
+            const x = k.M + FIX + j * cw;
+            const own = r.e.positionId === c.p.id;
+            if (own && !sickRow) k.box(C.accSoft, x + 0.25, k.y + 0.25, cw - 0.5, RH - 0.5);
+            const color = sickRow ? C.ink3 : own ? C.acc : C.ink2;
+            const gx = v ? x + cw / 2 - 1.2 : x + cw / 2;
+            pdfIluo(k, gx, cy, 1.45, v, color);
+            if (v) k.mid(String(v), gx + 2.1, cy, 6.6, { bold: true, color });
+          });
+          k.y += RH;
+          k.hline(k.y, C.line, 0.15);
+        });
+        if (blocks.length > 1) row(`Úroveň 3–4 · ${shiftName(sh)}`, idx.map(j => m.coverage[j].by[sh].ready), { risk: v => !v });
+      });
+      k.hline(k.y, C.line2, 0.3);
+      row(`Úroveň 3–4 celkem${m.sick ? ' (bez nemocných)' : ''}`, idx.map(j => m.coverage[j].ready), { bg: C.soft, risk: v => v < 2 });
+      row(`Hodnoceno 1–4 celkem${m.sick ? ' (bez nemocných)' : ''}`, idx.map(j => m.coverage[j].trained), { bg: C.soft });
+      k.y += 7;
+    });
+  });
+  // legenda
+  k.keep(() => {
+    k.heading('Jak číst matici', 11);
+    let x = k.M;
+    STD_SCALE.forEach((l, i) => {
+      const t = `${i} ${l.name}`;
+      if (x + 6 + k.width(t, 8) > k.M + k.CW) { x = k.M; k.y += 6; }
+      pdfIluo(k, x + 1.6, k.y + 2, 1.6, i, C.acc);
+      k.text(t, x + 4.6, k.y + 0.2, 8, { color: C.ink2 });
+      x += 9 + k.width(t, 8);
+    });
+    k.y += 7;
+    k.box(C.accSoft, k.M, k.y, 7, 4.6, 0.6);
+    k.text('dovednost vlastní skupiny člověka', k.M + 9, k.y + 0.5, 8, { color: C.ink2 });
+    const w1 = 9 + k.width('dovednost vlastní skupiny člověka', 8) + 8;
+    k.pill('nemoc', k.M + w1, k.y + 2.3, 'none', 6.6);
+    k.text('v nemoci: jen pro přehled, do počtů úrovní a kapacity se dočasně nepočítá', k.M + w1 + 13, k.y + 0.5, 8, { color: C.ink2 });
+    k.y += 7;
+    k.para('Úroveň 3–4 celkem = kolik lidí dovednost zvládá samostatně (červeně, když méně než 2). Zaučení = člověk z jiné skupiny, který dovednost umí.', k.M, k.CW, 8, { color: C.ink3 });
+    k.y += 4;
+  }, 30);
+  k.need(26);
+  k.signoff();
+  k.footer(`${EXPORT_NAME} · matice dovedností · jen ID zaměstnanců · ${dayText(todayIso())}`);
+  return noId;
+}
+async function exportMatrixPdf(button) {
+  const noId = await withPdf(button, doc => {
+    doc.setProperties({ title: 'Matice dovedností', creator: EXPORT_NAME });
+    const n = drawMatrix(doc);
+    downloadFile(`matice-dovednosti-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
+    return n;
+  }, 'landscape');
+  if (noId) toast(`${noId === 1 ? '1 člověk nemá' : `${noId} ${noId <= 4 ? 'lidé nemají' : 'lidí nemá'}`} ID v evidenci práce, v PDF ${noId === 1 ? 'je' : 'jsou'} jako „bez ID“. ID doplníš v části Lidé.`, true);
+}
+
 function bindMatrixEvents() {
   $('#view-matice').addEventListener('click', async event => {
     const t = event.target;
@@ -3578,6 +3785,7 @@ function bindMatrixEvents() {
     const t = event.target;
     if (t.id === 'matrixGroup') { setPref({ matrixDept: t.value }); renderMatrixGrid(); return; }
     if (t.id === 'matrixShift') { setPref({ matrixShift: t.value }); renderMatrixGrid(); return; }
+    if (t.id === 'matrixIds') { setPref({ matrixIds: t.checked }); renderMatrixGrid(); return; }
     if (t.id === 'capThr') { capSave({ thr: clamp(+t.value || 3, 1, 4) }); renderCapacity(); return; }
     if (t.id === 'capS1') {
       // uloží se týden, kdy má skupina 1 ranní; dál se střídá po týdnu
@@ -3594,6 +3802,7 @@ function bindMatrixEvents() {
   });
   $('#btnMatrixXlsx').onclick = exportMatrix;
   $('#btnMatrixPrint').onclick = () => window.print();
+  $('#btnMatrixPdf').onclick = () => exportMatrixPdf($('#btnMatrixPdf'));
   $('#btnRulesPdf').onclick = exportRulesPdf;
 }
 
