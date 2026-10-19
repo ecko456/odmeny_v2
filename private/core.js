@@ -1457,7 +1457,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=19;
+const DATA_VERSION=20;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service"];
@@ -3976,8 +3976,8 @@ const SV_FAULTS=[["start","Nelze spustit"],["rpm","Nedrží stabilně otáčky"]
 const SV_FAULT_KEYS=SV_FAULTS.map(x=>x[0]);
 /* Text poznámky do protokolu, když jsou nečitelná obě čísla. */
 const SV_MARK_TEXT="Interní ID i výrobní číslo jsou nečitelné, proto bylo zařízení dodatečně označeno na spodní stěně horního krytu, kde je řídicí jednotka.";
-function blankService(){return {devices:[],shipments:[]};}
-function blankSvItem(){return {dev:"",kind:"",brand:"",model:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",purpose:"repair",faults:[],fault:"",back:"",backNote:""};}
+function blankService(){return {devices:[],shipments:[],templates:[]};}
+function blankSvItem(){return {dev:"",kind:"",brand:"",model:"",made:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",purpose:"repair",faults:[],fault:"",back:"",backNote:""};}
 const SV_ISO=/^\d{4}-\d{2}-\d{2}$/;
 function cleanService(o){
   o=o&&typeof o==="object"?o:{};
@@ -3985,7 +3985,7 @@ function cleanService(o){
   const iso=v=>SV_ISO.test(String(v||""))?String(v):"";
   const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
   const ident=x=>{const iidBad=!!x.iidBad,snBad=!!x.snBad;
-    return {kind:str(x.kind,80),brand:str(x.brand,80),model:str(x.model,80),iid:iidBad?"":str(x.iid,60),sn:snBad?"":str(x.sn,80),iidBad,snBad,mark:str(x.mark,60)};};
+    return {kind:str(x.kind,80),brand:str(x.brand,80),model:str(x.model,80),made:str(x.made,10),iid:iidBad?"":str(x.iid,60),sn:snBad?"":str(x.sn,80),iidBad,snBad,mark:str(x.mark,60)};};
   const devices=(Array.isArray(o.devices)?o.devices:[]).filter(d=>d&&typeof d==="object").slice(0,3000)
     .map(d=>({id:uniq(d.id,"dv"),...ident(d),note:str(d.note,1000),at:Number.isFinite(+d.at)?Math.max(0,+d.at):0,by:str(d.by,60)}));
   const ids=new Set(devices.map(d=>d.id));
@@ -3998,7 +3998,24 @@ function cleanService(o){
         faults:SV_FAULT_KEYS.filter(k=>Array.isArray(i.faults)&&i.faults.includes(k)),
         fault:str(i.fault,600),back:back&&back>=x.date?back:"",backNote:str(i.backNote,300)};
     })}));
-  return {devices,shipments};
+  /* vzory zařízení (2.22): druh, značka a model k rychlému vyplnění položky */
+  const tkeys=new Set();
+  const templates=(Array.isArray(o.templates)?o.templates:[]).filter(t=>t&&typeof t==="object").slice(0,300)
+    .map(t=>({id:uniq(t.id,"tp"),kind:str(t.kind,80),brand:str(t.brand,80),model:str(t.model,80)}))
+    .filter(t=>{const k=svTplKey(t);if(k==="||"||tkeys.has(k))return false;tkeys.add(k);return true;});
+  return {devices,shipments,templates};
+}
+function svTplKey(t){return [t.kind,t.brand,t.model].map(v=>String(v||"").trim().toLowerCase().replace(/\s+/g," ")).join("|");}
+/* Uloží vzor (druh, značka, model); stejný vzor podruhé nepřidá. Vrací {t, existed}. */
+function svAddTemplate(svc,x){
+  svc.templates=svc.templates||[];
+  const t={kind:String(x.kind||"").trim().slice(0,80),brand:String(x.brand||"").trim().slice(0,80),model:String(x.model||"").trim().slice(0,80)};
+  if(!t.kind&&!t.brand&&!t.model)return null;
+  const same=svc.templates.find(y=>svTplKey(y)===svTplKey(t));
+  if(same)return {t:same,existed:true};
+  const out={id:uid("tp"),...t};
+  svc.templates.push(out);
+  return {t:out,existed:false};
 }
 /* Závady položky lidsky: zaškrtnuté v pořadí seznamu a jiná závada („…; jiná: …“). */
 function svFaultText(i){
@@ -4045,10 +4062,10 @@ function svSaveShipment(svc,draft,meta){
   items.forEach(it=>{
     let d=it.dev&&svc.devices.find(x=>x.id===it.dev);
     if(!d)d=svFindDevice(svc,it);
-    if(!d){d={id:uid("dv"),kind:"",brand:"",model:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",note:"",at:meta.at||Date.now(),by:meta.by||""};svc.devices.push(d);created.push(d);}
+    if(!d){d={id:uid("dv"),kind:"",brand:"",model:"",made:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",note:"",at:meta.at||Date.now(),by:meta.by||""};svc.devices.push(d);created.push(d);}
     // evidence = poslední známé údaje; prázdné pole v položce nic nesmaže a jinak zapsané
     // stejné číslo („x9“ proti „X-9“) evidenci nepřepíše
-    ["kind","brand","model"].forEach(k=>{if(it[k])d[k]=it[k];});
+    ["kind","brand","model","made"].forEach(k=>{if(it[k])d[k]=it[k];});
     if(it.mark&&svKey(it.mark)!==svKey(d.mark))d.mark=it.mark;
     if(it.iid){if(svKey(it.iid)!==svKey(d.iid))d.iid=it.iid;d.iidBad=false;}else if(it.iidBad&&!d.iid)d.iidBad=true;
     if(it.sn){if(svKey(it.sn)!==svKey(d.sn))d.sn=it.sn;d.snBad=false;}else if(it.snBad&&!d.sn)d.snBad=true;
@@ -4095,7 +4112,7 @@ function svChanges(A,B,add){
     const o=ma.get(x.id);
     const head="Servis "+svNo(x);
     if(!o){add("service","Servis: odeslání "+svNo(x)+" ("+dayText(x.date)+(x.to?", "+x.to:"")+"): "+x.items.length+" zařízení – "+x.items.map(i=>nm(B,i)+(i.purpose==="scrap"?" k vyřazení":"")).join("; "),{m:"svs:"+x.id});return;}
-    const key=i=>JSON.stringify([i.dev,i.kind,i.brand,i.model,i.iid,i.sn,i.iidBad,i.snBad,i.mark,i.purpose,i.faults,i.fault]);
+    const key=i=>JSON.stringify([i.dev,i.kind,i.brand,i.model,i.made,i.iid,i.sn,i.iidBad,i.snBad,i.mark,i.purpose,i.faults,i.fault]);
     if(o.date!==x.date||o.to!==x.to||o.note!==x.note||JSON.stringify(o.items.map(key))!==JSON.stringify(x.items.map(key)))
       add("service",head+": upraven protokol ("+dayText(x.date)+(x.to?", "+x.to:"")+", "+x.items.length+" zařízení)",{m:"svs:"+x.id});
     x.items.forEach(i=>{
@@ -4106,7 +4123,7 @@ function svChanges(A,B,add){
     });
   });
   A.shipments.forEach(x=>{if(!B.shipments.some(y=>y.id===x.id))add("service","Servis: smazán protokol "+svNo(x)+" ("+dayText(x.date)+", "+x.items.length+" zařízení)",{m:"svs:"+x.id});});
-  const FIELDS={kind:"druh",brand:"značka",model:"model",iid:"interní ID",sn:"výrobní číslo",iidBad:"ID nečitelné",snBad:"v. č. nečitelné",mark:"dodatečné označení",note:"poznámka"};
+  const FIELDS={kind:"druh",brand:"značka",model:"model",made:"rok výroby",iid:"interní ID",sn:"výrobní číslo",iidBad:"ID nečitelné",snBad:"v. č. nečitelné",mark:"dodatečné označení",note:"poznámka"};
   const da=new Map(A.devices.map(d=>[d.id,d]));
   B.devices.forEach(d=>{
     const o=da.get(d.id);
@@ -4115,6 +4132,9 @@ function svChanges(A,B,add){
     if(ch.length)add("service","Servis – zařízení "+svDevName(d)+": upravené údaje – "+ch.map(k=>FIELDS[k]).join(", "),{m:"svd:"+d.id+":"+ch.join()});
   });
   A.devices.forEach(d=>{if(!B.devices.some(y=>y.id===d.id))add("service","Servis: smazáno zařízení "+svDevName(d)+(svDevIdent(d)?" ("+svDevIdent(d)+")":""),{m:"svd:"+d.id});});
+  const ta=A.templates||[],tb=B.templates||[];
+  tb.forEach(t=>{if(!ta.some(y=>y.id===t.id))add("service","Servis: nový vzor zařízení "+svDevName(t),{m:"svt:"+t.id});});
+  ta.forEach(t=>{if(!tb.some(y=>y.id===t.id))add("service","Servis: smazán vzor zařízení "+svDevName(t),{m:"svt:"+t.id});});
 }
 
 if(typeof module==="object"&&module.exports){

@@ -93,7 +93,7 @@ function compare(beforeJson, afterJson) {
   };
   Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks', 'workAudit', 'service'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
   // 2.21 prázdný Servis (evidence zařízení a odeslání)
-  if ('service' in b) same(a.service || { devices: [], shipments: [] }, b.service, 'service');
+  if ('service' in b) same({ devices: [], shipments: [], templates: [], ...(a.service || {}) }, b.service, 'service');
   // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu,
   // 2.16 prázdné Protokoly, 2.17 prázdný Audit
   if ('leadSkills' in b) same(a.leadSkills || [], b.leadSkills, 'leadSkills');

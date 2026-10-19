@@ -7291,7 +7291,7 @@ function svShipHtml(x) {
       ? `<span class="tag ok">vráceno ${esc(dayText(i.back))}</span><small>${days} ${denN(days)} na servisu${i.backNote ? ` · ${esc(i.backNote)}` : ''}</small><button class="linkish" type="button" data-svunback="${esc(x.id)}" data-j="${j}">zrušit vrácení</button>`
       : `<span class="tag warn">na servisu${days > 0 ? ` ${days} ${denN(days)}` : ''}</span><button class="btn sec small" type="button" data-svback="${esc(x.id)}" data-j="${j}">Vráceno</button>`;
     return `<tr>
-      <td class="name" data-label="Zařízení"><b>${esc(svDevName(i))}</b>${dv ? `<button class="linkish" type="button" data-svdev="${esc(dv.id)}">historie</button>` : ''}</td>
+      <td class="name" data-label="Zařízení"><b>${esc(svDevName(i))}</b>${i.made ? `<small class="sv-made">rok výroby ${esc(i.made)}</small>` : ''}${dv ? `<button class="linkish" type="button" data-svdev="${esc(dv.id)}">historie</button>` : ''}</td>
       <td data-label="Interní ID">${svIdCell(i.iid, i.iidBad)}</td>
       <td data-label="Výrobní číslo">${svIdCell(i.sn, i.snBad)}</td>
       <td class="sv-block" data-label="Závada">${svFaultText(i) ? esc(svFaultText(i)) : '<span class="muted">—</span>'}${i.iidBad && i.snBad ? `<small class="sv-mark">Dodatečně označeno na spodní stěně horního krytu, kde je řídicí jednotka: <b>${esc(i.mark)}</b></small>` : ''}</td>
@@ -7335,7 +7335,16 @@ function svDevicesHtml() {
   const c = svc();
   if (!c.devices.length) return `<div class="card">${emptyState('Evidence je prázdná', 'Zařízení se do evidence zapíšou samy při prvním odeslání na servis.')}</div>`;
   return `<div class="toolbar"><input type="search" id="svQ" value="${esc(ui.sv.q)}" placeholder="Hledat zařízení (druh, značka, ID, výrobní číslo…)" aria-label="Hledat zařízení"></div><div id="svDevTable"></div>
-    <p class="hint">Na servisu = kolikrát zařízení odjelo na servis. Průměrně na servisu = dny od odeslání do vrácení. Odstup = průměrná doba mezi dvěma odesláními. Klepnutím na zařízení otevřeš jeho historii a údaje.</p>`;
+    <p class="hint">Na servisu = kolikrát zařízení odjelo na servis. Průměrně na servisu = dny od odeslání do vrácení. Odstup = průměrná doba mezi dvěma odesláními. Klepnutím na zařízení otevřeš jeho historii a údaje.</p>
+    ${svTemplatesHtml()}`;
+}
+/* Vzory zařízení (2.22): druh, značka a model; ukládají se v editoru protokolu u položky. */
+function svTemplatesHtml() {
+  const list = (svc().templates || []).slice().sort((a, b) => svDevName(a).localeCompare(svDevName(b), 'cs'));
+  return `<div class="card sv-tpls"><h3>Vzory zařízení</h3>
+    <p class="small muted">Vzor si pamatuje druh zařízení, značku a model. V novém odeslání ho vybereš v nabídce Podle vzoru u zařízení a zbývá doplnit interní ID, výrobní číslo a rok výroby. Vzor uložíš v protokolu tlačítkem Uložit jako vzor u zařízení.</p>
+    ${list.length ? `<ul class="sv-tpl-list">${list.map(t => `<li><span>${esc(svDevName(t))}</span><button type="button" class="icon-btn" data-svtpldel="${esc(t.id)}" title="Smazat vzor" aria-label="Smazat vzor ${esc(svDevName(t))}">${I.x}</button></li>`).join('')}</ul>` : '<p class="small muted">Zatím žádný vzor.</p>'}
+  </div>`;
 }
 function svDevTable() {
   const el = $('#svDevTable');
@@ -7346,7 +7355,7 @@ function svDevTable() {
     .filter(x => !q || norm(`${svDevName(x.dv)} ${x.dv.iid} ${x.dv.sn} ${x.dv.mark} ${x.dv.note}`).includes(q))
     .sort((a, b) => (b.h.out - a.h.out) || (!!a.h.retired - !!b.h.retired) || (b.h.count - a.h.count) || svDevName(a.dv).localeCompare(svDevName(b.dv), 'cs'));
   el.innerHTML = rows.length ? `<div class="table-card"><table class="stack sv-dev-tab"><thead><tr><th>Zařízení</th><th>Identifikace</th><th class="r">Na servisu</th><th class="r">Za 12 měsíců</th><th>Naposledy</th><th class="r">Průměrně na servisu</th><th class="r">Odstup</th><th>Stav</th></tr></thead><tbody>${rows.map(({ dv, h }) => `<tr class="sv-row" data-svdev="${esc(dv.id)}" tabindex="0">
-      <td class="name" data-label="Zařízení"><b>${esc(svDevName(dv))}</b></td>
+      <td class="name" data-label="Zařízení"><b>${esc(svDevName(dv))}</b>${dv.made ? `<small class="sv-made">rok výroby ${esc(dv.made)}</small>` : ''}</td>
       <td data-label="Identifikace">${esc(svDevIdent(dv) || '—')}</td>
       <td class="r num" data-label="Na servisu">${h.count}×</td>
       <td class="r num" data-label="Za 12 měsíců">${h.year}×</td>
@@ -7375,9 +7384,10 @@ async function svDeviceDialog(id) {
       <div class="table-card flat"><table class="stack sv-hist-tab"><thead><tr><th>Odesláno</th><th>Protokol</th><th>Servis</th><th>Účel a závada</th><th>Vráceno</th></tr></thead><tbody>${hist || '<tr><td colspan="5" class="muted">Zatím bez odeslání.</td></tr>'}</tbody></table></div>
       <h3 class="sv-dlg-h">Údaje v evidenci</h3>
       <div class="sv-grid">${f('kind', 'Druh zařízení', dv.kind, 80)}${f('brand', 'Značka', dv.brand, 80)}${f('model', 'Model', dv.model, 80)}</div>
-      <div class="sv-grid two">
+      <div class="sv-grid ids">
         <div class="field"><span>Interní ID</span><div class="sv-num"><input type="text" name="iid" value="${esc(dv.iid)}" maxlength="60"${dv.iidBad ? ' disabled' : ''}><label class="sv-bad"><input type="checkbox" name="iidBad"${dv.iidBad ? ' checked' : ''}><span>nečitelné</span></label></div></div>
         <div class="field"><span>Výrobní číslo</span><div class="sv-num"><input type="text" name="sn" value="${esc(dv.sn)}" maxlength="80"${dv.snBad ? ' disabled' : ''}><label class="sv-bad"><input type="checkbox" name="snBad"${dv.snBad ? ' checked' : ''}><span>nečitelné</span></label></div></div>
+        <label class="field"><span>Rok výroby</span><input type="text" name="made" inputmode="numeric" value="${esc(dv.made || '')}" maxlength="10"></label>
       </div>
       ${f('mark', 'Dodatečné označení (spodní stěna horního krytu u řídicí jednotky)', dv.mark, 60)}
       <label class="field"><span>Poznámka</span><textarea name="note" rows="2" maxlength="1000">${esc(dv.note)}</textarea></label>
@@ -7409,7 +7419,7 @@ async function svDeviceDialog(id) {
   const e = res.form.elements;
   Object.assign(dv, { kind: e.kind.value.trim().slice(0, 80), brand: e.brand.value.trim().slice(0, 80), model: e.model.value.trim().slice(0, 80),
     iidBad: e.iidBad.checked, snBad: e.snBad.checked, iid: e.iidBad.checked ? '' : e.iid.value.trim().slice(0, 60), sn: e.snBad.checked ? '' : e.sn.value.trim().slice(0, 80),
-    mark: e.mark.value.trim().slice(0, 60), note: e.note.value.trim().slice(0, 1000) });
+    made: e.made.value.trim().slice(0, 10), mark: e.mark.value.trim().slice(0, 60), note: e.note.value.trim().slice(0, 1000) });
   save();
   renderService();
 }
@@ -7418,7 +7428,7 @@ async function svDeviceDialog(id) {
 function svEditorHtml(d) {
   const c = svc();
   const ship = d.id && c.shipments.find(x => x.id === d.id);
-  const all = [...c.devices, ...c.shipments.flatMap(x => x.items)];
+  const all = [...c.devices, ...c.shipments.flatMap(x => x.items), ...(c.templates || [])];
   return `<div class="card sv-editor">
     <div class="card-head"><div><h2>${ship ? `Upravit protokol ${esc(svNo(ship))}` : 'Nové odeslání na servis'}</h2>
       <p class="small muted">Datum odeslání a zařízení, která jedou na servis. Po uložení se zařízení zapíšou do evidence (nebo se přiřadí k těm, která už v ní jsou) a stáhne se předávací protokol v PDF.</p></div></div>
@@ -7447,9 +7457,11 @@ function svItemHtml(it, i, n) {
   return `<article class="sv-item" data-svitem="${i}">
     <div class="sv-item-head"><span class="lb-num">${i + 1}</span>
       ${svc().devices.length ? `<input type="search" class="sv-pick" data-svpick="${i}" list="svDevList" placeholder="Vybrat z evidence (ID, výrobní číslo, značka…)" aria-label="Vybrat zařízení z evidence">` : '<b>Zařízení</b>'}
+      ${(svc().templates || []).length ? `<select class="sv-tpl" data-svtpl="${i}" aria-label="Vyplnit podle vzoru"><option value="">Podle vzoru…</option>${svc().templates.slice().sort((a, b) => svDevName(a).localeCompare(svDevName(b), 'cs')).map(t => `<option value="${esc(t.id)}">${esc(svDevName(t))}</option>`).join('')}</select>` : ''}
+      <button type="button" class="btn ghost small sv-tplsave" data-svtplsave="${i}" title="Uložit druh, značku a model jako vzor">Uložit jako vzor</button>
       <button type="button" class="icon-btn" data-svdel="${i}" title="Odebrat zařízení" aria-label="Odebrat zařízení ${i + 1}"${n > 1 ? '' : ' disabled'}>${I.x}</button></div>
     <div class="sv-grid">${field('kind', 'Druh zařízení', 80, 'svKindList', 'např. bruska')}${field('brand', 'Značka', 80, 'svBrandList')}${field('model', 'Model', 80, 'svModelList')}</div>
-    <div class="sv-grid two">${num('iid', 'Interní ID', 60)}${num('sn', 'Výrobní číslo', 80)}</div>
+    <div class="sv-grid ids">${num('iid', 'Interní ID', 60)}${num('sn', 'Výrobní číslo', 80)}<label class="field"><span>Rok výroby</span><input type="text" inputmode="numeric" data-svf="made" data-svi="${i}" value="${esc(it.made)}" maxlength="10" placeholder="např. 2019"></label></div>
     ${both ? `<div class="note w sv-markbox"><p>${esc(SV_MARK_TEXT)}</p>${field('mark', 'Dodatečné označení (co je napsané na spodní stěně horního krytu)', 60, '', 'např. S-014')}</div>` : ''}
     <div class="field"><span>Odesíláme</span><div class="sv-purpose" role="radiogroup" aria-label="Účel odeslání zařízení ${i + 1}">${SV_PURPOSE.map(([k, t]) => `<label class="sv-opt${k === 'scrap' ? ' scrap' : ''}"><input type="radio" name="svp${i}" data-svp="${k}" data-svi="${i}" value="${k}"${(it.purpose || 'repair') === k ? ' checked' : ''}><span>${t}</span></label>`).join('')}</div></div>
     <div class="field"><span>Závada</span><div class="sv-faults">${SV_FAULTS.map(([k, t]) => `<label class="sv-fault"><input type="checkbox" data-svfault="${k}" data-svi="${i}"${(it.faults || []).includes(k) ? ' checked' : ''}><span>${esc(t)}</span></label>`).join('')}</div></div>
@@ -7476,7 +7488,7 @@ function svHint(i) {
 function svDraftDirty(d) {
   const ship = d.id && svc().shipments.find(x => x.id === d.id);
   const base = ship ? svDraftOf(ship) : svDraftNew();
-  const key = x => JSON.stringify([x.date, x.to, x.note, x.items.map(i => [i.dev, i.kind, i.brand, i.model, i.iid, i.sn, i.iidBad, i.snBad, i.mark, i.purpose, i.faults, i.fault])]);
+  const key = x => JSON.stringify([x.date, x.to, x.note, x.items.map(i => [i.dev, i.kind, i.brand, i.model, i.made, i.iid, i.sn, i.iidBad, i.snBad, i.mark, i.purpose, i.faults, i.fault])]);
   return key(base) !== key({ ...d, date: ship ? d.date : base.date });
 }
 async function svSaveDraft(pdf) {
@@ -7526,6 +7538,17 @@ function bindService() {
       if (t.closest('[data-svadd]')) { d.items.push(blankSvItem()); renderService(); $(`[data-svitem="${d.items.length - 1}"] [data-svf="kind"]`)?.focus(); return; }
       const del = t.closest('[data-svdel]');
       if (del) { d.items.splice(+del.dataset.svdel, 1); if (!d.items.length) d.items.push(blankSvItem()); renderService(); return; }
+      const tps = t.closest('[data-svtplsave]');
+      if (tps) {
+        const it = d.items[+tps.dataset.svtplsave];
+        const r = it && svAddTemplate(svc(), it);
+        if (!r) { toast('Vyplň druh zařízení, značku nebo model.', true); return; }
+        if (r.existed) { toast(`Vzor ${svDevName(r.t)} už je uložený.`); return; }
+        save();
+        renderService();
+        toast(`Vzor uložen: ${svDevName(r.t)}. Příště ho vybereš v Podle vzoru.`);
+        return;
+      }
       const un = t.closest('[data-svunlink]');
       if (un) { d.items[+un.dataset.svunlink].dev = ''; svHint(+un.dataset.svunlink); return; }
       if (t.closest('[data-svcancel]')) {
@@ -7538,6 +7561,14 @@ function bindService() {
     }
     const devBtn = t.closest('[data-svdev]');
     if (devBtn) { await svDeviceDialog(devBtn.dataset.svdev); return; }
+    const tpd = t.closest('[data-svtpldel]');
+    if (tpd) {
+      const c = svc();
+      const tp = (c.templates || []).find(x => x.id === tpd.dataset.svtpldel);
+      if (!tp || !(await confirmBox('Smazat vzor?', `Vzor ${svDevName(tp)} zmizí z nabídky Podle vzoru. Zařízení ani protokoly se nemění.`, 'Smazat', true))) return;
+      c.templates = c.templates.filter(x => x !== tp);
+      save(); renderService(); return;
+    }
     if (t.closest('[data-svall]')) { ui.sv.all = true; renderService(); return; }
     const back = t.closest('[data-svback]');
     if (back) { await svBackDialog(back.dataset.svback, +back.dataset.j); return; }
@@ -7592,9 +7623,18 @@ function bindService() {
       const i = +t.dataset.svpick;
       const dv = svc().devices.find(x => svLabel(x) === t.value);
       if (!dv) return;
-      Object.assign(d.items[i], { dev: dv.id, kind: dv.kind, brand: dv.brand, model: dv.model, iid: dv.iid, sn: dv.sn, iidBad: dv.iidBad, snBad: dv.snBad, mark: dv.mark });
+      Object.assign(d.items[i], { dev: dv.id, kind: dv.kind, brand: dv.brand, model: dv.model, made: dv.made || '', iid: dv.iid, sn: dv.sn, iidBad: dv.iidBad, snBad: dv.snBad, mark: dv.mark });
       renderService();
       $(`[data-svitem="${i}"] [data-svf="fault"]`)?.focus();
+      return;
+    }
+    if (t.dataset.svtpl != null) {
+      const i = +t.dataset.svtpl;
+      const tp = (svc().templates || []).find(x => x.id === t.value);
+      if (!tp || !d.items[i]) return;
+      Object.assign(d.items[i], { kind: tp.kind, brand: tp.brand, model: tp.model });
+      renderService();
+      $(`[data-svitem="${i}"] [data-svf="iid"]`)?.focus();
       return;
     }
     if (t.type === 'checkbox' && t.dataset.svf) {
@@ -7644,7 +7684,7 @@ function drawServiceProtocol(doc, x) {
   if (x.note) { k.y += 1; k.para(x.note, k.M, k.CW, 9.2, { color: C.ink2 }); }
   k.y += 5;
   // tabulka zařízení
-  const cols = [[7, '#'], [32, 'Druh zařízení'], [26, 'Značka'], [30, 'Model'], [38, 'Interní ID'], [45, 'Výrobní číslo']];
+  const cols = [[7, '#'], [30, 'Druh zařízení'], [24, 'Značka'], [28, 'Model'], [16, 'Rok výroby'], [34, 'Interní ID'], [39, 'Výrobní číslo']];
   const head = () => {
     k.box(C.soft3, k.M, k.y, k.CW, 6.4, 1.2);
     let cx = k.M;
@@ -7654,8 +7694,8 @@ function drawServiceProtocol(doc, x) {
   const lh = k.LH(9, 1.3);
   head();
   x.items.forEach((it, n) => {
-    const vals = [[String(n + 1)], ...[it.kind, it.brand, it.model].map((v, i) => k.split(v || '—', cols[i + 1][0] - 3, 9)),
-      it.iidBad ? ['nečitelné'] : k.split(it.iid || '—', cols[4][0] - 3, 9, true), it.snBad ? ['nečitelné'] : k.split(it.sn || '—', cols[5][0] - 3, 9, true)];
+    const vals = [[String(n + 1)], ...[it.kind, it.brand, it.model, it.made].map((v, i) => k.split(v || '—', cols[i + 1][0] - 3, 9)),
+      it.iidBad ? ['nečitelné'] : k.split(it.iid || '—', cols[5][0] - 3, 9, true), it.snBad ? ['nečitelné'] : k.split(it.sn || '—', cols[6][0] - 3, 9, true)];
     const sub = [{ t: `${it.purpose === 'scrap' ? 'K VYŘAZENÍ' : 'K opravě'}${svFaultText(it) ? ` · Závada: ${svFaultText(it)}` : ''}`, mark: false, scrap: it.purpose === 'scrap' }];
     if (it.iidBad && it.snBad) sub.push({ t: `${SV_MARK_TEXT}${it.mark ? ` Dodatečné označení: ${it.mark}` : ''}`, mark: true });
     const subLines = sub.map(s => ({ ...s, lines: k.split(s.t, k.CW - cols[0][0] - 6, 8.2, s.mark || s.scrap) }));
@@ -7663,8 +7703,8 @@ function drawServiceProtocol(doc, x) {
     if (k.need(h)) head();
     let cx = k.M;
     vals.forEach((lines, i) => {
-      const bad = (i === 4 && it.iidBad) || (i === 5 && it.snBad);
-      lines.forEach((line, li) => k.text(line, cx + 1.6, k.y + 1 + li * lh, 9, { bold: bad || i >= 4 || i === 0, color: bad ? C.crit : i === 0 ? C.ink3 : C.ink }));
+      const bad = (i === 5 && it.iidBad) || (i === 6 && it.snBad);
+      lines.forEach((line, li) => k.text(line, cx + 1.6, k.y + 1 + li * lh, 9, { bold: bad || i >= 5 || i === 0, color: bad ? C.crit : i === 0 ? C.ink3 : C.ink }));
       cx += cols[i][0];
     });
     k.y += Math.max(...vals.map(v => v.length)) * lh + 1.6;

@@ -101,8 +101,16 @@ async function confirm(page) {
   await page.keyboard.press('Tab');   // zaškrtávátko nečitelné
   await page.keyboard.press('Tab');
   await page.keyboard.type('SN-001');
-  check(await page.evaluate(() => JSON.stringify(ui.sv.draft.items[0])) === JSON.stringify({ dev: '', kind: 'Bruska', brand: 'Makita', model: 'GA5030', iid: 'B-12', sn: 'SN-001', iidBad: false, snBad: false, mark: '', purpose: 'repair', faults: [], fault: '', back: '', backNote: '' }),
+  check(await page.evaluate(() => JSON.stringify(ui.sv.draft.items[0])) === JSON.stringify({ dev: '', kind: 'Bruska', brand: 'Makita', model: 'GA5030', made: '', iid: 'B-12', sn: 'SN-001', iidBad: false, snBad: false, mark: '', purpose: 'repair', faults: [], fault: '', back: '', backNote: '' }),
     `psaní z klávesnice do položky: ${await page.evaluate(() => JSON.stringify(ui.sv.draft.items[0]))}`);
+  await page.fill(`${item(0)} [data-svf="made"]`, '2019');
+  // vzor zařízení (2.22): uloží druh, značku a model, rozepsaný protokol zůstane
+  await page.click(`${item(0)} [data-svtplsave="0"]`);
+  await page.waitForFunction(() => (S.service.templates || []).length === 1 && /Vzor uložen: Bruska · Makita GA5030/.test(document.querySelector('#toast').textContent));
+  check(await page.inputValue(`${item(0)} [data-svf="sn"]`) === 'SN-001' && await page.inputValue(`${item(0)} [data-svf="made"]`) === '2019' && await page.$(`${item(0)} [data-svtpl="0"]`), 'po uložení vzoru zůstane rozepsaná položka a objeví se výběr vzoru');
+  await page.click(`${item(0)} [data-svtplsave="0"]`);
+  await page.waitForFunction(() => /už je uložený/.test(document.querySelector('#toast').textContent));
+  check(await page.evaluate(() => S.service.templates.length === 1), 'stejný vzor podruhé nepřibude');
   check(await page.isChecked(`${item(0)} [data-svp="repair"]`), 'výchozí účel: k opravě');
   await page.check(`${item(0)} [data-svfault="start"]`);
   await page.check(`${item(0)} [data-svfault="heat"]`);
@@ -130,11 +138,13 @@ async function confirm(page) {
   await saved(page);
   const st1 = await page.evaluate(() => ({ dev: S.service.devices.map(d => [d.kind, d.iid, d.sn, d.iidBad, d.snBad, d.mark]), ship: S.service.shipments.map(x => [svNo(x), x.date, x.to, x.items.length, x.by]),
     items: S.service.shipments[0].items.map(i => [i.purpose, i.faults.join(), i.fault]) }));
+  check(await page.evaluate(() => S.service.devices[0].made === '2019' && S.service.shipments[0].items[0].made === '2019'), 'rok výroby v protokolu i evidenci');
   check(JSON.stringify(st1) === JSON.stringify({ dev: [['Bruska', 'B-12', 'SN-001', false, false, ''], ['Vrtačka', '', 'X-9', true, false, ''], ['Pila', '', '', true, true, 'S-01']], ship: [['2026/001', '2026-10-19', 'Servis Brno', 3, 'Vedoucí dílny']],
     items: [['repair', 'start,heat', 'jiskří motor'], ['repair', '', ''], ['scrap', 'vibr,damage', '']] }), `po uložení: ${JSON.stringify(st1)}`);
   check(pdf1.pdf && pdf1.name === 'servis-protokol-2026-001.pdf', `PDF protokolu: ${pdf1.name}`);
   const t1 = pdfText(pdf1.path);
   if (t1 != null) {
+    check(/Rok výroby/.test(t1) && /GA5030 2019 B-12/.test(t1), `PDF rok výroby: ${t1.slice(0, 700)}`);
     check(/Předávací protokol/i.test(t1) && /2026\/001/.test(t1) && /19\. 10\. 2026/.test(t1) && /Servis Brno/.test(t1) && /Makita/.test(t1) && /B-12/.test(t1) && /SN-001/.test(t1) && /X-9/.test(t1), `PDF údaje: ${t1.slice(0, 500)}`);
     check(/nečitelné/.test(t1) && /spodní stěně horního krytu/.test(t1) && /S-01/.test(t1) && /Převzal za servis/.test(t1) && /HALA 2/.test(t1) && !/Odměny/.test(t1), `PDF nečitelné, označení, podpisy: ${t1.slice(0, 900)}`);
     check(/K opravě · Závada: Nelze spustit, Přehřívá se, jiná: jiskří motor/.test(t1) && /K VYŘAZENÍ · Závada: Nadměrné rezonance – nejde dlouho držet v ruce, Poškozené zařízení/.test(t1) && /k opravě 2, k vyřazení 1/.test(t1), `PDF účel a závady: ${t1.slice(0, 1200)}`);
@@ -205,7 +215,7 @@ async function confirm(page) {
   await page.click('[data-svtab="dev"]');
   await page.waitForSelector('#svDevTable tr[data-svdev]');
   const devRows = await page.$$eval('#svDevTable tbody tr', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
-  check(devRows.length === 3 && /^Bruska · Makita GA5030 ID B-12 · v\. č\. SN-001 2× 2× 2\. 11\. 2026 7 dní 14 dní v provozu$/.test(devRows[0]) && /vyřazeno 19\. 10\. 2026$/.test(devRows[2]), `evidence: ${JSON.stringify(devRows)}`);
+  check(devRows.length === 3 && /^Bruska · Makita GA5030rok výroby 2019 ID B-12 · v\. č\. SN-001 2× 2× 2\. 11\. 2026 7 dní 14 dní v provozu$/.test(devRows[0]) && /vyřazeno 19\. 10\. 2026$/.test(devRows[2]), `evidence: ${JSON.stringify(devRows)}`);
   check(/z toho 1 vyřazených/.test(await page.textContent('#svView .stats')), 'dlaždice: vyřazená zařízení');
   await page.fill('#svQ', 'festool');
   await page.waitForFunction(() => document.querySelectorAll('#svDevTable tbody tr').length === 1);
@@ -216,7 +226,7 @@ async function confirm(page) {
   await page.click('#svDevTable tr[data-svdev]:has-text("Makita")');
   await page.waitForSelector('#dlg[open] .sv-hist-tab');
   check(await page.$$eval('#dlg .sv-hist-tab tbody tr', els => els.length) === 2 && /na servisu 2× \(za 12 měsíců 2×\)/.test(await page.textContent('#dlg')) && /vyměněn vypínač/.test(await page.textContent('#dlg')), 'historie zařízení v dialogu');
-  check(!(await page.$('#dlg #svDevDel')), 'zařízení s historií nejde smazat');
+  check(!(await page.$('#dlg #svDevDel')) && await page.inputValue('#dlg [name="made"]') === '2019', 'zařízení s historií nejde smazat, rok výroby v údajích');
   await page.screenshot({ path: path.join(shots, '05-historie.png') });
   await page.fill('#dlg [name="note"]', 'patří lakovně');
   await page.click('#dlgOk');
@@ -232,6 +242,10 @@ async function confirm(page) {
   await page.click('[data-svsave="plain"]');
   await page.waitForFunction(() => !ui.sv.draft && S.service.shipments[1].to === 'Servis Ostrava' && svNo(S.service.shipments[1]) === '2026/002');
   await page.click('#svNew');
+  await page.selectOption(`${item(0)} [data-svtpl="0"]`, await page.evaluate(() => S.service.templates[0].id));
+  await page.waitForFunction(() => ui.sv.draft.items[0].kind === 'Bruska');
+  check(await page.inputValue(`${item(0)} [data-svf="brand"]`) === 'Makita' && await page.inputValue(`${item(0)} [data-svf="model"]`) === 'GA5030' && await page.inputValue(`${item(0)} [data-svf="iid"]`) === ''
+    && await page.evaluate(() => document.activeElement.matches('[data-svitem="0"] [data-svf="iid"]')), 'vzor vyplní druh, značku a model, kurzor skočí na interní ID');
   await page.fill(`${item(0)} [data-svf="kind"]`, 'Zkouška');
   await page.click('[data-svcancel]');
   await confirm(page);
@@ -243,10 +257,23 @@ async function confirm(page) {
   check(await page.evaluate(() => S.service.devices.length === 3 && svHistory(S.service, S.service.devices[1].id).count === 1), 'smazaný protokol zmizí z historie, zařízení zůstanou');
   await saved(page);
 
+  // Vzory v záložce Zařízení: seznam a smazání.
+  await page.click('[data-svtab="dev"]');
+  await page.waitForSelector('.sv-tpls');
+  check(/Bruska · Makita GA5030/.test(await page.textContent('.sv-tpl-list')), 'seznam vzorů');
+  await page.click('.sv-tpl-list [data-svtpldel]');
+  await confirm(page);
+  await page.waitForFunction(() => !S.service.templates.length);
+  check(/Zatím žádný vzor/.test(await page.textContent('.sv-tpls')), 'vzor smazán');
+  await saved(page);
+  await page.click('[data-svtab="ship"]');
+
   // Historie změn.
   const log = await page.evaluate(() => S.log.filter(x => x.kind === 'service').map(x => x.text));
   check(log.some(t => /^Servis: odeslání 2026\/001 \(19\. 10\. 2026, Servis Brno\): 3 zařízení/.test(t)) && log.some(t => /vráceno ze servisu 25\. 10\. 2026/.test(t))
-    && log.some(t => /smazán protokol 2026\/002/.test(t)) && log.some(t => /upravené údaje – poznámka/.test(t)), `historie změn: ${JSON.stringify(log)}`);
+    && log.some(t => /smazán protokol 2026\/002/.test(t)) && log.some(t => /upravené údaje – poznámka/.test(t))
+    // nový vzor tu v historii není: bylo to první uložení po čisté instalaci (to se nezapisuje), text hlídá test jádra
+    && log.some(t => t === 'Servis: smazán vzor zařízení Bruska · Makita GA5030'), `historie změn: ${JSON.stringify(log)}`);
   await page.click('#logBtn');
   await page.waitForSelector('#dlg[open] [data-lf="service"]');
   await page.click('#dlg [data-lf="service"]');

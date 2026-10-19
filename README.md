@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.22
+
+- **Servis: rok výroby.** U každého zařízení v protokolu je nová kolonka **Rok výroby**
+  (nepovinná). Zapíše se i do evidence zařízení a je vidět v PDF protokolu.
+- **Vzory zařízení.** Tlačítkem **Uložit jako vzor** v hlavičce zařízení si aplikace zapamatuje
+  jeho druh, značku a model. Příště ho vybereš v nabídce **Podle vzoru…** a zbývá doplnit interní
+  ID, výrobní číslo a rok výroby. Vzory jsou společné pro všechny, přehled a mazání je v záložce
+  Zařízení dole (Vzory zařízení). Stejný vzor se podruhé neuloží.
+- Data verze 20: stránka otevřená ve verzi 2.21 po aktualizaci nic neuloží a vyzve k obnovení
+  (jinak by zahodila rok výroby a vzory).
+
 ## Co je nového ve verzi 2.21
 
 - **Nový modul Servis: odeslání zařízení na servis.** Tlačítkem **Nové odeslání** vyplníš
