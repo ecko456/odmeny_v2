@@ -62,6 +62,24 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.24
+
+- **Matice dovedností → Směny a kapacita: plán a skutečnost podle docházky.** Dole je nová karta
+  **Historie obsazenosti**: vybereš týden zpětně (nabízí se týdny, pro které je nahraná docházka)
+  a uvidíš po skupinách, kolik lidodnů bylo v plánu, kolik lidí přišlo, kolik bylo omluveno
+  a kolik chybělo, kolik hodin bylo v plánu a kolik se odpracovalo a kolik schopných přišlo.
+- **Export do Excelu** má dva listy: **Souhrn** (skupina × den: plán lidí ranní a odpolední,
+  přišlo, omluveno, chybí, navíc mimo plán, hodiny, plnění, schopní) a **Lidé** (každý člověk
+  po dnech plán a skutečnost: hodiny, kód nepřítomnosti, „chybí“, a součty, kolik kdo odpracoval).
+- **Plán** je podle zařazení v Matici: skupina platná v tom týdnu (podle historie zařazení), směna
+  podle dnešního zařazení (historie směn se neukládá) a střídání skupin 1 a 2 podle nastavení
+  „Ranní tento týden má“. **Skutečnost** je z nahrané docházky. Lidé se párují podle jména jako
+  v Docházce; kdo je v plánu, ale v docházce ho to jméno nenašlo, nebo je v docházce, ale ne
+  v Lidech, je v Excelu označený v poznámce.
+- Dny, pro které docházka ještě není nahraná (třeba začátek dalšího měsíce), se neporovnávají
+  a karta na to upozorní. Do PDF reportu kapacit karta nepatří.
+- Data se nemění (verze dat zůstává 20).
+
 ## Co je nového ve verzi 2.23
 
 - **Lidé: filtry.** Nad seznamem lidí je výběr oddělení nebo skupiny a tlačítka **Bez skupiny**,

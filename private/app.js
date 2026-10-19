@@ -3507,7 +3507,7 @@ function renderCapacity() {
     statTile('Bez směny', String(head['']), head[''] ? 'doplň směnu v části Lidé' : 'všichni mají směnu', head[''] ? 'warn' : ''),
     ...(cap.sick ? [statTile('Nemoc', String(cap.sick), 'dočasně se nepočítají', 'warn')] : []),
   ].join('')}</div>`;
-  if (!cap.groups.length) return void (box.innerHTML = `${controls}${tiles}<div class="card">${emptyState('Žádné dovednosti', 'Report kapacit potřebuje skupiny s dovednostmi a hodnocení lidí.')}</div>`);
+  if (!cap.groups.length) return void (box.innerHTML = `${controls}${tiles}<div class="card">${emptyState('Žádné dovednosti', 'Report kapacit potřebuje skupiny s dovednostmi a hodnocení lidí.')}</div>${capHistHtml()}`);
   const weeks = capWeeks(rep);
   const risks = capRisks(cap, weeks);
   const noShift = head[''] > 0;
@@ -3533,7 +3533,48 @@ function renderCapacity() {
     ${risks.length ? `<div class="note e"><b>Odpoledne bez schopného člověka:</b><ul class="cap-risks">${risks.map(r => `<li><b>${esc(r.name)}</b> · ${r.parts.map(esc).join(' · ')}</li>`).join('')}</ul></div>` : '<div class="note i">Na každé odpolední směně je u každé dovednosti aspoň jeden schopný člověk.</div>'}
     ${groupsHtml}
     <div class="card"><h3>Závěr a opatření</h3><p class="small muted">Text se uloží a vytiskne s reportem (např. koho zaučit a do kdy).</p>
-      <textarea id="capNote" rows="4" maxlength="4000" placeholder="např. Zaučit 2 lidi ze skupiny 2 na Seřízení stroje do konce měsíce.">${esc(rep.note)}</textarea></div>`;
+      <textarea id="capNote" rows="4" maxlength="4000" placeholder="např. Zaučit 2 lidi ze skupiny 2 na Seřízení stroje do konce měsíce.">${esc(rep.note)}</textarea></div>
+    ${capHistHtml()}`;
+}
+/* Plán a skutečnost podle docházky (2.24): týden zpětně, souhrn po skupinách, rozpis v Excelu.
+   Do PDF ani tisku reportu kapacit nepatří (noprint). */
+function capHistHtml() {
+  const weeks = attWeeks();
+  const title = '<p class="eyebrow">Historie obsazenosti</p><h3>Plán a skutečnost podle docházky</h3>';
+  if (!weeks.length) return `<div class="card cap-hist noprint">${title}${emptyState('Zatím bez docházky', 'Nahraj docházku v části Docházka a tady porovnáš plán ze zařazení se skutečností.')}</div>`;
+  if (!weeks.includes(ui.capHist)) ui.capHist = weeks[0];
+  const x = planReality(ui.capHist);
+  const dl = iso => { const d = x.days.find(y => y.iso === iso); return `${DOW[d.dow]} ${d.d}. ${d.m}.`; };
+  const pct = (a, b) => (b > 0 ? `${nf(a / b * 100, 0)} %` : '—');
+  const row = (name, dept, t, cls = '') => `<tr${cls ? ` class="${cls}"` : ''}><th scope="row">${esc(name)}${dept && dept !== name ? `<small>${esc(dept)}</small>` : ''}</th>
+    <td class="r num">${t.planN}</td><td class="r num">${t.present}</td><td class="r num">${t.excused}</td><td class="r num${t.miss ? ' cap-miss' : ''}">${t.miss}</td><td class="r num">${t.extra}</td>
+    <td class="r num">${nf(t.planH, 1)}</td><td class="r num">${nf(t.realH, 1)}</td><td class="r num">${pct(t.realH, t.planH)}</td><td class="r num">${t.capPlan ? `${t.capReal} z ${t.capPlan}` : '—'}</td></tr>`;
+  return `<div class="card cap-hist noprint">
+    <div class="card-head"><div>${title}
+      <p class="small muted">Vyber týden zpětně. Plán je podle zařazení v Matici dovedností (skupina platná v tom týdnu, směna podle dnešního zařazení${x.mg ? `, ranní měla skupina ${x.mg === 'S1' ? 1 : 2}` : ', střídání skupin 1 a 2 není nastavené'}), skutečnost podle nahrané docházky. Lidé se párují podle jména.</p></div></div>
+    <div class="row gap wrap"><label class="field cap-thr"><span>Týden</span><select id="capHistWeek">${weeks.map(id => `<option value="${id}"${id === x.id ? ' selected' : ''}>${esc(weekLong(id))}</option>`).join('')}</select></label>
+      <span class="spacer"></span><button class="btn" type="button" id="capHistXlsx">Export do Excelu</button></div>
+    ${x.missing.length ? `<p class="small warn-t">Docházka chybí pro ${x.missing.map(dl).join(', ')}; tyto dny se neporovnávají.</p>` : ''}
+    <div class="table-card flat cap-wrap"><table class="cap-table cap-hist-tab"><thead><tr><th>Skupina</th><th class="r">Plán (lidodny)</th><th class="r">Přišlo</th><th class="r">Omluveno</th><th class="r">Chybí</th><th class="r">Navíc mimo plán</th><th class="r">Plán h</th><th class="r">Odpracováno h</th><th class="r">Plnění hodin</th><th class="r">Schopní přišli</th></tr></thead>
+    <tbody>${x.groups.map(g => row(g.name, g.dept, g.week)).join('')}${x.groups.length > 1 ? row('Celkem', '', x.total, 'cap-sum') : ''}</tbody></table></div>
+    <p class="tiny muted">Lidodny = lidé × pracovní dny v plánu. Chybí = plánovaný den bez hodin a bez omluveného kódu. Navíc = dny s hodinami mimo plán (víkend, svátek, lidé bez skupiny nebo směny). Schopní = průměr dovedností skupiny aspoň úroveň ${x.thr} (podle dnešního hodnocení). V Excelu je rozpis po skupinách a dnech a po lidech, kolik kdo odpracoval${x.unpaired ? `; ${x.unpaired === 1 ? '1 jméno se nepodařilo spárovat' : `${x.unpaired} jmen se nepodařilo spárovat`} (sloupec Poznámka)` : ''}.</p>
+  </div>`;
+}
+async function exportPlanReality(button) {
+  const id = ui.capHist || attWeeks()[0];
+  if (!id) return;
+  if (button) button.disabled = true;
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    planRealitySheets(id).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`plan-a-skutecnost-${id}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+  finally { if (button) button.disabled = false; }
 }
 /* Rizika po skupinách: dovednosti, na které odpoledne v daném týdnu (variantě) nikdo nestačí. */
 function capRisks(cap, weeks) {
@@ -3840,6 +3881,7 @@ function bindMatrixEvents() {
       renderCapacity(); return;
     }
     if (t.closest('#capPdf')) { exportCapacityPdf(t.closest('#capPdf')); return; }
+    if (t.closest('#capHistXlsx')) { exportPlanReality(t.closest('#capHistXlsx')); return; }
     if (t.closest('#capPrint')) window.print();
   });
   $('#view-matice').addEventListener('change', event => {
@@ -3855,6 +3897,7 @@ function bindMatrixEvents() {
       renderCapacity(); return;
     }
     if (t.id === 'capNote') { capSave({ note: t.value.slice(0, 4000) }); return; }
+    if (t.id === 'capHistWeek') { ui.capHist = t.value; renderCapacity(); $('#capHistWeek')?.focus(); return; }
     if (t.dataset.capskill) {
       const hidden = new Set(S.capReport.hidden || []);
       if (t.checked) hidden.delete(t.dataset.capskill); else hidden.add(t.dataset.capskill);

@@ -2419,6 +2419,69 @@ test('Kapacita (2.23): v zaškolování zvlášť od schopných', () => {
   return null;
 });
 
+test('Plán a skutečnost podle docházky (2.24)', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(blank());
+    const sk = [{ id: 'k1', name: 'Obsluha' }];
+    S.positions = [{ id: 'g1', name: 'CNC', dept: 'CNC', skillset: sk, maxTab: 8, tiers: [], penalty: [], bonus: [] },
+      { id: 'g2', name: 'Brusič', dept: 'Brusič', skillset: [{ id: 'b1', name: 'Broušení' }], maxTab: 8, tiers: [], penalty: [], bonus: [] }];
+    S = sanitizeState(S);
+    const days = Array.from({ length: 30 }, (_, i) => '2026-09-' + String(i + 1).padStart(2, '0'));
+    const rows = {};
+    const att = (key, first, last, cells) => { const h = days.map(() => 0), c = days.map(() => null);
+      Object.entries(cells).forEach(([d, v]) => { const i = +d - 1; if (typeof v === 'number') h[i] = v; else c[i] = v; }); rows[key] = { first, last, h, c }; };
+    const add = (key, o) => { S.employees[key] = { key, first: key, last: key, note: '', ...o }; };
+    add('a', { positionId: 'g1', shift: 'R', shortFri: true, rate: { k1: 4 } });
+    add('b', { positionId: 'g1', shift: 'S1', hist: [{ at: 0, pos: 'g2', lvl: null }, { at: new Date(2026, 9, 1).getTime(), pos: 'g1', lvl: null }] });
+    add('c', { positionId: 'g1', shift: 'S2' });
+    add('d', { shift: 'R' });
+    add('e', { positionId: 'g1', shift: 'R', excluded: true });
+    add('f', { lead: [] });
+    add('g', { positionId: 'g2', shift: 'O' });
+    att('a', 'a', 'a', { 21: 7.5, 22: 7.5, 23: 7.5, 24: 7.5, 25: 6.5 });
+    att('b', 'b', 'b', { 21: 'D', 22: 7.5, 23: 7.5, 24: 7.5, 25: 7.5 });
+    att('c', 'c', 'c', { 22: 'X', 23: 7.5, 24: 7.5, 25: 7.5, 26: 6 });
+    att('d', 'd', 'd', { 23: 8 });
+    att('e', 'e', 'e', { 24: 4 });
+    att('cizi|petr', 'Petr', 'Cizí', { 22: 7.5 });
+    S.periods['2026-09'] = { days, rows, codes: {}, file: 't.xlsx', at: 1 };
+    S.capReport = { ...blankCapReport(), s1am: '2026-W39' };
+    const x = planReality('2026-W39');
+    const p40 = planReality('2026-W40');
+    const sh = planRealitySheets('2026-W39');
+    const lide = sh[1].rows, hdr = lide.findIndex(r => r[0] === 'Příjmení'), cRow = lide.find(r => r[0] === 'c');
+    const col = t => lide[hdr].indexOf(t);
+    JSON.stringify({ weeks: attWeeks(), mg: x.mg, rows: x.rows.map(r => [r.key, r.pos ? r.pos.id : '', r.slot, r.planH, r.realH, r.workDays, r.excused, r.miss, r.extraDays, r.note]),
+      groups: x.groups.map(g => [g.pos ? g.pos.id : '', g.week.planN, g.week.am, g.week.pm, g.week.present, g.week.excused, g.week.miss, g.week.extra, g.week.planH, g.week.realH, g.week.capPlan, g.week.capReal]),
+      total: [x.total.planN, x.total.present, x.total.planH, x.total.realH], unpaired: x.unpaired, missing: x.missing,
+      p40: [p40.missing, p40.groups.find(g => g.pos && g.pos.id === 'g1').week.planN],
+      sheets: sh.map(s => s.name), cCells: [cRow[col('Po 21. 9. plán')], cRow[col('Po 21. 9. skutečnost')], cRow[col('Út 22. 9. skutečnost')], cRow[col('So 26. 9. plán')], cRow[col('So 26. 9. skutečnost')], cRow[cRow.length - 1]],
+      fri: friShift() })`));
+  assert.deepStrictEqual(out.weeks, ['2026-W40', '2026-W39', '2026-W38', '2026-W37', '2026-W36'], 'týdny s docházkou od nejnovějšího');
+  assert.strictEqual(out.mg, 'S1');
+  assert.deepStrictEqual(out.rows, [
+    ['a', 'g1', 'am', 4 * 7.5 + out.fri, 36.5, 5, 0, 0, 0, ''],
+    ['c', 'g1', 'pm', 37.5, 28.5, 3, 0, 2, 1, ''],
+    ['e', 'g1', 'none', 0, 4, 0, 0, 0, 1, 'vyřazen'],
+    ['b', 'g2', 'am', 37.5, 30, 4, 1, 0, 0, ''],
+    ['g', 'g2', 'pm', 37.5, 0, 0, 0, 5, 0, 'v docházce není (jiné jméno?)'],
+    ['cizi|petr', '', 'none', 0, 7.5, 0, 0, 0, 1, 'v Lidech není'],
+    ['d', '', 'none', 0, 8, 0, 0, 0, 1, 'bez skupiny']],
+    'lidé: plán ze zařazení (skupina z historie, zkrácený pátek, střídání), docházka, chybí a navíc; vedoucí bez hodin ve výstupu není');
+  assert.deepStrictEqual(out.groups, [
+    ['g1', 10, 5, 5, 8, 0, 2, 2, 4 * 7.5 + out.fri + 37.5, 69, 5, 5],
+    ['g2', 10, 5, 5, 4, 1, 5, 0, 75, 30, 0, 0],
+    ['', 0, 0, 0, 0, 0, 0, 2, 0, 15.5, 0, 0]], 'skupiny za týden (lidodny, hodiny, schopní)');
+  assert.deepStrictEqual(out.total, [20, 12, 4 * 7.5 + out.fri + 75 + 37.5, 114.5]);
+  assert.strictEqual(out.unpaired, 2, 'nespárovaná jména: plánovaný bez docházky a jméno z docházky, které v Lidech není');
+  assert.deepStrictEqual(out.missing, []);
+  assert.deepStrictEqual(out.p40, [['2026-10-01', '2026-10-02'], 6], 'částečný týden: dny bez docházky se neporovnávají (28. 9. je svátek); b je od 1. 10. v CNC');
+  assert.deepStrictEqual(out.sheets, ['Souhrn', 'Lidé']);
+  assert.deepStrictEqual(out.cCells, [7.5, 'chybí', 'X', 'volno', 6, ''], 'Excel po dnech: plán a skutečnost, kód, volno, víkend');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

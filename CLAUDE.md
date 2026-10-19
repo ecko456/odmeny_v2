@@ -34,6 +34,24 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 19. 10. 2026 (verze 2.24):
+
+- **Plán a skutečnost podle docházky** (Směny a kapacita). Uživatel: „export historické
+  obsazenosti podle docházky … vybrat týden zpětně … plán a realita, kolik kdo odpracoval.
+  Spárovat to podle jména … jaký byl plán a jaká realita na daných pozicích“.
+  - Core: `attDay(key, iso)` (docházka člověka v den, null bez docházky), `attWeeks()` (týdny
+    s docházkou), `planReality(weekId)` → `{days (has), rows, groups (week, days), total,
+    missing, unpaired, mg, thr}`, `planRealitySheets(weekId)` (Souhrn, Lidé). Plán: skupina
+    `levelAt(e, konec týdne)`, směna dnešní, `slotOn` se střídáním `S.capReport.s1am`, hodiny
+    `dayShift` (zkrácený pátek), jen pracovní dny s nahranou docházkou. Skutečnost: hodiny,
+    kód (omluvený podle `excusedSet`, jinak chybí), navíc = hodiny mimo plán. Páruje se klíčem
+    `příjmení|jméno` (řádky docházky a lidé mají stejný); poznámky „v docházce není (jiné
+    jméno?)“, „v Lidech není“, „bez skupiny“, „bez směny“, „vyřazen“, „vedoucí“.
+  - UI: `capHistHtml` (karta `.cap-hist`, `noprint`, `#capHistWeek`, `ui.capHist`),
+    `exportPlanReality` (`plan-a-skutecnost-RRRR-Wtt.xlsx`).
+  - Skupina se bere na konci týdne: kdo změnil skupinu uprostřed týdne, je celý týden v nové.
+  - `ODM_VERSION` 2.24, verze dat beze změny (20).
+
 Stav k 19. 10. 2026 (verze 2.23):
 
 - Uživatel: „lepšího filtrování v modulu Lidé … jen bez skupiny, bez zařazení nebo podle
@@ -969,7 +987,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.22 | `ea74466` | Servis – rok výroby, vzory zařízení (druh, značka, model) (data verze 20) |
 | 2.22.1 | `3b6c7d8` | Servis – duplicity červeně a nahoře (protokol i evidence), číslo jiného zařízení z evidence |
 | 2.22.2 | `e6c4825` | Servis – interní ID rozhoduje (bez falešných duplicit při úpravě), oprava spojených zařízení, úprava protokolu nepřepíše evidenci |
-| 2.23 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Lidé – filtry a celá šířka monitoru; Směny a kapacita – v zaškolování zvlášť, PDF bez upozornění |
+| 2.23 | `96f54c0` | Lidé – filtry a celá šířka monitoru; Směny a kapacita – v zaškolování zvlášť, PDF bez upozornění |
+| 2.24 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Směny a kapacita – plán a skutečnost podle docházky za týden zpětně, Excel |
 
 Verze 2.1 přidala:
 
@@ -1238,7 +1257,8 @@ UI v `app.js`:
   `tierCardHtml`, `TIER_TEMPLATES` (Prémie a Extra bonus podle zadání), `bindGroupEditor`
   (delegované události na `#posEditor`);
 - sekce matice: `renderMatrix` (záložky `ui.mxTab`), `renderMatrixGrid` (klik na buňku
-  zvýší úroveň o 1, po 4 je 0), `renderCapacity` (v zaškolování zvlášť `capCell`, `planCell`, 2.23),
+  zvýší úroveň o 1, po 4 je 0), `renderCapacity` (v zaškolování zvlášť `capCell`, `planCell`, 2.23;
+  plán a skutečnost podle docházky `capHistHtml`, `exportPlanReality`, 2.24),
   `capRisks` (jen v aplikaci), `drawCapacity` (PDF bez rizik a plánované kapacity, 2.23),
   `exportMatrix` (Excel z `matrixSheets`), `drawMatrix`/`exportMatrixPdf` (PDF matice jen
   s ID, 2.20), přepínač `#matrixIds` a `mxWho`;
@@ -1346,7 +1366,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 61 testů: proti původní aplikaci + opravy + 2.1 až 2.23
+node tests/test_core.js                 # 62 testů: proti původní aplikaci + opravy + 2.1 až 2.24
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1373,7 +1393,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     menu, hledání, Zpět, okna, filtry, šířka seznamu, manifest;
   - `e2e_lide.js`: Lidé (2.23): filtry s počty, člověk mimo filtr, oddělení a skupina, hledání,
     osobní nastavení, šířka na monitoru 2560 px, hodnocení v jednom řádku, v zaškolování v reportu
-    kapacit, telefon, tmavý režim;
+    kapacit, plán a skutečnost podle docházky (2.24: týdny, souhrn, Excel), telefon, tmavý režim;
   - `e2e_servis.js`: Servis (2.21, 2.22): protokol se třemi zařízeními, nečitelná čísla, k vyřazení,
     závady, rok výroby, vzory (uložení, duplicita, výběr, smazání), duplicitní zařízení (červeně
     při psaní, nahoru při uložení, číslo jiného zařízení, evidence; jiné ID se stejným v. č.

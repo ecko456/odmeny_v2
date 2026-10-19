@@ -134,6 +134,31 @@ const chips = page => page.$$eval('#lFilters [data-lst]', els => Object.fromEntr
   check(tr.cells > 0 && tr.note && tr.group, `v zaškolování v reportu: ${JSON.stringify(tr)}`);
   await page.screenshot({ path: path.join(shots, '11-kapacita.png'), fullPage: true });
 
+  // Plán a skutečnost podle docházky (2.24): týden zpětně, souhrn po skupinách, Excel.
+  const weeks = await page.$$eval('#capHistWeek option', o => o.map(x => x.value));
+  check(weeks.length >= 2 && weeks[0] > weeks[1] && await page.inputValue('#capHistWeek') === weeks[0], `týdny s docházkou: ${weeks}`);
+  check(/Docházka chybí pro/.test(await page.textContent('.cap-hist')) === await page.evaluate(w => planReality(w).missing.length > 0, weeks[0]), 'upozornění na dny bez docházky');
+  await page.selectOption('#capHistWeek', weeks[1]);
+  await page.waitForFunction(w => ui.capHist === w && document.querySelector('#capHistWeek').value === w, weeks[1]);
+  const hist = await page.evaluate(w => {
+    const x = planReality(w), rows = [...document.querySelectorAll('.cap-hist-tab tbody tr')].map(tr => [...tr.children].map(td => td.textContent.replace(/\s+/g, ' ').trim()));
+    return { groups: x.groups.length, rows, g0: [x.groups[0].name, x.groups[0].week.planN, x.groups[0].week.present], total: [x.total.planN, x.total.present] };
+  }, weeks[1]);
+  const sum = hist.rows[hist.rows.length - 1];
+  check(hist.rows.length === hist.groups + (hist.groups > 1 ? 1 : 0) && hist.rows[0][0].startsWith(hist.g0[0]) && +hist.rows[0][1] === hist.g0[1] && +hist.rows[0][2] === hist.g0[2]
+    && sum[0] === 'Celkem' && +sum[1] === hist.total[0] && +sum[2] === hist.total[1], `souhrn plánu a skutečnosti: ${JSON.stringify(hist)}`);
+  const [xl] = await Promise.all([page.waitForEvent('download'), page.click('#capHistXlsx')]);
+  const xlPath = path.join(S, xl.suggestedFilename());
+  await xl.saveAs(xlPath);
+  const xlRead = await page.evaluate(async b64 => {
+    const X = await xlsx(), wb = X.read(b64, { type: 'base64' });
+    const lide = X.utils.sheet_to_json(wb.Sheets['Lidé'], { header: 1 }), hdr = lide.findIndex(r => r[0] === 'Příjmení');
+    return { names: wb.SheetNames, cols: lide[hdr].slice(0, 9), people: lide.length - hdr - 1, want: planReality(ui.capHist).rows.length, title: lide[0][0] };
+  }, fs.readFileSync(xlPath).toString('base64'));
+  check(xl.suggestedFilename() === `plan-a-skutecnost-${weeks[1]}.xlsx` && JSON.stringify(xlRead.names) === '["Souhrn","Lidé"]' && xlRead.people === xlRead.want
+    && xlRead.cols.join() === 'Příjmení,Jméno,ID v evidenci práce,Oddělení,Skupina,Směna,V týdnu,Dovednosti %,Schopný' && /Plán a skutečnost podle docházky – Týden/.test(xlRead.title), `Excel plánu a skutečnosti: ${JSON.stringify(xlRead)}`);
+  await (await page.$('.cap-hist')).screenshot({ path: path.join(shots, '14-plan-skutecnost.png') });
+
   // Telefon: filtry nad seznamem, nic nepřetéká.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click('#nav [data-view="lide"]').catch(() => page.evaluate(() => showView('lide')));
