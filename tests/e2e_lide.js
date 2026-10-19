@@ -145,7 +145,7 @@ const chips = page => page.$$eval('#lFilters [data-lst]', els => Object.fromEntr
     return { groups: x.groups.length, rows, g0: [x.groups[0].name, x.groups[0].week.planN, x.groups[0].week.present], total: [x.total.planN, x.total.present] };
   }, weeks[1]);
   const sum = hist.rows[hist.rows.length - 1];
-  check(hist.rows.length === hist.groups + (hist.groups > 1 ? 1 : 0) && hist.rows[0][0].startsWith(hist.g0[0]) && +hist.rows[0][1] === hist.g0[1] && +hist.rows[0][2] === hist.g0[2]
+  check(hist.rows.length === hist.groups + 1 && hist.rows[0][0].startsWith(hist.g0[0]) && +hist.rows[0][1] === hist.g0[1] && +hist.rows[0][2] === hist.g0[2]
     && sum[0] === 'Celkem' && +sum[1] === hist.total[0] && +sum[2] === hist.total[1], `souhrn plánu a skutečnosti: ${JSON.stringify(hist)}`);
   const [xl] = await Promise.all([page.waitForEvent('download'), page.click('#capHistXlsx')]);
   const xlPath = path.join(S, xl.suggestedFilename());
@@ -153,10 +153,13 @@ const chips = page => page.$$eval('#lFilters [data-lst]', els => Object.fromEntr
   const xlRead = await page.evaluate(async b64 => {
     const X = await xlsx(), wb = X.read(b64, { type: 'base64' });
     const lide = X.utils.sheet_to_json(wb.Sheets['Lidé'], { header: 1 }), hdr = lide.findIndex(r => r[0] === 'Příjmení');
-    return { names: wb.SheetNames, cols: lide[hdr].slice(0, 9), people: lide.length - hdr - 1, want: planReality(ui.capHist).rows.length, title: lide[0][0] };
+    const sum = X.utils.sheet_to_json(wb.Sheets.Souhrn, { header: 1 }), sh = sum.findIndex(r => r[0] === 'Oddělení'), tot = sum.find(r => r[1] === 'Celkem'), x = planReality(ui.capHist);
+    const col = t => sum[sh].indexOf(t);
+    return { names: wb.SheetNames, cols: lide[hdr].slice(0, 9), people: lide.length - hdr - 1, want: x.rows.length, title: lide[0][0],
+      hours: [tot[col('Plán h')], tot[col('Odpracováno h')], tot[col('Schopní: odpracováno h')], tot[col('V zaškolování: odpracováno h')]].join() === [x.total.planH, x.total.realH, x.total.ok.realH, x.total.tr.realH].join() };
   }, fs.readFileSync(xlPath).toString('base64'));
-  check(xl.suggestedFilename() === `plan-a-skutecnost-${weeks[1]}.xlsx` && JSON.stringify(xlRead.names) === '["Souhrn","Lidé"]' && xlRead.people === xlRead.want
-    && xlRead.cols.join() === 'Příjmení,Jméno,ID v evidenci práce,Oddělení,Skupina,Směna,V týdnu,Dovednosti %,Schopný' && /Plán a skutečnost podle docházky – Týden/.test(xlRead.title), `Excel plánu a skutečnosti: ${JSON.stringify(xlRead)}`);
+  check(xl.suggestedFilename() === `plan-a-skutecnost-${weeks[1]}.xlsx` && JSON.stringify(xlRead.names) === '["Souhrn","Po dnech","Lidé"]' && xlRead.people === xlRead.want
+    && xlRead.cols.join() === 'Příjmení,Jméno,ID v evidenci práce,Oddělení,Skupina,Směna,V týdnu,Dovednosti %,Schopný' && /Plán a skutečnost podle docházky – Týden/.test(xlRead.title) && xlRead.hours, `Excel plánu a skutečnosti: ${JSON.stringify(xlRead)}`);
   await (await page.$('.cap-hist')).screenshot({ path: path.join(shots, '14-plan-skutecnost.png') });
 
   // Telefon: filtry nad seznamem, nic nepřetéká.

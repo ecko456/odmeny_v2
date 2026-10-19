@@ -1074,16 +1074,22 @@ function staffDay(from){
     deadlines:{late:dl.filter(x=>x.late).length,due:dl.filter(x=>!x.late).length}};
 }
 
-/* ---------- plán a skutečnost podle docházky (2.24) ----------
-   Týden zpětně. Plán = zařazení z Matice: skupina platná v tom týdnu (historie zařazení,
-   levelAt), směna podle dnešního zařazení (historie směn se neukládá) a střídání skupin 1 a 2
-   podle S.capReport.s1am; plánované hodiny = délka směny (zkrácený pátek). Skutečnost =
-   nahraná docházka (hodiny a kódy po dnech). Páruje se podle jména: řádek docházky má stejný
-   klíč jako člověk (příjmení|jméno). Porovnávají se jen pracovní dny (2.24.1: víkendy a svátky
-   vůbec, ani jejich hodiny), a to jen ty, pro které je docházka nahraná.
-   Vyřazení a vedoucí v plánu nejsou; když v docházce odpracovali hodiny, jsou ve výstupu jako
-   mimo plán (stejně lidé bez skupiny nebo směny a jména z docházky, která v Lidech nejsou). */
-const PR_SLOT={am:"ranní",pm:"odpolední",rot:"skupina 1/2",none:""};
+/* ---------- plán a skutečnost podle docházky (2.24, přepočet 2.24.2) ----------
+   Týden zpětně, jen pracovní dny (víkend a svátek se nepočítají ani s hodinami) a jen dny
+   s nahranou docházkou.
+   - V plánu je každý, kdo je v tom týdnu ve skupině (historie zařazení, levelAt ke konci týdne)
+     a není vedoucí; směna jen určuje ranní / odpolední (bez směny = „bez směny“, pořád v plánu).
+     Vyřazený (dnešní stav) je v plánu, jen když má v tom týdnu v docházce hodiny nebo kód (tehdy
+     ještě pracoval). Plánované hodiny = délka směny (zkrácený pátek).
+   - Skutečnost = hodiny a kódy z docházky. Odpracované jsou jen hodiny ze dnů v práci: den s kódem
+     nepřítomnosti (dovolená, nemoc, neomluveno…) se nepočítá, ani když má u kódu hodiny („8 D“).
+     Odpracováno počítá jen lidi v plánu; hodiny lidí mimo
+     plán (bez skupiny, vedoucí, jména z docházky, která v Lidech nejsou) jsou zvlášť jako navíc
+     a do plnění se nepočítají.
+   - Schopní a v zaškolování zvlášť: schopný = průměr dovedností skupiny aspoň práh reportu
+     (capableIn, dnešní hodnocení).
+   Páruje se podle jména: řádek docházky má stejný klíč jako člověk (příjmení|jméno). */
+const PR_SLOT={am:"ranní",pm:"odpolední",rot:"skupina 1/2",noshift:"bez směny",none:""};
 /* Docházka člověka v jeden den: {h, c, found}, nebo null, když pro ten den docházka není. */
 function attDay(key,iso){
   const p=S.periods&&S.periods[iso.slice(0,7)];
@@ -1098,11 +1104,27 @@ function attWeeks(){
   Object.values(S.periods||{}).forEach(p=>(p.days||[]).forEach(iso=>set.add(isoWeek(iso).id)));
   return [...set].sort().reverse();
 }
+/* Počty a hodiny jedné buňky souhrnu (den nebo týden, skupina nebo celkem). */
+function prBlank(){
+  const part=()=>({planN:0,present:0,planH:0,realH:0,excusedH:0});
+  return {planN:0,am:0,pm:0,rot:0,noshift:0,present:0,excused:0,miss:0,planH:0,realH:0,excusedH:0,extraN:0,extraH:0,ok:part(),tr:part()};
+}
+function prAdd(t,x){
+  ["planN","am","pm","rot","noshift","present","excused","miss","planH","realH","excusedH","extraN","extraH"].forEach(k=>{t[k]+=x[k];});
+  ["ok","tr"].forEach(p=>["planN","present","planH","realH","excusedH"].forEach(k=>{t[p][k]+=x[p][k];}));
+  return t;
+}
+function prRound(t){
+  const r=v=>Math.round(v*100)/100;
+  t.planH=r(t.planH);t.realH=r(t.realH);t.excusedH=r(t.excusedH);t.extraH=r(t.extraH);
+  ["ok","tr"].forEach(p=>{t[p].planH=r(t[p].planH);t[p].realH=r(t[p].realH);t[p].excusedH=r(t[p].excusedH);});
+  return t;
+}
 function planReality(weekId){
   const w=weekById(weekId);
   if(!w)return null;
   const rep=S.capReport||blankCapReport(),mg=morningGroup(weekId,rep.s1am),thr=clamp(Math.round(+rep.thr||3),1,4);
-  const ex=excusedSet(),r1=x=>Math.round(x*100)/100;
+  const ex=excusedSet(),r2=x=>Math.round(x*100)/100;
   const week=Array.from({length:7},(_,i)=>{const [y,m,d]=addDays(w.from,i).split("-").map(Number);const x=mkDay(y,m,d);
     const p=S.periods&&S.periods[x.iso.slice(0,7)];x.has=!!p&&Array.isArray(p.days)&&p.days.includes(x.iso);return x;});
   const days=week.filter(d=>d.work);   // jen pracovní dny (víkend a svátek se nepočítají)
@@ -1113,93 +1135,106 @@ function planReality(weekId){
   keys.forEach(key=>{
     const e=S.employees[key]||null;
     const att=days.map(d=>d.has?attDay(key,d.iso):null);
-    const inAtt=att.some(a=>a&&a.found);
+    const inAtt=att.some(a=>a&&a.found),active=att.some(a=>a&&(a.h>0||a.c));
     const posId=e?levelAt(e,endTs).pos:null;
     const pos=posId?S.positions.find(p=>p.id===posId)||null:null;
     const lead=!!e&&isLead(e),out=!!e&&!!e.excluded;
-    const slot=e&&!lead&&!out&&pos?slotOn(e,mg):"none";
-    const planned=slot!=="none";
+    const planned=!!e&&!!pos&&!lead&&(!out||active);
+    const slot=planned?(shiftOf(e)?slotOn(e,mg):"noshift"):"none";
+    const capable=planned&&capableIn(e,pos,thr);
     const cells=days.map((d,i)=>{
       const a=att[i],plan=planned&&d.has?dayShift(d,!!e.shortFri):0;
+      /* den s kódem je nepřítomnost i s hodinami („8 D“): ty hodiny nejsou odpracované (w = 0) */
       let kind="";
-      if(a){if(a.h>0)kind="work";else if(a.c)kind=ex.has(norm(a.c).toUpperCase())?"excused":"code";else if(plan)kind="miss";}
-      return {plan,h:a?a.h:null,c:a?a.c:"",kind};
+      if(a){if(a.c)kind=ex.has(norm(a.c).toUpperCase())?"excused":"code";else if(a.h>0)kind="work";else if(plan)kind="miss";}
+      return {plan,h:a?a.h:null,c:a?a.c:"",kind,w:kind==="work"?a.h:0,absH:a&&a.c?a.h:0};
     });
-    const realH=cells.reduce((x,c)=>x+(c.h||0),0);
-    if(!planned&&realH<=0)return;   // mimo plán a nepracoval: do výstupu nepatří
+    const sumH=cells.reduce((x,c)=>x+c.w,0),absH=cells.reduce((x,c)=>x+c.absH,0);
+    if(!planned&&sumH<=0)return;   // mimo plán a nepracoval: do výstupu nepatří
     let first=e?e.first:"",last=e?e.last:"";
     if(!e)days.some(d=>{const row=d.has&&S.periods[d.iso.slice(0,7)].rows[key];if(row){first=row.first||"";last=row.last||"";}return !!row;});
     const codes={};
-    cells.forEach(c=>{if(c.c&&!(c.h>0))codes[c.c]=(codes[c.c]||0)+1;});
-    rows.push({key,e,first,last,wid:e&&e.wid!=null?String(e.wid):"",pos,dept:pos?deptOf(pos):"",shift:e?shiftOf(e):"",slot,planned,
-      note:!e?"v Lidech není":lead?"vedoucí":out?"vyřazen":!pos?"bez skupiny":!shiftOf(e)?"bez směny":!inAtt?"v docházce není (jiné jméno?)":"",
-      pct:e&&pos?skillPct(e,pos):null,capable:!!(e&&pos&&capableIn(e,pos,thr)),cells,codes,
-      planH:r1(cells.reduce((x,c)=>x+c.plan,0)),realH:r1(realH),
+    cells.forEach(c=>{if(c.c)codes[c.c]=(codes[c.c]||0)+1;});
+    const planH=r2(cells.reduce((x,c)=>x+c.plan,0));
+    rows.push({key,e,first,last,wid:e&&e.wid!=null?String(e.wid):"",pos,dept:pos?deptOf(pos):"",shift:e?shiftOf(e):"",slot,planned,capable,
+      note:!e?"v Lidech není":lead?"vedoucí, mimo plán":!pos?"bez skupiny, mimo plán":out?"dnes vyřazen":!shiftOf(e)?"bez směny":!inAtt?"v docházce není (jiné jméno?)":"",
+      pct:e&&pos?skillPct(e,pos):null,cells,codes,
+      planH,realH:planned?r2(sumH):0,extraH:planned?0:r2(sumH),absH:r2(absH),fill:planned&&planH>0?sumH/planH:null,
       planDays:cells.filter(c=>c.plan).length,workDays:cells.filter(c=>c.plan&&c.kind==="work").length,
       excused:cells.filter(c=>c.plan&&c.kind==="excused").length,miss:cells.filter(c=>c.plan&&(c.kind==="miss"||c.kind==="code")).length,
-      extraDays:cells.filter(c=>!c.plan&&c.h>0).length});
+      extraDays:planned?0:cells.filter(c=>c.w>0).length});
   });
   const order=new Map(S.positions.map((p,i)=>[p.id,i]));
-  rows.sort((a,b)=>((a.pos?order.get(a.pos.id):999)-(b.pos?order.get(b.pos.id):999))||(b.planned-a.planned)||norm(a.last+" "+a.first).localeCompare(norm(b.last+" "+b.first),"cs"));
-  const blankDay=()=>({planN:0,am:0,pm:0,rot:0,present:0,excused:0,miss:0,extra:0,planH:0,realH:0,capPlan:0,capReal:0});
-  const sum=list=>{const t=blankDay();list.forEach(x=>Object.keys(t).forEach(k=>{t[k]+=x[k];}));t.planH=r1(t.planH);t.realH=r1(t.realH);return t;};
+  const ord=r=>r.pos?order.get(r.pos.id):999;
+  rows.sort((a,b)=>(ord(a)-ord(b))||(b.planned-a.planned)||(b.capable-a.capable)||norm(a.last+" "+a.first).localeCompare(norm(b.last+" "+b.first),"cs"));
   const byGroup=new Map();
   rows.forEach(r=>{
-    const id=r.pos?r.pos.id:"";
-    if(!byGroup.has(id))byGroup.set(id,{pos:r.pos,dept:r.pos?deptOf(r.pos):"",name:r.pos?r.pos.name||"(bez názvu)":"Bez skupiny a mimo plán",days:days.map(blankDay),people:0});
-    const g=byGroup.get(id);
-    g.people++;
+    const id=r.planned&&r.pos?r.pos.id:"";
+    if(!byGroup.has(id))byGroup.set(id,{pos:id?r.pos:null,dept:id?deptOf(r.pos):"",name:id?r.pos.name||"(bez názvu)":"Mimo plán",days:days.map(prBlank)});
+    const g=byGroup.get(id),part=r.capable?"ok":"tr";
     r.cells.forEach((c,i)=>{
       const t=g.days[i];
-      if(c.plan){t.planN++;t[r.slot]++;t.planH+=c.plan;if(r.capable)t.capPlan++;
-        if(c.kind==="work"){t.present++;if(r.capable)t.capReal++;}else if(c.kind==="excused")t.excused++;else t.miss++;}
-      else if(c.h>0)t.extra++;
-      t.realH+=c.h||0;
+      if(r.planned){
+        if(c.plan){t.planN++;t[r.slot]++;t.planH+=c.plan;t[part].planN++;t[part].planH+=c.plan;
+          if(c.kind==="work"){t.present++;t[part].present++;}else if(c.kind==="excused"){t.excused++;t.excusedH+=c.plan;t[part].excusedH+=c.plan;}else t.miss++;}
+        t.realH+=c.w;t[part].realH+=c.w;
+      }else if(c.w>0){t.extraN++;t.extraH+=c.w;}
     });
   });
   const groups=[...byGroup.values()].sort((a,b)=>(a.pos?order.get(a.pos.id):999)-(b.pos?order.get(b.pos.id):999));
-  groups.forEach(g=>{g.days.forEach(t=>{t.planH=r1(t.planH);t.realH=r1(t.realH);});g.week=sum(g.days);});
-  const total=sum(groups.map(g=>g.week));
-  return {week:w,id:weekId,mg,thr,days,rows,groups,total,missing:days.filter(d=>!d.has).map(d=>d.iso),
+  groups.forEach(g=>{g.days.forEach(prRound);g.week=prRound(g.days.reduce(prAdd,prBlank()));});
+  const total=prRound(groups.map(g=>g.week).reduce(prAdd,prBlank()));
+  const totalDays=days.map((_,i)=>prRound(groups.map(g=>g.days[i]).reduce(prAdd,prBlank())));
+  return {week:w,id:weekId,mg,thr,days,rows,groups,total,totalDays,missing:days.filter(d=>!d.has).map(d=>d.iso),
     holidays:week.filter(d=>d.hol&&!d.weekend).map(d=>({iso:d.iso,name:d.hol})),
     unpaired:rows.filter(r=>/v docházce není|v Lidech není/.test(r.note)).length};
 }
-/* Excel plánu a skutečnosti: list Souhrn (skupina × den) a list Lidé (po dnech plán a docházka). */
+/* Plnění hodin v % (na desetiny), bez plánu "". */
+function prPct(real,plan){return plan>0?Math.round(real/plan*1000)/10:"";}
+/* Excel plánu a skutečnosti: Souhrn (týden po skupinách), Po dnech (skupina × den) a Lidé. */
 function planRealitySheets(weekId){
   const x=planReality(weekId);
   if(!x)return [];
   const used=new Set(),dl=d=>DOW[d.dow]+" "+d.d+". "+d.m+".";
-  const pctOf=(a,b)=>b>0?Math.round(a/b*1000)/10:"";
   const head=[["Plán a skutečnost podle docházky – "+weekLong(x.id)],
-    ["Plán = zařazení z Matice dovedností (skupina platná v tom týdnu, směna podle dnešního zařazení, "+(x.mg?"ranní tento týden: skupina "+(x.mg==="S1"?1:2):"střídání skupin 1 a 2 není nastavené")+"), skutečnost = nahraná docházka. Páruje se podle jména. Schopný = průměr dovedností skupiny aspoň úroveň "+x.thr+"."],
+    ["Plán = zařazení z Matice dovedností (skupina platná v tom týdnu, směna podle dnešního zařazení, "+(x.mg?"ranní tento týden: skupina "+(x.mg==="S1"?1:2):"střídání skupin 1 a 2 není nastavené")+"), skutečnost = nahraná docházka. Páruje se podle jména."],
     ["Počítají se jen pracovní dny; víkendy a svátky se nepočítají ani s odpracovanými hodinami."+(x.holidays.length?" Svátek v tomto týdnu: "+x.holidays.map(h=>dayText(h.iso,false)+" ("+h.name+")").join(", ")+".":"")],
+    ["Odpracováno = jen hodiny ze dnů v práci; den s kódem nepřítomnosti (dovolená, nemoc, neomluveno…) se do odpracovaných hodin nepočítá, ani když má u kódu hodiny (např. 8 D). Odpracováno a plnění jen za lidi v plánu; hodiny lidí mimo plán (bez skupiny, vedoucí, jména mimo Lidi) jsou zvlášť ve sloupcích Mimo plán. Plnění = odpracováno ÷ plán; omluveno = plánované hodiny dnů s omluveným kódem (dovolená, nemoc…), plnění bez omluvených je odpracováno ÷ (plán − omluveno). Schopný = průměr dovedností skupiny aspoň úroveň "+x.thr+" (dnešní hodnocení), ostatní jsou v zaškolování."],
     ...(x.missing.length?[["Docházka chybí pro: "+x.missing.map(iso=>dl(x.days.find(d=>d.iso===iso))).join(", ")+" (tyto dny se neporovnávají)."]]:[]),
     ...(x.unpaired?[["Nespárováno podle jména: "+x.unpaired+" (viz list Lidé, sloupec Poznámka)."]]:[]),
-    ["Po dnech jsou počty lidí, řádek Celý týden sčítá lidodny (lidé × dny). Chybí = plánovaný den bez hodin a bez omluveného kódu; navíc = pracovní den s hodinami u člověka mimo plán (bez skupiny nebo směny, vyřazený, vedoucí)."],
     []];
-  const sumHead=["Oddělení","Skupina","Den","Plán lidí","Ranní","Odpolední","Skupina 1/2 (bez střídání)","Přišlo","Omluveno","Neomluveno / chybí","Navíc mimo plán","Plán h","Odpracováno h","Rozdíl h","Plnění hodin %","Schopní v plánu","Schopní přišli"];
-  const line=(g,label,t)=>[g.dept,g.name,label,t.planN,t.am,t.pm,t.rot,t.present,t.excused,t.miss,t.extra,t.planH,t.realH,Math.round((t.realH-t.planH)*100)/100,pctOf(t.realH,t.planH),t.capPlan,t.capReal];
-  const sumRows=[...head,sumHead];
+  const hoursHead=["Plán h","Odpracováno h","Rozdíl h","Plnění %","Omluveno h","Plnění bez omluvených %","Schopní: lidí v plánu","Schopní: přišlo","Schopní: plán h","Schopní: odpracováno h","Schopní: plnění %",
+    "V zaškolování: lidí v plánu","V zaškolování: přišlo","V zaškolování: plán h","V zaškolování: odpracováno h","V zaškolování: plnění %","Mimo plán: lidodny s hodinami","Mimo plán: h"];
+  const hours=t=>[t.planH,t.realH,Math.round((t.realH-t.planH)*100)/100,prPct(t.realH,t.planH),t.excusedH,prPct(t.realH,t.planH-t.excusedH),
+    t.ok.planN,t.ok.present,t.ok.planH,t.ok.realH,prPct(t.ok.realH,t.ok.planH),t.tr.planN,t.tr.present,t.tr.planH,t.tr.realH,prPct(t.tr.realH,t.tr.planH),t.extraN,t.extraH];
+  const counts=t=>[t.planN,t.present,t.excused,t.miss];
+  const sumRows=[...head,["Oddělení","Skupina","Lidodny v plánu","Přišlo","Omluveno","Neomluveno / chybí",...hoursHead]];
+  x.groups.forEach(g=>sumRows.push([g.dept,g.name,...counts(g.week),...hours(g.week)]));
+  sumRows.push(["","Celkem",...counts(x.total),...hours(x.total)]);
+  const dayRows=[...head,["Oddělení","Skupina","Den","Plán lidí","Ranní","Odpolední","Skupina 1/2 (bez střídání)","Bez směny","Přišlo","Omluveno","Neomluveno / chybí",...hoursHead]];
+  const dayLine=(g,label,t)=>[g.dept,g.name,label,t.planN,t.am,t.pm,t.rot,t.noshift,t.present,t.excused,t.miss,...hours(t)];
   x.groups.forEach(g=>{
-    x.days.forEach((d,i)=>{const t=g.days[i];if(d.has&&(t.planN||t.realH||t.extra))sumRows.push(line(g,dl(d),t));});
-    sumRows.push(line(g,"Celý týden",g.week));
-    sumRows.push([]);
+    x.days.forEach((d,i)=>{const t=g.days[i];if(d.has&&(t.planN||t.realH||t.extraH))dayRows.push(dayLine(g,dl(d),t));});
+    dayRows.push(dayLine(g,"Celý týden",g.week));
+    dayRows.push([]);
   });
-  sumRows.push(line({dept:"",name:"Všechny skupiny"},"Celý týden",x.total));
-  const vis=x.days.map((d,i)=>i);
+  x.days.forEach((d,i)=>{if(d.has)dayRows.push(dayLine({dept:"",name:"Všechny skupiny"},dl(d),x.totalDays[i]));});
+  dayRows.push(dayLine({dept:"",name:"Všechny skupiny"},"Celý týden",x.total));
   const pHead=["Příjmení","Jméno","ID v evidenci práce","Oddělení","Skupina","Směna","V týdnu","Dovednosti %","Schopný",
-    ...vis.flatMap(i=>[dl(x.days[i])+" plán",dl(x.days[i])+" skutečnost"]),
-    "Plán h","Odpracováno h","Rozdíl h","Plánované dny","Přišel","Omluveno","Neomluveno / chybí","Navíc dny","Kódy","Poznámka"];
+    ...x.days.flatMap(d=>[dl(d)+" plán",dl(d)+" skutečnost"]),
+    "Plán h","Odpracováno h","Rozdíl h","Plnění %","Mimo plán h","Hodiny u nepřítomnosti (nepočítají se)","Plánované dny","Přišel","Omluveno","Neomluveno / chybí","Kódy","Poznámka"];
   const pRows=[...head,pHead];
-  x.rows.forEach(r=>pRows.push([r.last,r.first,r.wid,r.dept,r.pos?r.pos.name:"",r.shift?shiftName(r.shift):"",PR_SLOT[r.slot]||"",
-    r.pct!=null?Math.round(r.pct):"",r.pos?(r.capable?"ano":"v zaškolování"):"",
-    ...vis.flatMap(i=>{const d=x.days[i],c=r.cells[i];
+  x.rows.forEach(r=>pRows.push([r.last,r.first,r.wid,r.dept,r.pos?r.pos.name:"",r.shift?shiftName(r.shift):"",PR_SLOT[r.slot]||"mimo plán",
+    r.pct!=null?Math.round(r.pct):"",r.planned?(r.capable?"ano":"v zaškolování"):"",
+    ...x.days.flatMap((d,i)=>{const c=r.cells[i];
       if(!d.has)return ["bez docházky","bez docházky"];
-      return [c.plan||"",c.h>0?c.h:c.c||(c.plan?"chybí":"")];}),
-    r.planH,r.realH,Math.round((r.realH-r.planH)*100)/100,r.planDays,r.workDays,r.excused,r.miss,r.extraDays,
+      return [c.plan||"",c.c?(c.h>0?c.c+" ("+nf(c.h,2)+" h)":c.c):c.h>0?c.h:c.plan?"chybí":""];}),
+    r.planH,r.realH,r.planned?Math.round((r.realH-r.planH)*100)/100:"",r.fill!=null?Math.round(r.fill*1000)/10:"",r.extraH||"",r.absH||"",r.planDays,r.workDays,r.excused,r.miss,
     Object.entries(r.codes).map(([k,n])=>k+(n>1?" ×"+n:"")).join(", "),r.note]));
-  return [{name:sheetName("Souhrn",used),rows:sumRows,cols:[16,20,12,9,8,10,12,8,10,12,12,9,13,9,12,12,12]},
-    {name:sheetName("Lidé",used),rows:pRows,cols:[16,12,12,16,18,18,12,11,13,...vis.flatMap(()=>[11,12]),9,13,9,12,8,10,12,10,16,26]}];
+  const hc=[9,13,9,9,10,12,12,10,11,13,12,12,10,11,13,12,12,10];
+  return [{name:sheetName("Souhrn",used),rows:sumRows,cols:[16,20,10,8,10,12,...hc]},
+    {name:sheetName("Po dnech",used),rows:dayRows,cols:[16,20,12,9,8,10,12,10,8,10,12,...hc]},
+    {name:sheetName("Lidé",used),rows:pRows,cols:[16,12,12,16,18,18,12,11,13,...x.days.flatMap(()=>[11,12]),9,13,9,9,11,16,12,8,10,12,16,30]}];
 }
 
 /* ---------- původní zařazení z verze 2.3 ----------

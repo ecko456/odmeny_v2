@@ -2430,7 +2430,7 @@ test('Plán a skutečnost podle docházky (2.24)', () => {
     const days = Array.from({ length: 30 }, (_, i) => '2026-09-' + String(i + 1).padStart(2, '0'));
     const rows = {};
     const att = (key, first, last, cells) => { const h = days.map(() => 0), c = days.map(() => null);
-      Object.entries(cells).forEach(([d, v]) => { const i = +d - 1; if (typeof v === 'number') h[i] = v; else c[i] = v; }); rows[key] = { first, last, h, c }; };
+      Object.entries(cells).forEach(([d, v]) => { const i = +d - 1; if (typeof v === 'number') h[i] = v; else { const x = parseHours(v); h[i] = x.h; c[i] = x.code; } }); rows[key] = { first, last, h, c }; };
     const add = (key, o) => { S.employees[key] = { key, first: key, last: key, note: '', ...o }; };
     add('a', { positionId: 'g1', shift: 'R', shortFri: true, rate: { k1: 4 } });
     add('b', { positionId: 'g1', shift: 'S1', hist: [{ at: 0, pos: 'g2', lvl: null }, { at: new Date(2026, 9, 1).getTime(), pos: 'g1', lvl: null }] });
@@ -2440,9 +2440,9 @@ test('Plán a skutečnost podle docházky (2.24)', () => {
     add('f', { lead: [] });
     add('g', { positionId: 'g2', shift: 'O' });
     att('a', 'a', 'a', { 21: 7.5, 22: 7.5, 23: 7.5, 24: 7.5, 25: 6.5 });
-    att('b', 'b', 'b', { 21: 'D', 22: 7.5, 23: 7.5, 24: 7.5, 25: 7.5 });
+    att('b', 'b', 'b', { 21: 'D', 22: '7,5 D', 23: 7.5, 24: 7.5, 25: 7.5 });
     att('c', 'c', 'c', { 22: 'X', 23: 7.5, 24: 7.5, 25: 7.5, 26: 6 });
-    att('d', 'd', 'd', { 23: 8 });
+    att('d', 'd', 'd', { 23: 8, 24: '8 NEM' });
     att('e', 'e', 'e', { 24: 4 });
     att('cizi|petr', 'Petr', 'Cizí', { 22: 7.5 });
     S.periods['2026-09'] = { days, rows, codes: {}, file: 't.xlsx', at: 1 };
@@ -2450,39 +2450,125 @@ test('Plán a skutečnost podle docházky (2.24)', () => {
     const x = planReality('2026-W39');
     const p40 = planReality('2026-W40');
     const sh = planRealitySheets('2026-W39');
-    const lide = sh[1].rows, hdr = lide.findIndex(r => r[0] === 'Příjmení'), cRow = lide.find(r => r[0] === 'c');
+    const lide = sh.find(t => t.name === 'Lidé').rows, hdr = lide.findIndex(r => r[0] === 'Příjmení'), cRow = lide.find(r => r[0] === 'c'), bRow = lide.find(r => r[0] === 'b');
     const col = t => lide[hdr].indexOf(t);
-    JSON.stringify({ weeks: attWeeks(), mg: x.mg, rows: x.rows.map(r => [r.key, r.pos ? r.pos.id : '', r.slot, r.planH, r.realH, r.workDays, r.excused, r.miss, r.extraDays, r.note]),
-      groups: x.groups.map(g => [g.pos ? g.pos.id : '', g.week.planN, g.week.am, g.week.pm, g.week.present, g.week.excused, g.week.miss, g.week.extra, g.week.planH, g.week.realH, g.week.capPlan, g.week.capReal]),
-      total: [x.total.planN, x.total.present, x.total.planH, x.total.realH], unpaired: x.unpaired, missing: x.missing,
+    JSON.stringify({ weeks: attWeeks(), mg: x.mg, rows: x.rows.map(r => [r.key, r.pos ? r.pos.id : '', r.slot, r.planH, r.realH, r.workDays, r.excused, r.miss, r.extraDays, r.extraH, r.capable, r.note]),
+      groups: x.groups.map(g => [g.pos ? g.pos.id : '', g.week.planN, g.week.am, g.week.pm, g.week.present, g.week.excused, g.week.miss, g.week.planH, g.week.realH, g.week.excusedH, g.week.extraN, g.week.extraH,
+        [g.week.ok.planN, g.week.ok.present, g.week.ok.planH, g.week.ok.realH], [g.week.tr.planN, g.week.tr.present, g.week.tr.planH, g.week.tr.realH]]),
+      total: [x.total.planN, x.total.present, x.total.planH, x.total.realH, x.total.extraH], unpaired: x.unpaired, missing: x.missing,
       p40: [p40.missing, p40.groups.find(g => g.pos && g.pos.id === 'g1').week.planN],
+      bCells: [bRow[col('Út 22. 9. plán')], bRow[col('Út 22. 9. skutečnost')], bRow[col('Odpracováno h')], bRow[col('Hodiny u nepřítomnosti (nepočítají se)')], bRow[col('Přišel')], bRow[col('Omluveno')], bRow[col('Kódy')]],
+      absH: x.rows.map(r => [r.key, r.absH]).filter(r => r[1]),
       sheets: sh.map(s => s.name), cCells: [cRow[col('Po 21. 9. plán')], cRow[col('Po 21. 9. skutečnost')], cRow[col('Út 22. 9. skutečnost')], cRow[col('Pá 25. 9. skutečnost')], cRow[cRow.length - 1]],
       weekendCols: lide[hdr].filter(t => /^(So|Ne) /.test(String(t))).length, days: x.days.map(d => d.iso), hol40: p40.holidays, days40: p40.days.map(d => d.iso),
       fri: friShift() })`));
   assert.deepStrictEqual(out.weeks, ['2026-W40', '2026-W39', '2026-W38', '2026-W37', '2026-W36'], 'týdny s docházkou od nejnovějšího');
   assert.strictEqual(out.mg, 'S1');
+  const A = 4 * 7.5 + out.fri;
   assert.deepStrictEqual(out.rows, [
-    ['a', 'g1', 'am', 4 * 7.5 + out.fri, 36.5, 5, 0, 0, 0, ''],
-    ['c', 'g1', 'pm', 37.5, 22.5, 3, 0, 2, 0, ''],
-    ['e', 'g1', 'none', 0, 4, 0, 0, 0, 1, 'vyřazen'],
-    ['b', 'g2', 'am', 37.5, 30, 4, 1, 0, 0, ''],
-    ['g', 'g2', 'pm', 37.5, 0, 0, 0, 5, 0, 'v docházce není (jiné jméno?)'],
-    ['cizi|petr', '', 'none', 0, 7.5, 0, 0, 0, 1, 'v Lidech není'],
-    ['d', '', 'none', 0, 8, 0, 0, 0, 1, 'bez skupiny']],
-    'lidé: plán ze zařazení (skupina z historie, zkrácený pátek, střídání), docházka, chybí a navíc; sobota se nepočítá (2.24.1); vedoucí bez hodin ve výstupu není');
+    ['a', 'g1', 'am', A, 36.5, 5, 0, 0, 0, 0, true, ''],
+    ['c', 'g1', 'pm', 37.5, 22.5, 3, 0, 2, 0, 0, false, ''],
+    ['e', 'g1', 'am', 37.5, 4, 1, 0, 4, 0, 0, false, 'dnes vyřazen'],
+    ['b', 'g2', 'am', 37.5, 22.5, 3, 2, 0, 0, 0, false, ''],
+    ['g', 'g2', 'pm', 37.5, 0, 0, 0, 5, 0, 0, false, 'v docházce není (jiné jméno?)'],
+    ['cizi|petr', '', 'none', 0, 0, 0, 0, 0, 1, 7.5, false, 'v Lidech není'],
+    ['d', '', 'none', 0, 0, 0, 0, 0, 1, 8, false, 'bez skupiny, mimo plán']],
+    'lidé: plán ze zařazení (skupina z historie, zkrácený pátek, střídání), dnes vyřazený s docházkou v plánu, mimo plán zvlášť; sobota se nepočítá; vedoucí bez hodin ve výstupu není; den s kódem nepřítomnosti a hodinami (7,5 D, 8 NEM) není odpracovaný');
   assert.deepStrictEqual(out.groups, [
-    ['g1', 10, 5, 5, 8, 0, 2, 1, 4 * 7.5 + out.fri + 37.5, 63, 5, 5],
-    ['g2', 10, 5, 5, 4, 1, 5, 0, 75, 30, 0, 0],
-    ['', 0, 0, 0, 0, 0, 0, 2, 0, 15.5, 0, 0]], 'skupiny za týden (lidodny, hodiny, schopní)');
-  assert.deepStrictEqual(out.total, [20, 12, 4 * 7.5 + out.fri + 75 + 37.5, 108.5]);
+    ['g1', 15, 10, 5, 9, 0, 6, A + 75, 63, 0, 0, 0, [5, 5, A, 36.5], [10, 4, 75, 26.5]],
+    ['g2', 10, 5, 5, 3, 2, 5, 75, 22.5, 15, 0, 0, [0, 0, 0, 0], [10, 3, 75, 22.5]],
+    ['', 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 15.5, [0, 0, 0, 0], [0, 0, 0, 0]]], 'skupiny za týden: lidodny, hodiny, omluveno, schopní a v zaškolování zvlášť, mimo plán zvlášť');
+  assert.deepStrictEqual(out.total, [25, 12, A + 150, 85.5, 15.5], 'celkem: odpracováno jen v plánu, mimo plán zvlášť');
+  assert.deepStrictEqual(out.absH, [['b', 7.5], ['d', 8]], 'hodiny u nepřítomnosti jen pro informaci');
+  assert.deepStrictEqual(out.bCells, [7.5, 'D (7,5 h)', 22.5, 7.5, 3, 2, 'D ×2'], 'Excel: dovolená s hodinami je nepřítomnost, hodiny jsou jen v závorce a ve zvláštním sloupci');
   assert.strictEqual(out.unpaired, 2, 'nespárovaná jména: plánovaný bez docházky a jméno z docházky, které v Lidech není');
   assert.deepStrictEqual(out.missing, []);
-  assert.deepStrictEqual(out.p40, [['2026-10-01', '2026-10-02'], 6], 'částečný týden: dny bez docházky se neporovnávají (28. 9. je svátek); b je od 1. 10. v CNC');
-  assert.deepStrictEqual(out.sheets, ['Souhrn', 'Lidé']);
+  assert.deepStrictEqual(out.p40, [['2026-10-01', '2026-10-02'], 6], 'částečný týden: dny bez docházky se neporovnávají (28. 9. je svátek); b je od 1. 10. v CNC, e bez docházky v plánu není');
+  assert.deepStrictEqual(out.sheets, ['Souhrn', 'Po dnech', 'Lidé']);
   assert.deepStrictEqual(out.cCells, [7.5, 'chybí', 'X', 7.5, ''], 'Excel po dnech: plán a skutečnost, kód');
   assert.strictEqual(out.weekendCols, 0, 'v Excelu nejsou víkendové sloupce');
   assert.deepStrictEqual(out.days, ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25'], 'jen pracovní dny');
   assert.deepStrictEqual([out.days40, out.hol40.map(h => h.iso)], [['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02'], ['2026-09-28']], 'svátek 28. 9. se nepočítá, jen se uvede');
+  return null;
+});
+
+test('Plán a skutečnost (2.24.2): nezávislá kontrola hodin proti docházce (jen dny v práci), součty, Excel a Docházka', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `JSON.stringify((()=>{
+  const errs=[];const eq=(a,b,m)=>{if(Math.abs(a-b)>1e-6)errs.push(m+': '+a+' ≠ '+b);};
+  const check=()=>{
+    const months=Object.keys(S.periods);
+    attWeeks().forEach(wid=>{
+      const x=planReality(wid);
+      // 1) člověk: hodiny ze surové docházky jen za pracovní dny s docházkou a jen dny v práci (bez kódu)
+      x.rows.forEach(r=>{
+        let raw=0,abs=0,plan=0;
+        x.days.forEach(d=>{if(!d.has)return;const p=S.periods[d.iso.slice(0,7)],i=p.days.indexOf(d.iso),row=p.rows[r.key];
+          const h=row?(+row.h[i]||0):0;if(row&&row.c[i])abs+=h;else raw+=h;if(r.planned)plan+=dayShift(d,!!(r.e&&r.e.shortFri));});
+        eq(r.planned?r.realH:r.extraH,raw,wid+' '+r.key+' hodiny');eq(r.absH,abs,wid+' '+r.key+' hodiny u nepřítomnosti');eq(r.planH,plan,wid+' '+r.key+' plán');
+        if(r.planned){eq(r.extraH,0,wid+' '+r.key+' navíc u plánovaného');eq(r.planDays,r.workDays+r.excused+r.miss,wid+' '+r.key+' dny = přišel + omluveno + chybí');}
+      });
+      // 2) skupina = součet lidí, schopní + zaškolování = celkem
+      x.groups.forEach(g=>{
+        const mine=x.rows.filter(r=>g.pos?(r.planned&&r.pos===g.pos):!r.planned);
+        eq(g.week.planH,mine.reduce((s,r)=>s+r.planH,0),wid+' '+g.name+' plán h');
+        eq(g.week.realH,mine.reduce((s,r)=>s+r.realH,0),wid+' '+g.name+' odpracováno');
+        eq(g.week.extraH,mine.reduce((s,r)=>s+r.extraH,0),wid+' '+g.name+' navíc');
+        ['planN','present','planH','realH'].forEach(k=>eq(g.week.ok[k]+g.week.tr[k],k==='planN'||k==='present'?g.week[k]:g.week[k],wid+' '+g.name+' ok+tr '+k));
+        eq(g.week.ok.realH,mine.filter(r=>r.capable).reduce((s,r)=>s+r.realH,0),wid+' '+g.name+' schopní h');
+        eq(g.week.planN,g.week.present+g.week.excused+g.week.miss,wid+' '+g.name+' lidodny = přišlo + omluveno + chybí');
+        eq(g.week.planN,g.week.am+g.week.pm+g.week.rot+g.week.noshift,wid+' '+g.name+' lidodny = směny');
+        g.days.forEach((t,i)=>eq(t.planH,mine.reduce((s,r)=>s+r.cells[i].plan,0),wid+' '+g.name+' den '+i));
+      });
+      ['planN','present','planH','realH','extraH'].forEach(k=>eq(x.total[k],x.groups.reduce((s,g)=>s+g.week[k],0),wid+' celkem '+k));
+      x.totalDays.forEach((t,i)=>eq(t.realH,x.groups.reduce((s,g)=>s+g.days[i].realH,0),wid+' celkem den '+i));
+      // 3) Excel Souhrn = výpočet
+      const sh=planRealitySheets(wid)[0].rows,hdr=sh.findIndex(r=>r[0]==='Oddělení'),col=t=>sh[hdr].indexOf(t);
+      const tot=sh.find(r=>r[1]==='Celkem');
+      eq(tot[col('Plán h')],x.total.planH,wid+' Excel plán');eq(tot[col('Odpracováno h')],x.total.realH,wid+' Excel odpracováno');
+      eq(tot[col('Schopní: odpracováno h')],x.total.ok.realH,wid+' Excel schopní');eq(tot[col('V zaškolování: odpracováno h')],x.total.tr.realH,wid+' Excel zaškolování');
+      eq(tot[col('Mimo plán: h')],x.total.extraH,wid+' Excel mimo plán');
+    });
+    // 4) Docházka: hodiny za pracovní dny měsíce (attendance().workHours, ta bere i hodiny u kódu)
+    //    minus hodiny u kódu nepřítomnosti = součet odpracovaného po týdnech
+    months.forEach(m=>{const p=S.periods[m];
+      Object.keys(p.rows).forEach(key=>{
+        if(!S.employees[key])return;
+        let sum=0;attWeeks().forEach(wid=>{const x=planReality(wid),r=x.rows.find(y=>y.key===key);if(!r)return;
+          x.days.forEach((d,i)=>{if(d.iso.slice(0,7)===m&&d.has)sum+=r.cells[i].w;});});
+        const a=attendance(p,key),coded=a.cells.reduce((s,c)=>s+(c.d.work&&c.c&&c.h>0?c.h:0),0);
+        eq(sum,a.workHours-coded,m+' '+key+' Docházka: hodiny v pracovní dny bez nepřítomnosti');
+      });});
+  };
+  // ukázková data
+  S=sanitizeState(demoData());check();
+  const demoErr=errs.length;
+  // náhodná data: 40 lidí, 3 skupiny, 2 měsíce, nemoc, dovolené, víkendy, svátky, vyřazení, bez směny
+  let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+  S=sanitizeState(blank());
+  S.positions=[0,1,2].map(i=>({id:'g'+i,name:'S'+i,dept:'D'+(i%2),skillset:[{id:'k'+i+'a',name:'a'},{id:'k'+i+'b',name:'b'}],maxTab:8,tiers:[],penalty:[],bonus:[]}));
+  S=sanitizeState(S);
+  const shifts=['R','O','S1','S2',''];
+  for(let n=0;n<40;n++){const k='p'+n;const g='g'+(n%3);
+    S.employees[k]={key:k,first:'J'+n,last:'P'+n,note:'',positionId:n%11===0?null:g,shift:shifts[n%5],shortFri:n%4===0,excluded:n%13===0,
+      rate:{['k'+(n%3)+'a']:n%5,['k'+(n%3)+'b']:(n*3)%5}};
+    if(n%7===0)S.employees[k].lead=[];}
+  ['2026-09','2026-10'].forEach(m=>{const [y,mm]=m.split('-').map(Number);const len=new Date(y,mm,0).getDate();
+    const days=Array.from({length:len},(_,i)=>m+'-'+String(i+1).padStart(2,'0'));const rows={};
+    for(let n=0;n<42;n++){const k=n<40?'p'+n:'x'+n;const h=[],c=[];
+      days.forEach(iso=>{const r=rnd();if(r<0.08){h.push(0);c.push(['D','NEM','A','PN'][Math.floor(rnd()*4)]);}
+        else if(r<0.11){h.push([8,7.5,4][Math.floor(rnd()*3)]);c.push(['D','NEM','A'][Math.floor(rnd()*3)]);}   // nepřítomnost s hodinami („8 D“)
+        else if(r<0.14){h.push(0);c.push(null);}else{h.push([7.5,6.5,8,9.25,4][Math.floor(rnd()*5)]);c.push(null);}});
+      rows[k]={first:'J'+n,last:'P'+n,h,c};}
+    S.periods[m]={days,rows,codes:{},file:'r.xlsx',at:1};});
+  S.capReport={...blankCapReport(),s1am:'2026-W40'};
+  S=sanitizeState(S);check();
+  const coded=Object.values(S.periods).reduce((s,p)=>s+Object.values(p.rows).reduce((t,r)=>t+r.h.filter((h,i)=>h>0&&r.c[i]).length,0),0);
+  return {weeks:attWeeks().length,demoErr,coded,errs:errs.slice(0,15),n:errs.length};
+})())`));
+  assert.ok(out.weeks >= 9, `týdnů ke kontrole: ${out.weeks}`);
+  assert.ok(out.coded > 50, `dnů s kódem i hodinami v náhodných datech: ${out.coded}`);
+  assert.deepStrictEqual(out.errs, [], `rozdíly (${out.n}): ${out.errs.join('; ')}`);
   return null;
 });
 

@@ -62,6 +62,29 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.24.2
+
+- **Plán a skutečnost podle docházky: opravené hodiny a schopní zvlášť od zaškolovaných.**
+  Po kompletní kontrole:
+  - **Odpracováno a plnění se počítají jen za lidi v plánu.** Dřív se do odpracovaných hodin
+    skupiny přičítaly i hodiny lidí mimo plán (třeba vyřazených) a řádek Celkem sčítal i lidi
+    bez skupiny, takže plnění vycházelo vyšší. Hodiny lidí mimo plán (bez skupiny, vedoucí, jména,
+    která v Lidech nejsou) jsou teď zvlášť ve sloupci **Mimo plán h** a do plnění se nepočítají.
+  - **V plánu je každý, kdo byl v tom týdnu ve skupině**, i bez nastavené směny (dřív se lidé bez
+    směny do plánu nepočítali a jejich hodiny byly „navíc“). Kdo je dnes vyřazený, ale v tom týdnu
+    ještě v docházce byl, je v plánu taky.
+  - **Odpracované jsou jen hodiny ze dnů, kdy byl člověk v práci.** Den s kódem nepřítomnosti
+    (dovolená, nemoc, neomluveno…) se do odpracovaných hodin nepočítá, ani když má docházka u kódu
+    hodiny (např. „8 D“). Takový den je omluvený (kód ze seznamu omluvené absence) nebo chybí;
+    hodiny u něj jsou v listu Lidé jen pro informaci (např. „D (8 h)“ a sloupec Hodiny
+    u nepřítomnosti). Modul Docházka (Kafe, absence) počítá jako dřív.
+  - **Schopní a v zaškolování zvlášť:** u každé skupiny i celkem plán hodin, odpracované hodiny
+    a plnění zvlášť pro schopné a zvlášť pro lidi v zaškolování.
+  - V Excelu je navíc **Omluveno h** (plánované hodiny dnů s dovolenou, nemocí…) a **plnění bez
+    omluvených**; listy jsou Souhrn (týden po skupinách), Po dnech a Lidé (s plněním u každého).
+  - Výpočet kontroluje nový test proti surové docházce a proti modulu Docházka: odpracované hodiny
+    za pracovní dny bez nepřítomnosti musí sedět na hodinu.
+
 ## Co je nového ve verzi 2.24.1
 
 - **Plán a skutečnost podle docházky bere jen pracovní dny.** Víkendy a svátky se nepočítají vůbec,

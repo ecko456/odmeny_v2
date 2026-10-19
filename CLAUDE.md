@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 19. 10. 2026 (verze 2.24.2):
+
+- Uživatel: „Plán a skutečnost podle docházky nesedí nějak hodiny. Udělej kompletní kontrolu,
+  potřebuji mít odpracované hodiny a plnění hodin jak pro schopné, tak ty, co se zaučují.“
+  - Chyby 2.24: odpracováno skupiny obsahovalo hodiny lidí mimo plán (vyřazených ve skupině),
+    Celkem i hodiny lidí bez skupiny; lidé ve skupině bez směny nebyli v plánu.
+  - Teď: v plánu každý ve skupině (ne vedoucí; bez směny `slot: 'noshift'`; dnes vyřazený jen
+    s docházkou v tom týdnu), `realH` jen lidé v plánu, `extraH` zvlášť (skupina „Mimo plán“),
+    u buněk `ok` a `tr` (schopní / v zaškolování: planN, present, planH, realH, excusedH),
+    `excusedH`, `totalDays`. Pomocné `prBlank`, `prAdd`, `prRound`, `prPct`.
+  - Uživatel pak: „Počítej jen pokud jsou v práci. Pokud mají nepřítomnost, tak to nepočítej jako
+    odpracované hodiny.“ Buňka s kódem je nepřítomnost i s hodinami („8 D“): `kind` podle kódu
+    (excused / code), odpracované hodiny buňky `w` = 0, hodiny u kódu jen `absH` (Excel: „D (8 h)“
+    a sloupec Hodiny u nepřítomnosti). Všechny součty berou `c.w`, ne `c.h`.
+    **Docházka (`attendance`) počítá h > 0 s kódem dál jako práci** (Kafe, absence); sjednotit jen
+    na přání uživatele.
+  - Excel: Souhrn (týden po skupinách), Po dnech, Lidé (plnění u člověka, mimo plán h).
+  - Test „Plán a skutečnost (2.24.2): nezávislá kontrola“ přepočítá vše ze surové docházky na
+    ukázkových i náhodných datech (40 lidí, 2 měsíce, i dny „hodiny + kód“) a porovná
+    s `attendance().workHours` minus hodiny u kódu.
+  - `ODM_VERSION` 2.24.2, data beze změny.
+
 Stav k 19. 10. 2026 (verze 2.24.1):
 
 - Uživatel: „Plán a skutečnost podle docházky ber vždy jen pracovní dny.“ `planReality` má
@@ -47,10 +69,10 @@ Stav k 19. 10. 2026 (verze 2.24):
   Spárovat to podle jména … jaký byl plán a jaká realita na daných pozicích“.
   - Core: `attDay(key, iso)` (docházka člověka v den, null bez docházky), `attWeeks()` (týdny
     s docházkou), `planReality(weekId)` → `{days (has), rows, groups (week, days), total,
-    missing, unpaired, mg, thr}`, `planRealitySheets(weekId)` (Souhrn, Lidé). Plán: skupina
+    missing, unpaired, mg, thr}`, `planRealitySheets(weekId)` (Souhrn, Po dnech, Lidé). Plán: skupina
     `levelAt(e, konec týdne)`, směna dnešní, `slotOn` se střídáním `S.capReport.s1am`, hodiny
     `dayShift` (zkrácený pátek), jen pracovní dny s nahranou docházkou. Skutečnost: hodiny,
-    kód (omluvený podle `excusedSet`, jinak chybí), navíc = hodiny mimo plán; víkend a svátek
+    kód (omluvený podle `excusedSet`, jinak chybí), mimo plán = hodiny lidí mimo plán zvlášť (2.24.2); víkend a svátek
     se nepočítají vůbec (2.24.1). Páruje se klíčem
     `příjmení|jméno` (řádky docházky a lidé mají stejný); poznámky „v docházce není (jiné
     jméno?)“, „v Lidech není“, „bez skupiny“, „bez směny“, „vyřazen“, „vedoucí“.
@@ -996,7 +1018,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.22.2 | `e6c4825` | Servis – interní ID rozhoduje (bez falešných duplicit při úpravě), oprava spojených zařízení, úprava protokolu nepřepíše evidenci |
 | 2.23 | `96f54c0` | Lidé – filtry a celá šířka monitoru; Směny a kapacita – v zaškolování zvlášť, PDF bez upozornění |
 | 2.24 | `c91b119` | Směny a kapacita – plán a skutečnost podle docházky za týden zpětně, Excel |
-| 2.24.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plán a skutečnost jen za pracovní dny (víkend a svátek se nepočítají) |
+| 2.24.1 | `2320230` | plán a skutečnost jen za pracovní dny (víkend a svátek se nepočítají) |
+| 2.24.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plán a skutečnost – opravené hodiny, schopní a v zaškolování zvlášť, kontrola proti docházce |
 
 Verze 2.1 přidala:
 
@@ -1374,7 +1397,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 62 testů: proti původní aplikaci + opravy + 2.1 až 2.24
+node tests/test_core.js                 # 63 testů: proti původní aplikaci + opravy + 2.1 až 2.24.2
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

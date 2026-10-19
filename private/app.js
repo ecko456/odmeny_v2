@@ -3536,7 +3536,7 @@ function renderCapacity() {
       <textarea id="capNote" rows="4" maxlength="4000" placeholder="např. Zaučit 2 lidi ze skupiny 2 na Seřízení stroje do konce měsíce.">${esc(rep.note)}</textarea></div>
     ${capHistHtml()}`;
 }
-/* Plán a skutečnost podle docházky (2.24): týden zpětně, souhrn po skupinách, rozpis v Excelu.
+/* Plán a skutečnost podle docházky (2.24, přepočet 2.24.2): týden zpětně, souhrn po skupinách, rozpis v Excelu.
    Do PDF ani tisku reportu kapacit nepatří (noprint). */
 function capHistHtml() {
   const weeks = attWeeks();
@@ -3546,19 +3546,24 @@ function capHistHtml() {
   const x = planReality(ui.capHist);
   const dl = iso => { const d = x.days.find(y => y.iso === iso); return `${DOW[d.dow]} ${d.d}. ${d.m}.`; };
   const pct = (a, b) => (b > 0 ? `${nf(a / b * 100, 0)} %` : '—');
+  const h = v => nf(v, 1);
+  const out = x.total.extraH > 0;   // sloupec Mimo plán jen, když někdo mimo plán pracoval
+  const hrs = (p, cls = '') => `<td class="r num${cls}">${p.planN ? h(p.planH) : '—'}</td><td class="r num">${p.planN ? h(p.realH) : '—'}</td><td class="r num">${pct(p.realH, p.planH)}</td>`;
   const row = (name, dept, t, cls = '') => `<tr${cls ? ` class="${cls}"` : ''}><th scope="row">${esc(name)}${dept && dept !== name ? `<small>${esc(dept)}</small>` : ''}</th>
-    <td class="r num">${t.planN}</td><td class="r num">${t.present}</td><td class="r num">${t.excused}</td><td class="r num${t.miss ? ' cap-miss' : ''}">${t.miss}</td><td class="r num">${t.extra}</td>
-    <td class="r num">${nf(t.planH, 1)}</td><td class="r num">${nf(t.realH, 1)}</td><td class="r num">${pct(t.realH, t.planH)}</td><td class="r num">${t.capPlan ? `${t.capReal} z ${t.capPlan}` : '—'}</td></tr>`;
+    <td class="r num">${t.planN}</td><td class="r num">${t.present}</td><td class="r num">${t.excused}</td><td class="r num${t.miss ? ' cap-miss' : ''}">${t.miss}</td>
+    ${hrs(t, ' cap-grp')}${hrs(t.ok, ' cap-grp')}${hrs(t.tr, ' cap-grp')}${out ? `<td class="r num cap-grp">${t.extraH ? h(t.extraH) : '—'}</td>` : ''}</tr>`;
   return `<div class="card cap-hist noprint">
     <div class="card-head"><div>${title}
-      <p class="small muted">Vyber týden zpětně. Plán je podle zařazení v Matici dovedností (skupina platná v tom týdnu, směna podle dnešního zařazení${x.mg ? `, ranní měla skupina ${x.mg === 'S1' ? 1 : 2}` : ', střídání skupin 1 a 2 není nastavené'}), skutečnost podle nahrané docházky. Lidé se párují podle jména.</p></div></div>
+      <p class="small muted">Vyber týden zpětně. V plánu je každý, kdo byl v tom týdnu zařazený do skupiny (směna určuje ranní a odpolední${x.mg ? `; ranní měla skupina ${x.mg === 'S1' ? 1 : 2}` : '; střídání skupin 1 a 2 není nastavené'}), skutečnost je z nahrané docházky. Lidé se párují podle jména.</p></div></div>
     <div class="row gap wrap"><label class="field cap-thr"><span>Týden</span><select id="capHistWeek">${weeks.map(id => `<option value="${id}"${id === x.id ? ' selected' : ''}>${esc(weekLong(id))}</option>`).join('')}</select></label>
       <span class="spacer"></span><button class="btn" type="button" id="capHistXlsx">Export do Excelu</button></div>
-    ${x.holidays.length ? `<p class="small muted">Svátek v tomto týdnu: ${x.holidays.map(h => `${esc(dayText(h.iso, false))} (${esc(h.name)})`).join(', ')}; nepočítá se.</p>` : ''}
+    ${x.holidays.length ? `<p class="small muted">Svátek v tomto týdnu: ${x.holidays.map(d => `${esc(dayText(d.iso, false))} (${esc(d.name)})`).join(', ')}; nepočítá se.</p>` : ''}
     ${x.missing.length ? `<p class="small warn-t">Docházka chybí pro ${x.missing.map(dl).join(', ')}; tyto dny se neporovnávají.</p>` : ''}
-    <div class="table-card flat cap-wrap"><table class="cap-table cap-hist-tab"><thead><tr><th>Skupina</th><th class="r">Plán (lidodny)</th><th class="r">Přišlo</th><th class="r">Omluveno</th><th class="r">Chybí</th><th class="r">Navíc mimo plán</th><th class="r">Plán h</th><th class="r">Odpracováno h</th><th class="r">Plnění hodin</th><th class="r">Schopní přišli</th></tr></thead>
-    <tbody>${x.groups.map(g => row(g.name, g.dept, g.week)).join('')}${x.groups.length > 1 ? row('Celkem', '', x.total, 'cap-sum') : ''}</tbody></table></div>
-    <p class="tiny muted">Počítají se jen pracovní dny, víkendy a svátky ani s odpracovanými hodinami ne. Lidodny = lidé × pracovní dny v plánu. Chybí = plánovaný den bez hodin a bez omluveného kódu. Navíc = pracovní den s hodinami u člověka mimo plán (bez skupiny nebo směny, vyřazený, vedoucí). Schopní = průměr dovedností skupiny aspoň úroveň ${x.thr} (podle dnešního hodnocení). V Excelu je rozpis po skupinách a dnech a po lidech, kolik kdo odpracoval${x.unpaired ? `; ${x.unpaired === 1 ? '1 jméno se nepodařilo spárovat' : `${x.unpaired} jmen se nepodařilo spárovat`} (sloupec Poznámka)` : ''}.</p>
+    <div class="table-card flat cap-wrap"><table class="cap-table cap-hist-tab"><thead>
+      <tr class="cap-weeks"><th rowspan="2">Skupina</th><th colspan="4" class="cap-wk">Lidé v plánu</th><th colspan="3" class="cap-wk">Hodiny celkem</th><th colspan="3" class="cap-wk">Schopní</th><th colspan="3" class="cap-wk">V zaškolování</th>${out ? '<th rowspan="2" class="r cap-grp">Mimo plán h</th>' : ''}</tr>
+      <tr><th class="r">Lidodny</th><th class="r">Přišlo</th><th class="r">Omluveno</th><th class="r">Chybí</th>${['', '', ''].map(() => '<th class="r cap-grp">Plán h</th><th class="r">Odprac. h</th><th class="r">Plnění</th>').join('')}</tr></thead>
+    <tbody>${x.groups.map(g => row(g.name, g.dept, g.week, g.pos ? '' : 'cap-out')).join('')}${row('Celkem', '', x.total, 'cap-sum')}</tbody></table></div>
+    <p class="tiny muted">Počítají se jen pracovní dny, víkendy a svátky ani s odpracovanými hodinami ne. Lidodny = lidé × pracovní dny v plánu. Odpracované jsou jen hodiny ze dnů v práci: den s kódem nepřítomnosti (dovolená, nemoc, neomluveno…) se nepočítá, ani když má u kódu hodiny. Odpracováno a plnění jsou jen za lidi v plánu; hodiny lidí mimo plán (bez skupiny, vedoucí, jména, která v Lidech nejsou) jsou zvlášť. Plnění = odpracováno ÷ plán (dovolená a nemoc ho snižují); omluvené hodiny a plnění bez nich jsou v Excelu. Schopný = průměr dovedností skupiny aspoň úroveň ${x.thr} (podle dnešního hodnocení), ostatní jsou v zaškolování. V Excelu je souhrn, rozpis po dnech a po lidech, kolik kdo odpracoval${x.unpaired ? `; ${x.unpaired === 1 ? '1 jméno se nepodařilo spárovat' : `${x.unpaired} jmen se nepodařilo spárovat`} (sloupec Poznámka)` : ''}.</p>
   </div>`;
 }
 async function exportPlanReality(button) {
