@@ -3,7 +3,8 @@
 // matice (klik na buňku, filtr skupiny a směny), směny a kapacita (práh, vyřazená dovednost,
 // závěr, PDF), pravidla do PDF, Excel, bod vedoucího u prémie a sankce: posuvník 5–50 %
 // a srážka ze mzdy (upozornění, Srážka zpracována, zrušení), od 2.8 stálá odpolední směna,
-// od 2.9 plánovaná kapacita skupiny (ks/h na osobu) a nemoc.
+// od 2.9 plánovaná kapacita skupiny (ks/h na osobu) a nemoc, od 2.25 dovednost „Není nutností“
+// (čtvrtinová váha, celkové skóre v reportu kapacit, rozpis dovedností).
 // Na konci mobil a tmavý režim.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -257,7 +258,8 @@ async function nav(page, view) {
   if (capText != null) {
     check(/Kapacita dovedností podle směn/.test(capText) && /Zaučit skupinu 2/.test(capText) && /Frézování/.test(capText), `PDF kapacity: ${capText.slice(0, 300)}`);
     check(/úroveň aspoň 2/i.test(capText), 'PDF kapacity ukazuje práh 2');
-    check(!/bez schopného|aspoň jeden schopný/i.test(capText), 'PDF kapacity bez upozornění na odpoledne bez schopného člověka (2.23)');
+    check(!/bez schopného|aspoň jeden schopný|bez zkušeného|aspoň jeden zkušený/i.test(capText), 'PDF kapacity bez upozornění na odpoledne bez zkušeného pracovníka (2.23)');
+    check(/Zkušení pracovníci/.test(capText) && /Pracovníci v zácviku/.test(capText) && !/schopn|zaškol/i.test(capText), 'PDF kapacity: pojmy Zkušení pracovníci a Pracovníci v zácviku (2.25)');
     check(/HALA 2/.test(capText) && !/Odměny|ODMĚNY/.test(capText), `PDF kapacity: místo názvu aplikace HALA 2 (2.13): ${capText.slice(0, 200)}`);
   }
   // Report se pamatuje i po přepnutí záložek.
@@ -303,9 +305,10 @@ async function nav(page, view) {
     const rep = S.capReport, cap = capacity(rep.groups, rep.thr, rep.hidden);
     const want = cap.groups.flatMap(g => g.skills.flatMap(r => [r.A.amT, r.A.pmT, r.B.amT, r.B.pmT, ...(cap.head[''] ? [r.by[''].tr] : [])]));
     const g = cap.groups[0], r = g.skills[0];
-    return { want: want.filter(Boolean).length, sum: want.reduce((x, v) => x + v, 0), got: document.querySelectorAll('#capView .cap-table .cap-tr').length,
-      text: [...document.querySelectorAll('#capView .cap-table .cap-tr')].reduce((x, el) => x + parseInt(el.textContent, 10), 0),
-      group: document.querySelector('#capView .cap-group p').textContent.includes(`schopní ${g.ok}, v zaškolování ${g.training}`), ok: g.ok + g.training === g.members,
+    // řádky dovedností (řádky celkového skóre z 2.25 mají vlastní kontrolu)
+    return { want: want.filter(Boolean).length, sum: want.reduce((x, v) => x + v, 0), got: document.querySelectorAll('#capView .cap-table tr:not(.cap-score) .cap-tr').length,
+      text: [...document.querySelectorAll('#capView .cap-table tr:not(.cap-score) .cap-tr')].reduce((x, el) => x + parseInt(el.textContent, 10), 0),
+      group: document.querySelector('#capView .cap-group p').textContent.includes(`zkušení ${g.ok}, v zácviku ${g.training}`), ok: g.ok + g.training === g.members,
       split: r.A.amT + r.A.pmT === r.by.R.tr + r.by.O.tr + r.by.S1.tr + r.by.S2.tr };
   });
   check(capTr.want > 0 && capTr.got === capTr.want && capTr.text === capTr.sum && capTr.group && capTr.ok && capTr.split, `v zaškolování v reportu kapacit: ${JSON.stringify(capTr)}`);
@@ -360,11 +363,87 @@ async function nav(page, view) {
   await page.waitForFunction(k => !S.employees[k].sick, adam.key);
   await page.click('#nav [data-view="matice"]');
 
+  // Není nutností (2.25): Programování ve Frézování je nepovinné → v procentu čtvrtinová váha (i tabáky),
+  // v matici označené, v reportu kapacit celkové skóre a nepovinné jen vyjmenované; volba rozpisu.
+  await page.click('[data-mxtab="groups"]');
+  await page.click(`#posList [data-selpos="${grp.id}"]`);
+  await page.waitForSelector(`${editor} [data-skrow="${prog}"] [data-skopt]`);
+  check(!(await page.isChecked(`${editor} [data-skrow="${prog}"] [data-skopt]`)), 'dovednost je výchozí nutná');
+  await page.check(`${editor} [data-skrow="${prog}"] [data-skopt]`);
+  await page.waitForFunction(([id, s]) => S.positions.find(p => p.id === id).skillset.find(x => x.id === s).opt === true, [grp.id, prog]);
+  await page.waitForSelector(`${editor} [data-skrow="${prog}"].is-opt .sk-opt-tag`);
+  const optAdam = await page.evaluate(k => { const L = levelOf(S.employees[k]); return [L.pct, L.base]; }, adam.key);
+  check(JSON.stringify(optAdam) === JSON.stringify([90, 9]), `Adam po označení Programování jako nepovinné: (4 + ¼ · 2) / 5 = 90 %, 9 tabáků: ${JSON.stringify(optAdam)}`);
+  await (await page.$(`${editor} #skillCard`)).screenshot({ path: `${shots}/06-opt-skills.png` });
+  await page.click(`${editor} [data-skrow="${prog}"] [data-skedit]`);
+  await page.waitForSelector('#dlg[open] [name="opt"]');
+  check(await page.isChecked('#dlg [name="opt"]'), 'dialog dovednosti ukazuje Není nutností');
+  await page.click('#dlgCancel');
+  await page.waitForSelector('#dlg', { state: 'hidden' });
+  await saved(page);
+  const optLog = await page.evaluate(async () => (await Vault.loadData()).state.log.map(e => e.text).filter(t => /Programování/.test(t)));
+  check(optLog.some(t => /dovednost „Programování“ není nutností/.test(t)), `historie změn: ${JSON.stringify(optLog)}`);
+  // matice: sloupec označený, procento přepočtené
+  await page.click('[data-mxtab="matrix"]');
+  await page.selectOption('#matrixGroup', grp.id);
+  await page.waitForSelector(`[data-mxr="${adam.key}"]`);
+  check(/nepovinná/.test(await page.textContent('#matrixView th.mx-col.is-opt')), 'v matici je nepovinná dovednost označená');
+  check(/90\s*%/.test(await page.textContent(`#matrixView tr:has([data-mxr="${adam.key}"])`)), 'procento v matici s čtvrtinovou váhou');
+  await page.selectOption('#matrixGroup', '');
+  // report kapacit: výchozí rozpis = celkové skóre a nutné dovednosti
+  await page.click('[data-mxtab="cap"]');
+  await page.waitForSelector('#capDetail');
+  const capCard = `#capView .cap-group:has(h3:text-is("Frézování"))`;
+  const optCap = await page.evaluate(([id, s, sel]) => {
+    const rep = S.capReport, cap = capacity(rep.groups, rep.thr, rep.hidden), g = cap.groups.find(x => x.p.id === id);
+    const card = [...document.querySelectorAll('#capView .cap-group')].find(c => c.querySelector('h3').textContent === sel);
+    const want = [...capWeeks(rep).flatMap(w => [g.score[w.v].am, g.score[w.v].pm]), ...(cap.head[''] ? [g.score.none.n] : [])];
+    const wantT = [...capWeeks(rep).flatMap(w => [g.score[w.v].amT, g.score[w.v].pmT]), ...(cap.head[''] ? [g.score.none.tr] : [])];
+    return { detail: document.querySelector('#capDetail').value, scoreRows: document.querySelectorAll('#capView tr.cap-score').length, groups: cap.groups.length,
+      got: [...card.querySelectorAll('tr.cap-score .cap-n')].map(x => +x.textContent), want,
+      gotT: [...card.querySelectorAll('tr.cap-train .cap-n')].map(x => +x.textContent), wantT,
+      labels: [card.querySelector('tr.cap-score b').textContent, card.querySelector('tr.cap-train b').textContent],
+      progRow: !!card.querySelector(`[data-capskill="${s}"]`), fold: (card.querySelector('tr.cap-fold') || {}).textContent || '' };
+  }, [grp.id, prog, 'Frézování']);
+  check(optCap.detail === 'need' && optCap.scoreRows === optCap.groups && JSON.stringify(optCap.got) === JSON.stringify(optCap.want) && JSON.stringify(optCap.gotT) === JSON.stringify(optCap.wantT)
+    && optCap.labels.join() === 'Zkušení pracovníci,Pracovníci v zácviku' && !optCap.progRow && /Nepovinné dovednosti \(1\)/.test(optCap.fold) && /Programování/.test(optCap.fold),
+    `report kapacit s celkovým skóre a sbalenou nepovinnou dovedností: ${JSON.stringify(optCap)}`);
+  await (await page.$(capCard)).screenshot({ path: `${shots}/07-cap-need.png` });
+  const capPdfN = await download(page, '#capPdf', 'matice-kapacita-nutne.pdf');
+  const capTextN = pdfText(capPdfN.path);
+  if (capTextN != null) check(/Zkušení pracovníci/.test(capTextN) && /Pracovníci v zácviku/.test(capTextN) && /Nepovinné dovednosti \(1\): Programování/.test(capTextN), `PDF kapacit s celkovým skóre: ${capTextN.slice(0, 600)}`);
+  await page.selectOption('#capDetail', 'all');
+  await page.waitForFunction(() => S.capReport.detail === 'all');
+  check(await page.evaluate(s => { const r = document.querySelector(`#capView tr:has([data-capskill="${s}"])`); return !!r && r.classList.contains('cap-opt') && !r.querySelector('.cap-zero, .cap-one'); }, prog),
+    'všechny dovednosti: nepovinná má vlastní řádek bez barvy rizika');
+  await page.selectOption('#capDetail', 'none');
+  await page.waitForFunction(() => S.capReport.detail === 'none');
+  const onlyScore = await page.evaluate(() => { const rep = S.capReport, cap = capacity(rep.groups, rep.thr, []), card = document.querySelector('#capView .cap-score-card');
+    return { skills: document.querySelectorAll('#capView [data-capskill]').length, cards: document.querySelectorAll('#capView .cap-group').length, groups: cap.groups.length,
+      pro: card ? card.querySelectorAll('tr.cap-pro:not(.cap-sum)').length : -1, train: card ? card.querySelectorAll('tr.cap-train:not(.cap-sum)').length : -1,
+      labels: card ? [...new Set([...card.querySelectorAll('.cap-who')].map(x => x.textContent))] : [] }; });
+  check(onlyScore.skills === 0 && onlyScore.cards === 1 && onlyScore.pro === onlyScore.groups && onlyScore.train === onlyScore.groups && onlyScore.labels.join() === 'Zkušení pracovníci,Pracovníci v zácviku',
+    `jen celkové skóre: jedna tabulka, za skupinu zkušení a v zácviku, bez rozpisu dovedností: ${JSON.stringify(onlyScore)}`);
+  await page.screenshot({ path: `${shots}/08-cap-none.png`, fullPage: true });
+  const capPdfS = await download(page, '#capPdf', 'matice-kapacita-skore.pdf');
+  const capTextS = pdfText(capPdfS.path);
+  if (capTextS != null) check(/Celkové skóre po skupinách/.test(capTextS) && /Frézování – zkušení pracovníci/.test(capTextS) && /Pracovníci v zácviku/.test(capTextS) && !/Obsluha frézy/.test(capTextS), `PDF kapacit jen se skóre: ${capTextS.slice(0, 600)}`);
+  await page.selectOption('#capDetail', 'need');
+  await page.waitForFunction(() => !('detail' in S.capReport));   // výchozí rozpis se neukládá
+  // u člověka je nepovinná dovednost označená
+  await page.click('#nav [data-view="lide"]');
+  await page.click(`#lList [data-key="${adam.key}"]`);
+  await page.waitForSelector('#lDetail .rate-card .rate-seg');
+  check(await page.evaluate(() => [...document.querySelectorAll('#lDetail .rate-card .rate-row')].some(r => /Programování/.test(r.textContent) && r.querySelector('.sk-opt-tag'))), 'v hodnocení člověka je nepovinná dovednost označená');
+  check(/90 %/.test(await page.textContent('#lDetail .rate-card')), 'u člověka vážené procento');
+  await page.click('#nav [data-view="matice"]');
+
   // Pravidla do PDF.
   const rules = await download(page, '#btnRulesPdf', 'matice-pravidla.pdf');
   check(rules.pdf, 'PDF pravidel');
   const rulesText = pdfText(rules.path);
   if (rulesText != null) check(/Frézování/.test(rulesText) && /Obsluha frézy/.test(rulesText) && /Začátečník/.test(rulesText) && /navýšení mzdy o 15 %/.test(rulesText), `PDF pravidel: ${rulesText.slice(0, 400)}`);
+  if (rulesText != null) check(/Programování \(není nutností/.test(rulesText), 'PDF pravidel: nepovinná dovednost je označená (2.25)');
   if (rulesText != null) check(/HALA 2/.test(rulesText) && !/Odměny|ODMĚNY/.test(rulesText), 'PDF pravidel: HALA 2 místo názvu aplikace');
 
   // Bod vedoucího u prémie (Dvořák z ukázky, skupina CNC).

@@ -34,6 +34,37 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 19. 10. 2026 (verze 2.25):
+
+- **Dovednost „Není nutností“ a celkové skóre v reportu kapacit.** Uživatel: „u dovedností
+  zakliknout ‚Není nutností‘ a nebralo by to v celkovém hodnocení tolik v potaz … přehlednější
+  report o kapacitách na dané oddělení … aby to vypovídalo spíše o celkovém skóre“. Na dotaz
+  zvolil: **jedno skóre všude** (i tabáky a prémie) a **čtvrtinovou váhu**.
+  - `skillset[].opt: true` (jen `true`, nutná dovednost pole nemá). `OPT_W = 0.25`, `skillW`,
+    `needSkills` (když jsou všechny nepovinné, platí všechny), `optText`.
+  - `skillPct` = vážený průměr. Bez nepovinných přesně stejné číslo jako dřív (test na 420
+    náhodných kombinacích, `===`). Tím se mění i tabáky (`skillTab`), schopní (`capableIn`),
+    historie zařazení (`pct` při změně). Vydané měsíce mají snímek, nemění se.
+  - `minRate` jen z nutných dovedností: prémie „všechny **nutné** dovednosti aspoň X“ (`tierChecks`
+    i `tierConds(t, p)` pro Excel a PDF pravidel; když jsou nepovinné všechny, bez slova „nutné“).
+  - Rizika: úvod HALA 2 (`staffDay`), pokrytí v matici (`coverage[].opt`) a `capRisks` nepovinné
+    dovednosti nehlásí. Log: „dovednost „X“ není nutností / je zase nutná“.
+  - `capacity()`: `skills[].opt`, `g.opt` (počet), `g.score` `{A, B, none, weaker}` = zkušení
+    pracovníci (`am/pm`) a pracovníci v zácviku (`amT/pmT`) skupiny podle procenta skupiny;
+    `bySh[k].tr`. `capScoreByDept(cap)`: skupiny po odděleních, u víc skupin `total`.
+  - Report: `capReport.detail` (`#capDetail`) `all` | `none`, výchozí `need` se **neukládá**
+    (aktualizace data nezmění). `need` = skóre + nutné dovednosti, nepovinné sbalené do řádku
+    `tr.cap-fold`; `all` = i nepovinné (`tr.cap-opt`, bez barvy rizika); `none` = jedna tabulka
+    `capScoreHtml` (`.cap-score-card`, dvojice `tr.cap-pro` / `tr.cap-train`, oddělení `tr.cap-dept`
+    jen když nese informaci, `capDeptHead`). PDF stejně (`drawCapacity`).
+  - Uživatel pak: „V reportech ať je vidět ‚Zkušení pracovníci‘ a ‚Pracovníci v zácviku‘.“ Místo
+    „schopní“ a „v zaškolování“ v reportu kapacit (aplikace i PDF, `CAP_PRO`, `CAP_TR`), v plánované
+    kapacitě a v Plánu a skutečnosti (karta i Excel: `Zkušení pracovníci: …`, `Pracovníci
+    v zácviku: …`, sloupec `Zkušený pracovník`). V kódu zůstávají názvy `ok`/`tr`, `capable`.
+  - Rozhraní: zaškrtávátko `[data-skopt]` v řádku dovednosti a `name="opt"` v dialogu
+    (`applySkill`), štítek `optTag`, v matici `th.mx-col.is-opt` „nepovinná“, v PDF matice `*`.
+  - `ODM_VERSION` 2.25, `DATA_VERSION` = `CLIENT_VERSION` = `ODM_MIN_CLIENT` = 21.
+
 Stav k 19. 10. 2026 (verze 2.24.2):
 
 - Uživatel: „Plán a skutečnost podle docházky nesedí nějak hodiny. Udělej kompletní kontrolu,
@@ -1019,7 +1050,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.23 | `96f54c0` | Lidé – filtry a celá šířka monitoru; Směny a kapacita – v zaškolování zvlášť, PDF bez upozornění |
 | 2.24 | `c91b119` | Směny a kapacita – plán a skutečnost podle docházky za týden zpětně, Excel |
 | 2.24.1 | `2320230` | plán a skutečnost jen za pracovní dny (víkend a svátek se nepočítají) |
-| 2.24.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plán a skutečnost – opravené hodiny, schopní a v zaškolování zvlášť, kontrola proti docházce |
+| 2.24.2 | `77e4b94` | plán a skutečnost – opravené hodiny, schopní a v zaškolování zvlášť, hodiny jen ze dnů v práci, kontrola proti docházce |
+| 2.25 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: dovednost „Není nutností“ (váha ¼ i v tabácích), celkové skóre v reportu kapacit, Zkušení pracovníci a Pracovníci v zácviku (data verze 21) |
 
 Verze 2.1 přidala:
 
@@ -1131,7 +1163,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `20` (od 2.22):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `21` (od 2.25):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1146,7 +1178,8 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 
 - `positions[]` (skupiny): `{id, name, dept, max, onlyKafe, levels[4], skillset[], maxTab, tiers[], penalty[], bonus[], plan{v, unit ks|h}}` (`plan` od 2.9, jen když je zapnutá plánovaná kapacita)
   - `max: null` = bez stropu (maximum + nejvyšší bonus, `posMaxAuto`);
-  - `skillset[]`: `{id, name, desc, scale}`; `scale` je 5 úrovní `{name, desc}`, `null` = `STD_SCALE`;
+  - `skillset[]`: `{id, name, desc, scale, opt?}`; `scale` je 5 úrovní `{name, desc}`, `null` = `STD_SCALE`;
+    `opt: true` (2.25) = není nutností, v procentu skupiny váha ¼;
   - `normCut` (2.12): `{from, rows[{max, pct}]}`, srážky ze mzdy za neproduktivitu (jen když jsou zapnuté);
   - `tiers[]` (varianty prémie): `{id, name, minSkill 0–4, skills[{id, lvl}], raise %, reward, maxAbs, minWknd, minAtt, minNorm, minUse, maxKt, moral, manual[{id, text}], streak{months, label}|null}` (`skills`, `maxKt`, `moral` od 2.11);
     prázdná podmínka = `null` = nehlídá se;
@@ -1176,7 +1209,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `kafe{period: práh v hodinách}`;
   - `issued{period: {key: {at, tabaky, kafe, pos, lvl, pct, tier, raise}}}` (snímek při výdeji);
   - `marks{period: {key: {bodId: důvod}}}`: body prémie, které vedoucí označil jako nesplněné;
-  - `capReport{groups[], thr, hidden[], note}`: report Směny a kapacita;
+  - `capReport{groups[], thr, hidden[], note, s1am, detail?}`: report Směny a kapacita (`detail` 2.25: `all` | `none`, výchozí se neukládá);
   - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook`);
   - `logbooks[]` (2.16): Protokoly (viz níže);
   - `service` (2.21, 2.22): Servis, evidence zařízení, odeslání a vzory (viz níže);
@@ -1397,7 +1430,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 63 testů: proti původní aplikaci + opravy + 2.1 až 2.24.2
+node tests/test_core.js                 # 64 testů: proti původní aplikaci + opravy + 2.1 až 2.25
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

@@ -488,6 +488,8 @@ label.btn { cursor: pointer; }
 .matrix .mx-main { min-width: 140px; font-size: 13px; white-space: nowrap; color: var(--ink-2); }
 .matrix .mx-col { width: 64px; min-width: 64px; max-width: 90px; text-align: center; white-space: normal; line-height: 1.15; }
 .matrix .mx-col span { display: inline-block; max-width: 86px; overflow: hidden; text-overflow: ellipsis; }
+.matrix .mx-col.is-opt span { color: var(--ink-2); font-style: italic; }
+.matrix .mx-col small { display: block; margin-top: 2px; font: 600 10px/1.2 var(--body); color: var(--ink-3); text-transform: none; letter-spacing: 0; }
 .matrix .mx-cell { text-align: center; border-left: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
 .matrix .mx-cell.is-main { background: color-mix(in srgb, var(--acc-soft) 55%, transparent); }
 .mx-btn, .mx-static { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 44px; min-height: 34px; padding: 2px 6px; border: 1px solid transparent; border-radius: 9px; background: transparent; }
@@ -951,6 +953,11 @@ td.t5-lastc { max-width: 280px; }
 .sk-row:first-child { border-top: 0; }
 .sk-main { min-width: 0; }
 .sk-main p { margin: 2px 0 0; overflow-wrap: anywhere; }
+/* nepovinná dovednost (2.25) */
+.sk-opt { display: inline-flex; align-items: center; gap: 6px; margin-right: 6px; font: 600 12.5px/1.3 var(--body); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.sk-opt input { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); }
+.sk-opt-tag { margin-left: 6px; vertical-align: 1px; }
+.sk-row.is-opt .sk-main > b { color: var(--ink-2); }
 .sk-tools, .tier-tools { display: flex; align-items: center; gap: 4px; flex: none; }
 .sk-tools .icon-btn, .tier-tools .icon-btn { width: 32px; height: 32px; }
 .sk-tools [data-skup] .icon, .tier-tools [data-tierup] .icon { transform: rotate(90deg); }
@@ -980,6 +987,7 @@ td.t5-lastc { max-width: 280px; }
 .rate-row:first-child { border-top: 0; }
 .rate-name { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; }
 .rate-name small { color: var(--ink-3); font-size: 12.5px; overflow-wrap: anywhere; }
+.rate-name .sk-opt-tag { justify-self: start; margin-left: 0; }
 .rate-seg button { min-width: 38px; }
 .rate-others > summary { cursor: pointer; padding: 2px 0; }
 .rate-others[open] > summary { margin-bottom: 8px; }
@@ -1024,6 +1032,28 @@ td.t5-lastc { max-width: 280px; }
 .cap-tog { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
 .cap-tog input { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); }
 .cap-off td { opacity: .6; }
+/* celkové skóre a nepovinné dovednosti (2.25) */
+/* celkové skóre skupiny: řádek zkušení pracovníci (barva rizika) a pod ním pracovníci v zácviku */
+.cap-table tr.cap-score td:not(.cap-zero):not(.cap-one), .cap-table tr.cap-train td { background: var(--surface-2); }
+.cap-table tr.cap-score td:first-child b, .cap-table tr.cap-train td:first-child b { font-size: 14px; }
+.cap-table tr.cap-train td:first-child b { font-weight: 600; color: var(--ink-2); }
+.cap-table tr.cap-score td:first-child small, .cap-table tr.cap-train td:first-child small { display: block; font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
+.cap-table tr.cap-score .cap-n { font-weight: 700; font-size: 15px; }
+.cap-table tr.cap-train .cap-n { color: var(--ink-2); }
+.cap-table tr.cap-train-end td { border-bottom: 2px solid var(--line); }
+/* jen celkové skóre: dvojice řádků za skupinu */
+.cap-score-card .cap-who { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.cap-score-card tr.cap-pro .cap-who { color: var(--ink); font-weight: 600; }
+.cap-score-card tr.cap-pro .cap-n { font-weight: 700; }
+.cap-score-card tr.cap-train td { background: transparent; }
+.cap-score-card tr.cap-train .cap-n { color: var(--ink-2); font-weight: 500; }
+.cap-table tr.cap-opt td { color: var(--ink-2); }
+.cap-table tr.cap-fold td { color: var(--ink-2); font-size: 13px; }
+.cap-table tr.cap-fold td b { color: var(--ink); font-weight: 600; }
+.cap-table tr.cap-dept td { padding-top: 14px; font: 700 11px/1.3 var(--body); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); background: transparent; }
+.cap-table tr.cap-pro.cap-sum td { border-top: 2px solid var(--line); }
+.cap-table tr.cap-sum td:first-child b { font-weight: 700; }
+.cap-score-card .cap-table td:first-child small { display: block; font-size: 11.5px; color: var(--ink-3); font-weight: 400; }
 .cap-risks { margin: 6px 0 0; padding-left: 18px; }
 #capNote { width: 100%; }
 @media screen and (max-width: 760px) {

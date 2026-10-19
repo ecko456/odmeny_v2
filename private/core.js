@@ -60,6 +60,9 @@ const DEF_SAN_REASONS=["Nedodržení BOZP","Nedodržení výrobních předpisů"
 /* ---------- matice dovedností (verze 2.4) ----------
    Skupina (do verze 2.3 „pozice“) má dovednosti hodnocené 0–4. Každá úroveň je 25 %: procento
    skupiny = průměr úrovní dovedností ÷ 4 (dvě dovednosti, jedna na 4 a druhá na 0 = 50 %).
+   Dovednost, která „není nutností“ (opt, 2.25), má v průměru váhu OPT_W (čtvrtinu); u prémie
+   s podmínkou „všechny dovednosti aspoň X“ se nevyžaduje a v reportu kapacit se ukáže jen
+   v celkovém skóre.
    Tabáky za dovednosti = maximum skupiny × procento, zaokrouhleno na celé. */
 const STD_SCALE=[
   {name:"Žádná úroveň",desc:"Osoba nemá žádné relevantní znalosti ani zkušenosti v této dovednosti."},
@@ -651,9 +654,24 @@ function isGroup(p){return !!(p&&Array.isArray(p.skillset));}
 function groupSkills(p){return isGroup(p)?p.skillset:[];}
 function skillScale(s){return s&&Array.isArray(s.scale)&&s.scale.length===5?s.scale:STD_SCALE;}
 function rateOf(e,id){const v=e&&e.rate?Math.round(+e.rate[id]):0;return v>=0&&v<=4?v:0;}
-/* procento skupiny: průměr úrovní jejích dovedností ÷ 4; skupina bez dovedností = null */
-function skillPct(e,p){const l=groupSkills(p);return l.length?l.reduce((x,s)=>x+rateOf(e,s.id),0)/(l.length*4)*100:null;}
-function minRate(e,p){const l=groupSkills(p);return l.length?Math.min(...l.map(s=>rateOf(e,s.id))):0;}
+/* váha dovednosti v procentu skupiny: nutná 1, „není nutností“ čtvrtina (2.25) */
+const OPT_W=0.25;
+function skillW(s){return s&&s.opt?OPT_W:1;}
+function optText(s){return s&&s.opt?"není nutností (váha ¼)":"nutná";}
+/* nutné dovednosti skupiny; když jsou všechny nepovinné, platí všechny */
+function needSkills(p){const l=groupSkills(p),n=l.filter(s=>!s.opt);return n.length?n:l;}
+/* procento skupiny: vážený průměr úrovní jejích dovedností ÷ 4; skupina bez dovedností = null.
+   Bez nepovinných dovedností je to prostý průměr jako do verze 2.24 (váhy 1 a ¼ jsou v binárním
+   zápisu přesné, takže se výsledek nezmění ani o zaokrouhlení). */
+function skillPct(e,p){
+  const l=groupSkills(p);
+  if(!l.length)return null;
+  let w=0,v=0;
+  l.forEach(s=>{const k=skillW(s);w+=k;v+=k*rateOf(e,s.id);});
+  return v/(w*4)*100;
+}
+/* nejnižší úroveň nutných dovedností (prémie „všechny dovednosti aspoň X“) */
+function minRate(e,p){const l=needSkills(p);return l.length?Math.min(...l.map(s=>rateOf(e,s.id))):0;}
 /* tabáky za dovednosti: maximum skupiny × procento, zaokrouhleno na celé (6,5 → 7) */
 function skillTab(p,pv){return p&&!p.onlyKafe&&pv!=null?Math.max(0,Math.round((+p.maxTab||0)*pv/100+1e-9)):0;}
 function levelOf(e){
@@ -852,8 +870,8 @@ function setMark(pid,key,pointId,note){
 }
 function tierChecks(t,e,ev,perf,pid){
   const a=ev.att&&ev.att.found?ev.att:null,p=ev.pos,out=[];
-  if(+t.minSkill>0){const n=groupSkills(p).length,m=minRate(e,p);
-    out.push({k:"skill",label:"všechny dovednosti aspoň na úrovni "+t.minSkill,val:n?m:null,txt:n?"nejnižší úroveň "+m:"skupina nemá dovednosti",ok:n>0&&m>=+t.minSkill});}
+  if(+t.minSkill>0){const n=groupSkills(p).length,m=minRate(e,p),opt=n&&needSkills(p).length<n;
+    out.push({k:"skill",label:"všechny "+(opt?"nutné ":"")+"dovednosti aspoň na úrovni "+t.minSkill,val:n?m:null,txt:n?"nejnižší úroveň "+m:"skupina nemá dovednosti",ok:n>0&&m>=+t.minSkill});}
   (t.skills||[]).forEach(r=>{const f=skillIn(S,r.id);if(!f)return;const v=rateOf(e,r.id);
     out.push({k:"skill1",id:r.id,label:f.x.name+(f.p!==p?" ("+(f.p.name||"jiná skupina")+")":"")+" aspoň na úrovni "+r.lvl,val:v,txt:"úroveň "+v,ok:v>=r.lvl});});
   if(t.maxAbs!=null||t.minWknd!=null)out.push({k:"att",label:"nahraná docházka za měsíc",val:null,txt:a?"ano":"chybí",ok:!!a});
@@ -905,6 +923,9 @@ function legacyTier(x){return {pct:x.pct,lvl:x.lvl,tier:null,name:x.pct>0?"Úrov
 /* ---------- směny a kapacita (verze 2.4) ---------- */
 function shiftOf(e){return e&&SHIFT_KEYS.includes(e.shift)?e.shift:"";}
 function shiftName(k){const x=SHIFTS.find(y=>y[0]===k);return x?x[1]:"Bez směny";}
+/* detail (2.25): rozpis dovedností v reportu kapacit – need = celkové skóre a nutné dovednosti
+   (výchozí, neukládá se, takže se aktualizací data nezmění), all = i nepovinné, none = jen celkové skóre */
+const CAP_DETAIL=["need","all","none"];
 function blankCapReport(){return {groups:[],thr:3,hidden:[],note:"",s1am:""};}
 /* Vedoucí pracovník (2.7): e.lead = oddělení, která má na starosti (může být prázdné).
    Nepočítá se do tabáků, Kafe, prémií, sankcí, kontrol ani kapacity; v matici je jen jako
@@ -943,7 +964,7 @@ function skillGrid(groupId,shift,dept,byId){
   const live=rows.filter(r=>!r.e.sick);
   const coverage=cols.map((c,j)=>{const by={};[...SHIFT_KEYS,""].forEach(k=>{by[k]={ready:0,trained:0};});
     live.forEach(r=>{const v=r.cells[j];if(v>=1)by[r.shift].trained++;if(v>=3)by[r.shift].ready++;});
-    return {by,ready:live.filter(r=>r.cells[j]>=3).length,trained:live.filter(r=>r.cells[j]>=1).length};});
+    return {by,ready:live.filter(r=>r.cells[j]>=3).length,trained:live.filter(r=>r.cells[j]>=1).length,opt:!!c.s.opt};});   // opt: slabé pokrytí není riziko (2.25)
   return {groups,cols,rows,coverage,sick:rows.length-live.length};
 }
 /* Kapacita dovedností po směnách: kolik lidí dovednost zvládá aspoň na úrovni thr a součet úrovní.
@@ -968,16 +989,38 @@ function capacity(groupIds,thr,hidden){
         if(!v)return;b.sum+=v;b.any++;if(v>=thr)b.n++;});
       const A={am:by.R.n+by.S1.n,pm:by.O.n+by.S2.n,amT:by.R.tr+by.S1.tr,pmT:by.O.tr+by.S2.tr},
         B={am:by.R.n+by.S2.n,pm:by.O.n+by.S1.n,amT:by.R.tr+by.S2.tr,pmT:by.O.tr+by.S1.tr};
-      return {s,by,A,B,diff:by.S1.n-by.S2.n,weakest:Math.min(A.pm,B.pm),total:by.R.n+by.O.n+by.S1.n+by.S2.n+by[""].n,
+      return {s,opt:!!s.opt,by,A,B,diff:by.S1.n-by.S2.n,weakest:Math.min(A.pm,B.pm),total:by.R.n+by.O.n+by.S1.n+by.S2.n+by[""].n,
         training:by.R.tr+by.O.tr+by.S1.tr+by.S2.tr+by[""].tr};
     });
     const members=people.filter(e=>e.positionId===p.id);
-    const bySh={};[...SHIFT_KEYS,""].forEach(k=>{const m=members.filter(e=>shiftOf(e)===k);
-      bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null,ok:m.filter(e=>capableIn(e,p,thr)).length};});
+    const bySh={};[...SHIFT_KEYS,""].forEach(k=>{const m=members.filter(e=>shiftOf(e)===k),ok=m.filter(e=>capableIn(e,p,thr)).length;
+      bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null,ok,tr:m.length-ok};});
     const ok=members.filter(e=>capableIn(e,p,thr)).length;
-    return {p,skills,members:members.length,ok,training:members.length-ok,bySh};
+    /* celkové skóre (2.25): schopní členové skupiny podle procenta skupiny (vážený průměr)
+       na ranní a odpolední v obou variantách; pod nimi členové v zaškolování */
+    const sh=k=>bySh[k];
+    const score={A:{am:sh("R").ok+sh("S1").ok,pm:sh("O").ok+sh("S2").ok,amT:sh("R").tr+sh("S1").tr,pmT:sh("O").tr+sh("S2").tr},
+      B:{am:sh("R").ok+sh("S2").ok,pm:sh("O").ok+sh("S1").ok,amT:sh("R").tr+sh("S2").tr,pmT:sh("O").tr+sh("S1").tr},
+      none:{n:sh("").ok,tr:sh("").tr},
+      weaker:sh("S1").ok===sh("S2").ok?((sh("S1").pct||0)===(sh("S2").pct||0)?"":(sh("S1").pct||0)<(sh("S2").pct||0)?"S1":"S2"):sh("S1").ok<sh("S2").ok?"S1":"S2"};
+    return {p,skills,members:members.length,ok,training:members.length-ok,bySh,score,opt:groupSkills(p).filter(s=>s.opt).length};
   }).filter(g=>g.skills.length);
   return {thr,head,groups,sick:all.length-people.length};
+}
+
+/* Celkové skóre po odděleních (2.25): skupiny reportu kapacit seskupené podle oddělení v pořadí
+   skupin; u oddělení s víc skupinami součet (člověk je jen v jedné skupině, nic se nezdvojí). */
+function capScoreByDept(cap){
+  const out=[];
+  cap.groups.forEach(g=>{const d=deptOf(g.p);let x=out.find(o=>o.dept===d);if(!x)out.push(x={dept:d,groups:[],total:null});x.groups.push(g);});
+  const add=(a,b)=>{Object.keys(b).forEach(k=>{if(typeof b[k]==="number")a[k]=(a[k]||0)+b[k];});return a;};
+  out.forEach(x=>{
+    if(x.groups.length<2)return;
+    const t={members:0,ok:0,training:0,A:{},B:{},none:{}};
+    x.groups.forEach(g=>{t.members+=g.members;t.ok+=g.ok;t.training+=g.training;["A","B","none"].forEach(v=>add(t[v],g.score[v]));});
+    x.total=t;
+  });
+  return out;
 }
 
 /* Střídání skupin 1 a 2 po týdnu (2.8): ref = týden, kdy má skupina 1 ranní.
@@ -1054,7 +1097,7 @@ function staffDay(from){
       if(per)r.plan[sl][unit]+=here.length*per;
       // riziko jen tam, kde skupina na směně někoho má (oddělení bez odpolední nehlásí nic)
       if(!here.length)return;
-      groupSkills(p).forEach(s=>{
+      groupSkills(p).filter(s=>!s.opt).forEach(s=>{   // nepovinná dovednost riziko není (2.25)
         const n=live.filter(e=>slotOf(e)===sl&&rateOf(e,s.id)>=thr).length;
         if(n<=1)r.risks.push({slot:sl,group:p.name||"",skill:s.name,n});
       });
@@ -1086,7 +1129,8 @@ function staffDay(from){
      Odpracováno počítá jen lidi v plánu; hodiny lidí mimo
      plán (bez skupiny, vedoucí, jména z docházky, která v Lidech nejsou) jsou zvlášť jako navíc
      a do plnění se nepočítají.
-   - Schopní a v zaškolování zvlášť: schopný = průměr dovedností skupiny aspoň práh reportu
+   - Zkušení pracovníci a pracovníci v zácviku zvlášť (dřív „schopní“ a „v zaškolování“, pojmy
+     v reportech od 2.25): zkušený = průměr dovedností skupiny aspoň práh reportu
      (capableIn, dnešní hodnocení).
    Páruje se podle jména: řádek docházky má stejný klíč jako člověk (příjmení|jméno). */
 const PR_SLOT={am:"ranní",pm:"odpolední",rot:"skupina 1/2",noshift:"bez směny",none:""};
@@ -1199,12 +1243,14 @@ function planRealitySheets(weekId){
   const head=[["Plán a skutečnost podle docházky – "+weekLong(x.id)],
     ["Plán = zařazení z Matice dovedností (skupina platná v tom týdnu, směna podle dnešního zařazení, "+(x.mg?"ranní tento týden: skupina "+(x.mg==="S1"?1:2):"střídání skupin 1 a 2 není nastavené")+"), skutečnost = nahraná docházka. Páruje se podle jména."],
     ["Počítají se jen pracovní dny; víkendy a svátky se nepočítají ani s odpracovanými hodinami."+(x.holidays.length?" Svátek v tomto týdnu: "+x.holidays.map(h=>dayText(h.iso,false)+" ("+h.name+")").join(", ")+".":"")],
-    ["Odpracováno = jen hodiny ze dnů v práci; den s kódem nepřítomnosti (dovolená, nemoc, neomluveno…) se do odpracovaných hodin nepočítá, ani když má u kódu hodiny (např. 8 D). Odpracováno a plnění jen za lidi v plánu; hodiny lidí mimo plán (bez skupiny, vedoucí, jména mimo Lidi) jsou zvlášť ve sloupcích Mimo plán. Plnění = odpracováno ÷ plán; omluveno = plánované hodiny dnů s omluveným kódem (dovolená, nemoc…), plnění bez omluvených je odpracováno ÷ (plán − omluveno). Schopný = průměr dovedností skupiny aspoň úroveň "+x.thr+" (dnešní hodnocení), ostatní jsou v zaškolování."],
+    ["Odpracováno = jen hodiny ze dnů v práci; den s kódem nepřítomnosti (dovolená, nemoc, neomluveno…) se do odpracovaných hodin nepočítá, ani když má u kódu hodiny (např. 8 D). Odpracováno a plnění jen za lidi v plánu; hodiny lidí mimo plán (bez skupiny, vedoucí, jména mimo Lidi) jsou zvlášť ve sloupcích Mimo plán. Plnění = odpracováno ÷ plán; omluveno = plánované hodiny dnů s omluveným kódem (dovolená, nemoc…), plnění bez omluvených je odpracováno ÷ (plán − omluveno). Zkušený pracovník = průměr dovedností skupiny aspoň úroveň "+x.thr+" (dnešní hodnocení), ostatní jsou pracovníci v zácviku."],
     ...(x.missing.length?[["Docházka chybí pro: "+x.missing.map(iso=>dl(x.days.find(d=>d.iso===iso))).join(", ")+" (tyto dny se neporovnávají)."]]:[]),
     ...(x.unpaired?[["Nespárováno podle jména: "+x.unpaired+" (viz list Lidé, sloupec Poznámka)."]]:[]),
     []];
-  const hoursHead=["Plán h","Odpracováno h","Rozdíl h","Plnění %","Omluveno h","Plnění bez omluvených %","Schopní: lidí v plánu","Schopní: přišlo","Schopní: plán h","Schopní: odpracováno h","Schopní: plnění %",
-    "V zaškolování: lidí v plánu","V zaškolování: přišlo","V zaškolování: plán h","V zaškolování: odpracováno h","V zaškolování: plnění %","Mimo plán: lidodny s hodinami","Mimo plán: h"];
+  /* pojmy v reportech (2.25, přání uživatele): Zkušení pracovníci a Pracovníci v zácviku */
+  const PRO="Zkušení pracovníci: ",TRN="Pracovníci v zácviku: ";
+  const hoursHead=["Plán h","Odpracováno h","Rozdíl h","Plnění %","Omluveno h","Plnění bez omluvených %",PRO+"lidí v plánu",PRO+"přišlo",PRO+"plán h",PRO+"odpracováno h",PRO+"plnění %",
+    TRN+"lidí v plánu",TRN+"přišlo",TRN+"plán h",TRN+"odpracováno h",TRN+"plnění %","Mimo plán: lidodny s hodinami","Mimo plán: h"];
   const hours=t=>[t.planH,t.realH,Math.round((t.realH-t.planH)*100)/100,prPct(t.realH,t.planH),t.excusedH,prPct(t.realH,t.planH-t.excusedH),
     t.ok.planN,t.ok.present,t.ok.planH,t.ok.realH,prPct(t.ok.realH,t.ok.planH),t.tr.planN,t.tr.present,t.tr.planH,t.tr.realH,prPct(t.tr.realH,t.tr.planH),t.extraN,t.extraH];
   const counts=t=>[t.planN,t.present,t.excused,t.miss];
@@ -1220,21 +1266,21 @@ function planRealitySheets(weekId){
   });
   x.days.forEach((d,i)=>{if(d.has)dayRows.push(dayLine({dept:"",name:"Všechny skupiny"},dl(d),x.totalDays[i]));});
   dayRows.push(dayLine({dept:"",name:"Všechny skupiny"},"Celý týden",x.total));
-  const pHead=["Příjmení","Jméno","ID v evidenci práce","Oddělení","Skupina","Směna","V týdnu","Dovednosti %","Schopný",
+  const pHead=["Příjmení","Jméno","ID v evidenci práce","Oddělení","Skupina","Směna","V týdnu","Dovednosti %","Zkušený pracovník",
     ...x.days.flatMap(d=>[dl(d)+" plán",dl(d)+" skutečnost"]),
     "Plán h","Odpracováno h","Rozdíl h","Plnění %","Mimo plán h","Hodiny u nepřítomnosti (nepočítají se)","Plánované dny","Přišel","Omluveno","Neomluveno / chybí","Kódy","Poznámka"];
   const pRows=[...head,pHead];
   x.rows.forEach(r=>pRows.push([r.last,r.first,r.wid,r.dept,r.pos?r.pos.name:"",r.shift?shiftName(r.shift):"",PR_SLOT[r.slot]||"mimo plán",
-    r.pct!=null?Math.round(r.pct):"",r.planned?(r.capable?"ano":"v zaškolování"):"",
+    r.pct!=null?Math.round(r.pct):"",r.planned?(r.capable?"ano":"v zácviku"):"",
     ...x.days.flatMap((d,i)=>{const c=r.cells[i];
       if(!d.has)return ["bez docházky","bez docházky"];
       return [c.plan||"",c.c?(c.h>0?c.c+" ("+nf(c.h,2)+" h)":c.c):c.h>0?c.h:c.plan?"chybí":""];}),
     r.planH,r.realH,r.planned?Math.round((r.realH-r.planH)*100)/100:"",r.fill!=null?Math.round(r.fill*1000)/10:"",r.extraH||"",r.absH||"",r.planDays,r.workDays,r.excused,r.miss,
     Object.entries(r.codes).map(([k,n])=>k+(n>1?" ×"+n:"")).join(", "),r.note]));
-  const hc=[9,13,9,9,10,12,12,10,11,13,12,12,10,11,13,12,12,10];
+  const hc=[9,13,9,9,10,12,16,14,14,18,16,16,14,14,18,16,12,10];
   return [{name:sheetName("Souhrn",used),rows:sumRows,cols:[16,20,10,8,10,12,...hc]},
     {name:sheetName("Po dnech",used),rows:dayRows,cols:[16,20,12,9,8,10,12,10,8,10,12,...hc]},
-    {name:sheetName("Lidé",used),rows:pRows,cols:[16,12,12,16,18,18,12,11,13,...x.days.flatMap(()=>[11,12]),9,13,9,9,11,16,12,8,10,12,16,30]}];
+    {name:sheetName("Lidé",used),rows:pRows,cols:[16,12,12,16,18,18,12,11,17,...x.days.flatMap(()=>[11,12]),9,13,9,9,11,16,12,8,10,12,16,30]}];
 }
 
 /* ---------- původní zařazení z verze 2.3 ----------
@@ -1355,24 +1401,24 @@ function rosterSheets(){
   const cols=S.positions.filter(isGroup).flatMap(p=>groupSkills(p).map(x=>({p,x})));
   const rates=[["Příjmení","Jméno",...cols.map(c=>(c.p.name||"?")+" · "+c.x.name)]];
   people.forEach(e=>rates.push([e.last,e.first,...cols.map(c=>rateOf(e,c.x.id))]));
-  const posSheet=[["Skupina","Oddělení","Dovednost","Popis",...STD_SCALE.map((_,i)=>"Úroveň "+i)]];
-  S.positions.filter(isGroup).forEach(p=>groupSkills(p).forEach(x=>posSheet.push([p.name,deptOf(p),x.name,x.desc||"",...skillScale(x).map(l=>l.name+(l.desc?": "+l.desc:""))])));
+  const posSheet=[["Skupina","Oddělení","Dovednost","Popis",...STD_SCALE.map((_,i)=>"Úroveň "+i),"Nutnost"]];
+  S.positions.filter(isGroup).forEach(p=>groupSkills(p).forEach(x=>posSheet.push([p.name,deptOf(p),x.name,x.desc||"",...skillScale(x).map(l=>l.name+(l.desc?": "+l.desc:"")),optText(x)])));
   const rules=[["Skupina","Typ","Práh","Tabáky / odměna","Význam"]];
   S.positions.forEach(p=>{
-    if(isGroup(p))rules.push([p.name,"maximum za dovednosti","",+p.maxTab||0,"všechny dovednosti na úrovni 4 = 100 %, každá úroveň 25 %"]);
+    if(isGroup(p))rules.push([p.name,"maximum za dovednosti","",+p.maxTab||0,"všechny dovednosti na úrovni 4 = 100 %, každá úroveň 25 %"+(groupSkills(p).some(x=>x.opt)?"; dovednosti, které nejsou nutností, mají v průměru čtvrtinovou váhu":"")]);
     rules.push([p.name,"strop celkem","",p.max!=null&&p.max!==""?+p.max:"",p.max!=null&&p.max!==""?"vlastní strop":"bez stropu"]);
     (p.penalty||[]).forEach(r=>rules.push([p.name,"srážka",+r.at,-Math.abs(+r.t||0),"chybí aspoň "+r.at+" prac. "+dnW(+r.at)]));
     (p.bonus||[]).forEach(r=>rules.push([p.name,"bonus",+r.at,Math.abs(+r.t||0),"aspoň "+r.at+" víkend. "+smW(+r.at)+" navíc"]));
     const nc=normCutRule(p);
     if(nc)nc.rows.forEach((r,i)=>rules.push([p.name,"srážka ze mzdy za neproduktivitu",+r.max,"−"+r.pct+" % mzdy",(i?"plnění normy nad "+nf(nc.rows[i-1].max,1)+" do ":"plnění normy do ")+nf(r.max,1)+" %"+(nc.from?", od "+monthLabel(nc.from):"")]));
-    (p.tiers||[]).forEach(t=>rules.push([p.name,"prémie: "+t.name,"",(+t.raise?"+"+nf(+t.raise,1)+" % mzdy":"")+(t.reward?(+t.raise?", ":"")+t.reward:""),tierConds(t).join(", ")+(t.streak?"; "+t.streak.months+" měsíců v řadě: "+t.streak.label:"")]));
+    (p.tiers||[]).forEach(t=>rules.push([p.name,"prémie: "+t.name,"",(+t.raise?"+"+nf(+t.raise,1)+" % mzdy":"")+(t.reward?(+t.raise?", ":"")+t.reward:""),tierConds(t,p).join(", ")+(t.streak?"; "+t.streak.months+" měsíců v řadě: "+t.streak.label:"")]));
   });
   return {main,rates,posSheet,rules};
 }
-/* Podmínky stupně prémie jako text (Excel, pravidla do PDF). */
-function tierConds(t){
+/* Podmínky stupně prémie jako text (Excel, pravidla do PDF); p = skupina (nepovinné dovednosti 2.25). */
+function tierConds(t,p){
   const c=[];
-  if(+t.minSkill>0)c.push("všechny dovednosti aspoň "+t.minSkill);
+  if(+t.minSkill>0)c.push("všechny "+(p&&needSkills(p).length<groupSkills(p).length?"nutné ":"")+"dovednosti aspoň "+t.minSkill);
   (t.skills||[]).forEach(r=>{const f=skillIn(S,r.id);if(f)c.push(f.x.name+" aspoň "+r.lvl);});
   if(t.maxAbs!=null)c.push("absence v pracovní dny nejvýš "+t.maxAbs);
   if(t.minWknd!=null)c.push("víkendové směny aspoň "+t.minWknd);
@@ -1640,7 +1686,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=20;
+const DATA_VERSION=21;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service"];
@@ -1711,7 +1757,7 @@ function sanitizeState(input){
     if(+pl.v>0)g.plan=pl.unit==="h"?{v:Math.round(num(pl.v,0,0.1,1000)*10)/10,unit:"h"}:{v:int(pl.v,1,1,100000),unit:"ks"};
     if(Array.isArray(p.skillset)){
       g.skillset=p.skillset.filter(x=>x&&typeof x==="object").slice(0,60).map(x=>({id:sid(x.id,"s"),name:str(x.name,80).trim()||"Dovednost",
-        desc:str(x.desc,1000),scale:scaleClean(x.scale)})).filter(x=>!skillIds.has(x.id)&&skillIds.add(x.id));
+        desc:str(x.desc,1000),scale:scaleClean(x.scale),...(x.opt===true?{opt:true}:{})})).filter(x=>!skillIds.has(x.id)&&skillIds.add(x.id));
       g.maxTab=int(p.maxTab,0,0,500);
       g.tiers=arr(p.tiers).slice(0,10).map(tierClean);
     }else{
@@ -1930,7 +1976,7 @@ function sanitizeState(input){
   const cr=obj(o.capReport);
   out.capReport={groups:arr(cr.groups).filter(id=>posIds.has(id)).slice(0,100),thr:int(cr.thr,3,1,4),
     hidden:arr(cr.hidden).filter(id=>skillIds.has(id)).slice(0,500),note:str(cr.note,4000),
-    s1am:weekById(cr.s1am)?String(cr.s1am):""};
+    s1am:weekById(cr.s1am)?String(cr.s1am):"",...(cr.detail==="all"||cr.detail==="none"?{detail:cr.detail}:{})};
   /* Protokoly – provozní deníky strojů (2.16): starší data je nemají, začínají prázdné */
   out.logbooks=cleanLogbooks(o.logbooks);
   /* Audit – lidé v práci a zpracované kusy (2.17): starší data ho nemají, začíná prázdný */
@@ -2124,9 +2170,10 @@ function describeChanges(a,b,meta){
       if(!same(q.plan||null,p.plan||null))add("position","",{m:"plan:"+id,p:"Skupina "+nm+", plánovaná kapacita: ",v0:pt(q),v1:pt(p)});
       const KA=new Map(groupSkills(q).map(x=>[x.id,x])),KB=new Map(groupSkills(p).map(x=>[x.id,x]));
       KB.forEach((x,sid)=>{const o=KA.get(sid);
-        if(!o)add("position","Skupina "+nm+": nová dovednost „"+x.name+"“",{m:"sk:"+sid});
+        if(!o)add("position","Skupina "+nm+": nová dovednost „"+x.name+"“"+(x.opt?" (není nutností)":""),{m:"sk:"+sid});
         else{if(o.name!==x.name)add("position","",{m:"skn:"+sid,p:"Skupina "+nm+", dovednost: ",v0:"„"+o.name+"“",v1:"„"+x.name+"“"});
-          if(o.desc!==x.desc||!same(o.scale,x.scale))add("position","Skupina "+nm+": upraven popis nebo hodnoticí schéma dovednosti „"+x.name+"“",{m:"skd:"+sid});}});
+          if(o.desc!==x.desc||!same(o.scale,x.scale))add("position","Skupina "+nm+": upraven popis nebo hodnoticí schéma dovednosti „"+x.name+"“",{m:"skd:"+sid});
+          if(!!o.opt!==!!x.opt)add("position","Skupina "+nm+": dovednost „"+x.name+"“ "+(x.opt?"není nutností (v procentu skupiny čtvrtinová váha)":"je zase nutná"),{m:"skopt:"+sid});}});
       KA.forEach((x,sid)=>{if(!KB.has(sid))add("position","Skupina "+nm+": smazána dovednost „"+x.name+"“",{m:"sk:"+sid});});
       const oa=groupSkills(q).filter(x=>KB.has(x.id)).map(x=>x.id).join(),ob=groupSkills(p).filter(x=>KA.has(x.id)).map(x=>x.id).join();
       if(oa!==ob)add("position","Skupina "+nm+": změněno pořadí dovedností",{m:"sko:"+id});
@@ -2457,9 +2504,9 @@ function matrixSheets(){
     rows.push([]);rows.push(["Úrovně: "+STD_SCALE.map((l,i)=>i+" "+l.name).join(" · ")]);
     sheets.push({name:sheetName("Vedoucí",used),rows,cols:[16,12,22,12,...ls.map(()=>14)]});
   }
-  const legend=[["Skupina","Dovednost","Popis",...STD_SCALE.map((_,i)=>"Úroveň "+i)]];
-  S.positions.filter(isGroup).forEach(p=>groupSkills(p).forEach(x=>legend.push([p.name,x.name,x.desc||"",...skillScale(x).map(l=>l.name+(l.desc?": "+l.desc:""))])));
-  sheets.push({name:sheetName("Popis dovedností",used),rows:legend,cols:[16,24,40,30,30,30,30,30]});
+  const legend=[["Skupina","Dovednost","Popis",...STD_SCALE.map((_,i)=>"Úroveň "+i),"Nutnost"]];
+  S.positions.filter(isGroup).forEach(p=>groupSkills(p).forEach(x=>legend.push([p.name,x.name,x.desc||"",...skillScale(x).map(l=>l.name+(l.desc?": "+l.desc:"")),optText(x)])));
+  sheets.push({name:sheetName("Popis dovedností",used),rows:legend,cols:[16,24,40,30,30,30,30,30,22]});
   return sheets;
 }
 
@@ -2491,7 +2538,7 @@ function rulesDoc(){
   const st=S.settings;
   const cut=cutoffDays();
   const general=[
-    ["Dovednosti","Každá skupina má své dovednosti hodnocené na stupnici 0–4. Každá úroveň je 25 % (0 = 0 %, 4 = 100 %). Procento skupiny je průměr všech jejích dovedností: když má skupina dvě dovednosti a člověk umí jednu na úrovni 4 a druhou vůbec, má 50 %."],
+    ["Dovednosti","Každá skupina má své dovednosti hodnocené na stupnici 0–4. Každá úroveň je 25 % (0 = 0 %, 4 = 100 %). Procento skupiny je průměr všech jejích dovedností: když má skupina dvě dovednosti a člověk umí jednu na úrovni 4 a druhou vůbec, má 50 %. Dovednost označená „není nutností“ se do průměru počítá jen čtvrtinovou vahou (nutná na 4 a nepovinná na 0 = 80 %) a u prémie s podmínkou „všechny dovednosti aspoň na úrovni“ se nevyžaduje."],
     ["Tabáky","Tabáky za dovednosti = maximum skupiny × procento dovedností, zaokrouhleno na celé. Docházka je podle pravidel skupiny sníží (srážka za absenci) nebo zvýší (bonus za víkendové směny navíc); případný strop skupiny se nepřekročí. Sankce strhávají "+SAN_PCTS[0]+"–"+SAN_PCTS[SAN_PCTS.length-1]+" % z nároku (po 5 %), každá aspoň jeden tabák; součet 100 % a víc znamená nic. Srážka ze mzdy benefity nekrátí, zpracuje se ve mzdách."],
     ["Absence","Absence je celý pracovní den bez docházky; kratší směna absencí není. Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence: srážka pak není, ale ani bonus za víkend. Omluvená absence (kódy "+(st.excused||"—")+")"+(st.excusedReducesFund?" snižuje fond hodin.":" se počítá jako absence.")],
     ["Kafe","Kafe dostane, kdo odpracuje aspoň fond hodin měsíce (pracovní dny × "+nf(st.shift)+" h"+(st.friShift&&st.friShift!==st.shift?"; kdo má zkrácený pátek, má v pátek plnou směnu "+nf(st.friShift)+" h":"")+"), pokud pro měsíc není nastaven jiný práh."],
@@ -2503,12 +2550,12 @@ function rulesDoc(){
     const mt=Math.max(0,+p.maxTab||0);
     return {name:p.name||"(bez názvu)",dept:(p.dept||"").trim(),onlyKafe:!!p.onlyKafe,maxTab:mt,
       steps:[0,1,2,3,4].map(l=>({l,pct:l*25,tab:p.onlyKafe?"—":String(Math.round(mt*l/4+1e-9))})),
-      skills:groupSkills(p).map(x=>({name:x.name,desc:x.desc||"",std:!x.scale,scale:skillScale(x).map((l,i)=>({n:i,name:l.name,desc:l.desc||""}))})),
+      skills:groupSkills(p).map(x=>({name:x.name,desc:x.desc||"",std:!x.scale,opt:!!x.opt,scale:skillScale(x).map((l,i)=>({n:i,name:l.name,desc:l.desc||""}))})),
       rules:p.onlyKafe?["Jen Kafe, bez tabáků."]:[
         "Maximum za dovednosti: "+mt+" "+tabW(mt)+" (všechny dovednosti na úrovni 4)."+(p.max!=null&&p.max!==""?" Strop celkem včetně bonusu: "+p.max+" "+tabW(+p.max)+".":" Bonus za víkendy se přičte navíc."),
         "Srážka za absenci: "+((p.penalty||[]).length?p.penalty.slice().sort((a,b)=>a.at-b.at).map(r=>"od "+r.at+" "+dnW(r.at)+" −"+r.t).join(", "):"žádná")+".",
         "Bonus za víkendy navíc: "+((p.bonus||[]).length?p.bonus.slice().sort((a,b)=>a.at-b.at).map(r=>"od "+r.at+" "+smW(r.at)+" +"+r.t).join(", "):"žádný")+"."].concat(normCutRule(p)?["Srážka ze mzdy za neproduktivitu (plnění normy): "+normCutText(p.normCut)+". Benefity nekrátí."]:[]),
-      tiers:(p.tiers||[]).map(t=>({name:t.name,conds:tierConds(t),reward:[+t.raise?"navýšení mzdy o "+nf(+t.raise,1)+" %":"",t.reward||""].filter(Boolean).join(", ")||"—",
+      tiers:(p.tiers||[]).map(t=>({name:t.name,conds:tierConds(t,p),reward:[+t.raise?"navýšení mzdy o "+nf(+t.raise,1)+" %":"",t.reward||""].filter(Boolean).join(", ")||"—",
         streak:t.streak?"Po "+t.streak.months+" měsících v řadě: "+t.streak.label+".":""}))};
   });
   return {title:"Pravidla hodnocení",sub:"Matice dovedností, tabáky, Kafe a prémie podle skupin",date:new Date().toLocaleDateString("cs-CZ"),

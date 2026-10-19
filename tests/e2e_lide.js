@@ -2,7 +2,7 @@
 // směny, bez hodnocení, nemoc, vedoucí, vyřazení) s počty, člověk, který po úpravě z filtru
 // vypadne, zůstane označený, dokud se nevybere jiný, hledání ve filtru, osobní nastavení.
 // Na velkém monitoru Lidé využijí celou šířku a hodnocení 0–4 je v jednom řádku. Nakonec report
-// kapacit s lidmi v zaškolování, telefon a tmavý režim.
+// kapacit s pracovníky v zácviku (do 2.24 „v zaškolování“), telefon a tmavý režim.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
@@ -124,14 +124,15 @@ const chips = page => page.$$eval('#lFilters [data-lst]', els => Object.fromEntr
   check(await page.evaluate(() => JSON.stringify(cleanPrefs(JSON.parse(JSON.stringify(P))).lideF) === '{"g":"d:Daiho","st":""}' && cleanPrefs({ lideF: { g: 'x', st: 'nesmysl' } }).lideF.st === ''), 'filtr v osobním nastavení');
   await page.selectOption('#lScope', '');
 
-  // Report kapacit: lidé v zaškolování zvlášť.
+  // Report kapacit: pracovníci v zácviku zvlášť (2.25: popisky Zkušení pracovníci a Pracovníci v zácviku).
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.click('#nav [data-view="matice"]');
   await page.click('[data-mxtab="cap"]');
   await page.waitForSelector('#capView .cap-table');
-  const tr = await page.evaluate(() => ({ cells: document.querySelectorAll('#capView .cap-tr').length, note: /v zaškolování/.test(document.querySelector('#capView .note.i').textContent),
-    group: /schopní \d+, v zaškolování \d+/.test(document.querySelector('#capView .cap-group p').textContent) }));
-  check(tr.cells > 0 && tr.note && tr.group, `v zaškolování v reportu: ${JSON.stringify(tr)}`);
+  const tr = await page.evaluate(() => ({ cells: document.querySelectorAll('#capView .cap-tr').length, note: /Pracovníci v zácviku/.test(document.querySelector('#capView .note.i').textContent),
+    group: /zkušení \d+, v zácviku \d+/.test(document.querySelector('#capView .cap-group p').textContent),
+    rows: [...document.querySelectorAll('#capView .cap-group')].every(c => /Zkušení pracovníci/.test(c.querySelector('tr.cap-score').textContent) && /Pracovníci v zácviku/.test(c.querySelector('tr.cap-train').textContent)) }));
+  check(tr.cells > 0 && tr.note && tr.group && tr.rows, `zkušení pracovníci a pracovníci v zácviku v reportu: ${JSON.stringify(tr)}`);
   await page.screenshot({ path: path.join(shots, '11-kapacita.png'), fullPage: true });
 
   // Plán a skutečnost podle docházky (2.24): týden zpětně, souhrn po skupinách, Excel.
@@ -156,10 +157,10 @@ const chips = page => page.$$eval('#lFilters [data-lst]', els => Object.fromEntr
     const sum = X.utils.sheet_to_json(wb.Sheets.Souhrn, { header: 1 }), sh = sum.findIndex(r => r[0] === 'Oddělení'), tot = sum.find(r => r[1] === 'Celkem'), x = planReality(ui.capHist);
     const col = t => sum[sh].indexOf(t);
     return { names: wb.SheetNames, cols: lide[hdr].slice(0, 9), people: lide.length - hdr - 1, want: x.rows.length, title: lide[0][0],
-      hours: [tot[col('Plán h')], tot[col('Odpracováno h')], tot[col('Schopní: odpracováno h')], tot[col('V zaškolování: odpracováno h')]].join() === [x.total.planH, x.total.realH, x.total.ok.realH, x.total.tr.realH].join() };
+      hours: [tot[col('Plán h')], tot[col('Odpracováno h')], tot[col('Zkušení pracovníci: odpracováno h')], tot[col('Pracovníci v zácviku: odpracováno h')]].join() === [x.total.planH, x.total.realH, x.total.ok.realH, x.total.tr.realH].join() };
   }, fs.readFileSync(xlPath).toString('base64'));
   check(xl.suggestedFilename() === `plan-a-skutecnost-${weeks[1]}.xlsx` && JSON.stringify(xlRead.names) === '["Souhrn","Po dnech","Lidé"]' && xlRead.people === xlRead.want
-    && xlRead.cols.join() === 'Příjmení,Jméno,ID v evidenci práce,Oddělení,Skupina,Směna,V týdnu,Dovednosti %,Schopný' && /Plán a skutečnost podle docházky – Týden/.test(xlRead.title) && xlRead.hours, `Excel plánu a skutečnosti: ${JSON.stringify(xlRead)}`);
+    && xlRead.cols.join() === 'Příjmení,Jméno,ID v evidenci práce,Oddělení,Skupina,Směna,V týdnu,Dovednosti %,Zkušený pracovník' && /Plán a skutečnost podle docházky – Týden/.test(xlRead.title) && xlRead.hours, `Excel plánu a skutečnosti: ${JSON.stringify(xlRead)}`);
   await (await page.$('.cap-hist')).screenshot({ path: path.join(shots, '14-plan-skutecnost.png') });
 
   // Telefon: filtry nad seznamem, nic nepřetéká.

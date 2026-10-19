@@ -62,6 +62,33 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.25
+
+- **Matice dovedností: dovednost „Není nutností“.** U dovednosti ve skupině (Skupiny a pravidla)
+  zaškrtneš **Není nutností** (jde to i v dialogu dovednosti). Taková dovednost:
+  - se do procenta skupiny počítá **čtvrtinovou vahou**. Příklad: nutná dovednost na 4
+    a nepovinná na 0 dá 80 % místo 50 %. Procento platí všude: v matici, u člověka, v tabácích
+    za dovednosti i v kapacitách. Vydané měsíce se nemění;
+  - se nevyžaduje u prémie s podmínkou „všechny dovednosti aspoň na úrovni…“ (teď „všechny
+    nutné dovednosti“);
+  - se nehlásí jako riziko (slabé pokrytí v matici, odpoledne bez zkušeného pracovníka, úvod);
+  - je označená v matici (kurzívou, „nepovinná“), u člověka, v Excelu (sloupec Nutnost)
+    a v PDF pravidel i matice.
+  Dokud nic nezaškrtneš, všechno se počítá přesně jako dřív.
+- **Směny a kapacita: celkové skóre.** U každé skupiny jsou nahoře dva řádky podle celkového
+  procenta skupiny: **Zkušení pracovníci** a **Pracovníci v zácviku**, na ranní a odpolední v obou
+  týdnech. Volba **Rozpis dovedností**:
+  - *Celkové skóre a nutné dovednosti* (výchozí): nepovinné dovednosti jsou jen vyjmenované;
+  - *Celkové skóre a všechny dovednosti*;
+  - *Jen celkové skóre*: jedna přehledná tabulka všech skupin po odděleních, u oddělení s víc
+    skupinami součet.
+  PDF reportu se řídí stejnou volbou.
+- **Zkušení pracovníci a Pracovníci v zácviku.** Tyto pojmy jsou teď v reportech místo
+  „schopní“ a „v zaškolování“: report kapacit (aplikace i PDF), plánovaná kapacita a Plán
+  a skutečnost podle docházky (karta i Excel).
+- Verze dat 21: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení (jinak by
+  označení „Není nutností“ zahodila).
+
 ## Co je nového ve verzi 2.24.2
 
 - **Plán a skutečnost podle docházky: opravené hodiny a schopní zvlášť od zaškolovaných.**
