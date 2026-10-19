@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.22.1
+
+- **Servis: duplicitní zařízení jsou červeně a nahoře.** Když v protokolu zadáš stejné zařízení
+  víckrát (stejné interní ID, výrobní číslo nebo dodatečné označení, i když je napsané jinak,
+  nebo dvakrát totéž zařízení z evidence), obě položky se hned při psaní zbarví červeně a pod nimi
+  je napsáno, se kterou položkou se shodují a proč. Při uložení se duplicity přesunou nahoru pod
+  sebe a protokol se neuloží, dokud jednu neodebereš nebo neopravíš číslo.
+- **Číslo jiného zařízení z evidence:** když má položka interní ID jednoho zařízení a výrobní
+  číslo jiného (typicky překlep), je taky červeně a protokol se neuloží. Jinak by uložení zapsalo
+  číslo do evidence ke špatnému zařízení a vznikla by duplicita.
+- **Duplicity v evidenci:** zařízení se stejným číslem nebo označením jsou v záložce Zařízení
+  nahoře pod sebou, červeně a s upozorněním, detail zařízení ukáže, s čím se shoduje.
+- Na telefonu se pole Vybrat z evidence v hlavičce zařízení už nesmrskne, když ještě není
+  uložený žádný vzor.
+- Data se nemění (verze dat zůstává 20).
+
 ## Co je nového ve verzi 2.22
 
 - **Servis: rok výroby.** U každého zařízení v protokolu je nová kolonka **Rok výroby**

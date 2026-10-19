@@ -4050,6 +4050,100 @@ function svItemProblem(i){
   if(i.iidBad&&i.snBad&&!i.mark)return "obě čísla jsou nečitelná: doplň dodatečné označení";
   return "";
 }
+/* Duplicity (2.22.1). Klíče, podle kterých je zařízení stejné: čitelné interní ID, čitelné
+   výrobní číslo a dodatečné označení (bez mezer a pomlček, velkými), u položky i zařízení
+   z evidence, ke kterému patří. Interní ID a výrobní číslo se mezi sebou nemíchají. */
+function svDupKeys(x){
+  const out=[];
+  if(!x.iidBad&&svKey(x.iid))out.push("i:"+svKey(x.iid));
+  if(!x.snBad&&svKey(x.sn))out.push("s:"+svKey(x.sn));
+  if(svKey(x.mark))out.push("m:"+svKey(x.mark));
+  return out;
+}
+/* Klíč lidsky („interní ID B-12“) a proč jsou dvě věci stejné („stejné interní ID B-12“). */
+function svKeyText(key,x){
+  const t=key.slice(0,2);
+  return t==="i:"?"interní ID "+x.iid:t==="s:"?"výrobní číslo "+x.sn:"dodatečné označení "+x.mark;
+}
+function svDupWhy(key,x,dv){
+  if(key.startsWith("d:"))return "stejné zařízení z evidence"+(dv?": "+svDevName(dv)+(svDevIdent(dv)?" ("+svDevIdent(dv)+")":""):"");
+  return "stejné "+svKeyText(key,x);
+}
+/* Skupiny věcí se společným klíčem (sjednocení přes všechny klíče). keysOf(i) → klíče i-té.
+   Vrací skupiny indexů po dvou a víc, v pořadí prvního výskytu, a ke každé společný klíč. */
+function svGroupByKeys(n,keysOf){
+  const par=Array.from({length:n},(_,i)=>i);
+  const find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
+  const owner=new Map(),keys=[];
+  for(let i=0;i<n;i++){
+    keys[i]=keysOf(i)||[];
+    keys[i].forEach(k=>{if(owner.has(k)){const a=find(i),b=find(owner.get(k));if(a!==b)par[Math.max(a,b)]=Math.min(a,b);}else owner.set(k,i);});
+  }
+  const by=new Map();
+  for(let i=0;i<n;i++){const r=find(i);if(!by.has(r))by.set(r,[]);by.get(r).push(i);}
+  return [...by.values()].filter(g=>g.length>1).sort((a,b)=>a[0]-b[0]).map(idx=>{
+    const cnt=new Map();idx.forEach(i=>keys[i].forEach(k=>cnt.set(k,(cnt.get(k)||0)+1)));
+    const key=keys[idx[0]].find(k=>cnt.get(k)>1)||[...cnt.keys()].find(k=>cnt.get(k)>1)||"";
+    return {idx,key};
+  });
+}
+/* Klíče zařízení v evidenci → zařízení (v pořadí evidence), jako svFindDevice, ale jedním průchodem. */
+function svDevIndex(svc){
+  const idx=new Map();
+  (svc.devices||[]).forEach(d=>svDupKeys(d).forEach(k=>{if(!idx.has(k))idx.set(k,[]);idx.get(k).push(d);}));
+  return idx;
+}
+/* Kontrola duplicit v protokolu:
+   - groups: stejné zařízení víckrát (stejné zařízení z evidence, vybrané nebo nalezené podle čísla,
+     nebo stejné číslo či označení), [{idx:[indexy položek], why:"stejné interní ID B-12"}];
+   - clash: číslo položky má v evidenci jiné zařízení, než ke kterému položka patří (překlep, nebo
+     by uložení v evidenci vytvořilo duplicitu), [{i, dev, what:"výrobní číslo SN-1"}].
+   Prázdné položky se nepočítají. */
+function svDupCheck(svc,items){
+  const idx=svDevIndex(svc);
+  const live=items.map(it=>!!it&&svItemProblem(it)!=="prázdná položka");
+  const keys=items.map((it,i)=>live[i]?svDupKeys(it):[]);
+  const own=items.map((it,i)=>{
+    if(!live[i])return null;
+    const linked=it.dev&&svc.devices.find(d=>d.id===it.dev);
+    if(linked)return linked;
+    const k=keys[i].find(k=>idx.has(k));   // pořadí i:, s:, m: jako svFindDevice
+    return k?idx.get(k)[0]:null;
+  });
+  const groups=svGroupByKeys(items.length,i=>live[i]?[...keys[i],...(own[i]?["d:"+own[i].id]:[])]:[]).map(g=>{
+    const x=g.key.startsWith("d:")?items[g.idx[0]]:items.find((it,i)=>g.idx.includes(i)&&keys[i].includes(g.key));
+    return {idx:g.idx,why:svDupWhy(g.key,x||items[g.idx[0]],g.key.startsWith("d:")?own[g.idx[0]]:null)};
+  });
+  // jen čísla, která zařízení ještě nemá: ta by mu uložení zapsalo (duplicita, která už v evidenci
+  // je, protokol neblokuje, ukazuje ji evidence)
+  const clash=[];
+  items.forEach((it,i)=>{
+    if(!own[i])return;
+    const has=new Set(svDupKeys(own[i]));
+    for(const k of keys[i]){
+      if(has.has(k))continue;
+      const o=(idx.get(k)||[]).find(d=>d!==own[i]);
+      if(o){clash.push({i,dev:o,what:svKeyText(k,it)});return;}
+    }
+  });
+  return {groups,clash};
+}
+function svDupGroups(svc,items){return svDupCheck(svc,items).groups;}
+/* Pořadí, ve kterém jdou duplicity nahoru: skupiny za sebou (členové pod sebou), pak položky se
+   shodou v evidenci, pak ostatní v původním pořadí. Vrací pole původních indexů. */
+function svDupOrder(n,groups,clash){
+  const first=[...groups.flatMap(g=>g.idx),...(clash||[]).map(c=>c.i)].filter((v,j,a)=>a.indexOf(v)===j);
+  const set=new Set(first);
+  return [...first,...Array.from({length:n},(_,i)=>i).filter(i=>!set.has(i))];
+}
+/* Zařízení v evidenci se stejným číslem nebo označením. Vrací [{ids:[id], why}]. */
+function svDevDups(svc){
+  const list=svc.devices||[];
+  return svGroupByKeys(list.length,i=>svDupKeys(list[i])).map(g=>{
+    const x=list.find((d,i)=>g.idx.includes(i)&&svDupKeys(d).includes(g.key))||list[g.idx[0]];
+    return {ids:g.idx.map(i=>list[i].id),why:svDupWhy(g.key,x,null)};
+  });
+}
 /* Uložení odeslání (nové i upravené). Položky bez odkazu najdou zařízení v evidenci, nebo ho
    založí; evidence se doplní o novější údaje z položky. Vrací {ship, created[]}. */
 function svSaveShipment(svc,draft,meta){

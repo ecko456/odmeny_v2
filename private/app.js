@@ -7250,7 +7250,7 @@ function renderService() {
   $('#svTabs').hidden = !!d;
   if (d) {
     box.innerHTML = svEditorHtml(d);
-    d.items.forEach((_, i) => svHint(i));
+    svHints();
     return;
   }
   const tab = SV_TABS.some(t => t[0] === ui.sv.tab) ? ui.sv.tab : 'ship';
@@ -7351,11 +7351,17 @@ function svDevTable() {
   if (!el) return;
   const c = svc();
   const q = norm(ui.sv.q || '');
+  // duplicity (stejné číslo nebo označení u víc zařízení) jsou nahoře pod sebou a červeně
+  const dups = svDevDups(c);
+  const dupOf = new Map();
+  dups.forEach((g, n) => g.ids.forEach((id, j) => dupOf.set(id, { n, j, why: g.why })));
+  const dupCmp = (a, b) => { const x = dupOf.get(a.dv.id), y = dupOf.get(b.dv.id); return x || y ? (!x ? 1 : !y ? -1 : (x.n - y.n) || (x.j - y.j)) : 0; };
   const rows = c.devices.map(dv => ({ dv, h: svHistory(c, dv.id) }))
     .filter(x => !q || norm(`${svDevName(x.dv)} ${x.dv.iid} ${x.dv.sn} ${x.dv.mark} ${x.dv.note}`).includes(q))
-    .sort((a, b) => (b.h.out - a.h.out) || (!!a.h.retired - !!b.h.retired) || (b.h.count - a.h.count) || svDevName(a.dv).localeCompare(svDevName(b.dv), 'cs'));
-  el.innerHTML = rows.length ? `<div class="table-card"><table class="stack sv-dev-tab"><thead><tr><th>Zařízení</th><th>Identifikace</th><th class="r">Na servisu</th><th class="r">Za 12 měsíců</th><th>Naposledy</th><th class="r">Průměrně na servisu</th><th class="r">Odstup</th><th>Stav</th></tr></thead><tbody>${rows.map(({ dv, h }) => `<tr class="sv-row" data-svdev="${esc(dv.id)}" tabindex="0">
-      <td class="name" data-label="Zařízení"><b>${esc(svDevName(dv))}</b>${dv.made ? `<small class="sv-made">rok výroby ${esc(dv.made)}</small>` : ''}</td>
+    .sort((a, b) => dupCmp(a, b) || (b.h.out - a.h.out) || (!!a.h.retired - !!b.h.retired) || (b.h.count - a.h.count) || svDevName(a.dv).localeCompare(svDevName(b.dv), 'cs'));
+  const warn = dups.length ? `<div class="note e sv-dupwarn"><b>V evidenci jsou duplicity</b> (${dups.length === 1 ? esc(dups[0].why) : `${dups.length} ${dups.length < 5 ? 'skupiny' : 'skupin'}`}). Zařízení se stejným číslem nebo označením jsou nahoře pod sebou a označená červeně. Otevři je a oprav číslo, které nesedí.</div>` : '';
+  el.innerHTML = warn + (rows.length ? `<div class="table-card"><table class="stack sv-dev-tab"><thead><tr><th>Zařízení</th><th>Identifikace</th><th class="r">Na servisu</th><th class="r">Za 12 měsíců</th><th>Naposledy</th><th class="r">Průměrně na servisu</th><th class="r">Odstup</th><th>Stav</th></tr></thead><tbody>${rows.map(({ dv, h }) => `<tr class="sv-row${dupOf.has(dv.id) ? ' dup' : ''}" data-svdev="${esc(dv.id)}" tabindex="0">
+      <td class="name" data-label="Zařízení"><b>${esc(svDevName(dv))}</b>${dv.made ? `<small class="sv-made">rok výroby ${esc(dv.made)}</small>` : ''}${dupOf.has(dv.id) ? `<small class="sv-dupnote">Duplicita: ${esc(dupOf.get(dv.id).why)}</small>` : ''}</td>
       <td data-label="Identifikace">${esc(svDevIdent(dv) || '—')}</td>
       <td class="r num" data-label="Na servisu">${h.count}×</td>
       <td class="r num" data-label="Za 12 měsíců">${h.year}×</td>
@@ -7363,7 +7369,7 @@ function svDevTable() {
       <td class="r num" data-label="Průměrně na servisu">${h.avgDays != null ? `${h.avgDays} ${denN(h.avgDays)}` : '—'}</td>
       <td class="r num" data-label="Odstup">${h.avgGap != null ? `${h.avgGap} ${denN(h.avgGap)}` : '—'}</td>
       <td data-label="Stav">${h.out ? `<span class="tag warn">na servisu ${h.outDays} ${denN(h.outDays)}</span>` : h.retired ? `<span class="tag crit">vyřazeno ${esc(dayText(h.retired))}</span>` : h.count ? '<span class="tag ok">v provozu</span>' : '<span class="muted">bez odeslání</span>'}</td></tr>`).join('')}</tbody></table></div>`
-    : `<div class="card">${emptyState('Nic nenalezeno', 'Zkus jiný název nebo číslo.')}</div>`;
+    : `<div class="card">${emptyState('Nic nenalezeno', 'Zkus jiný název nebo číslo.')}</div>`);
 }
 async function svDeviceDialog(id) {
   const c = svc();
@@ -7378,9 +7384,11 @@ async function svDeviceDialog(id) {
   }).join('');
   const sum = h.count ? [`na servisu ${h.count}× (za 12 měsíců ${h.year}×)`, h.avgDays != null ? `průměrně ${h.avgDays} ${denN(h.avgDays)} na servisu` : '', h.avgGap != null ? `odstup mezi odesláními ${h.avgGap} ${denN(h.avgGap)}` : '', h.out ? `teď na servisu ${h.outDays} ${denN(h.outDays)}` : '', h.retired ? `odesláno k vyřazení ${dayText(h.retired)}` : ''].filter(Boolean).join(' · ') : 'zatím bez odeslání';
   const f = (name, label, val, max, list = '') => `<label class="field"><span>${label}</span><input type="text" name="${name}" value="${esc(val)}" maxlength="${max}"${list ? ` list="${list}"` : ''}></label>`;
+  const dg = svDevDups(c).find(g => g.ids.includes(id));
+  const dupNote = dg ? `<p class="note e"><b>Duplicita v evidenci:</b> ${esc(dg.why)} má i ${dg.ids.filter(x => x !== id).map(x => esc(svLabel(c.devices.find(d => d.id === x)))).join(', ')}. Oprav číslo, které nesedí.</p>` : '';
   const res = await dialog({
     title: svDevName(dv), ok: 'Uložit údaje', cancel: 'Zavřít', wide: true,
-    html: `<p class="small">${esc(sum)}</p>
+    html: `${dupNote}<p class="small">${esc(sum)}</p>
       <div class="table-card flat"><table class="stack sv-hist-tab"><thead><tr><th>Odesláno</th><th>Protokol</th><th>Servis</th><th>Účel a závada</th><th>Vráceno</th></tr></thead><tbody>${hist || '<tr><td colspan="5" class="muted">Zatím bez odeslání.</td></tr>'}</tbody></table></div>
       <h3 class="sv-dlg-h">Údaje v evidenci</h3>
       <div class="sv-grid">${f('kind', 'Druh zařízení', dv.kind, 80)}${f('brand', 'Značka', dv.brand, 80)}${f('model', 'Model', dv.model, 80)}</div>
@@ -7472,12 +7480,15 @@ function svItemHtml(it, i, n) {
 /* Nápověda u položky: zařízení z evidence, nebo nové (bez překreslení, aby se dalo psát dál).
    Obnovuje se už při psaní: kdyby se změnila až při opuštění pole, posunula by tlačítko pod
    kurzorem a klik na Přidat další zařízení by se ztratil. */
-function svHint(i) {
+function svHint(i, dup = null, clash = null) {
   const el = $(`[data-svhint="${i}"]`);
   const d = ui.sv.draft;
   const it = d && d.items[i];
   if (!el || !it) return;
   const set = html => { if (el.innerHTML !== html) el.innerHTML = html; };
+  el.closest('.sv-item')?.classList.toggle('dup', !!(dup || clash));
+  if (dup) { set(`<b>Duplicita:</b> stejné zařízení jako č. ${svNums(dup.idx.filter(j => j !== i))} (${esc(dup.why)}). V protokolu může být jen jednou.`); return; }
+  if (clash) { set(`<b>Duplicita v evidenci:</b> ${esc(svCap(clash.what))} má v evidenci jiné zařízení: ${esc(svDevName(clash.dev))}${svDevIdent(clash.dev) ? ` (${esc(svDevIdent(clash.dev))})` : ''}. Oprav číslo tady, nebo v evidenci.`); return; }
   const c = svc();
   const linked = it.dev && c.devices.find(x => x.id === it.dev);
   const found = linked || svFindDevice(c, it);
@@ -7485,6 +7496,33 @@ function svHint(i) {
   const h = svHistOf(found.id, d.id);
   set(`${linked ? 'Z evidence' : 'V evidenci už je'}: <b>${esc(svDevName(found))}</b>${svDevIdent(found) ? ` (${esc(svDevIdent(found))})` : ''} · na servisu ${h.count}×${h.last ? `, naposledy ${esc(dayText(h.last))}` : ''}${h.out ? ' · <b>podle evidence je teď na servisu</b>' : ''}${h.retired ? ` · <b>podle evidence odesláno k vyřazení ${esc(dayText(h.retired))}</b>` : ''}${linked ? ` <button class="linkish" type="button" data-svunlink="${i}">odpojit</button>` : ''}`);
 }
+/* Duplicity v protokolu (2.22.1): stejné zařízení víckrát, nebo číslo jiného zařízení z evidence.
+   Červeně se označí hned při psaní (barva, text v nápovědě, rozložení se nemění); při uložení
+   jdou nahoru pod sebe. only = položka, ve které se píše: ostatní se překreslí, jen když se
+   jejich duplicita změnila (nápověda s evidencí je jinak zbytečně dělaná pořád dokola). */
+function svHints(only = null) {
+  const d = ui.sv.draft;
+  if (!d) return;
+  const { groups, clash } = svDupCheck(svc(), d.items);
+  const dupOf = new Map();
+  groups.forEach(g => g.idx.forEach(i => dupOf.set(i, g)));
+  const clashOf = new Map(clash.map(x => [x.i, x]));
+  d.items.forEach((_, i) => {
+    const card = $(`[data-svitem="${i}"]`);
+    if (!card) return;
+    const g = dupOf.get(i), x = clashOf.get(i);
+    const st = g ? `g:${g.idx.join()}:${g.why}` : x ? `x:${x.dev.id}:${x.what}` : '-';
+    if (only != null && i !== only && card.dataset.dupst === st) return;
+    card.dataset.dupst = st;
+    svHint(i, g, x);
+  });
+}
+/* Čísla položek lidsky: „2“, „2 a 5“, „2, 5 a 7“ (indexy od nuly). */
+function svNums(list) {
+  const n = list.map(j => j + 1);
+  return n.length > 1 ? `${n.slice(0, -1).join(', ')} a ${n[n.length - 1]}` : String(n[0] || '');
+}
+function svCap(t) { return t ? t[0].toUpperCase() + t.slice(1) : t; }
 function svDraftDirty(d) {
   const ship = d.id && svc().shipments.find(x => x.id === d.id);
   const base = ship ? svDraftOf(ship) : svDraftNew();
@@ -7503,13 +7541,20 @@ async function svSaveDraft(pdf) {
     $(`[data-svitem="${bad.i}"] input[data-svf="${bad.it.iidBad && bad.it.snBad ? 'mark' : 'iid'}"]`)?.focus();
     return;
   }
-  // stejné zařízení dvakrát v jednom protokolu
-  const ident = it => it.dev || (svFindDevice(c, it) || {}).id || `k:${svKey(!it.iidBad && it.iid) || svKey(!it.snBad && it.sn) || svKey(it.mark)}`;
-  const seen = new Map();
-  for (const x of keep) {
-    const k = ident(x.it);
-    if (seen.has(k)) { toast(`Zařízení ${seen.get(k) + 1} a ${x.i + 1} je stejné zařízení. V protokolu může být jen jednou.`, true); return; }
-    seen.set(k, x.i);
+  // stejné zařízení víckrát, nebo číslo jiného zařízení z evidence: duplicity jdou nahoru pod sebe
+  // a zůstanou označené červeně, dokud se neopraví
+  const { groups, clash } = svDupCheck(c, d.items);
+  if (groups.length || clash.length) {
+    d.items = svDupOrder(d.items.length, groups, clash).map(i => d.items[i]);
+    renderService();
+    $('[data-svitem="0"]')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const g = groups[0], x = clash[0];
+    toast(groups.length === 1 && !clash.length
+      ? `Zařízení ${svNums(g.idx.map((_, j) => j))} je stejné zařízení (${g.why}). Duplicity jsou teď nahoře pod sebou a označené červeně. V protokolu může být jen jednou: jedno odeber, nebo oprav číslo.`
+      : !groups.length && clash.length === 1
+        ? `Zařízení 1: ${svCap(x.what)} má v evidenci jiné zařízení (${svDevName(x.dev)}). Je teď nahoře a označené červeně. Oprav číslo tady, nebo v evidenci.`
+        : 'Protokol má duplicity: stejné zařízení víckrát, nebo číslo, které v evidenci patří jinému zařízení. Jsou teď nahoře pod sebou a označené červeně. Odeber je, nebo oprav čísla.', true);
+    return;
   }
   const { ship, created } = svSaveShipment(c, { ...d, items: keep.map(x => x.it) }, { by: ui.me.label || '', at: Date.now() });
   ui.sv.draft = null;
@@ -7550,7 +7595,7 @@ function bindService() {
         return;
       }
       const un = t.closest('[data-svunlink]');
-      if (un) { d.items[+un.dataset.svunlink].dev = ''; svHint(+un.dataset.svunlink); return; }
+      if (un) { d.items[+un.dataset.svunlink].dev = ''; svHints(+un.dataset.svunlink); return; }
       if (t.closest('[data-svcancel]')) {
         if (svDraftDirty(d) && !(await confirmBox('Zahodit rozepsaný protokol?', 'Vyplněné údaje se neuloží.', 'Zahodit', true))) return;
         ui.sv.draft = null; renderService(); return;
@@ -7612,7 +7657,7 @@ function bindService() {
       const it = d.items[+t.dataset.svi];
       if (!it) return;
       it[t.dataset.svf] = t.value;
-      if (['iid', 'sn', 'mark'].includes(t.dataset.svf)) svHint(+t.dataset.svi);
+      if (['iid', 'sn', 'mark'].includes(t.dataset.svf)) svHints(+t.dataset.svi);
     }
   });
   view.addEventListener('change', event => {
@@ -7656,7 +7701,7 @@ function bindService() {
       it.faults = SV_FAULT_KEYS.filter(k => set.has(k));
       return;
     }
-    if (['iid', 'sn', 'mark'].includes(t.dataset.svf)) svHint(+t.dataset.svi);
+    if (['iid', 'sn', 'mark'].includes(t.dataset.svf)) svHints(+t.dataset.svi);
   });
 }
 

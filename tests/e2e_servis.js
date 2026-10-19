@@ -177,15 +177,37 @@ async function confirm(page) {
   await page.waitForFunction(() => ui.sv.draft.items.length === 2);
   await page.click('[data-svadd]');
   await fillItem(page, 2, { iid: 'b 12' });
+  // duplicita (2.22.1): červeně hned při psaní, při uložení nahoru pod sebe
+  await page.waitForFunction(() => document.querySelector('[data-svitem="0"]').classList.contains('dup') && document.querySelector('[data-svitem="2"]').classList.contains('dup') && !document.querySelector('[data-svitem="1"]').classList.contains('dup'));
+  check(/Duplicita: stejné zařízení jako č\. 3 \(stejné interní ID B-12\)/.test(await page.textContent(`${item(0)} .sv-hint`)) && /Duplicita: stejné zařízení jako č\. 1 /.test(await page.textContent(`${item(2)} .sv-hint`)), 'duplicita označená červeně hned při psaní');
   await page.click('[data-svsave="plain"]');
-  await page.waitForFunction(() => /Zařízení 1 a 3 je stejné zařízení/.test(document.querySelector('#toast').textContent));
-  await page.click('[data-svdel="2"]');
-  await page.waitForFunction(() => ui.sv.draft.items.length === 2);
+  await page.waitForFunction(() => /Zařízení 1 a 2 je stejné zařízení \(stejné interní ID B-12\)/.test(document.querySelector('#toast').textContent));
+  check(await page.evaluate(() => ui.sv.draft.items.map(i => i.iid || i.sn).join() === 'B-12,b 12,x9' && [...document.querySelectorAll('.sv-item')].map(e => e.classList.contains('dup')).join() === 'true,true,false'
+    && /jako č\. 2 /.test(document.querySelector('[data-svhint="0"]').textContent) && !S.service.shipments[1]), 'při uložení jsou duplicity nahoře pod sebou a červeně, protokol se neuloží');
+  await page.waitForFunction(() => Math.abs(document.querySelector('[data-svitem="0"]').getBoundingClientRect().top - 16) < 3, null, { timeout: 5000 });
+  await page.screenshot({ path: path.join(shots, '06-duplicita.png') });
+  await page.click('[data-svdel="1"]');
+  await page.waitForFunction(() => ui.sv.draft.items.length === 2 && !document.querySelector('.sv-item.dup'));
   await page.click('[data-svsave="plain"]');
   await page.waitForFunction(() => !ui.sv.draft && S.service.shipments.length === 2);
   await saved(page);
   const st2 = await page.evaluate(() => ({ devs: S.service.devices.length, no: svNo(S.service.shipments[1]), sn: S.service.devices[1].sn, links: S.service.shipments[1].items.map(i => S.service.devices.findIndex(d => d.id === i.dev)) }));
   check(JSON.stringify(st2) === JSON.stringify({ devs: 3, no: '2026/002', sn: 'X-9', links: [0, 1] }), `druhé odeslání bez nových zařízení: ${JSON.stringify(st2)}`);
+
+  // Číslo jiného zařízení z evidence (2.22.1): ID patří brusce, výrobní číslo vrtačce. Uložení by
+  // brusce zapsalo číslo vrtačky a v evidenci by vznikla duplicita.
+  await page.click('#svNew');
+  await fillItem(page, 0, { iid: 'B-12', sn: 'X-9' });
+  await page.waitForFunction(() => document.querySelector('[data-svitem="0"]').classList.contains('dup'));
+  check(/Duplicita v evidenci: Výrobní číslo X-9 má v evidenci jiné zařízení: Vrtačka · Bosch GSB 18/.test(await page.textContent(`${item(0)} .sv-hint`)), `číslo jiného zařízení z evidence: ${await page.textContent(`${item(0)} .sv-hint`)}`);
+  await page.click('[data-svsave="plain"]');
+  await page.waitForFunction(() => /Zařízení 1: Výrobní číslo X-9 má v evidenci jiné zařízení \(Vrtačka/.test(document.querySelector('#toast').textContent));
+  check(await page.evaluate(() => !!ui.sv.draft && S.service.shipments.length === 2 && S.service.devices[0].sn === 'SN-001'), 'neuloží se a evidence se nezmění');
+  await page.fill(`${item(0)} [data-svf="sn"]`, 'SN-001');
+  await page.waitForFunction(() => !document.querySelector('.sv-item.dup') && /V evidenci už je: Bruska/.test(document.querySelector('[data-svhint="0"]').textContent));
+  await page.click('[data-svcancel]');
+  await confirm(page);
+  await page.waitForFunction(() => !ui.sv.draft);
 
   // Vrácení ze servisu: jedno a pak vše.
   const ship1 = '[data-svship]:has-text("Protokol 2026/001")';
@@ -233,6 +255,21 @@ async function confirm(page) {
   await page.waitForSelector('#dlg', { state: 'hidden' });
   await page.waitForFunction(() => S.service.devices[0].note === 'patří lakovně');
   check(await page.evaluate(() => S.service.shipments[0].items[0].kind === 'Bruska'), 'úprava evidence protokol nemění');
+
+  // Duplicita v evidenci (2.22.1; protokol ji už vytvořit nedovolí, tady je vložená přímo):
+  // stejné označení u dvou zařízení je nahoře pod sebou a červeně, v detailu upozornění.
+  await page.evaluate(() => { S.service.devices.push({ ...S.service.devices[2], id: 'dvdup', iid: '', sn: '', iidBad: true, snBad: true, mark: 's 01', note: '', made: '' }); renderService(); });
+  await page.waitForSelector('#svDevTable tr.dup');
+  const dupRows = await page.$$eval('#svDevTable tbody tr', els => els.map(e => [e.dataset.svdev, e.classList.contains('dup'), (e.querySelector('.sv-dupnote') || {}).textContent || '']));
+  check(JSON.stringify(dupRows.map(r => r[1])) === '[true,true,false,false]' && dupRows[1][0] === 'dvdup' && dupRows[0][0] === await page.evaluate(() => S.service.devices[2].id)
+    && dupRows[0][2] === 'Duplicita: stejné dodatečné označení S-01' && /V evidenci jsou duplicity \(stejné dodatečné označení S-01\)/.test(await page.textContent('#svDevTable .sv-dupwarn')), `duplicita v evidenci nahoře: ${JSON.stringify(dupRows)}`);
+  await page.screenshot({ path: path.join(shots, '07-evidence-duplicita.png'), fullPage: true });
+  await page.click('#svDevTable tr[data-svdev="dvdup"]');
+  await page.waitForSelector('#dlg[open] #svDevDel');
+  check(/Duplicita v evidenci: stejné dodatečné označení S-01 má i Pila · Festool TS 55/.test(await page.textContent('#dlg')), 'upozornění na duplicitu v detailu zařízení');
+  await page.click('#dlg #svDevDel');
+  await confirm(page);
+  await page.waitForFunction(() => S.service.devices.length === 3 && !document.querySelector('#svDevTable tr.dup') && !document.querySelector('.sv-dupwarn'));
 
   // Úprava protokolu, zrušení rozepsaného, smazání.
   await page.click('[data-svtab="ship"]');

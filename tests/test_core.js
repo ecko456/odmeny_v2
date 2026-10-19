@@ -2294,6 +2294,45 @@ test('Servis (2.22): rok výroby a vzory zařízení (druh, značka, model)', ()
   return null;
 });
 
+test('Servis (2.22.1): duplicity v protokolu a v evidenci', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    const dev = (id, o) => ({ id, kind: 'Bruska', brand: 'Makita', model: 'GA', iid: '', sn: '', iidBad: false, snBad: false, mark: '', ...o });
+    const svc = { devices: [dev('dv1', { iid: 'B-12', sn: 'SN-1' }), dev('dv2', { kind: 'Pila', iidBad: true, snBad: true, mark: 'S-01' }), dev('dv3', { kind: 'Vrtačka', iid: 'B-13', sn: 'SN-2' })], shipments: [], templates: [] };
+    const it = o => ({ ...blankSvItem(), ...o });
+    const items = [
+      it({ iid: 'A-1' }),                                 // 0: nové zařízení
+      it({ iid: 'b 12' }),                                // 1: dv1 podle ID (jinak zapsané)
+      it({}),                                             // 2: prázdná položka se nepočítá
+      it({ sn: 'sn1' }),                                  // 3: dv1 podle výrobního čísla
+      it({ iid: 'a1', sn: 'X' }),                         // 4: stejné ID jako 0
+      it({ iidBad: true, snBad: true, mark: 's01' }),     // 5: dv2 podle označení
+      it({ dev: 'dv2', kind: 'Pila', iidBad: true, snBad: true, mark: 'S-01' }), // 6: dv2 vybraná z evidence
+      it({ sn: 'A-1' }),                                  // 7: výrobní číslo A-1 není interní ID A-1
+      it({ iid: 'B-13', sn: 'SN-2', iidBad: true }),      // 8: ID nečitelné, text se nepočítá; dv3 podle v. č.
+      it({ iid: 'B-13', sn: 'SN-1' })                     // 9: dv3 podle ID (jako 8), ale v. č. má dv1 (jako 1 a 3)
+    ];
+    const c = svDupCheck(svc, items);
+    const order = svDupOrder(items.length, c.groups, c.clash);
+    const one = svDupCheck(svc, [it({ dev: 'dv1', iid: 'B-12', sn: 'SN-1' }), it({ iid: 'Z-9' })]);
+    // duplicita, která už v evidenci je, protokol neblokuje
+    const reg = { devices: [...svc.devices, dev('dv4', { iid: 'b12' }), dev('dv5', { sn: 'sn-2' }), dev('dv6', { iid: 'Q' })] };
+    const keep = svDupCheck(reg, [it({ dev: 'dv1', iid: 'B-12', sn: 'SN-1' })]);
+    JSON.stringify({ groups: c.groups, clash: c.clash.map(x => [x.i, x.dev.id, x.what]), order, one: [one.groups.length, one.clash.length],
+      regDups: svDevDups(reg), keep: [keep.groups.length, keep.clash.length], nums: [svDupOrder(3, [], [])] })`));
+  assert.deepStrictEqual(out.groups.map(g => g.idx), [[0, 4], [1, 3, 8, 9], [5, 6]], 'skupiny: stejné ID (i jinak zapsané), stejné zařízení z evidence podle ID a v. č. (9 spojí dv1 a dv3), označení; prázdná, v. č. proti ID a nečitelné ID se nepočítají');
+  assert.strictEqual(out.groups[0].why, 'stejné interní ID A-1');
+  assert.match(out.groups[1].why, /^stejné (výrobní číslo SN-1|zařízení z evidence: Bruska · Makita GA \(ID B-12 · v\. č\. SN-1\))$/);
+  assert.strictEqual(out.groups[2].why, 'stejné dodatečné označení s01');
+  assert.deepStrictEqual(out.clash, [[9, 'dv1', 'výrobní číslo SN-1']], 'ID patří dv3, výrobní číslo dv1: uložení by v evidenci udělalo duplicitu');
+  assert.deepStrictEqual(out.order, [0, 4, 1, 3, 8, 9, 5, 6, 2, 7], 'duplicity nahoru pod sebe, ostatní v původním pořadí');
+  assert.deepStrictEqual(out.one, [0, 0], 'bez duplicit nic');
+  assert.deepStrictEqual(out.regDups, [{ ids: ['dv1', 'dv4'], why: 'stejné interní ID B-12' }, { ids: ['dv3', 'dv5'], why: 'stejné výrobní číslo SN-2' }], 'duplicity v evidenci');
+  assert.deepStrictEqual(out.keep, [0, 0], 'duplicita, která už v evidenci je, odeslání nezablokuje');
+  assert.deepStrictEqual(out.nums, [[0, 1, 2]]);
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {
