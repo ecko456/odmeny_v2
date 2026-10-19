@@ -257,6 +257,7 @@ async function nav(page, view) {
   if (capText != null) {
     check(/Kapacita dovedností podle směn/.test(capText) && /Zaučit skupinu 2/.test(capText) && /Frézování/.test(capText), `PDF kapacity: ${capText.slice(0, 300)}`);
     check(/úroveň aspoň 2/i.test(capText), 'PDF kapacity ukazuje práh 2');
+    check(!/bez schopného|aspoň jeden schopný/i.test(capText), 'PDF kapacity bez upozornění na odpoledne bez schopného člověka (2.23)');
     check(/HALA 2/.test(capText) && !/Odměny|ODMĚNY/.test(capText), `PDF kapacity: místo názvu aplikace HALA 2 (2.13): ${capText.slice(0, 200)}`);
   }
   // Report se pamatuje i po přepnutí záložek.
@@ -297,6 +298,17 @@ async function nav(page, view) {
   }, adam.key);
   check(/Stálá odpolední\s*1/.test(capO.tile) && capO.th && capO.note && capO.sel === 'S2', `kapacita se stálou odpolední po týdnech: ${JSON.stringify(capO)}`);
   check(capO.pm[0] === capO.pm[2] + capO.pm[3] && capO.pm[1] === capO.pm[2] + capO.pm[4], `stálá odpolední je odpoledne v obou variantách: ${capO.pm}`);
+  // V zaškolování (2.23): v každé buňce zvlášť pod počtem schopných, stejně jako capacity()
+  const capTr = await page.evaluate(() => {
+    const rep = S.capReport, cap = capacity(rep.groups, rep.thr, rep.hidden);
+    const want = cap.groups.flatMap(g => g.skills.flatMap(r => [r.A.amT, r.A.pmT, r.B.amT, r.B.pmT, ...(cap.head[''] ? [r.by[''].tr] : [])]));
+    const g = cap.groups[0], r = g.skills[0];
+    return { want: want.filter(Boolean).length, sum: want.reduce((x, v) => x + v, 0), got: document.querySelectorAll('#capView .cap-table .cap-tr').length,
+      text: [...document.querySelectorAll('#capView .cap-table .cap-tr')].reduce((x, el) => x + parseInt(el.textContent, 10), 0),
+      group: document.querySelector('#capView .cap-group p').textContent.includes(`schopní ${g.ok}, v zaškolování ${g.training}`), ok: g.ok + g.training === g.members,
+      split: r.A.amT + r.A.pmT === r.by.R.tr + r.by.O.tr + r.by.S1.tr + r.by.S2.tr };
+  });
+  check(capTr.want > 0 && capTr.got === capTr.want && capTr.text === capTr.sum && capTr.group && capTr.ok && capTr.split, `v zaškolování v reportu kapacit: ${JSON.stringify(capTr)}`);
   await page.screenshot({ path: `${shots}/04b-capacity-odpoledni.png`, fullPage: true });
   const capPdfO = await download(page, '#capPdf', 'matice-kapacita-odpoledni.pdf');
   const capTextO = pdfText(capPdfO.path);
@@ -341,7 +353,7 @@ async function nav(page, view) {
   await page.screenshot({ path: `${shots}/04d-capacity-plan-sick.png`, fullPage: true });
   const capPdfP = await download(page, '#capPdf', 'matice-kapacita-plan.pdf');
   const capTextP = pdfText(capPdfP.path);
-  if (capTextP != null) check(/Plánovaná kapacita \(7,5 h na osobu za směnu\)/.test(capTextP) && /Nemoc/.test(capTextP), `PDF s plánovanou kapacitou: ${capTextP.slice(0, 500)}`);
+  if (capTextP != null) check(!/Plánovaná kapacita|na osobu za směnu/.test(capTextP) && /Nemoc/.test(capTextP), `PDF kapacit bez plánované kapacity (2.23): ${capTextP.slice(0, 500)}`);
   await page.click('#nav [data-view="lide"]');
   await page.click(`#lList [data-key="${adam.key}"]`);
   await page.uncheck('#lDetail #pSick');

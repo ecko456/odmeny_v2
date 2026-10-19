@@ -949,7 +949,11 @@ function skillGrid(groupId,shift,dept,byId){
 /* Kapacita dovedností po směnách: kolik lidí dovednost zvládá aspoň na úrovni thr a součet úrovní.
    Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají:
    varianta A = ráno stálá ranní + skupina 1, odpoledne stálá odpolední + skupina 2;
-   varianta B = ráno stálá ranní + skupina 2, odpoledne stálá odpolední + skupina 1. */
+   varianta B = ráno stálá ranní + skupina 2, odpoledne stálá odpolední + skupina 1.
+   V zaškolování (2.23) je zvlášť, do schopných se nepočítá: člen skupiny pod úrovní thr
+   (i s nulou) a člověk odjinud s dovedností ohodnocenou 1 až thr − 1 (zaučuje se).
+   U členů skupiny: schopný = průměr dovedností skupiny aspoň thr (capableIn). */
+function capableIn(e,p,thr){const v=skillPct(e,p);return v!=null&&v>=thr*25-1e-9;}
 function capacity(groupIds,thr,hidden){
   thr=clamp(Math.round(+thr||3),1,4);
   const all=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e));
@@ -958,15 +962,20 @@ function capacity(groupIds,thr,hidden){
   const hide=new Set(hidden||[]);
   const groups=S.positions.filter(p=>isGroup(p)&&(!groupIds||!groupIds.length||groupIds.includes(p.id))).map(p=>{
     const skills=groupSkills(p).filter(s=>!hide.has(s.id)).map(s=>{
-      const by={};[...SHIFT_KEYS,""].forEach(k=>{by[k]={n:0,sum:0,any:0};});
-      people.forEach(e=>{const v=rateOf(e,s.id);if(!v)return;const b=by[shiftOf(e)];b.sum+=v;b.any++;if(v>=thr)b.n++;});
-      const A={am:by.R.n+by.S1.n,pm:by.O.n+by.S2.n},B={am:by.R.n+by.S2.n,pm:by.O.n+by.S1.n};
-      return {s,by,A,B,diff:by.S1.n-by.S2.n,weakest:Math.min(A.pm,B.pm),total:by.R.n+by.O.n+by.S1.n+by.S2.n+by[""].n};
+      const by={};[...SHIFT_KEYS,""].forEach(k=>{by[k]={n:0,sum:0,any:0,tr:0,trK:[]};});
+      people.forEach(e=>{const v=rateOf(e,s.id),b=by[shiftOf(e)];
+        if(v<thr&&(v>=1||e.positionId===p.id)){b.tr++;b.trK.push(e.key);}
+        if(!v)return;b.sum+=v;b.any++;if(v>=thr)b.n++;});
+      const A={am:by.R.n+by.S1.n,pm:by.O.n+by.S2.n,amT:by.R.tr+by.S1.tr,pmT:by.O.tr+by.S2.tr},
+        B={am:by.R.n+by.S2.n,pm:by.O.n+by.S1.n,amT:by.R.tr+by.S2.tr,pmT:by.O.tr+by.S1.tr};
+      return {s,by,A,B,diff:by.S1.n-by.S2.n,weakest:Math.min(A.pm,B.pm),total:by.R.n+by.O.n+by.S1.n+by.S2.n+by[""].n,
+        training:by.R.tr+by.O.tr+by.S1.tr+by.S2.tr+by[""].tr};
     });
     const members=people.filter(e=>e.positionId===p.id);
     const bySh={};[...SHIFT_KEYS,""].forEach(k=>{const m=members.filter(e=>shiftOf(e)===k);
-      bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null};});
-    return {p,skills,members:members.length,bySh};
+      bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null,ok:m.filter(e=>capableIn(e,p,thr)).length};});
+    const ok=members.filter(e=>capableIn(e,p,thr)).length;
+    return {p,skills,members:members.length,ok,training:members.length-ok,bySh};
   }).filter(g=>g.skills.length);
   return {thr,head,groups,sick:all.length-people.length};
 }
@@ -991,15 +1000,26 @@ function workDays(weekId){
 /* Plánovaná kapacita skupiny (2.9): na osobu za směnu (ks nebo h) × lidé skupiny na směně.
    v = varianta A (skupina 1 ranní) / B (skupina 2 ranní); ranní = stálá ranní + skupina
    s ranní, odpolední = stálá odpolední + druhá skupina; týden = den × pracovní dny.
-   Lidé bez směny, nemocní, vyřazení a vedoucí se nepočítají. Bez zapnuté kapacity null. */
-function groupPlan(p,v,days){
+   Lidé bez směny, nemocní, vyřazení a vedoucí se nepočítají. Bez zapnuté kapacity null.
+   S thr (2.23) navíc ok a tr: totéž jen za schopné (průměr dovedností aspoň thr) a za lidi
+   v zaškolování; celkové am/pm/day/week zůstávají (počítá s nimi úvod a Audit). */
+function groupPlan(p,v,days,thr){
   if(!p||!p.plan||!(+p.plan.v>0))return null;
   const all=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&e.positionId===p.id);
   const m=all.filter(e=>!e.sick);
   const by=k=>m.filter(e=>shiftOf(e)===k).length;
   const amN=by("R")+(v==="B"?by("S2"):by("S1")),pmN=by("O")+(v==="B"?by("S1"):by("S2"));
   const per=+p.plan.v,d=days==null?5:days,r=x=>Math.round(x*10)/10;
-  return {per,unit:p.plan.unit==="h"?"h":"ks",amN,pmN,am:r(amN*per),pm:r(pmN*per),day:r((amN+pmN)*per),days:d,week:r((amN+pmN)*per*d),none:by(""),sick:all.length-m.length};
+  const out={per,unit:p.plan.unit==="h"?"h":"ks",amN,pmN,am:r(amN*per),pm:r(pmN*per),day:r((amN+pmN)*per),days:d,week:r((amN+pmN)*per*d),none:by(""),sick:all.length-m.length};
+  if(thr!=null){
+    const t=clamp(Math.round(+thr||3),1,4);
+    const part=list=>{const n=k=>list.filter(e=>shiftOf(e)===k).length;
+      const a=n("R")+(v==="B"?n("S2"):n("S1")),b=n("O")+(v==="B"?n("S1"):n("S2"));
+      return {amN:a,pmN:b,am:r(a*per),pm:r(b*per),day:r((a+b)*per),week:r((a+b)*per*d)};};
+    out.ok=part(m.filter(e=>capableIn(e,p,t)));
+    out.tr=part(m.filter(e=>!capableIn(e,p,t)));
+  }
+  return out;
 }
 
 /* ---------- plánovaná obsazenost dne (2.15) ----------

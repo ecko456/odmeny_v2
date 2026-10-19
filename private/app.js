@@ -60,6 +60,8 @@ function cleanPrefs(input) {
     profileTo: MONTH_RE.test(String(x.profileTo)) ? x.profileTo : '',
     t5PdfShort: x.t5PdfShort === true,
     matrixIds: x.matrixIds === true,   // matice jen s ID z evidence práce místo jmen (2.20)
+    // filtr seznamu Lidé (2.23): g = id skupiny nebo „d:“ + oddělení, st = stav (LIDE_STATES)
+    lideF: { g: str(x.lideF?.g, 80), st: LIDE_STATES.some(t => t[0] === x.lideF?.st) ? x.lideF.st : '' },
   };
 }
 
@@ -1283,32 +1285,80 @@ function calStrip(a) {
 /* ==========================================================================
    LIDÉ
    ========================================================================== */
-function renderPeople() {
+/* Filtr seznamu (2.23): stav člověka. Bez skupiny / směny / hodnocení a v nemoci jen u lidí,
+   kteří se hodnotí (ne vedoucí, ne vyřazení). */
+const LIDE_STATES = [['', 'Všichni'], ['nogroup', 'Bez skupiny'], ['noshift', 'Bez směny'], ['norate', 'Bez hodnocení'], ['sick', 'V nemoci'], ['lead', 'Vedoucí'], ['out', 'Vyřazení']];
+function lideState(e, st) {
+  const active = !isLead(e) && !e.excluded;
+  if (st === 'nogroup') return active && !e.positionId;
+  if (st === 'noshift') return active && !shiftOf(e);
+  if (st === 'norate') { const sk = groupSkills(posOf(e)); return active && !!e.positionId && sk.length > 0 && sk.every(x => !rateOf(e, x.id)); }
+  if (st === 'sick') return active && !!e.sick;
+  if (st === 'lead') return isLead(e);
+  if (st === 'out') return !isLead(e) && !!e.excluded;
+  return true;
+}
+/* Oddělení nebo skupina: „d:“ + oddělení (u vedoucích oddělení, která vedou), jinak id skupiny. */
+function lideScope(e, g) {
+  if (!g) return true;
+  if (g.startsWith('d:')) { const d = g.slice(2); return isLead(e) ? e.lead.includes(d) : empDept(e) === d; }
+  return !isLead(e) && e.positionId === g;
+}
+function lideScopeOptions(g) {
+  const opt = (v, t) => `<option value="${esc(v)}"${v === g ? ' selected' : ''}>${esc(t)}</option>`;
+  const known = new Set(['']);
+  const html = departments().map(d => {
+    const groups = S.positions.filter(p => deptOf(p) === d);
+    known.add(`d:${d}`); groups.forEach(p => known.add(p.id));
+    if (groups.length === 1 && (groups[0].name || '') === d) return opt(`d:${d}`, d);
+    return `<optgroup label="${esc(d)}">${opt(`d:${d}`, `Celé oddělení ${d}`)}${groups.map(p => opt(p.id, p.name || '(bez názvu)')).join('')}</optgroup>`;
+  }).join('');
+  return `${opt('', 'Všechna oddělení a skupiny')}${html}${known.has(g) ? '' : opt(g, '(skupina už neexistuje)')}`;
+}
+function lideFilter() { return P.lideF || { g: '', st: '' }; }
+function setLideFilter(patch) {
+  setPref({ lideF: { ...lideFilter(), ...patch } });
+  renderPeople({ refilter: true });
+}
+function renderPeople(opts = {}) {
   const q = norm($('#lSearch').value);
+  const F = lideFilter();
   // pořadí: hodnocení lidé, vedoucí pracovníci (2.7), vyřazení ze seznamu
   const rank = e => (isLead(e) ? 1 : e.excluded ? 2 : 0);
-  let list = Object.values(S.employees).sort((a, b) => (rank(a) - rank(b)) || norm(a.last).localeCompare(norm(b.last), 'cs'));
-  if (q) list = list.filter(e => norm(`${e.last} ${e.first}`).includes(q));
+  const all = Object.values(S.employees).sort((a, b) => (rank(a) - rank(b)) || norm(a.last).localeCompare(norm(b.last), 'cs'));
+  const scoped = all.filter(e => lideScope(e, F.g));
+  const match = e => lideState(e, F.st) && (!q || norm(`${e.last} ${e.first}`).includes(q));
+  let list = scoped.filter(match);
+  // po změně filtru se vybere první, kdo mu odpovídá; po úpravě člověka (třeba zařazení do
+  // skupiny ve filtru Bez skupiny) zůstane v seznamu označený, dokud se nevybere někdo jiný
+  const sel = ui.selPerson && S.employees[ui.selPerson];
+  const held = sel && !list.includes(sel) && !opts.refilter ? sel : null;
+  if (held) list = all.filter(e => list.includes(e) || e === held);
+  else if (list.length && (!sel || !list.includes(sel))) ui.selPerson = list[0].key;
   const p = curPeriod();
-  if (list.length && (!ui.selPerson || !S.employees[ui.selPerson])) ui.selPerson = list[0].key;
+  const filtered = !!(F.g || F.st || q);
+  $('#lFilters').innerHTML = `<select id="lScope" aria-label="Oddělení nebo skupina">${lideScopeOptions(F.g)}</select>
+    <div class="chips lchips" role="group" aria-label="Stav">${LIDE_STATES.map(([k, t]) => { const n = k ? scoped.filter(e => lideState(e, k)).length : scoped.length; return `<button type="button" class="chip${k === F.st ? ' on' : ''}${n ? '' : ' none'}" data-lst="${k}" aria-pressed="${k === F.st}">${esc(t)} <span class="num">${n}</span></button>`; }).join('')}</div>
+    ${filtered ? `<p class="lcount small muted">Zobrazeno ${list.length - (held ? 1 : 0)} z ${all.length}${F.g || F.st ? ' · <button type="button" class="linkish" data-lclear>zrušit filtr</button>' : ''}</p>` : ''}`;
   let section = 0;
   $('#lList').innerHTML = list.length ? list.map(e => {
     const r = rank(e);
     const sep = r > section ? (section = r, `<div class="listsep">${r === 1 ? 'Vedoucí pracovníci' : 'Vyřazení ze seznamu'}</div>`) : '';
+    const out = e === held ? ' <span class="tag">mimo filtr</span>' : '';
     if (r === 1) {
-      return `${sep}<button class="list-item lead-item" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
+      return `${sep}<button class="list-item lead-item${e === held ? ' held' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       <span class="lvl lead" title="Vedoucí pracovník" aria-hidden="true">V</span>
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span title="${esc(e.lead.join(', '))}">${e.lead.length ? esc(e.lead.join(', ')) : '<span class="warn-t">bez oddělení</span>'}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${out}</b><span title="${esc(e.lead.join(', '))}">${e.lead.length ? esc(e.lead.join(', ')) : '<span class="warn-t">bez oddělení</span>'}</span></span>
       <span class="tag">vedoucí</span></button>`;
     }
     const ev = evaluate(e, p);
     const L = ev.L;
-    return `${sep}<button class="list-item${e.excluded ? ' out' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
+    return `${sep}<button class="list-item${e.excluded ? ' out' : ''}${e === held ? ' held' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       ${L.pct != null || L.n ? `<span class="lvl l${L.n}" title="Průměrná úroveň dovedností">${L.n}</span>` : '<span class="lvl l0">?</span>'}
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${out}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}</span></span>
       ${e.excluded ? '<span class="tag">vyřazen</span>' : `<span class="num small list-val" title="Tabáky za vybraný měsíc">${nf(ev.total, 0)}</span>`}
     </button>`;
-  }).join('') : emptyState('Nikdo tu není', 'Nahraj docházku, nebo přidej člověka ručně.');
+  }).join('') : filtered && all.length ? emptyState('Nikdo neodpovídá filtru', 'Zkus jiné oddělení nebo stav, nebo filtr zruš.') : emptyState('Nikdo tu není', 'Nahraj docházku, nebo přidej člověka ručně.');
   $('#peopleSplit').classList.toggle('show-detail', ui.personOpen);
   renderPersonDetail();
   syncHistory();
@@ -3408,7 +3458,13 @@ function capWeeks(rep) {
 }
 /* Plánovaná kapacita skupiny (2.9): tento a příští týden (nebo varianty A/B). */
 function planUnit(x, v) { return x.unit === 'h' ? `${nf(v, 1)} h` : `${nf(v, 0)} ks`; }
-function planRows(p) { return capWeeks(S.capReport || blankCapReport()).map(w => ({ w, x: groupPlan(p, w.v, w.id ? workDays(w.id) : 5) })).filter(r => r.x); }
+function planRows(p) { const rep = S.capReport || blankCapReport(); return capWeeks(rep).map(w => ({ w, x: groupPlan(p, w.v, w.id ? workDays(w.id) : 5, rep.thr) })).filter(r => r.x); }
+/* Buňka plánované kapacity (2.23): schopní tučně, v zaškolování zvlášť pod nimi. */
+function planCell(x, k, n) {
+  const ok = x.ok || x, tr = x.tr;
+  const trN = !tr ? 0 : n ? tr[n] : tr.amN + tr.pmN;
+  return `<b>${planUnit(x, ok[k])}</b>${n ? `<small>${peopleCount(ok[n])}</small>` : ''}${trN ? `<small class="cap-tr">v zaškolování ${planUnit(x, tr[k])}${n ? ` (${peopleCount(tr[n])})` : ''}</small>` : ''}`;
+}
 function workDaysW(n) { return n === 1 ? 'pracovní den' : n >= 2 && n <= 4 ? 'pracovní dny' : 'pracovních dní'; }
 function planHtml(p) {
   const rows = planRows(p);
@@ -3416,14 +3472,16 @@ function planHtml(p) {
   const x0 = rows[0].x;
   const out = [x0.none ? `${peopleCount(x0.none)} bez směny` : '', x0.sick ? `${peopleCount(x0.sick)} v nemoci` : ''].filter(Boolean).join(', ');
   return `<div class="table-card flat plan-wrap"><table class="plan-table"><thead><tr><th>${rows[0].w.id ? 'Týden' : 'Varianta'}</th><th class="r">Ranní</th><th class="r">Odpolední</th><th class="r">Za den</th><th class="r">Za týden</th></tr></thead><tbody>${rows.map(({ w, x }) => `<tr><th scope="row">${esc(w.label)}<small>ranní skupina ${w.v === 'A' ? 1 : 2}</small></th>
-      <td class="r num"><b>${planUnit(x, x.am)}</b><small>${peopleCount(x.amN)}</small></td>
-      <td class="r num"><b>${planUnit(x, x.pm)}</b><small>${peopleCount(x.pmN)}</small></td>
-      <td class="r num"><b>${planUnit(x, x.day)}</b></td>
-      <td class="r num"><b>${planUnit(x, x.week)}</b><small>${x.days} ${workDaysW(x.days)}</small></td></tr>`).join('')}</tbody></table></div>
-    <p class="tiny muted">${planUnit(x0, x0.per)} na osobu za směnu × lidé skupiny na směně. Ranní = stálá ranní + skupina, která má ranní; odpolední = stálá odpolední + druhá skupina; týden = den × pracovní dny bez svátků.${out ? ` Nepočítá se: ${esc(out)}.` : ''}${rows[0].w.id ? '' : ' Kdo má tento týden ranní, nastavíš v Matici dovedností → Směny a kapacita.'}</p>`;
+      <td class="r num">${planCell(x, 'am', 'amN')}</td>
+      <td class="r num">${planCell(x, 'pm', 'pmN')}</td>
+      <td class="r num">${planCell(x, 'day')}</td>
+      <td class="r num">${planCell(x, 'week')}<small>${x.days} ${workDaysW(x.days)}</small></td></tr>`).join('')}</tbody></table></div>
+    <p class="tiny muted">${planUnit(x0, x0.per)} na osobu za směnu × schopní lidé skupiny na směně (průměr dovedností aspoň úroveň ${capThr()}); lidé v zaškolování jsou zvlášť a do kapacity schopných se nepočítají. Ranní = stálá ranní + skupina, která má ranní; odpolední = stálá odpolední + druhá skupina; týden = den × pracovní dny bez svátků.${out ? ` Nepočítá se: ${esc(out)}.` : ''}${rows[0].w.id ? '' : ' Kdo má tento týden ranní, nastavíš v Matici dovedností → Směny a kapacita.'}</p>`;
 }
 function capCompo(v) { return v === 'A' ? 'ranní = stálá ranní + skupina 1, odpolední = stálá odpolední + skupina 2' : 'ranní = stálá ranní + skupina 2, odpolední = stálá odpolední + skupina 1'; }
-function capCell(n, risk) { return `<td class="r num${risk && !n ? ' cap-zero' : risk && n === 1 ? ' cap-one' : ''}">${n}</td>`; }
+function capThr() { return clamp(Math.round(+(S.capReport || blankCapReport()).thr || 3), 1, 4); }
+/* Počet schopných a pod ním zvlášť lidé v zaškolování (2.23); barva rizika jen podle schopných. */
+function capCell(n, risk, tr) { return `<td class="r num${risk && !n ? ' cap-zero' : risk && n === 1 ? ' cap-one' : ''}"><span class="cap-n">${n}</span>${tr ? `<small class="cap-tr">${tr} v zaškolování</small>` : ''}</td>`; }
 function renderCapacity() {
   const box = $('#capView');
   const rep = S.capReport || blankCapReport();
@@ -3460,18 +3518,18 @@ function renderCapacity() {
       if (off || !r) return `<tr class="cap-off"><td><label class="cap-tog"><input type="checkbox" data-capskill="${esc(x.id)}"> <span>${esc(x.name)}</span></label></td><td colspan="${2 * weeks.length + 1 + noShift}" class="muted small">vyřazeno z reportu</td></tr>`;
       const weaker = r.by.S1.n === r.by.S2.n ? (r.by.S1.sum === r.by.S2.sum ? '—' : r.by.S1.sum < r.by.S2.sum ? 'skupina 1' : 'skupina 2') : r.by.S1.n < r.by.S2.n ? 'skupina 1' : 'skupina 2';
       return `<tr><td><label class="cap-tog"><input type="checkbox" data-capskill="${esc(x.id)}" checked> <span>${esc(x.name)}</span></label></td>
-        ${weeks.map(w => capCell(r[w.v].am, true) + capCell(r[w.v].pm, true)).join('')}${noShift ? capCell(r.by[''].n) : ''}
+        ${weeks.map(w => capCell(r[w.v].am, true, r[w.v].amT) + capCell(r[w.v].pm, true, r[w.v].pmT)).join('')}${noShift ? capCell(r.by[''].n, false, r.by[''].tr) : ''}
         <td class="r">${weaker === '—' ? '<span class="muted">vyrovnané</span>' : `<span class="tag warn">${weaker}</span>`}</td></tr>`;
     }).join('');
     const pct = k => (g.bySh[k].n ? `${nf(g.bySh[k].pct, 0)} % (${g.bySh[k].n})` : '—');
-    return `<div class="card cap-group"><div class="card-head"><div><h3>${esc(g.p.name)}</h3><p class="small muted">Ve skupině: ${peopleCount(g.members)} · průměr dovedností podle směn: stálá ranní ${pct('R')}${g.bySh.O.n ? `, stálá odpolední ${pct('O')}` : ''}, skupina 1 ${pct('S1')}, skupina 2 ${pct('S2')}${g.bySh[''].n ? `, bez směny ${pct('')}` : ''}</p></div></div>
+    return `<div class="card cap-group"><div class="card-head"><div><h3>${esc(g.p.name)}</h3><p class="small muted">Ve skupině: ${peopleCount(g.members)}${g.members ? ` (schopní ${g.ok}, v zaškolování ${g.training})` : ''} · průměr dovedností podle směn: stálá ranní ${pct('R')}${g.bySh.O.n ? `, stálá odpolední ${pct('O')}` : ''}, skupina 1 ${pct('S1')}, skupina 2 ${pct('S2')}${g.bySh[''].n ? `, bez směny ${pct('')}` : ''}</p></div></div>
       ${g.p.plan ? `<div class="plan-in-cap"><p class="eyebrow">Plánovaná kapacita · ${planUnit(g.p.plan, g.p.plan.v)} na osobu za směnu</p>${planHtml(g.p)}</div>` : ''}
       <div class="table-card flat cap-wrap"><table class="cap-table"><thead><tr class="cap-weeks"><th rowspan="2">Dovednost</th>${weeks.map(w => `<th colspan="2" class="cap-wk" title="${esc(capCompo(w.v))}">${esc(w.label)}<small>ranní skupina ${w.v === 'A' ? 1 : 2}, odpolední skupina ${w.v === 'A' ? 2 : 1}</small></th>`).join('')}${noShift ? '<th rowspan="2" class="r">Bez směny</th>' : ''}<th rowspan="2" class="r">Slabší skupina</th></tr>
         <tr>${weeks.map(() => '<th class="r">Ranní</th><th class="r">Odpolední</th>').join('')}</tr></thead>
       <tbody>${rows}</tbody></table></div></div>`;
   }).join('');
   box.innerHTML = `${controls}${tiles}
-    <div class="note i"><b>Jak číst report:</b> čísla jsou počty lidí, kteří dovednost zvládají aspoň na úrovni ${cap.thr} (${esc(STD_SCALE[cap.thr].name.toLowerCase())}). Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `<b>${esc(w.label)}</b>: ${esc(capCompo(w.v))}.`).join(' ')}${rep.s1am ? '' : ' Nastav nahoře, která skupina má tento týden ranní, a report ukáže konkrétní týdny.'}</div>
+    <div class="note i"><b>Jak číst report:</b> čísla jsou počty lidí, kteří dovednost zvládají aspoň na úrovni ${cap.thr} (${esc(STD_SCALE[cap.thr].name.toLowerCase())}). Pod nimi je zvlášť <b>v zaškolování</b>: členové skupiny, kteří úrovně ještě nedosáhli, a lidé z jiných skupin, kteří dovednost mají ohodnocenou, ale pod touto úrovní. Do schopných se nepočítají. U skupiny a v plánované kapacitě je schopný ten, kdo má průměr dovedností skupiny aspoň na úrovni ${cap.thr}. Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `<b>${esc(w.label)}</b>: ${esc(capCompo(w.v))}.`).join(' ')}${rep.s1am ? '' : ' Nastav nahoře, která skupina má tento týden ranní, a report ukáže konkrétní týdny.'}</div>
     ${risks.length ? `<div class="note e"><b>Odpoledne bez schopného člověka:</b><ul class="cap-risks">${risks.map(r => `<li><b>${esc(r.name)}</b> · ${r.parts.map(esc).join(' · ')}</li>`).join('')}</ul></div>` : '<div class="note i">Na každé odpolední směně je u každé dovednosti aspoň jeden schopný člověk.</div>'}
     ${groupsHtml}
     <div class="card"><h3>Závěr a opatření</h3><p class="small muted">Text se uloží a vytiskne s reportem (např. koho zaučit a do kdy).</p>
@@ -3482,9 +3540,13 @@ function capRisks(cap, weeks) {
   return cap.groups.map(g => {
     const o = cap.head.O ? 'stálá odpolední + ' : '';
     const parts = weeks.map(w => {
-      const miss = g.skills.filter(r => !r[w.v].pm).map(r => r.s.name);
-      if (!miss.length) return '';
-      return `${w.label} (odpoledne ${o}skupina ${w.v === 'A' ? 2 : 1}): ${miss.length > 1 && miss.length === g.skills.length ? `všechny dovednosti (${miss.length})` : miss.join(', ')}`;
+      const gaps = g.skills.filter(r => !r[w.v].pm);
+      if (!gaps.length) return '';
+      // různí lidé v zaškolování na odpolední směně (jeden člověk se učí víc dovedností)
+      const pmShifts = ['O', w.v === 'A' ? 'S2' : 'S1'];
+      const tr = new Set(gaps.flatMap(r => pmShifts.flatMap(k => r.by[k].trK))).size;
+      const all = gaps.length > 1 && gaps.length === g.skills.length;
+      return `${w.label} (odpoledne ${o}skupina ${w.v === 'A' ? 2 : 1}): ${all ? `všechny dovednosti (${gaps.length})${tr ? `, v zaškolování ${peopleCount(tr)}` : ''}` : gaps.map(r => `${r.s.name}${r[w.v].pmT ? ` (v zaškolování ${r[w.v].pmT})` : ''}`).join(', ')}`;
     }).filter(Boolean);
     return parts.length ? { name: g.p.name || 'Skupina', parts } : null;
   }).filter(Boolean);
@@ -3500,38 +3562,37 @@ function drawCapacity(doc) {
   const cap = capacity(rep.groups, rep.thr, rep.hidden);
   const weeks = capWeeks(rep);
   k.header({ eyebrow: `${EXPORT_NAME} · MATICE DOVEDNOSTÍ`, right: `Stav k ${dayText(todayIso())}`, title: 'Kapacita dovedností podle směn',
-    sub: `Schopný = úroveň aspoň ${cap.thr} (${STD_SCALE[cap.thr].name.toLowerCase()})`,
-    meta: `Počty lidí, kteří dovednost zvládají. Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `${w.label}: ${capCompo(w.v)}.`).join(' ')}` });
+    sub: `Schopný = úroveň aspoň ${cap.thr} (${STD_SCALE[cap.thr].name.toLowerCase()}); v zaškolování zvlášť`,
+    meta: `Počty lidí, kteří dovednost zvládají; pod nimi zvlášť lidé v zaškolování (pod touto úrovní), do schopných se nepočítají. U skupiny je schopný ten, kdo má průměr dovedností skupiny aspoň na této úrovni. Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `${w.label}: ${capCompo(w.v)}.`).join(' ')}` });
   const noShift = cap.head[''] > 0;
   const hasO = cap.head.O > 0;
   k.tiles([['Stálá ranní', String(cap.head.R), 'lidí'], ...(hasO ? [['Stálá odpolední', String(cap.head.O), 'lidí']] : []), ['Skupina 1', String(cap.head.S1), 'lidí'], ['Skupina 2', String(cap.head.S2), 'lidí'], ['Bez směny', String(cap.head['']), 'lidí', cap.head[''] ? 'crit' : ''], ...(cap.sick ? [['Nemoc', String(cap.sick), 'nepočítají se', 'crit']] : [])]);
   const cols = [[70 - (noShift ? 14 : 0), 'Dovednost'], ...weeks.flatMap(w => [[22, `${w.short} ranní`, 'r'], [24, `${w.short} odpolední`, 'r']]), ...(noShift ? [[14, 'Bez směny', 'r']] : []), [17, 'Slabší', 'r']];
   const head = () => { let x = k.M; cols.forEach(([w, t, al]) => { k.text(t, al === 'r' ? x + w - 1.5 : x, k.y, 7, { bold: true, color: k.C.ink2, align: al === 'r' ? 'right' : 'left' }); x += w; }); k.y += 4.4; k.hline(k.y, k.C.line2, 0.3); k.y += 1; };
-  const risks = capRisks(cap, weeks).map(r => `${r.name} · ${r.parts.join(' · ')}`);
+  // upozornění „Odpoledne bez schopného člověka“ do PDF nepatří (2.23, přání uživatele), jen do aplikace;
+  // stejně tak plánovaná kapacita skupiny (níž)
   cap.groups.forEach(g => {
     k.keep(() => {
       k.heading(g.p.name || 'Skupina', 11.5);
       const pr = s => (g.bySh[s].n ? `${nf(g.bySh[s].pct, 0)} %` : '—');
-      k.text(`Ve skupině: ${peopleCount(g.members)} · průměr dovedností: stálá ranní ${pr('R')}${g.bySh.O.n ? `, stálá odpolední ${pr('O')}` : ''}, skupina 1 ${pr('S1')}, skupina 2 ${pr('S2')}`, k.M, k.y - 1, 8, { color: k.C.ink2 });
+      k.text(`Ve skupině: ${peopleCount(g.members)}${g.members ? ` (schopní ${g.ok}, v zaškolování ${g.training})` : ''} · průměr dovedností: stálá ranní ${pr('R')}${g.bySh.O.n ? `, stálá odpolední ${pr('O')}` : ''}, skupina 1 ${pr('S1')}, skupina 2 ${pr('S2')}`, k.M, k.y - 1, 8, { color: k.C.ink2 });
       k.y += 5;
-      const plan = g.p.plan ? planRows(g.p) : [];
-      if (plan.length) {
-        const txt = `Plánovaná kapacita (${planUnit(g.p.plan, g.p.plan.v)} na osobu za směnu): ${plan.map(({ w, x }) => `${w.label} – ranní ${planUnit(x, x.am)} (${peopleCount(x.amN)}), odpolední ${planUnit(x, x.pm)} (${peopleCount(x.pmN)}), za den ${planUnit(x, x.day)}, za týden ${planUnit(x, x.week)} (${x.days} ${workDaysW(x.days)})`).join('; ')}.`;
-        const lines = k.split(txt, k.CW, 8.4);
-        lines.forEach(line => { k.text(line, k.M, k.y - 1, 8.4, { bold: false, color: k.C.ink }); k.y += k.LH(8.4, 1.3); });
-        k.y += 2;
-      }
+      // plánovaná kapacita (ks/h na osobu) do PDF nepatří (2.23, přání uživatele), jen do aplikace
       head();
       g.skills.forEach(r => {
         const nm = k.split(r.s.name, cols[0][0] - 2, 8.6);
-        const h = nm.length * k.LH(8.6, 1.25) + 2.2;
+        const cells = [...weeks.flatMap(w => [[String(r[w.v].am), !r[w.v].am, r[w.v].amT], [String(r[w.v].pm), !r[w.v].pm, r[w.v].pmT]]), ...(noShift ? [[String(r.by[''].n), false, r.by[''].tr]] : [])];
+        const anyTr = cells.some(c => c[2]);
+        const h = Math.max(nm.length * k.LH(8.6, 1.25), anyTr ? k.LH(8.6, 1.25) + k.LH(6.6, 1.2) : 0) + 2.2;
         k.need(h);
         let x = k.M;
         nm.forEach((line, i) => k.text(line, x, k.y + 0.4 + i * k.LH(8.6, 1.25), 8.6)); x += cols[0][0];
         const weaker = r.by.S1.n === r.by.S2.n ? (r.by.S1.sum === r.by.S2.sum ? '—' : r.by.S1.sum < r.by.S2.sum ? 'sk. 1' : 'sk. 2') : r.by.S1.n < r.by.S2.n ? 'sk. 1' : 'sk. 2';
-        [...weeks.flatMap(w => [[String(r[w.v].am), !r[w.v].am], [String(r[w.v].pm), !r[w.v].pm]]), ...(noShift ? [[String(r.by[''].n)]] : []), [weaker]].forEach(([v, bad], i) => {
+        [...cells, [weaker]].forEach(([v, bad, tr], i) => {
           const w = cols[i + 1][0];
-          k.text(v, x + w - 1.5, k.y + 0.4, 8.6, { align: 'right', bold: !!bad, color: bad ? k.C.crit : k.C.ink }); x += w;
+          k.text(v, x + w - 1.5, k.y + 0.4, 8.6, { align: 'right', bold: !!bad, color: bad ? k.C.crit : k.C.ink });
+          if (tr) k.text(`v zaškol. ${tr}`, x + w - 1.5, k.y + 0.4 + k.LH(8.6, 1.25), 6.6, { align: 'right', color: k.C.ink2 });
+          x += w;
         });
         k.y += h;
         k.hline(k.y - 0.8);
@@ -3539,12 +3600,6 @@ function drawCapacity(doc) {
       k.y += 5;
     }, 40);
   });
-  k.keep(() => {
-    k.heading('Odpoledne bez schopného člověka', 11.5);
-    if (!risks.length) { k.text('Na každé odpolední směně je u každé dovednosti aspoň jeden schopný člověk.', k.M, k.y, 9, { color: k.C.good }); k.y += 7; }
-    risks.forEach(r => { const l = k.split(`• ${r}`, k.CW, 9); k.need(l.length * k.LH(9, 1.3)); l.forEach(line => { k.text(line, k.M, k.y, 9, { color: k.C.crit }); k.y += k.LH(9, 1.3); }); });
-    k.y += 4;
-  }, 20);
   if (rep.note) { k.keep(() => { k.heading('Závěr a opatření', 11.5); k.para(rep.note, k.M, k.CW, 9.4); k.y += 4; }, 25); }
   k.need(26);
   k.signoff();
@@ -6509,7 +6564,13 @@ function bindEvents() {
   $('#btnXlsx').onclick = exportXlsx;
   $('#btnPrint').onclick = () => window.print();
 
-  $('#lSearch').addEventListener('input', renderPeople);
+  $('#lSearch').addEventListener('input', () => renderPeople({ refilter: true }));
+  $('#lFilters').addEventListener('change', event => { if (event.target.id === 'lScope') setLideFilter({ g: event.target.value }); });
+  $('#lFilters').addEventListener('click', event => {
+    const chip = event.target.closest('[data-lst]');
+    if (chip) { const st = chip.dataset.lst; setLideFilter({ st: st === lideFilter().st ? '' : st }); return; }
+    if (event.target.closest('[data-lclear]')) setLideFilter({ g: '', st: '' });
+  });
   $('#lList').addEventListener('click', event => {
     const button = event.target.closest('[data-key]');
     if (!button) return;

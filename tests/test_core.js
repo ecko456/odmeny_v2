@@ -2388,6 +2388,37 @@ test('Servis (2.22.2): interní ID rozhoduje, úprava protokolu bez falešných 
   return null;
 });
 
+test('Kapacita (2.23): v zaškolování zvlášť od schopných', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    S = sanitizeState(blank());
+    const sk = [{ id: 'k1', name: 'Obsluha' }, { id: 'k2', name: 'Seřízení' }];
+    S.positions = [{ id: 'g1', name: 'CNC', dept: 'CNC', skillset: sk, maxTab: 8, tiers: [], penalty: [], bonus: [], plan: { v: 10, unit: 'ks' } },
+      { id: 'g2', name: 'Brusič', dept: 'Brusič', skillset: [{ id: 'b1', name: 'Broušení' }], maxTab: 8, tiers: [], penalty: [], bonus: [] }];
+    S = sanitizeState(S);
+    const add = (key, o) => { S.employees[key] = { key, first: key, last: key, ...o }; };
+    add('a', { positionId: 'g1', shift: 'S1', rate: { k1: 4, k2: 3 } });   // schopný
+    add('b', { positionId: 'g1', shift: 'S2', rate: { k1: 3, k2: 1 } });   // průměr 2 → v zaškolování, k1 schopný
+    add('c', { positionId: 'g1', shift: 'S2' });                           // nový, všude 0 → v zaškolování
+    add('d', { positionId: 'g2', shift: 'S1', rate: { k1: 2 } });           // odjinud, zaučuje se na k1
+    add('e', { positionId: 'g2', shift: 'S2', rate: { k1: 0, b1: 4 } });    // odjinud, k1 neumí → nepočítá se
+    add('f', { positionId: 'g1', shift: 'S1', rate: { k1: 1 }, sick: true }); // nemoc → nikam
+    const cap = capacity([], 3, []);
+    const g = cap.groups.find(x => x.p.id === 'g1');
+    const k1 = g.skills.find(x => x.s.id === 'k1'), k2 = g.skills.find(x => x.s.id === 'k2');
+    const plan = groupPlan(S.positions[0], 'A', 5, 3), old = groupPlan(S.positions[0], 'A', 5);
+    JSON.stringify({ k1: [k1.by.S1.n, k1.by.S1.tr, k1.by.S2.n, k1.by.S2.tr, k1.A.am, k1.A.amT, k1.A.pm, k1.A.pmT, k1.training],
+      k2: [k2.by.S1.n, k2.by.S2.tr, k2.B.amT, k2.B.pmT], g: [g.members, g.ok, g.training, g.bySh.S2.ok],
+      plan: [plan.am, plan.pm, plan.ok.am, plan.ok.pm, plan.tr.am, plan.tr.pm, plan.tr.amN, plan.tr.pmN, plan.ok.week, plan.tr.week], old: [old.am, old.pm, old.ok, old.tr] })`));
+  // k1 (práh 3): S1 schopný a, zaučuje se d (2); S2 schopný b, v zaškolování c (člen s 0); e (0, odjinud) se nepočítá
+  assert.deepStrictEqual(out.k1, [1, 1, 1, 1, 1, 1, 1, 1, 2], 'k1: schopní a v zaškolování zvlášť po směnách');
+  assert.deepStrictEqual(out.k2, [1, 2, 2, 0], 'k2: b (1) a c (0) jsou ve skupině 2 v zaškolování (ve variantě B ráno)');
+  assert.deepStrictEqual(out.g, [3, 1, 2, 0], 'skupina: schopný jen a (průměr aspoň 3), nemocný f se nepočítá');
+  assert.deepStrictEqual(out.plan, [10, 20, 10, 0, 0, 20, 0, 2, 50, 100], 'plánovaná kapacita: schopní a v zaškolování zvlášť, celkem beze změny');
+  assert.deepStrictEqual(out.old, [10, 20, null, null], 'bez prahu jako dřív (úvod a Audit)');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

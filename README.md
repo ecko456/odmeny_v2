@@ -62,6 +62,26 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.23
+
+- **Lidé: filtry.** Nad seznamem lidí je výběr oddělení nebo skupiny a tlačítka **Bez skupiny**,
+  **Bez směny**, **Bez hodnocení** (ve skupině, ale všechny dovednosti na 0), **V nemoci**,
+  **Vedoucí** a **Vyřazení**, u každého s počtem lidí. Druhým klepnutím se filtr vypne, „zrušit
+  filtr“ vrátí všechny. Filtr si aplikace pamatuje pro tvoji kartičku.
+- Když někoho ve filtru zařadíš (třeba mu ve filtru Bez směny nastavíš směnu), zůstane v seznamu
+  označený „mimo filtr“, dokud nevybereš dalšího. Můžeš tak u něj dodělat i zbytek.
+- **Lidé na velkém monitoru** využijí celou šířku obrazovky a seznam je širší. Hodnocení
+  dovedností 0–4 je zase v jednom řádku (od verze 2.15 se zalamovalo 0 1 2 / 3 4).
+- **Matice dovedností → Směny a kapacita: v zaškolování zvlášť.** Lidé, kteří nesplní „Kdo se
+  počítá jako schopný“, se počítají do kapacity **V zaškolování**, odděleně od schopných: v každé
+  buňce je pod počtem schopných počet lidí v zaškolování (členové skupiny pod úrovní a lidé
+  z jiných skupin, kteří dovednost mají ohodnocenou, ale pod úrovní). U skupiny je vidět, kolik
+  lidí je schopných a kolik v zaškolování (podle průměru dovedností), plánovaná kapacita (ks/h)
+  se počítá zvlášť za schopné a zvlášť za lidi v zaškolování. Totéž je v PDF reportu.
+- **PDF Směn a kapacity** už nemá upozornění „Odpoledne bez schopného člověka“ ani plánovanou
+  kapacitu skupiny (ks/h na osobu za směnu). V aplikaci obojí zůstává.
+- Data se nemění (verze dat zůstává 20).
+
 ## Co je nového ve verzi 2.22.2
 
 - **Servis: interní ID rozhoduje.** Dvě zařízení s různým interním ID jsou vždy dvě různá

@@ -34,6 +34,31 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 19. 10. 2026 (verze 2.23):
+
+- Uživatel: „lepšího filtrování v modulu Lidé … jen bez skupiny, bez zařazení nebo podle
+  oddělení … ten box můžeš rozšířit … na velkém monitoru vidím jen část“ a „Směny a kapacity …
+  lidé, co nesplní ‚Kdo se počítá jako schopný‘, ať se počítají do kapacity ‚V zaškolování‘
+  a je tato kapacita oddělena od kapacity schopných“, potom „ať v PDF exportu nemá ty
+  upozornění ‚Odpoledne bez schopného člověka‘“ a „odstraň i Plánovaná kapacita (25 ks na osobu
+  za směnu), ať také není v PDF exportu“.
+  - Lidé: `LIDE_STATES` (nogroup, noshift, norate, sick, lead, out), `lideState`, `lideScope`
+    (`d:` + oddělení, nebo id skupiny; vedoucí podle `e.lead`), `lideScopeOptions`,
+    `#lFilters` (`#lScope`, `[data-lst]`, `[data-lclear]`), prefs `lideF {g, st}`.
+    `renderPeople({refilter})`: po změně filtru nebo hledání se vybere první shoda, jinak
+    vybraný člověk zůstane v seznamu (`.held`, „mimo filtr“). „Bez zařazení“ jsme vzali jako
+    bez směny (ve skupině je zvlášť Bez skupiny); kdyby to uživatel myslel jinak, doplnit.
+  - Šířka: `.main:has(> #view-lide.on)` až 2400 px, `#peopleSplit` seznam `clamp(300px, 26%,
+    520px)` (jen nad 1100 px). Oprava: `.seg` z úvodu HALA 2 (2.15) přebíjel `.rate-seg`
+    (mřížka 3 sloupce), teď je jen pod `.home`.
+  - Kapacita: `capacity()` má u dovednosti `by[k].tr` (+ `trK` klíče lidí), `A/B.amT/pmT`,
+    `training`; u skupiny `ok`, `training`, `bySh[k].ok` (`capableIn`: průměr dovedností aspoň
+    práh). `groupPlan(p, v, days, thr)` s prahem přidá `ok` a `tr`, celkové hodnoty zůstaly
+    (úvod HALA 2 a Audit je berou beze změny). UI `capCell(n, risk, tr)`, `planCell`, rizika
+    počítají různé lidi v zaškolování. PDF bez oddílu rizik a bez plánované kapacity (v aplikaci
+    obojí zůstává).
+  - `ODM_VERSION` 2.23, verze dat beze změny (20).
+
 Stav k 19. 10. 2026 (verze 2.22.2):
 
 - **Servis: interní ID rozhoduje.** Uživatel: „Když upravuji záznamy, tak mi to hlásí duplicitu
@@ -943,7 +968,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.21 | `c7d1af4` | Servis – odeslání zařízení na servis, předávací protokol v PDF, evidence zařízení s historií (data verze 19) |
 | 2.22 | `ea74466` | Servis – rok výroby, vzory zařízení (druh, značka, model) (data verze 20) |
 | 2.22.1 | `3b6c7d8` | Servis – duplicity červeně a nahoře (protokol i evidence), číslo jiného zařízení z evidence |
-| 2.22.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – interní ID rozhoduje (bez falešných duplicit při úpravě), oprava spojených zařízení, úprava protokolu nepřepíše evidenci |
+| 2.22.2 | `e6c4825` | Servis – interní ID rozhoduje (bez falešných duplicit při úpravě), oprava spojených zařízení, úprava protokolu nepřepíše evidenci |
+| 2.23 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Lidé – filtry a celá šířka monitoru; Směny a kapacita – v zaškolování zvlášť, PDF bez upozornění |
 
 Verze 2.1 přidala:
 
@@ -1111,7 +1137,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - **Osobní nastavení** (`prefs`, pro každou kartičku zvlášť, `cleanPrefs` v `app.js`):
   - `period, sort, pos, onlyImported, onlyOpen, hiddenCols, sanFilter`;
   - `lockMinutes, logSeen, matrixDept` (vybraná skupina v matici), `matrixShift, mxTab`;
-  - `profileRange, profileFrom, profileTo, t5PdfShort`.
+  - `profileRange, profileFrom, profileTo, t5PdfShort`, `matrixIds` (2.20), `lideF {g, st}` (filtr Lidí, 2.23).
   - `sharedState()` proto ze sdílených dat vyhazuje `current`, `hiddenCols` a `lockMinutes`.
 
 ### Když přidáváš pole (jinak se data ztratí)
@@ -1212,7 +1238,8 @@ UI v `app.js`:
   `tierCardHtml`, `TIER_TEMPLATES` (Prémie a Extra bonus podle zadání), `bindGroupEditor`
   (delegované události na `#posEditor`);
 - sekce matice: `renderMatrix` (záložky `ui.mxTab`), `renderMatrixGrid` (klik na buňku
-  zvýší úroveň o 1, po 4 je 0), `renderCapacity`, `capRisks`, `drawCapacity` (PDF),
+  zvýší úroveň o 1, po 4 je 0), `renderCapacity` (v zaškolování zvlášť `capCell`, `planCell`, 2.23),
+  `capRisks` (jen v aplikaci), `drawCapacity` (PDF bez rizik a plánované kapacity, 2.23),
   `exportMatrix` (Excel z `matrixSheets`), `drawMatrix`/`exportMatrixPdf` (PDF matice jen
   s ID, 2.20), přepínač `#matrixIds` a `mxWho`;
 - u člověka (`renderPersonDetail`): skupina, směna, `legacyCard` + `legacyCompare` (tabáky
@@ -1319,7 +1346,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 60 testů: proti původní aplikaci + opravy + 2.1 až 2.22.2
+node tests/test_core.js                 # 61 testů: proti původní aplikaci + opravy + 2.1 až 2.23
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1336,13 +1363,17 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_top5.js`: Top 5 (2.2, komentáře o vývoji 2.19);
   - `e2e_kontroly.js`: Kontroly (2.3); o víkendu ověří, že plán tohoto týdne nevznikne (v týdnu
     nezbývá pracovní den), jinak odznak nezapsaných kontrol;
-  - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4), PDF matice jen s ID (2.20);
+  - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4), PDF matice jen s ID (2.20),
+    v zaškolování v reportu kapacit, PDF bez rizik a plánované kapacity (2.23);
   - `e2e_ai.js`: ✦ Přeformulovat (2.5); sám spustí náhradní API na 127.0.0.1:8598, server
     musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
   - `e2e_vedouci.js`: vedoucí pracovníci (2.7) a jejich dovednosti (2.10);
   - `e2e_skener.js`: skener kartičky v Sankcích (2.13), falešná kamera Chromia;
   - `e2e_mobil.js`: telefon jako aplikace (2.14, 2.15): HALA 2, hlavní menu, směna, rozbalovací
     menu, hledání, Zpět, okna, filtry, šířka seznamu, manifest;
+  - `e2e_lide.js`: Lidé (2.23): filtry s počty, člověk mimo filtr, oddělení a skupina, hledání,
+    osobní nastavení, šířka na monitoru 2560 px, hodnocení v jednom řádku, v zaškolování v reportu
+    kapacit, telefon, tmavý režim;
   - `e2e_servis.js`: Servis (2.21, 2.22): protokol se třemi zařízeními, nečitelná čísla, k vyřazení,
     závady, rok výroby, vzory (uložení, duplicita, výběr, smazání), duplicitní zařízení (červeně
     při psaní, nahoru při uložení, číslo jiného zařízení, evidence; jiné ID se stejným v. č.
