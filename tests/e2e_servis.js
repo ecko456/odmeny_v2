@@ -276,6 +276,13 @@ async function confirm(page) {
   await page.click('[data-svship]:has-text("Protokol 2026/002") [data-svedit]');
   await page.waitForSelector('.sv-editor h2:has-text("Upravit protokol 2026/002")');
   await page.fill('[data-svd="to"]', 'Servis Ostrava');
+  // úprava (2.22.2): jiné interní ID se stejným výrobním číslem není duplicita
+  await page.click('[data-svadd]');
+  await fillItem(page, 2, { iid: 'B-77', sn: 'SN-001' });
+  await page.waitForFunction(() => /Nové zařízení/.test(document.querySelector('[data-svhint="2"]').textContent));
+  check(await page.evaluate(() => !document.querySelector('.sv-item.dup')), 'jiné interní ID se stejným výrobním číslem: bez duplicity');
+  await page.click('[data-svdel="2"]');
+  await page.waitForFunction(() => ui.sv.draft.items.length === 2);
   await page.click('[data-svsave="plain"]');
   await page.waitForFunction(() => !ui.sv.draft && S.service.shipments[1].to === 'Servis Ostrava' && svNo(S.service.shipments[1]) === '2026/002');
   await page.click('#svNew');

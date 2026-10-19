@@ -4029,11 +4029,10 @@ function svKey(v){return String(v||"").toUpperCase().replace(/[\s\-_.\/\\]+/g,""
 /* Číslo protokolu „2026/001“. */
 function svNo(x){return x.year+"/"+String(x.no).padStart(3,"0");}
 function svNextNo(svc,year){return Math.max(0,...svc.shipments.filter(x=>x.year===year).map(x=>x.no))+1;}
-/* Zařízení v evidenci podle čitelného interního ID, výrobního čísla, nebo dodatečného označení. */
-function svFindDevice(svc,x){
-  const by=(k,v)=>{const key=svKey(v);return key?svc.devices.find(d=>svKey(d[k])===key&&!(k==="iid"&&d.iidBad)&&!(k==="sn"&&d.snBad)):null;};
-  return (!x.iidBad&&by("iid",x.iid))||(!x.snBad&&by("sn",x.sn))||by("mark",x.mark)||null;
-}
+/* Zařízení v evidenci podle čitelného interního ID, výrobního čísla, nebo dodatečného označení.
+   Interní ID rozhoduje (2.22.2): podle výrobního čísla nebo označení se najde jen zařízení, které
+   nemá jiné čitelné interní ID. */
+function svFindDevice(svc,x){return svFinder(svc)(x);}
 /* Jak se zařízení jmenuje: druh, značka a model; identifikace ID, v. č. nebo označení. */
 function svDevName(d){return [d.kind,[d.brand,d.model].filter(Boolean).join(" ")].filter(Boolean).join(" · ")||"Zařízení";}
 function svDevIdent(d){
@@ -4050,16 +4049,25 @@ function svItemProblem(i){
   if(i.iidBad&&i.snBad&&!i.mark)return "obě čísla jsou nečitelná: doplň dodatečné označení";
   return "";
 }
-/* Duplicity (2.22.1). Klíče, podle kterých je zařízení stejné: čitelné interní ID, čitelné
-   výrobní číslo a dodatečné označení (bez mezer a pomlček, velkými), u položky i zařízení
-   z evidence, ke kterému patří. Interní ID a výrobní číslo se mezi sebou nemíchají. */
-function svDupKeys(x){
-  const out=[];
-  if(!x.iidBad&&svKey(x.iid))out.push("i:"+svKey(x.iid));
-  if(!x.snBad&&svKey(x.sn))out.push("s:"+svKey(x.sn));
-  if(svKey(x.mark))out.push("m:"+svKey(x.mark));
-  return out;
+/* Duplicity (2.22.1, pravidla 2.22.2). Klíče: čitelné interní ID (i:), čitelné výrobní číslo (s:)
+   a dodatečné označení (m:), bez mezer a pomlček, velkými (svKey). */
+function svIdKeys(x){
+  return {i:!x.iidBad&&svKey(x.iid)||"",s:!x.snBad&&svKey(x.sn)||"",m:svKey(x.mark)};
 }
+function svDupKeys(x){
+  const k=svIdKeys(x);
+  return [k.i&&"i:"+k.i,k.s&&"s:"+k.s,k.m&&"m:"+k.m].filter(Boolean);
+}
+/* Je to stejné zařízení? Interní ID rozhoduje: dvě čitelná a různá interní ID jsou vždy dvě
+   zařízení, i když mají stejné výrobní číslo nebo označení. Jinak stačí stejné interní ID,
+   výrobní číslo nebo označení. Vrací klíč shody („s:SN1“), nebo "". */
+function svSameK(a,b){
+  if(a.i&&b.i)return a.i===b.i?"i:"+a.i:"";
+  if(a.s&&a.s===b.s)return "s:"+a.s;
+  if(a.m&&a.m===b.m)return "m:"+a.m;
+  return "";
+}
+function svSameKey(a,b){return svSameK(svIdKeys(a),svIdKeys(b));}
 /* Klíč lidsky („interní ID B-12“) a proč jsou dvě věci stejné („stejné interní ID B-12“). */
 function svKeyText(key,x){
   const t=key.slice(0,2);
@@ -4069,66 +4077,97 @@ function svDupWhy(key,x,dv){
   if(key.startsWith("d:"))return "stejné zařízení z evidence"+(dv?": "+svDevName(dv)+(svDevIdent(dv)?" ("+svDevIdent(dv)+")":""):"");
   return "stejné "+svKeyText(key,x);
 }
-/* Skupiny věcí se společným klíčem (sjednocení přes všechny klíče). keysOf(i) → klíče i-té.
-   Vrací skupiny indexů po dvou a víc, v pořadí prvního výskytu, a ke každé společný klíč. */
-function svGroupByKeys(n,keysOf){
+/* Souvislé skupiny z dvojic [a, b] (n věcí). Skupiny po dvou a víc v pořadí prvního výskytu. */
+function svComponents(n,pairs){
   const par=Array.from({length:n},(_,i)=>i);
   const find=i=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i];}return i;};
-  const owner=new Map(),keys=[];
-  for(let i=0;i<n;i++){
-    keys[i]=keysOf(i)||[];
-    keys[i].forEach(k=>{if(owner.has(k)){const a=find(i),b=find(owner.get(k));if(a!==b)par[Math.max(a,b)]=Math.min(a,b);}else owner.set(k,i);});
-  }
+  pairs.forEach(([a,b])=>{const x=find(a),y=find(b);if(x!==y)par[Math.max(x,y)]=Math.min(x,y);});
   const by=new Map();
   for(let i=0;i<n;i++){const r=find(i);if(!by.has(r))by.set(r,[]);by.get(r).push(i);}
-  return [...by.values()].filter(g=>g.length>1).sort((a,b)=>a[0]-b[0]).map(idx=>{
-    const cnt=new Map();idx.forEach(i=>keys[i].forEach(k=>cnt.set(k,(cnt.get(k)||0)+1)));
-    const key=keys[idx[0]].find(k=>cnt.get(k)>1)||[...cnt.keys()].find(k=>cnt.get(k)>1)||"";
-    return {idx,key};
-  });
+  return [...by.values()].filter(g=>g.length>1).sort((a,b)=>a[0]-b[0]);
 }
-/* Klíče zařízení v evidenci → zařízení (v pořadí evidence), jako svFindDevice, ale jedním průchodem. */
+/* Klíče zařízení v evidenci → zařízení (v pořadí evidence). */
 function svDevIndex(svc){
   const idx=new Map();
   (svc.devices||[]).forEach(d=>svDupKeys(d).forEach(k=>{if(!idx.has(k))idx.set(k,[]);idx.get(k).push(d);}));
   return idx;
 }
+/* Hledání v evidenci jedním průchodem (svFindDevice pro hodně položek najednou). */
+function svFinder(svc){
+  const idx=svDevIndex(svc);
+  return x=>{
+    const k=svIdKeys(x);
+    if(k.i&&idx.has("i:"+k.i))return idx.get("i:"+k.i)[0];
+    const ok=d=>!(k.i&&svIdKeys(d).i);   // jiné čitelné interní ID = jiné zařízení
+    if(k.s){const d=(idx.get("s:"+k.s)||[]).find(ok);if(d)return d;}
+    if(k.m){const d=(idx.get("m:"+k.m)||[]).find(ok);if(d)return d;}
+    return null;
+  };
+}
+/* Ke kterému zařízení z evidence položky protokolu patří:
+   - položka s odkazem (vybraná z evidence, nebo z upravovaného protokolu) u něj zůstává;
+     jiné interní ID než zařízení je oprava čísla (nebo evidence byla mezitím opravená),
+     ledaže na stejné zařízení odkazuje i jiná položka: pak odkaz drží jen ta se shodným ID
+     a ostatní se hledají podle svých čísel (verze 2.21 a 2.22 takhle omylem spojily dvě
+     zařízení se stejným výrobním číslem);
+   - jinak podle čísel (svFindDevice). Prázdné položky → null. */
+function svOwners(svc,items){
+  const find=svFinder(svc);
+  const byId=new Map((svc.devices||[]).map(d=>[d.id,d]));
+  const live=items.map(it=>!!it&&svItemProblem(it)!=="prázdná položka");
+  const linked=items.map((it,i)=>live[i]&&it.dev&&byId.get(it.dev)||null);
+  return items.map((it,i)=>{
+    if(!live[i])return null;
+    const l=linked[i];
+    if(l){
+      const a=svIdKeys(it).i,b=svIdKeys(l).i;
+      if(!(a&&b&&a!==b))return l;
+      if(!linked.some((x,j)=>j!==i&&x===l))return l;
+    }
+    return find(it);
+  });
+}
 /* Kontrola duplicit v protokolu:
-   - groups: stejné zařízení víckrát (stejné zařízení z evidence, vybrané nebo nalezené podle čísla,
-     nebo stejné číslo či označení), [{idx:[indexy položek], why:"stejné interní ID B-12"}];
-   - clash: číslo položky má v evidenci jiné zařízení, než ke kterému položka patří (překlep, nebo
-     by uložení v evidenci vytvořilo duplicitu), [{i, dev, what:"výrobní číslo SN-1"}].
+   - match[i]: se kterými položkami je i-tá stejné zařízení, [{j, why}] (svSameKey, nebo stejné
+     zařízení z evidence podle svOwners);
+   - groups: souvislé skupiny duplicit [{idx, why}] (kvůli pořadí nahoře pod sebou);
+   - clash: číslo položky má v evidenci jiné zařízení, které je podle pravidel stejné (uložením
+     by se v evidenci zařízení zdvojilo), [{i, dev, what:"výrobní číslo SN-1"}]. Duplicita, která
+     už v evidenci je, protokol neblokuje (ukazuje ji evidence);
+   - own: zařízení z evidence ke každé položce (svOwners).
    Prázdné položky se nepočítají. */
 function svDupCheck(svc,items){
   const idx=svDevIndex(svc);
-  const live=items.map(it=>!!it&&svItemProblem(it)!=="prázdná položka");
-  const keys=items.map((it,i)=>live[i]?svDupKeys(it):[]);
-  const own=items.map((it,i)=>{
-    if(!live[i])return null;
-    const linked=it.dev&&svc.devices.find(d=>d.id===it.dev);
-    if(linked)return linked;
-    const k=keys[i].find(k=>idx.has(k));   // pořadí i:, s:, m: jako svFindDevice
-    return k?idx.get(k)[0]:null;
-  });
-  const groups=svGroupByKeys(items.length,i=>live[i]?[...keys[i],...(own[i]?["d:"+own[i].id]:[])]:[]).map(g=>{
-    const x=g.key.startsWith("d:")?items[g.idx[0]]:items.find((it,i)=>g.idx.includes(i)&&keys[i].includes(g.key));
-    return {idx:g.idx,why:svDupWhy(g.key,x||items[g.idx[0]],g.key.startsWith("d:")?own[g.idx[0]]:null)};
-  });
-  // jen čísla, která zařízení ještě nemá: ta by mu uložení zapsalo (duplicita, která už v evidenci
-  // je, protokol neblokuje, ukazuje ji evidence)
+  const own=svOwners(svc,items);
+  const keys=items.map(it=>it?svIdKeys(it):null);
+  const live=own.map((o,i)=>!!items[i]&&svItemProblem(items[i])!=="prázdná položka");
+  const match=items.map(()=>[]),pairs=[];
+  for(let a=0;a<items.length;a++){
+    if(!live[a])continue;
+    for(let b=a+1;b<items.length;b++){
+      if(!live[b])continue;
+      let k=svSameK(keys[a],keys[b]);
+      if(!k&&own[a]&&own[a]===own[b])k="d:"+own[a].id;
+      if(!k)continue;
+      const why=svDupWhy(k,items[a],k.startsWith("d:")?own[a]:null);
+      match[a].push({j:b,why});match[b].push({j:a,why});pairs.push([a,b,why]);
+    }
+  }
+  const groups=svComponents(items.length,pairs).map(idx=>({idx,why:(pairs.find(p=>p[0]===idx[0]||p[1]===idx[0])||[])[2]||""}));
   const clash=[];
   items.forEach((it,i)=>{
-    if(!own[i])return;
-    const has=new Set(svDupKeys(own[i]));
-    for(const k of keys[i]){
-      if(has.has(k))continue;
-      const o=(idx.get(k)||[]).find(d=>d!==own[i]);
-      if(o){clash.push({i,dev:o,what:svKeyText(k,it)});return;}
+    const o=own[i];
+    if(!o)return;
+    const seen=new Set([o]);
+    for(const k of svDupKeys(it))for(const d of idx.get(k)||[]){
+      if(seen.has(d))continue;
+      seen.add(d);
+      const key=svSameKey(it,d);
+      if(key&&!svSameKey(o,d)){clash.push({i,dev:d,what:svKeyText(key,it)});return;}
     }
   });
-  return {groups,clash};
+  return {groups,match,clash,own};
 }
-function svDupGroups(svc,items){return svDupCheck(svc,items).groups;}
 /* Pořadí, ve kterém jdou duplicity nahoru: skupiny za sebou (členové pod sebou), pak položky se
    shodou v evidenci, pak ostatní v původním pořadí. Vrací pole původních indexů. */
 function svDupOrder(n,groups,clash){
@@ -4136,13 +4175,30 @@ function svDupOrder(n,groups,clash){
   const set=new Set(first);
   return [...first,...Array.from({length:n},(_,i)=>i).filter(i=>!set.has(i))];
 }
-/* Zařízení v evidenci se stejným číslem nebo označením. Vrací [{ids:[id], why}]. */
+/* Zařízení v evidenci, která jsou podle pravidel stejná (stejné interní ID, nebo stejné výrobní
+   číslo či označení, když jedno z nich interní ID nemá). Vrací {groups: [{ids, why}], match:
+   Map id → [{id, why}]}. Porovnávají se jen zařízení se společným klíčem. */
 function svDevDups(svc){
   const list=svc.devices||[];
-  return svGroupByKeys(list.length,i=>svDupKeys(list[i])).map(g=>{
-    const x=list.find((d,i)=>g.idx.includes(i)&&svDupKeys(d).includes(g.key))||list[g.idx[0]];
-    return {ids:g.idx.map(i=>list[i].id),why:svDupWhy(g.key,x,null)};
+  const keys=list.map(svIdKeys);
+  const idx=new Map();
+  list.forEach((d,n)=>svDupKeys(d).forEach(k=>{if(!idx.has(k))idx.set(k,[]);idx.get(k).push(n);}));
+  const pairs=[],seen=new Set();
+  idx.forEach(ns=>{
+    for(let a=0;a<ns.length;a++)for(let b=a+1;b<ns.length;b++){
+      const x=Math.min(ns[a],ns[b]),y=Math.max(ns[a],ns[b]),pk=x+","+y;
+      if(seen.has(pk))continue;
+      seen.add(pk);
+      const k=svSameK(keys[x],keys[y]);
+      if(k)pairs.push([x,y,svDupWhy(k,list[x],null)]);
+    }
   });
+  const match=new Map();
+  pairs.forEach(([x,y,why])=>{
+    [[x,y],[y,x]].forEach(([p,q])=>{if(!match.has(list[p].id))match.set(list[p].id,[]);match.get(list[p].id).push({id:list[q].id,why});});
+  });
+  const groups=svComponents(list.length,pairs).map(g=>({ids:g.map(i=>list[i].id),why:match.get(list[g[0]].id)[0].why}));
+  return {groups,match};
 }
 /* Uložení odeslání (nové i upravené). Položky bez odkazu najdou zařízení v evidenci, nebo ho
    založí; evidence se doplní o novější údaje z položky. Vrací {ship, created[]}. */
@@ -4153,16 +4209,22 @@ function svSaveShipment(svc,draft,meta){
   if(!src)throw new Error("Datum odeslání chybí.");
   const items=src.items.map((it,j)=>({...it,dev:(draft.items[j]&&draft.items[j].dev)||it.dev}));
   const created=[];
-  items.forEach(it=>{
-    let d=it.dev&&svc.devices.find(x=>x.id===it.dev);
-    if(!d)d=svFindDevice(svc,it);
-    if(!d){d={id:uid("dv"),kind:"",brand:"",model:"",made:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",note:"",at:meta.at||Date.now(),by:meta.by||""};svc.devices.push(d);created.push(d);}
+  // upravovaný protokol: do evidence jde jen to, co se v položce teď změnilo (jinak by starší
+  // protokol přepsal novější údaje, třeba interní ID opravené v evidenci)
+  const orig=draft.id&&svc.shipments.find(x=>x.id===draft.id);
+  const origOf=it=>orig?orig.items.find(o=>o.dev&&o.dev===it.dev&&svKey(o.iid)===svKey(it.iid))||orig.items.find(o=>o.dev&&o.dev===it.dev)||null:null;
+  const owners=svOwners(svc,items);
+  items.forEach((it,j)=>{
+    let d=owners[j]||svFindDevice(svc,it),o=origOf(it);
+    if(!d){d={id:uid("dv"),kind:"",brand:"",model:"",made:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",note:"",at:meta.at||Date.now(),by:meta.by||""};svc.devices.push(d);created.push(d);o=null;}
+    else if(o&&o.dev!==d.id)o=null;
+    const same=k=>!!o&&String(o[k]||"")===String(it[k]||"");
     // evidence = poslední známé údaje; prázdné pole v položce nic nesmaže a jinak zapsané
     // stejné číslo („x9“ proti „X-9“) evidenci nepřepíše
-    ["kind","brand","model","made"].forEach(k=>{if(it[k])d[k]=it[k];});
-    if(it.mark&&svKey(it.mark)!==svKey(d.mark))d.mark=it.mark;
-    if(it.iid){if(svKey(it.iid)!==svKey(d.iid))d.iid=it.iid;d.iidBad=false;}else if(it.iidBad&&!d.iid)d.iidBad=true;
-    if(it.sn){if(svKey(it.sn)!==svKey(d.sn))d.sn=it.sn;d.snBad=false;}else if(it.snBad&&!d.sn)d.snBad=true;
+    ["kind","brand","model","made"].forEach(k=>{if(it[k]&&!same(k))d[k]=it[k];});
+    if(it.mark&&!same("mark")&&svKey(it.mark)!==svKey(d.mark))d.mark=it.mark;
+    if(!(same("iid")&&same("iidBad"))){if(it.iid){if(svKey(it.iid)!==svKey(d.iid))d.iid=it.iid;d.iidBad=false;}else if(it.iidBad&&!d.iid)d.iidBad=true;}
+    if(!(same("sn")&&same("snBad"))){if(it.sn){if(svKey(it.sn)!==svKey(d.sn))d.sn=it.sn;d.snBad=false;}else if(it.snBad&&!d.sn)d.snBad=true;}
     it.dev=d.id;
   });
   const year=+src.date.slice(0,4);

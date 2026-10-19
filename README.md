@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.22.2
+
+- **Servis: interní ID rozhoduje.** Dvě zařízení s různým interním ID jsou vždy dvě různá
+  zařízení, i když mají stejné výrobní číslo nebo dodatečné označení. Úprava protokolu (třeba
+  oprava nebo prohození výrobních čísel) už proto nehlásí falešnou duplicitu. Výrobní číslo
+  a označení rozhodují, jen když interní ID chybí nebo je nečitelné.
+- **Protokoly ze starší verze:** verze 2.21 a 2.22 mohly dvě zařízení se stejným výrobním číslem
+  spojit v evidenci do jednoho. Takový protokol jde teď upravit bez hlášení duplicity a po uložení
+  dostane každé zařízení v evidenci svůj vlastní záznam.
+- **Úprava staršího protokolu nepřepíše evidenci:** do evidence se zapíše jen to, co jsi v protokolu
+  právě změnil. Dřív by uložení starého protokolu vrátilo třeba interní ID, které jsi mezitím
+  opravil v evidenci.
+- U položky s duplicitou v evidenci jde zařízení odpojit přímo z upozornění.
+- Data se nemění (verze dat zůstává 20).
+
 ## Co je nového ve verzi 2.22.1
 
 - **Servis: duplicitní zařízení jsou červeně a nahoře.** Když v protokolu zadáš stejné zařízení

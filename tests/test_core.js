@@ -2310,26 +2310,81 @@ test('Servis (2.22.1): duplicity v protokolu a v evidenci', () => {
       it({ dev: 'dv2', kind: 'Pila', iidBad: true, snBad: true, mark: 'S-01' }), // 6: dv2 vybraná z evidence
       it({ sn: 'A-1' }),                                  // 7: výrobní číslo A-1 není interní ID A-1
       it({ iid: 'B-13', sn: 'SN-2', iidBad: true }),      // 8: ID nečitelné, text se nepočítá; dv3 podle v. č.
-      it({ iid: 'B-13', sn: 'SN-1' })                     // 9: dv3 podle ID (jako 8), ale v. č. má dv1 (jako 1 a 3)
+      it({ iid: 'B-13', sn: 'SN-1' })                     // 9: dv3 podle ID (jako 8), v. č. jako 3 (ta ID nemá)
     ];
     const c = svDupCheck(svc, items);
     const order = svDupOrder(items.length, c.groups, c.clash);
     const one = svDupCheck(svc, [it({ dev: 'dv1', iid: 'B-12', sn: 'SN-1' }), it({ iid: 'Z-9' })]);
+    // ID brusky, výrobní číslo zařízení bez čitelného ID: uložení by obě zařízení spojilo
+    const cl = svDupCheck({ devices: [...svc.devices, dev('dv7', { kind: 'Pila', iidBad: true, sn: 'SN-7' })] }, [it({ iid: 'B-12', sn: 'SN-7' })]).clash;
     // duplicita, která už v evidenci je, protokol neblokuje
-    const reg = { devices: [...svc.devices, dev('dv4', { iid: 'b12' }), dev('dv5', { sn: 'sn-2' }), dev('dv6', { iid: 'Q' })] };
+    const reg = { devices: [...svc.devices, dev('dv4', { iid: 'b12' }), dev('dv5', { sn: 'sn-2' }), dev('dv6', { iid: 'Q' }), dev('dv7', { iid: 'Z-1', sn: 'SN-1' })] };
     const keep = svDupCheck(reg, [it({ dev: 'dv1', iid: 'B-12', sn: 'SN-1' })]);
-    JSON.stringify({ groups: c.groups, clash: c.clash.map(x => [x.i, x.dev.id, x.what]), order, one: [one.groups.length, one.clash.length],
-      regDups: svDevDups(reg), keep: [keep.groups.length, keep.clash.length], nums: [svDupOrder(3, [], [])] })`));
+    JSON.stringify({ groups: c.groups, clash: c.clash.map(x => [x.i, x.dev.id, x.what]), cl: cl.map(x => [x.i, x.dev.id, x.what]), order, one: [one.groups.length, one.clash.length],
+      regDups: svDevDups(reg).groups, keep: [keep.groups.length, keep.clash.length], nums: [svDupOrder(3, [], [])] })`));
   assert.deepStrictEqual(out.groups.map(g => g.idx), [[0, 4], [1, 3, 8, 9], [5, 6]], 'skupiny: stejné ID (i jinak zapsané), stejné zařízení z evidence podle ID a v. č. (9 spojí dv1 a dv3), označení; prázdná, v. č. proti ID a nečitelné ID se nepočítají');
   assert.strictEqual(out.groups[0].why, 'stejné interní ID A-1');
   assert.match(out.groups[1].why, /^stejné (výrobní číslo SN-1|zařízení z evidence: Bruska · Makita GA \(ID B-12 · v\. č\. SN-1\))$/);
   assert.strictEqual(out.groups[2].why, 'stejné dodatečné označení s01');
-  assert.deepStrictEqual(out.clash, [[9, 'dv1', 'výrobní číslo SN-1']], 'ID patří dv3, výrobní číslo dv1: uložení by v evidenci udělalo duplicitu');
+  assert.deepStrictEqual(out.clash, [], 'ID dv3 a výrobní číslo dv1 (ta má jiné ID): jiná zařízení, žádná duplicita (2.22.2)');
+  assert.deepStrictEqual(out.cl, [[0, 'dv7', 'výrobní číslo SN-7']], 'ID brusky a výrobní číslo zařízení bez čitelného ID: uložení by je v evidenci spojilo');
   assert.deepStrictEqual(out.order, [0, 4, 1, 3, 8, 9, 5, 6, 2, 7], 'duplicity nahoru pod sebe, ostatní v původním pořadí');
   assert.deepStrictEqual(out.one, [0, 0], 'bez duplicit nic');
-  assert.deepStrictEqual(out.regDups, [{ ids: ['dv1', 'dv4'], why: 'stejné interní ID B-12' }, { ids: ['dv3', 'dv5'], why: 'stejné výrobní číslo SN-2' }], 'duplicity v evidenci');
+  assert.deepStrictEqual(out.regDups, [{ ids: ['dv1', 'dv4'], why: 'stejné interní ID B-12' }, { ids: ['dv3', 'dv5'], why: 'stejné výrobní číslo SN-2' }], 'duplicity v evidenci (dv7 má stejné v. č. jako dv1, ale jiné ID)');
   assert.deepStrictEqual(out.keep, [0, 0], 'duplicita, která už v evidenci je, odeslání nezablokuje');
   assert.deepStrictEqual(out.nums, [[0, 1, 2]]);
+  return null;
+});
+
+test('Servis (2.22.2): interní ID rozhoduje, úprava protokolu bez falešných duplicit', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `
+    const it = o => ({ ...blankSvItem(), ...o });
+    const draftOf = x => ({ id: x.id, date: x.date, to: x.to, note: x.note, items: x.items.map(i => ({ ...i })) });   // jako svDraftOf v app.js
+    const svc = blankService();
+    // nový protokol: různá interní ID, stejné výrobní číslo → dvě zařízení, žádná duplicita
+    const fresh = [it({ kind: 'Bruska', iid: 'B-1', sn: '?' }), it({ kind: 'Bruska', iid: 'B-2', sn: '?' }), it({ kind: 'Bruska', iid: 'B-3', sn: 'SN-3' })];
+    const c0 = svDupCheck(svc, fresh);
+    const r1 = svSaveShipment(svc, { date: '2026-10-19', items: fresh }, {});
+    const d = n => svc.devices.find(x => x.iid === n);
+    // úprava: prohození výrobních čísel mezi B-1 a B-3, cestou je SN-3 dvakrát
+    const ed = draftOf(r1.ship);
+    ed.items[0].sn = 'SN-3';
+    const mid = svDupCheck(svc, ed.items);
+    ed.items[2].sn = '?';
+    svSaveShipment(svc, ed, {});
+    const swapped = [d('B-1').sn, d('B-2').sn, d('B-3').sn, svc.devices.length];
+    // ID opravené v evidenci: úprava starého protokolu (jen servis) ho nepřepíše zpátky
+    d('B-2').iid = 'B-20';
+    const ed2 = draftOf(r1.ship); ed2.to = 'Servis Ostrava';
+    const c2 = svDupCheck(svc, ed2.items);
+    svSaveShipment(svc, ed2, {});
+    const kept = [svc.devices.map(x => x.iid).join(), r1.ship.items[1].iid, r1.ship.to];
+    // oprava ID v protokolu (jediná položka u zařízení): evidence se opraví
+    const ed3 = draftOf(r1.ship); ed3.items[2].iid = 'B-30';
+    svSaveShipment(svc, ed3, {});
+    const fixed = [svc.devices.map(x => x.iid).join(), svc.devices.length];
+    // verze 2.21/2.22 spojila dvě položky se stejným v. č. do jednoho zařízení (druhá přepsala ID)
+    const leg = blankService();
+    leg.devices.push({ id: 'dvL', kind: 'Bruska', brand: '', model: '', made: '', iid: 'A-2', sn: 'S', iidBad: false, snBad: false, mark: '', note: '', at: 0, by: '' });
+    leg.shipments.push({ id: 'svL', no: 1, year: 2026, date: '2026-10-01', to: '', note: '', by: '', at: 0, items: [it({ dev: 'dvL', kind: 'Bruska', iid: 'A-1', sn: 'S' }), it({ dev: 'dvL', kind: 'Bruska', iid: 'A-2', sn: 'S' })] });
+    const ld = draftOf(leg.shipments[0]);
+    const lc = svDupCheck(leg, ld.items);
+    const lr = svSaveShipment(leg, ld, {});
+    const legOut = [lc.groups.length, lc.clash.length, lr.created.length, leg.devices.map(x => x.iid).join(), leg.shipments[0].items.map(i => leg.devices.find(x => x.id === i.dev).iid).join(),
+      svHistory(leg, 'dvL').count];
+    // hledání v evidenci: podle v. č. jen zařízení bez jiného čitelného ID
+    const f = [svFindDevice(svc, { iid: 'Z-9', sn: 'SN-3' }), (svFindDevice(svc, { iidBad: true, sn: 'sn3' }) || {}).iid, svSameKey({ iid: 'A' , sn: 'S' }, { iid: 'B', sn: 'S' }), svSameKey({ iidBad: true, sn: 'S' }, { iid: 'B', sn: 's' })];
+    JSON.stringify({ c0: [c0.groups.length, c0.clash.length], r1: r1.created.length, mid: [mid.groups.length, mid.clash.length], swapped, c2: [c2.groups.length, c2.clash.length], kept, fixed, legOut, f })`));
+  assert.deepStrictEqual(out.c0, [0, 0], 'různá interní ID se stejným výrobním číslem nejsou duplicita');
+  assert.strictEqual(out.r1, 3, 'tři zařízení v evidenci');
+  assert.deepStrictEqual(out.mid, [0, 0], 'prohazování výrobních čísel při úpravě nehlásí duplicitu');
+  assert.deepStrictEqual(out.swapped, ['SN-3', '?', '?', 3], 'čísla prohozená v evidenci, žádné zařízení navíc');
+  assert.deepStrictEqual(out.c2, [0, 0]);
+  assert.deepStrictEqual(out.kept, ['B-1,B-20,B-3', 'B-2', 'Servis Ostrava'], 'starý protokol nepřepíše ID opravené v evidenci, sám zůstane snímkem');
+  assert.deepStrictEqual(out.fixed, ['B-1,B-20,B-30', 3], 'oprava ID v protokolu opraví evidenci');
+  assert.deepStrictEqual(out.legOut, [0, 0, 1, 'A-2,A-1', 'A-1,A-2', 1], 'spojená zařízení ze starší verze: bez duplicity, po uložení má A-1 vlastní zařízení');
+  assert.deepStrictEqual(out.f, [null, 'B-1', '', 's:S'], 'hledání a shoda podle pravidla „interní ID rozhoduje“ (SN-3 má po prohození B-1)');
   return null;
 });
 

@@ -34,6 +34,25 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 19. 10. 2026 (verze 2.22.2):
+
+- **Servis: interní ID rozhoduje.** Uživatel: „Když upravuji záznamy, tak mi to hlásí duplicitu
+  i když interní ID je jiné u každé položky.“ Pravidla z 2.22.1 braly za stejné zařízení i stejné
+  výrobní číslo nebo označení (sjednocení přes všechny klíče).
+  - Nové pravidlo `svSameKey`/`svSameK`: dvě čitelná různá interní ID = dvě zařízení. V. č.
+    a označení rozhodují, jen když jednomu z nich ID chybí. Platí všude: `svFindDevice` (přes
+    `svFinder`), duplicity v protokolu (dvojice, ne sjednocení klíčů), `clash`, `svDevDups`,
+    kontrola v dialogu zařízení.
+  - `svOwners`: odkaz `dev` platí i s jiným ID (oprava čísla, evidence mezitím opravená), ledaže
+    na stejné zařízení odkazuje víc položek: pak se ta s jiným ID hledá podle svých čísel.
+    Opraví to protokoly z 2.21/2.22, kde druhá položka se stejným v. č. přepsala ID první
+    a obě skončily u jednoho zařízení (`svSaveShipment` hledal podle v. č. i při jiném ID).
+  - `svSaveShipment` u upravovaného protokolu zapíše do evidence jen pole, která se proti
+    původní položce změnila (dřív starý snímek vrátil ID opravené v evidenci).
+  - Nejspíš šlo o prohazování nebo opravu výrobních čísel, nebo o protokol ze starší verze.
+    Jistě to nevíme: když se to bude opakovat, potřebujeme přesný text hlášky (v závorce je důvod).
+  - `ODM_VERSION` 2.22.2, verze dat beze změny (20).
+
 Stav k 19. 10. 2026 (verze 2.22.1):
 
 - **Servis: duplicity červeně a nahoře.** Uživatel: „V případě duplicit, ať mi to označí červeně
@@ -658,7 +677,7 @@ Známá omezení: fotka smazaná v aplikaci zmizí ze serveru hned, takže star�
 z historie ji už neukáže (prázdné pole `.ph.missing`); vrátí ji jen záloha. Fotky, na které
 neodkazuje žádný stav (nahrané, ale neuložené), na serveru zůstanou; úklid zatím není.
 
-## Servis (verze 2.21, 2.22, 2.22.1)
+## Servis (verze 2.21 až 2.22.2)
 
 Data `S.service` (`blankService`, čištění `cleanService` v `core.js`):
 
@@ -682,12 +701,17 @@ totalDays, avgGap, year}` (k vyřazení = `retired`, na servisu se nepočítá),
 `svFaultText`, `svDevName`, `svDevIdent`, `svAddTemplate(svc, x)` → `{t, existed}` nebo `null`
 (prázdný vzor), `svChanges` (klíče `svs:` protokol, `svb:` vrácení, `svd:` zařízení, `svt:` vzor).
 
-Duplicity (2.22.1): `svDupKeys` (`i:` čitelné ID, `s:` čitelné v. č., `m:` označení, vše přes `svKey`;
-ID a v. č. se nemíchají), `svGroupByKeys` (sjednocení přes společné klíče), `svDevIndex` (klíč →
-zařízení jedním průchodem, místo `svFindDevice` pro každou položku), `svDupCheck(svc, items)` →
-`{groups: [{idx, why}], clash: [{i, dev, what}]}` (skupiny: stejné číslo, nebo stejné zařízení
-z evidence `d:`; clash: číslo, které zařízení položky nemá a v evidenci patří jinému),
-`svDupOrder(n, groups, clash)` (pořadí indexů: duplicity nahoru), `svDevDups(svc)` → `[{ids, why}]`.
+Duplicity (2.22.1, pravidla 2.22.2): `svIdKeys` → `{i, s, m}` (čitelné ID, čitelné v. č., označení
+přes `svKey`), `svDupKeys` (totéž jako `i:…`, `s:…`, `m:…`), **`svSameK`/`svSameKey`: dvě čitelná
+různá ID = dvě zařízení**, jinak stačí stejné ID, v. č. nebo označení. `svFinder(svc)` (index
+`svDevIndex`, podle v. č. a označení jen zařízení bez jiného ID; `svFindDevice` ho volá),
+`svOwners(svc, items)` (zařízení k položkám, odkaz `dev` a oprava spojených zařízení ze starší
+verze), `svDupCheck(svc, items)` → `{groups: [{idx, why}], match: [[{j, why}]], clash: [{i, dev,
+what}], own}` (dvojice podle `svSameK` nebo stejného zařízení `d:`; skupiny = souvislé části přes
+`svComponents`; clash = číslo zařízení, které je podle pravidla stejné jako položka, ale není její),
+`svDupOrder(n, groups, clash)` (pořadí indexů: duplicity nahoru), `svDevDups(svc)` →
+`{groups: [{ids, why}], match: Map id → [{id, why}]}` (porovnává jen zařízení se společným klíčem).
+`svSaveShipment` u upravovaného protokolu zapisuje do evidence jen změněná pole.
 
 UI v `app.js` (sekce „SERVIS“): `renderService` (záložky Odeslání a Zařízení, dlaždice),
 `svShipHtml` (karta protokolu, Vráceno / Vráceno vše `svBackDialog`), `svDevTable` (hledání
@@ -918,7 +942,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.20 | `0cf0ad7` | Matice – report do PDF jen s ID zaměstnanců, přepínač Jen ID, nemocní mimo počty úrovní |
 | 2.21 | `c7d1af4` | Servis – odeslání zařízení na servis, předávací protokol v PDF, evidence zařízení s historií (data verze 19) |
 | 2.22 | `ea74466` | Servis – rok výroby, vzory zařízení (druh, značka, model) (data verze 20) |
-| 2.22.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – duplicity červeně a nahoře (protokol i evidence), číslo jiného zařízení z evidence |
+| 2.22.1 | `3b6c7d8` | Servis – duplicity červeně a nahoře (protokol i evidence), číslo jiného zařízení z evidence |
+| 2.22.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – interní ID rozhoduje (bez falešných duplicit při úpravě), oprava spojených zařízení, úprava protokolu nepřepíše evidenci |
 
 Verze 2.1 přidala:
 
@@ -1294,7 +1319,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 59 testů: proti původní aplikaci + opravy + 2.1 až 2.22.1
+node tests/test_core.js                 # 60 testů: proti původní aplikaci + opravy + 2.1 až 2.22.2
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1320,7 +1345,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     menu, hledání, Zpět, okna, filtry, šířka seznamu, manifest;
   - `e2e_servis.js`: Servis (2.21, 2.22): protokol se třemi zařízeními, nečitelná čísla, k vyřazení,
     závady, rok výroby, vzory (uložení, duplicita, výběr, smazání), duplicitní zařízení (červeně
-    při psaní, nahoru při uložení, číslo jiného zařízení, evidence), PDF přes pypdf, výběr z evidence, párování, vrácení, evidence, úprava, smazání, telefon;
+    při psaní, nahoru při uložení, číslo jiného zařízení, evidence; jiné ID se stejným v. č.
+    při úpravě protokolu duplicita není), PDF přes pypdf, výběr z evidence, párování, vrácení, evidence, úprava, smazání, telefon;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
