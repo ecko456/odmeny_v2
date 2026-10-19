@@ -120,7 +120,7 @@ function save(){_prodIdx=null;_effCache=null;if(typeof onStateChange==="function
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),v:DATA_VERSION};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),service:blankService(),v:DATA_VERSION};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -1457,10 +1457,10 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=18;
+const DATA_VERSION=19;
 const LOG_MAX=2000;
 const HIST_MAX=200;
-const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit"];
+const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service"];
 function sanitizeState(input){
   const o=(input&&typeof input==="object"&&!Array.isArray(input))?input:{};
   const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
@@ -1752,6 +1752,8 @@ function sanitizeState(input){
   out.logbooks=cleanLogbooks(o.logbooks);
   /* Audit – lidé v práci a zpracované kusy (2.17): starší data ho nemají, začíná prázdný */
   out.workAudit=cleanWorkAudit(o.workAudit);
+  /* Servis – odeslání zařízení na servis (2.21): starší data ho nemají, začíná prázdný */
+  out.service=cleanService(o.service);
   // data před 2.18.1: požadavek lidí je pevných 100 (zadání), dřív se bral jen ze souboru
   if(!(+o.v>=17)&&out.workAudit.target==null)out.workAudit.target=WA_TARGET;
   out.v=DATA_VERSION;
@@ -2076,6 +2078,7 @@ function describeChanges(a,b,meta){
   if(uka!=null&&ukb!=null&&uka!==ukb)add("settings","",{m:"audset:pct",p:"Kontroly – podíl lidí z oddělení: ",v0:uka+" %",v1:ukb+" %"});
   lbChanges(a.logbooks||[],b.logbooks||[],add);
   waChanges(a.workAudit,b.workAudit,add);
+  svChanges(a.service,b.service,add);
   return {entries,hist};
 }
 
@@ -3956,6 +3959,162 @@ function waChanges(A,B,add){
   new Set([...Object.keys(A.notes),...Object.keys(B.notes)]).forEach(iso=>{
     if((A.notes[iso]||"")!==(B.notes[iso]||""))add("workaudit","Audit "+dayText(iso)+": "+(B.notes[iso]?"poznámka ke dni „"+B.notes[iso].slice(0,80)+"“":"poznámka smazána"),{m:"wanote:"+iso});
   });
+}
+
+/* ==========================================================================
+   SERVIS: odeslání zařízení na servis (verze 2.21)
+   Odeslání = předávací protokol (datum, servis, zařízení). Každá položka nese snímek údajů
+   zařízení z doby odeslání (protokol se zpětně nemění) a odkaz na zařízení v evidenci.
+   Zařízení vznikne při prvním odeslání; další odeslání se k němu přiřadí podle interního ID,
+   výrobního čísla nebo dodatečného označení. Z položek je historie: kolikrát a jak často
+   zařízení jezdí na servis a jak dlouho tam je.
+   ========================================================================== */
+const SV_MAX_ITEMS=60;
+/* Účel odeslání a zaškrtávané závady (u položky, zadání uživatele). */
+const SV_PURPOSE=[["repair","K opravě"],["scrap","K vyřazení"]];
+const SV_FAULTS=[["start","Nelze spustit"],["rpm","Nedrží stabilně otáčky"],["heat","Přehřívá se"],["vibr","Nadměrné rezonance – nejde dlouho držet v ruce"],["damage","Poškozené zařízení"]];
+const SV_FAULT_KEYS=SV_FAULTS.map(x=>x[0]);
+/* Text poznámky do protokolu, když jsou nečitelná obě čísla. */
+const SV_MARK_TEXT="Interní ID i výrobní číslo jsou nečitelné, proto bylo zařízení dodatečně označeno na spodní stěně horního krytu, kde je řídicí jednotka.";
+function blankService(){return {devices:[],shipments:[]};}
+function blankSvItem(){return {dev:"",kind:"",brand:"",model:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",purpose:"repair",faults:[],fault:"",back:"",backNote:""};}
+const SV_ISO=/^\d{4}-\d{2}-\d{2}$/;
+function cleanService(o){
+  o=o&&typeof o==="object"?o:{};
+  const str=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g,"").trim().slice(0,max);
+  const iso=v=>SV_ISO.test(String(v||""))?String(v):"";
+  const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
+  const ident=x=>{const iidBad=!!x.iidBad,snBad=!!x.snBad;
+    return {kind:str(x.kind,80),brand:str(x.brand,80),model:str(x.model,80),iid:iidBad?"":str(x.iid,60),sn:snBad?"":str(x.sn,80),iidBad,snBad,mark:str(x.mark,60)};};
+  const devices=(Array.isArray(o.devices)?o.devices:[]).filter(d=>d&&typeof d==="object").slice(0,3000)
+    .map(d=>({id:uniq(d.id,"dv"),...ident(d),note:str(d.note,1000),at:Number.isFinite(+d.at)?Math.max(0,+d.at):0,by:str(d.by,60)}));
+  const ids=new Set(devices.map(d=>d.id));
+  const shipments=(Array.isArray(o.shipments)?o.shipments:[]).filter(x=>x&&typeof x==="object"&&iso(x.date)).slice(0,2000).map(x=>({
+    id:uniq(x.id,"sv"),no:Math.round(clamp(+x.no||1,1,9999)),year:Math.round(clamp(+x.year||+String(x.date).slice(0,4),2000,2100)),
+    date:iso(x.date),to:str(x.to,160),note:str(x.note,1000),by:str(x.by,60),at:Number.isFinite(+x.at)?Math.max(0,+x.at):0,
+    items:(Array.isArray(x.items)?x.items:[]).filter(i=>i&&typeof i==="object").slice(0,SV_MAX_ITEMS).map(i=>{
+      const back=iso(i.back);
+      return {dev:ids.has(i.dev)?i.dev:"",...ident(i),purpose:i.purpose==="scrap"?"scrap":"repair",
+        faults:SV_FAULT_KEYS.filter(k=>Array.isArray(i.faults)&&i.faults.includes(k)),
+        fault:str(i.fault,600),back:back&&back>=x.date?back:"",backNote:str(i.backNote,300)};
+    })}));
+  return {devices,shipments};
+}
+/* Závady položky lidsky: zaškrtnuté v pořadí seznamu a jiná závada („…; jiná: …“). */
+function svFaultText(i){
+  const list=SV_FAULTS.filter(([k])=>(i.faults||[]).includes(k)).map(x=>x[1]);
+  if(i.fault)list.push(list.length?"jiná: "+i.fault:i.fault);
+  return list.join(", ");
+}
+function svPurposeText(i){return i.purpose==="scrap"?"k vyřazení":"k opravě";}
+/* Porovnání čísel: bez mezer, pomlček, teček a lomítek, velkými písmeny. */
+function svKey(v){return String(v||"").toUpperCase().replace(/[\s\-_.\/\\]+/g,"");}
+/* Číslo protokolu „2026/001“. */
+function svNo(x){return x.year+"/"+String(x.no).padStart(3,"0");}
+function svNextNo(svc,year){return Math.max(0,...svc.shipments.filter(x=>x.year===year).map(x=>x.no))+1;}
+/* Zařízení v evidenci podle čitelného interního ID, výrobního čísla, nebo dodatečného označení. */
+function svFindDevice(svc,x){
+  const by=(k,v)=>{const key=svKey(v);return key?svc.devices.find(d=>svKey(d[k])===key&&!(k==="iid"&&d.iidBad)&&!(k==="sn"&&d.snBad)):null;};
+  return (!x.iidBad&&by("iid",x.iid))||(!x.snBad&&by("sn",x.sn))||by("mark",x.mark)||null;
+}
+/* Jak se zařízení jmenuje: druh, značka a model; identifikace ID, v. č. nebo označení. */
+function svDevName(d){return [d.kind,[d.brand,d.model].filter(Boolean).join(" ")].filter(Boolean).join(" · ")||"Zařízení";}
+function svDevIdent(d){
+  const out=[];
+  if(d.iid)out.push("ID "+d.iid);else if(d.iidBad)out.push("ID nečitelné");
+  if(d.sn)out.push("v. č. "+d.sn);else if(d.snBad)out.push("v. č. nečitelné");
+  if(d.mark)out.push("označení "+d.mark);
+  return out.join(" · ");
+}
+/* Položka je identifikovatelná: čitelné ID nebo výrobní číslo, nebo dodatečné označení. */
+function svItemProblem(i){
+  if(!i.kind&&!i.brand&&!i.model&&!i.iid&&!i.sn&&!i.mark&&!i.iidBad&&!i.snBad)return "prázdná položka";
+  if(!i.iidBad&&!i.iid&&!i.snBad&&!i.sn&&!i.mark)return "chybí interní ID nebo výrobní číslo";
+  if(i.iidBad&&i.snBad&&!i.mark)return "obě čísla jsou nečitelná: doplň dodatečné označení";
+  return "";
+}
+/* Uložení odeslání (nové i upravené). Položky bez odkazu najdou zařízení v evidenci, nebo ho
+   založí; evidence se doplní o novější údaje z položky. Vrací {ship, created[]}. */
+function svSaveShipment(svc,draft,meta){
+  meta=meta||{};
+  const clean=cleanService({devices:svc.devices,shipments:[{...draft,id:draft.id||"x",no:1,year:+String(draft.date).slice(0,4)}]});
+  const src=clean.shipments[0];
+  if(!src)throw new Error("Datum odeslání chybí.");
+  const items=src.items.map((it,j)=>({...it,dev:(draft.items[j]&&draft.items[j].dev)||it.dev}));
+  const created=[];
+  items.forEach(it=>{
+    let d=it.dev&&svc.devices.find(x=>x.id===it.dev);
+    if(!d)d=svFindDevice(svc,it);
+    if(!d){d={id:uid("dv"),kind:"",brand:"",model:"",iid:"",sn:"",iidBad:false,snBad:false,mark:"",note:"",at:meta.at||Date.now(),by:meta.by||""};svc.devices.push(d);created.push(d);}
+    // evidence = poslední známé údaje; prázdné pole v položce nic nesmaže a jinak zapsané
+    // stejné číslo („x9“ proti „X-9“) evidenci nepřepíše
+    ["kind","brand","model"].forEach(k=>{if(it[k])d[k]=it[k];});
+    if(it.mark&&svKey(it.mark)!==svKey(d.mark))d.mark=it.mark;
+    if(it.iid){if(svKey(it.iid)!==svKey(d.iid))d.iid=it.iid;d.iidBad=false;}else if(it.iidBad&&!d.iid)d.iidBad=true;
+    if(it.sn){if(svKey(it.sn)!==svKey(d.sn))d.sn=it.sn;d.snBad=false;}else if(it.snBad&&!d.sn)d.snBad=true;
+    it.dev=d.id;
+  });
+  const year=+src.date.slice(0,4);
+  let ship=draft.id&&svc.shipments.find(x=>x.id===draft.id);
+  if(ship){
+    if(ship.year!==year){ship.year=year;ship.no=svNextNo({shipments:svc.shipments.filter(x=>x!==ship)},year);}
+    Object.assign(ship,{date:src.date,to:src.to,note:src.note,items});
+  }else{
+    ship={id:uid("sv"),no:svNextNo(svc,year),year,date:src.date,to:src.to,note:src.note,by:meta.by||"",at:meta.at||Date.now(),items};
+    svc.shipments.push(ship);
+  }
+  return {ship,created};
+}
+/* Historie zařízení: odeslání od nejstaršího, počet, dny na servisu, průměrný odstup odeslání
+   a zda je teď na servisu (poslední odeslání bez vrácení). */
+function svHistory(svc,devId,today){
+  today=today||todayIso();
+  const list=svc.shipments.flatMap(x=>x.items.filter(i=>i.dev===devId).map(i=>({ship:x,item:i})))
+    .sort((a,b)=>a.ship.date.localeCompare(b.ship.date)||a.ship.at-b.ship.at);
+  const done=list.filter(h=>h.item.back&&h.item.purpose!=="scrap");
+  const days=done.map(h=>daysBetween(h.ship.date,h.item.back));
+  const gaps=list.slice(1).map((h,i)=>daysBetween(list[i].ship.date,h.ship.date));
+  const last=list[list.length-1]||null;
+  // odesláno k vyřazení = zařízení je vyřazené (na servisu se nepočítá, pokud se nevrátilo)
+  const retired=last&&last.item.purpose==="scrap"&&!last.item.back?last.ship.date:"";
+  const out=!!(last&&!last.item.back&&!retired);
+  return {list,count:list.length,first:list[0]?list[0].ship.date:"",last:last?last.ship.date:"",
+    out,outDays:out?daysBetween(last.ship.date,today):0,retired,
+    avgDays:days.length?Math.round(days.reduce((a,b)=>a+b,0)/days.length):null,
+    totalDays:days.reduce((a,b)=>a+b,0),
+    avgGap:gaps.length?Math.round(gaps.reduce((a,b)=>a+b,0)/gaps.length):null,
+    year:list.filter(h=>h.ship.date>=addDays(today,-365)).length};
+}
+/* Historie změn v Servisu. */
+function svChanges(A,B,add){
+  A=A||blankService();B=B||blankService();
+  const dev=(svc,id)=>svc.devices.find(d=>d.id===id);
+  const nm=(svc,i)=>{const d=dev(svc,i.dev)||i;return svDevName(d)+(svDevIdent(i)?" ("+svDevIdent(i)+")":"");};
+  const ma=new Map(A.shipments.map(x=>[x.id,x]));
+  B.shipments.forEach(x=>{
+    const o=ma.get(x.id);
+    const head="Servis "+svNo(x);
+    if(!o){add("service","Servis: odeslání "+svNo(x)+" ("+dayText(x.date)+(x.to?", "+x.to:"")+"): "+x.items.length+" zařízení – "+x.items.map(i=>nm(B,i)+(i.purpose==="scrap"?" k vyřazení":"")).join("; "),{m:"svs:"+x.id});return;}
+    const key=i=>JSON.stringify([i.dev,i.kind,i.brand,i.model,i.iid,i.sn,i.iidBad,i.snBad,i.mark,i.purpose,i.faults,i.fault]);
+    if(o.date!==x.date||o.to!==x.to||o.note!==x.note||JSON.stringify(o.items.map(key))!==JSON.stringify(x.items.map(key)))
+      add("service",head+": upraven protokol ("+dayText(x.date)+(x.to?", "+x.to:"")+", "+x.items.length+" zařízení)",{m:"svs:"+x.id});
+    x.items.forEach(i=>{
+      const p=o.items.find(y=>y.dev===i.dev);
+      if(!p||p.back===i.back&&p.backNote===i.backNote)return;
+      if(i.back)add("service",head+": vráceno ze servisu "+dayText(i.back)+" – "+nm(B,i)+(i.backNote?" ("+i.backNote+")":""),{m:"svb:"+x.id+":"+i.dev});
+      else add("service",head+": zrušeno vrácení – "+nm(B,i),{m:"svb:"+x.id+":"+i.dev});
+    });
+  });
+  A.shipments.forEach(x=>{if(!B.shipments.some(y=>y.id===x.id))add("service","Servis: smazán protokol "+svNo(x)+" ("+dayText(x.date)+", "+x.items.length+" zařízení)",{m:"svs:"+x.id});});
+  const FIELDS={kind:"druh",brand:"značka",model:"model",iid:"interní ID",sn:"výrobní číslo",iidBad:"ID nečitelné",snBad:"v. č. nečitelné",mark:"dodatečné označení",note:"poznámka"};
+  const da=new Map(A.devices.map(d=>[d.id,d]));
+  B.devices.forEach(d=>{
+    const o=da.get(d.id);
+    if(!o)return;   // nové zařízení je v záznamu o odeslání
+    const ch=Object.keys(FIELDS).filter(k=>o[k]!==d[k]);
+    if(ch.length)add("service","Servis – zařízení "+svDevName(d)+": upravené údaje – "+ch.map(k=>FIELDS[k]).join(", "),{m:"svd:"+d.id+":"+ch.join()});
+  });
+  A.devices.forEach(d=>{if(!B.devices.some(y=>y.id===d.id))add("service","Servis: smazáno zařízení "+svDevName(d)+(svDevIdent(d)?" ("+svDevIdent(d)+")":""),{m:"svd:"+d.id});});
 }
 
 if(typeof module==="object"&&module.exports){

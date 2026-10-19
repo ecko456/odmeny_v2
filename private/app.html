@@ -22,6 +22,7 @@
       <button type="button" data-view="sankce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg><span>Sankce</span></button>
       <button type="button" data-view="kontroly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m8.5 11.5 2 2 4-4M8.5 17h7"/></svg><span>Kontroly</span><em class="nav-badge" id="navKt" hidden></em></button>
       <button type="button" data-view="protokoly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6M9 11h6M9 14.5h3"/></svg><span>Protokoly</span></button>
+      <button type="button" data-view="servis"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5a4.5 4.5 0 0 0-4.3 5.8L4 17a2.1 2.1 0 0 0 3 3l6.7-6.7A4.5 4.5 0 0 0 19.5 9l-2.7 2.7-3-.6-.6-3z"/></svg><span>Servis</span></button>
       <button type="button" data-view="dochazka"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 13.5h2M14 13.5h2M8 17h2"/></svg><span>Docházka</span></button>
       <button type="button" data-view="vyroba"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5.5 20.5V11l5 3V11l5 3V6.5h3v14"/></svg><span>Výroba</span></button>
       <button type="button" data-view="audit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h11"/><path d="M6 16.5v-5M10 16.5V8"/><circle cx="16.5" cy="10.5" r="4"/><path d="m19.4 13.4 2.6 2.6"/><path d="M14.8 10.6l1.2 1.2 2.2-2.4"/></svg><span>Audit</span><em class="nav-badge" id="navWa" hidden></em></button>
@@ -291,6 +292,22 @@
       </div>
     </section>
 
+
+    <!-- ============ SERVIS (odeslání zařízení na servis, 2.21) ============ -->
+    <section class="view" id="view-servis" aria-labelledby="svTitle">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Odeslání zařízení na servis</p>
+          <h1 id="svTitle">Servis</h1>
+          <p class="lede">Předávací protokol pro servis: datum odeslání a zařízení s interním ID, výrobním číslem, značkou, modelem a druhem. Každé odeslané zařízení se zapíše do evidence, takže je vidět, jak často a na jak dlouho jezdí na servis.</p>
+        </div>
+        <div class="page-actions noprint">
+          <button class="btn" type="button" id="svNew">Nové odeslání</button>
+        </div>
+      </header>
+      <div class="chips t5-tabs noprint" id="svTabs"></div>
+      <div id="svView"></div>
+    </section>
 
     <!-- ============ AUDIT (lidé v práci a zpracované kusy, 2.17) ============ -->
     <section class="view" id="view-audit" aria-labelledby="waTitle">

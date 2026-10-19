@@ -1762,3 +1762,60 @@ table.wa-plantab td small { color: var(--ink-3); font-size: 12px; }
   #view-audit table.stack td[data-label]::before { flex: 0 1 auto; min-width: 0; font-family: var(--body); white-space: normal; }
   #view-audit table.stack td.name .num { font-family: var(--mono); }
 }
+
+/* ---------- Servis: odeslání zařízení na servis (2.21) ---------- */
+.tag.ok { background: var(--good-soft); color: var(--good); }
+.tag.crit { background: var(--crit-soft); color: var(--crit); }
+.sv-ship { margin-bottom: 16px; }
+.sv-ship.fresh { box-shadow: 0 0 0 2px var(--acc-soft); }
+.sv-ship .card-head { align-items: flex-start; }
+.sv-actions { justify-content: flex-end; align-items: center; }
+table.sv-items-tab td, table.sv-dev-tab td, table.sv-hist-tab td { vertical-align: top; }
+table.sv-items-tab td.name .linkish { display: block; margin-top: 2px; font-size: 12.5px; color: var(--ink-3); }
+.sv-state { white-space: nowrap; }
+table.sv-dev-tab td.num, table.sv-hist-tab td.num { white-space: nowrap; }
+.sv-state small { display: block; margin-top: 3px; color: var(--ink-3); white-space: normal; }
+.sv-state .btn, .sv-state .linkish { margin-top: 6px; }
+.sv-state .linkish { display: block; font-size: 12.5px; color: var(--ink-3); }
+.sv-mark { display: block; margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: var(--warn-soft); color: var(--warn); }
+.sv-row { cursor: pointer; }
+.sv-row:hover td { background: var(--surface-2); }
+.sv-editor { display: grid; gap: 14px; }
+.sv-editor h2 { margin: 0; }
+.sv-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.sv-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.sv-items { display: grid; gap: 12px; }
+.sv-item { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); min-width: 0; }
+.sv-item-head { display: flex; align-items: center; gap: 10px; }
+.sv-item-head .sv-pick { flex: 1 1 auto; min-width: 0; }
+.sv-item-head b { flex: 1 1 auto; }
+.sv-num { display: flex; align-items: center; gap: 10px; }
+.sv-num > input { flex: 1 1 auto; min-width: 0; }
+.sv-bad { display: inline-flex; flex: none; align-items: center; gap: 6px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.sv-bad input { width: 18px; height: 18px; margin: 0; accent-color: var(--crit); }
+.sv-markbox { display: grid; gap: 8px; margin: 0; }
+.sv-markbox p { margin: 0; }
+.sv-purpose { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.sv-opt { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); font-size: 14px; cursor: pointer; }
+.sv-opt input { margin: 0; accent-color: var(--acc); }
+.sv-opt:has(input:checked) { border-color: var(--acc); background: var(--acc-soft); color: var(--acc); font-weight: 600; }
+.sv-opt.scrap:has(input:checked) { border-color: var(--crit); background: var(--crit-soft); color: var(--crit); }
+.sv-opt.scrap input { accent-color: var(--crit); }
+.sv-faults { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.sv-fault { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; font-size: 14px; cursor: pointer; }
+.sv-fault input { width: 18px; height: 18px; margin: 0; accent-color: var(--acc); }
+.sv-hint { margin: 0; color: var(--ink-2); }
+.sv-hint:empty { display: none; }
+.sv-editor-foot { align-items: center; padding-top: 4px; }
+.sv-dlg-h { margin: 18px 0 8px; font-size: 15px; }
+@media (max-width: 900px) {
+  .sv-grid, .sv-grid.two { grid-template-columns: minmax(0, 1fr); }
+  .sv-actions { justify-content: flex-start; }
+  .sv-editor-foot .btn { flex: 1 1 40%; }
+  .sv-editor-foot .spacer { display: none; }
+  .sv-state { white-space: normal; }
+  table.stack td.sv-block { display: block; min-width: 0; text-align: left; }
+  table.stack td.sv-block::before { display: block; margin-bottom: 4px; }
+  .sv-state .btn { margin: 0 0 0 8px; }
+  .sv-state small { margin-top: 4px; }
+}

@@ -62,6 +62,32 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.21
+
+- **Nový modul Servis: odeslání zařízení na servis.** Tlačítkem **Nové odeslání** vyplníš
+  předávací protokol: datum odeslání, servis (komu se zařízení předávají), poznámku a jednotlivá
+  zařízení s druhem, značkou, modelem, interním ID a výrobním číslem. Po uložení se stáhne
+  jednoduché **PDF předávacího protokolu** s číslem (např. 2026/001) a místem pro podpisy
+  (předal, převzal za servis, datum převzetí).
+- **Nečitelná čísla:** u interního ID i u výrobního čísla jde zaškrtnout „nečitelné“. Když jsou
+  nečitelná obě, protokol uvede, že zařízení bylo proto dodatečně označeno na spodní stěně
+  horního krytu, kde je řídicí jednotka, a vyplní se dodatečné označení (bez něj se protokol
+  neuloží, jinak by zařízení příště nešlo poznat).
+- **K opravě, nebo k vyřazení:** u každého zařízení se zvolí, proč jede. Zařízení odeslané
+  k vyřazení se nepočítá jako „na servisu“ a v evidenci je vedené jako vyřazené.
+- **Závady k zaškrtnutí:** Nelze spustit, Nedrží stabilně otáčky, Přehřívá se, Nadměrné
+  rezonance – nejde dlouho držet v ruce, Poškozené zařízení, a k tomu jiná závada nebo poznámka.
+- **Evidence zařízení s historií:** zařízení se do evidence zapíše samo při prvním odeslání.
+  Další odeslání ho najde podle interního ID, výrobního čísla nebo dodatečného označení (i když
+  je číslo napsané s mezerou nebo bez pomlčky), nebo ho vybereš z evidence. Záložka Zařízení
+  ukáže, kolikrát které zařízení bylo na servisu (celkem a za 12 měsíců), naposledy, průměrně
+  kolik dní tam bylo a jaký je odstup mezi odesláními. Klepnutím otevřeš historii a údaje.
+- **Vráceno ze servisu:** u zařízení zapíšeš datum vrácení a poznámku (např. co se vyměnilo),
+  u protokolu jde zapsat „Vráceno vše“.
+- Protokol jde upravit i smazat, každá změna je v historii změn (nový filtr Servis). Na telefonu
+  je Servis v hlavním menu.
+- Data verze 19: stránka otevřená ve starší verzi po aktualizaci nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.20
 
 - **Matice dovedností: report do PDF jen s ID zaměstnanců.** V záložce Matice je tlačítko

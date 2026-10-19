@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 19. 10. 2026 (verze 2.21):
+
+- **Servis: odeslání zařízení na servis.** Uživatel: „modul ‚Odeslání na servis‘, kde se
+  následně vygeneruje jednoduché PDF, předávací protokol … datum odeslání, jednotlivá zařízení,
+  jejich interní ID, výrobní číslo, značka, model a druh zařízení. U ID nebo výrobního čísla ať
+  jde zaškrtnout, že číslo je nečitelné a pokud budou obě nečitelné, tak proto bylo označeno
+  dodatečně na spodní stěnu horního krytu, jak je řídicí jednotka. Při odeslání na servis modul
+  vytvoří zařízení a bude k němu uvádět historii“ a doplnil: „zda odesíláme k opravě nebo na
+  vyřazení … závada: Nelze spustit, Nedrží stabilně otáčky, Přehřívá se, Nadběrné rezonace –
+  nejde dlouho držet v ruce, poškozené zařízení“ (v aplikaci opraveno na „Nadměrné rezonance“).
+  - Data `S.service` (verze dat 19), podrobnosti v sekci Servis níže. Pohled `#view-servis`,
+    v menu za Protokoly, dlaždice v hlavním menu telefonu, historie změn kind `service`.
+  - Chyby nalezené testem: nápověda u položky se obnovovala až při opuštění pole, posunula
+    tlačítko pod kurzorem a klik na Přidat další zařízení se ztratil (teď se obnovuje při psaní
+    a jen když se text změní). Překreslení s kurzorem v poli házelo chybu (před překreslením
+    `blur()`).
+  - `ODM_VERSION` 2.21, `DATA_VERSION` = `CLIENT_VERSION` = `ODM_MIN_CLIENT` = 19.
+  - **Se skutečným servisem a jeho postupem to nikdo nezkoušel**: zpětnou vazbu na protokol
+    (co v něm chybí, jestli servis chce i jiné údaje) je potřeba od uživatele.
+
 Stav k 15. 10. 2026 (verze 2.20):
 
 - Uživatel: „export v matici dovednosti, že report PDF nebude obsahovat jména, ale jen ID
@@ -609,6 +629,36 @@ Známá omezení: fotka smazaná v aplikaci zmizí ze serveru hned, takže star�
 z historie ji už neukáže (prázdné pole `.ph.missing`); vrátí ji jen záloha. Fotky, na které
 neodkazuje žádný stav (nahrané, ale neuložené), na serveru zůstanou; úklid zatím není.
 
+## Servis (verze 2.21)
+
+Data `S.service` (`blankService`, čištění `cleanService` v `core.js`):
+
+- `devices[≤ 3000]`: `{id 'dv…', kind, brand, model, iid, sn, iidBad, snBad, mark, note, at, by}`;
+  `iidBad`/`snBad` = číslo je nečitelné (text se pak neukládá), `mark` = dodatečné označení
+  na spodní stěně horního krytu u řídicí jednotky (povinné, když jsou nečitelná obě čísla);
+- `shipments[≤ 2000]`: `{id 'sv…', no, year, date, to, note, by, at, items[≤ 60]}`, číslo
+  protokolu `svNo` = `rok/NNN` (`svNextNo` po letech);
+- položka: snímek údajů v době odeslání `{dev, kind, brand, model, iid, sn, iidBad, snBad, mark,
+  purpose 'repair'|'scrap', faults[] (SV_FAULTS: start, rpm, heat, vibr, damage), fault (jiná),
+  back (datum vrácení, ne dřív než odeslání), backNote}`. Protokol se zpětně nemění, evidence ano.
+
+Výpočty: `svKey` (bez mezer, pomlček, teček a lomítek, velkými), `svFindDevice` (čitelné ID,
+pak výrobní číslo, pak označení), `svSaveShipment` (položky bez odkazu najdou nebo založí
+zařízení, evidence se doplní o novější údaje, jinak zapsané stejné číslo ji nepřepíše),
+`svHistory(svc, id, dnes)` → `{list, count, first, last, out, outDays, retired, avgDays,
+totalDays, avgGap, year}` (k vyřazení = `retired`, na servisu se nepočítá), `svItemProblem`,
+`svFaultText`, `svDevName`, `svDevIdent`, `svChanges` (klíče `svs:` protokol, `svb:` vrácení,
+`svd:` zařízení).
+
+UI v `app.js` (sekce „SERVIS“): `renderService` (záložky Odeslání a Zařízení, dlaždice),
+`svShipHtml` (karta protokolu, Vráceno / Vráceno vše `svBackDialog`), `svDevTable` (hledání
+`#svQ` překresluje jen tabulku), `svDeviceDialog` (historie a úprava evidence, smazat jde jen
+zařízení bez odeslání), editor `svEditorHtml`/`svItemHtml` nad `ui.sv.draft` (pole se při psaní
+jen zapisují; překresluje se po kliknutí a zaškrtnutí nečitelné, výběr z evidence datalistem
+`svDevList`), `svHint` (nápověda z evidence, obnovuje se při psaní), `svSaveDraft` (kontroly:
+datum, identifikace, stejné zařízení dvakrát), PDF `drawServiceProtocol` (A4 na výšku)
+a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
+
 ## Audit (verze 2.17, 2.18)
 
 Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
@@ -823,7 +873,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.19 | `5b70d7e` | Top 5 – komentáře o vývoji případu (data verze 18) |
 | 2.19.1 | `7f76bb1` | Audit – vlastní období od–do v přehledu a výrobním plánu |
 | 2.19.2 | `a1ffc39` | Audit – pole od–do vždy vidět, použití tlačítkem Zobrazit (psaní data z klávesnice) |
-| 2.20 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Matice – report do PDF jen s ID zaměstnanců, přepínač Jen ID, nemocní mimo počty úrovní |
+| 2.20 | `0cf0ad7` | Matice – report do PDF jen s ID zaměstnanců, přepínač Jen ID, nemocní mimo počty úrovní |
+| 2.21 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – odeslání zařízení na servis, předávací protokol v PDF, evidence zařízení s historií (data verze 19) |
 
 Verze 2.1 přidala:
 
@@ -935,7 +986,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `14` (od 2.16):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `19` (od 2.21):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -983,6 +1034,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `capReport{groups[], thr, hidden[], note}`: report Směny a kapacita;
   - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook`);
   - `logbooks[]` (2.16): Protokoly (viz níže);
+  - `service` (2.21): Servis, evidence zařízení a odeslání (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -1065,8 +1117,8 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `vyroba`, `top5`, `kontroly`, `nastaveni` (`showView('pozice')` otevře Matici, záložku
-  Skupiny a pravidla).
+  `vyroba`, `top5`, `kontroly`, `protokoly`, `servis` (2.21), `audit`, `nastaveni`
+  (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
   - hodiny = historie změn (`openLog`, odznak nových od posledního otevření);
@@ -1198,7 +1250,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 56 testů: proti původní aplikaci + opravy + 2.1 až 2.20
+node tests/test_core.js                 # 57 testů: proti původní aplikaci + opravy + 2.1 až 2.21
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1222,6 +1274,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_skener.js`: skener kartičky v Sankcích (2.13), falešná kamera Chromia;
   - `e2e_mobil.js`: telefon jako aplikace (2.14, 2.15): HALA 2, hlavní menu, směna, rozbalovací
     menu, hledání, Zpět, okna, filtry, šířka seznamu, manifest;
+  - `e2e_servis.js`: Servis (2.21): protokol se třemi zařízeními, nečitelná čísla, k vyřazení,
+    závady, PDF přes pypdf, výběr z evidence, párování, vrácení, evidence, úprava, smazání, telefon;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;
