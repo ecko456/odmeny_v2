@@ -1079,7 +1079,8 @@ function staffDay(from){
    levelAt), směna podle dnešního zařazení (historie směn se neukládá) a střídání skupin 1 a 2
    podle S.capReport.s1am; plánované hodiny = délka směny (zkrácený pátek). Skutečnost =
    nahraná docházka (hodiny a kódy po dnech). Páruje se podle jména: řádek docházky má stejný
-   klíč jako člověk (příjmení|jméno). Porovnávají se jen dny, pro které je docházka nahraná.
+   klíč jako člověk (příjmení|jméno). Porovnávají se jen pracovní dny (2.24.1: víkendy a svátky
+   vůbec, ani jejich hodiny), a to jen ty, pro které je docházka nahraná.
    Vyřazení a vedoucí v plánu nejsou; když v docházce odpracovali hodiny, jsou ve výstupu jako
    mimo plán (stejně lidé bez skupiny nebo směny a jména z docházky, která v Lidech nejsou). */
 const PR_SLOT={am:"ranní",pm:"odpolední",rot:"skupina 1/2",none:""};
@@ -1102,8 +1103,9 @@ function planReality(weekId){
   if(!w)return null;
   const rep=S.capReport||blankCapReport(),mg=morningGroup(weekId,rep.s1am),thr=clamp(Math.round(+rep.thr||3),1,4);
   const ex=excusedSet(),r1=x=>Math.round(x*100)/100;
-  const days=Array.from({length:7},(_,i)=>{const [y,m,d]=addDays(w.from,i).split("-").map(Number);const x=mkDay(y,m,d);
+  const week=Array.from({length:7},(_,i)=>{const [y,m,d]=addDays(w.from,i).split("-").map(Number);const x=mkDay(y,m,d);
     const p=S.periods&&S.periods[x.iso.slice(0,7)];x.has=!!p&&Array.isArray(p.days)&&p.days.includes(x.iso);return x;});
+  const days=week.filter(d=>d.work);   // jen pracovní dny (víkend a svátek se nepočítají)
   const [ty,tm,td]=w.to.split("-").map(Number),endTs=new Date(ty,tm-1,td,23,59,59).getTime();
   const keys=new Set(Object.keys(S.employees));
   days.forEach(d=>{if(d.has)Object.keys(S.periods[d.iso.slice(0,7)].rows||{}).forEach(k=>keys.add(k));});
@@ -1118,7 +1120,7 @@ function planReality(weekId){
     const slot=e&&!lead&&!out&&pos?slotOn(e,mg):"none";
     const planned=slot!=="none";
     const cells=days.map((d,i)=>{
-      const a=att[i],plan=planned&&d.work&&d.has?dayShift(d,!!e.shortFri):0;
+      const a=att[i],plan=planned&&d.has?dayShift(d,!!e.shortFri):0;
       let kind="";
       if(a){if(a.h>0)kind="work";else if(a.c)kind=ex.has(norm(a.c).toUpperCase())?"excused":"code";else if(plan)kind="miss";}
       return {plan,h:a?a.h:null,c:a?a.c:"",kind};
@@ -1158,7 +1160,8 @@ function planReality(weekId){
   const groups=[...byGroup.values()].sort((a,b)=>(a.pos?order.get(a.pos.id):999)-(b.pos?order.get(b.pos.id):999));
   groups.forEach(g=>{g.days.forEach(t=>{t.planH=r1(t.planH);t.realH=r1(t.realH);});g.week=sum(g.days);});
   const total=sum(groups.map(g=>g.week));
-  return {week:w,id:weekId,mg,thr,days,rows,groups,total,missing:days.filter(d=>(d.work||d.has)&&!d.has).map(d=>d.iso),
+  return {week:w,id:weekId,mg,thr,days,rows,groups,total,missing:days.filter(d=>!d.has).map(d=>d.iso),
+    holidays:week.filter(d=>d.hol&&!d.weekend).map(d=>({iso:d.iso,name:d.hol})),
     unpaired:rows.filter(r=>/v docházce není|v Lidech není/.test(r.note)).length};
 }
 /* Excel plánu a skutečnosti: list Souhrn (skupina × den) a list Lidé (po dnech plán a docházka). */
@@ -1169,9 +1172,10 @@ function planRealitySheets(weekId){
   const pctOf=(a,b)=>b>0?Math.round(a/b*1000)/10:"";
   const head=[["Plán a skutečnost podle docházky – "+weekLong(x.id)],
     ["Plán = zařazení z Matice dovedností (skupina platná v tom týdnu, směna podle dnešního zařazení, "+(x.mg?"ranní tento týden: skupina "+(x.mg==="S1"?1:2):"střídání skupin 1 a 2 není nastavené")+"), skutečnost = nahraná docházka. Páruje se podle jména. Schopný = průměr dovedností skupiny aspoň úroveň "+x.thr+"."],
+    ["Počítají se jen pracovní dny; víkendy a svátky se nepočítají ani s odpracovanými hodinami."+(x.holidays.length?" Svátek v tomto týdnu: "+x.holidays.map(h=>dayText(h.iso,false)+" ("+h.name+")").join(", ")+".":"")],
     ...(x.missing.length?[["Docházka chybí pro: "+x.missing.map(iso=>dl(x.days.find(d=>d.iso===iso))).join(", ")+" (tyto dny se neporovnávají)."]]:[]),
     ...(x.unpaired?[["Nespárováno podle jména: "+x.unpaired+" (viz list Lidé, sloupec Poznámka)."]]:[]),
-    ["Po dnech jsou počty lidí, řádek Celý týden sčítá lidodny (lidé × dny). Chybí = plánovaný den bez hodin a bez omluveného kódu; navíc = hodiny mimo plán."],
+    ["Po dnech jsou počty lidí, řádek Celý týden sčítá lidodny (lidé × dny). Chybí = plánovaný den bez hodin a bez omluveného kódu; navíc = pracovní den s hodinami u člověka mimo plán (bez skupiny nebo směny, vyřazený, vedoucí)."],
     []];
   const sumHead=["Oddělení","Skupina","Den","Plán lidí","Ranní","Odpolední","Skupina 1/2 (bez střídání)","Přišlo","Omluveno","Neomluveno / chybí","Navíc mimo plán","Plán h","Odpracováno h","Rozdíl h","Plnění hodin %","Schopní v plánu","Schopní přišli"];
   const line=(g,label,t)=>[g.dept,g.name,label,t.planN,t.am,t.pm,t.rot,t.present,t.excused,t.miss,t.extra,t.planH,t.realH,Math.round((t.realH-t.planH)*100)/100,pctOf(t.realH,t.planH),t.capPlan,t.capReal];
@@ -1182,7 +1186,7 @@ function planRealitySheets(weekId){
     sumRows.push([]);
   });
   sumRows.push(line({dept:"",name:"Všechny skupiny"},"Celý týden",x.total));
-  const vis=x.days.map((d,i)=>d.work||x.rows.some(r=>r.cells[i].h>0)?i:-1).filter(i=>i>=0);
+  const vis=x.days.map((d,i)=>i);
   const pHead=["Příjmení","Jméno","ID v evidenci práce","Oddělení","Skupina","Směna","V týdnu","Dovednosti %","Schopný",
     ...vis.flatMap(i=>[dl(x.days[i])+" plán",dl(x.days[i])+" skutečnost"]),
     "Plán h","Odpracováno h","Rozdíl h","Plánované dny","Přišel","Omluveno","Neomluveno / chybí","Navíc dny","Kódy","Poznámka"];
@@ -1191,7 +1195,7 @@ function planRealitySheets(weekId){
     r.pct!=null?Math.round(r.pct):"",r.pos?(r.capable?"ano":"v zaškolování"):"",
     ...vis.flatMap(i=>{const d=x.days[i],c=r.cells[i];
       if(!d.has)return ["bez docházky","bez docházky"];
-      return [c.plan||(d.work?"":"volno"),c.h>0?c.h:c.c||(c.plan?"chybí":"")];}),
+      return [c.plan||"",c.h>0?c.h:c.c||(c.plan?"chybí":"")];}),
     r.planH,r.realH,Math.round((r.realH-r.planH)*100)/100,r.planDays,r.workDays,r.excused,r.miss,r.extraDays,
     Object.entries(r.codes).map(([k,n])=>k+(n>1?" ×"+n:"")).join(", "),r.note]));
   return [{name:sheetName("Souhrn",used),rows:sumRows,cols:[16,20,12,9,8,10,12,8,10,12,12,9,13,9,12,12,12]},

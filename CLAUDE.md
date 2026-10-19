@@ -34,6 +34,12 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 19. 10. 2026 (verze 2.24.1):
+
+- Uživatel: „Plán a skutečnost podle docházky ber vždy jen pracovní dny.“ `planReality` má
+  `days` jen pracovní (`d.work`), víkend a svátek se nepočítají ani s hodinami; `holidays`
+  (svátky v týdnu) se jen uvedou v kartě a v Excelu. `ODM_VERSION` 2.24.1, data beze změny.
+
 Stav k 19. 10. 2026 (verze 2.24):
 
 - **Plán a skutečnost podle docházky** (Směny a kapacita). Uživatel: „export historické
@@ -44,7 +50,8 @@ Stav k 19. 10. 2026 (verze 2.24):
     missing, unpaired, mg, thr}`, `planRealitySheets(weekId)` (Souhrn, Lidé). Plán: skupina
     `levelAt(e, konec týdne)`, směna dnešní, `slotOn` se střídáním `S.capReport.s1am`, hodiny
     `dayShift` (zkrácený pátek), jen pracovní dny s nahranou docházkou. Skutečnost: hodiny,
-    kód (omluvený podle `excusedSet`, jinak chybí), navíc = hodiny mimo plán. Páruje se klíčem
+    kód (omluvený podle `excusedSet`, jinak chybí), navíc = hodiny mimo plán; víkend a svátek
+    se nepočítají vůbec (2.24.1). Páruje se klíčem
     `příjmení|jméno` (řádky docházky a lidé mají stejný); poznámky „v docházce není (jiné
     jméno?)“, „v Lidech není“, „bez skupiny“, „bez směny“, „vyřazen“, „vedoucí“.
   - UI: `capHistHtml` (karta `.cap-hist`, `noprint`, `#capHistWeek`, `ui.capHist`),
@@ -988,7 +995,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.22.1 | `3b6c7d8` | Servis – duplicity červeně a nahoře (protokol i evidence), číslo jiného zařízení z evidence |
 | 2.22.2 | `e6c4825` | Servis – interní ID rozhoduje (bez falešných duplicit při úpravě), oprava spojených zařízení, úprava protokolu nepřepíše evidenci |
 | 2.23 | `96f54c0` | Lidé – filtry a celá šířka monitoru; Směny a kapacita – v zaškolování zvlášť, PDF bez upozornění |
-| 2.24 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Směny a kapacita – plán a skutečnost podle docházky za týden zpětně, Excel |
+| 2.24 | `c91b119` | Směny a kapacita – plán a skutečnost podle docházky za týden zpětně, Excel |
+| 2.24.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plán a skutečnost jen za pracovní dny (víkend a svátek se nepočítají) |
 
 Verze 2.1 přidala:
 

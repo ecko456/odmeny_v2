@@ -62,6 +62,13 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.24.1
+
+- **Plán a skutečnost podle docházky bere jen pracovní dny.** Víkendy a svátky se nepočítají vůbec,
+  ani s odpracovanými hodinami, a v Excelu pro ně nejsou sloupce. Svátek v týdnu karta i Excel
+  jen uvedou. „Navíc mimo plán“ jsou teď jen pracovní dny s hodinami u lidí mimo plán (bez
+  skupiny nebo směny, vyřazení, vedoucí).
+
 ## Co je nového ve verzi 2.24
 
 - **Matice dovedností → Směny a kapacita: plán a skutečnost podle docházky.** Dole je nová karta

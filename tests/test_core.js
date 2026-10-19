@@ -2456,29 +2456,33 @@ test('Plán a skutečnost podle docházky (2.24)', () => {
       groups: x.groups.map(g => [g.pos ? g.pos.id : '', g.week.planN, g.week.am, g.week.pm, g.week.present, g.week.excused, g.week.miss, g.week.extra, g.week.planH, g.week.realH, g.week.capPlan, g.week.capReal]),
       total: [x.total.planN, x.total.present, x.total.planH, x.total.realH], unpaired: x.unpaired, missing: x.missing,
       p40: [p40.missing, p40.groups.find(g => g.pos && g.pos.id === 'g1').week.planN],
-      sheets: sh.map(s => s.name), cCells: [cRow[col('Po 21. 9. plán')], cRow[col('Po 21. 9. skutečnost')], cRow[col('Út 22. 9. skutečnost')], cRow[col('So 26. 9. plán')], cRow[col('So 26. 9. skutečnost')], cRow[cRow.length - 1]],
+      sheets: sh.map(s => s.name), cCells: [cRow[col('Po 21. 9. plán')], cRow[col('Po 21. 9. skutečnost')], cRow[col('Út 22. 9. skutečnost')], cRow[col('Pá 25. 9. skutečnost')], cRow[cRow.length - 1]],
+      weekendCols: lide[hdr].filter(t => /^(So|Ne) /.test(String(t))).length, days: x.days.map(d => d.iso), hol40: p40.holidays, days40: p40.days.map(d => d.iso),
       fri: friShift() })`));
   assert.deepStrictEqual(out.weeks, ['2026-W40', '2026-W39', '2026-W38', '2026-W37', '2026-W36'], 'týdny s docházkou od nejnovějšího');
   assert.strictEqual(out.mg, 'S1');
   assert.deepStrictEqual(out.rows, [
     ['a', 'g1', 'am', 4 * 7.5 + out.fri, 36.5, 5, 0, 0, 0, ''],
-    ['c', 'g1', 'pm', 37.5, 28.5, 3, 0, 2, 1, ''],
+    ['c', 'g1', 'pm', 37.5, 22.5, 3, 0, 2, 0, ''],
     ['e', 'g1', 'none', 0, 4, 0, 0, 0, 1, 'vyřazen'],
     ['b', 'g2', 'am', 37.5, 30, 4, 1, 0, 0, ''],
     ['g', 'g2', 'pm', 37.5, 0, 0, 0, 5, 0, 'v docházce není (jiné jméno?)'],
     ['cizi|petr', '', 'none', 0, 7.5, 0, 0, 0, 1, 'v Lidech není'],
     ['d', '', 'none', 0, 8, 0, 0, 0, 1, 'bez skupiny']],
-    'lidé: plán ze zařazení (skupina z historie, zkrácený pátek, střídání), docházka, chybí a navíc; vedoucí bez hodin ve výstupu není');
+    'lidé: plán ze zařazení (skupina z historie, zkrácený pátek, střídání), docházka, chybí a navíc; sobota se nepočítá (2.24.1); vedoucí bez hodin ve výstupu není');
   assert.deepStrictEqual(out.groups, [
-    ['g1', 10, 5, 5, 8, 0, 2, 2, 4 * 7.5 + out.fri + 37.5, 69, 5, 5],
+    ['g1', 10, 5, 5, 8, 0, 2, 1, 4 * 7.5 + out.fri + 37.5, 63, 5, 5],
     ['g2', 10, 5, 5, 4, 1, 5, 0, 75, 30, 0, 0],
     ['', 0, 0, 0, 0, 0, 0, 2, 0, 15.5, 0, 0]], 'skupiny za týden (lidodny, hodiny, schopní)');
-  assert.deepStrictEqual(out.total, [20, 12, 4 * 7.5 + out.fri + 75 + 37.5, 114.5]);
+  assert.deepStrictEqual(out.total, [20, 12, 4 * 7.5 + out.fri + 75 + 37.5, 108.5]);
   assert.strictEqual(out.unpaired, 2, 'nespárovaná jména: plánovaný bez docházky a jméno z docházky, které v Lidech není');
   assert.deepStrictEqual(out.missing, []);
   assert.deepStrictEqual(out.p40, [['2026-10-01', '2026-10-02'], 6], 'částečný týden: dny bez docházky se neporovnávají (28. 9. je svátek); b je od 1. 10. v CNC');
   assert.deepStrictEqual(out.sheets, ['Souhrn', 'Lidé']);
-  assert.deepStrictEqual(out.cCells, [7.5, 'chybí', 'X', 'volno', 6, ''], 'Excel po dnech: plán a skutečnost, kód, volno, víkend');
+  assert.deepStrictEqual(out.cCells, [7.5, 'chybí', 'X', 7.5, ''], 'Excel po dnech: plán a skutečnost, kód');
+  assert.strictEqual(out.weekendCols, 0, 'v Excelu nejsou víkendové sloupce');
+  assert.deepStrictEqual(out.days, ['2026-09-21', '2026-09-22', '2026-09-23', '2026-09-24', '2026-09-25'], 'jen pracovní dny');
+  assert.deepStrictEqual([out.days40, out.hol40.map(h => h.iso)], [['2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02'], ['2026-09-28']], 'svátek 28. 9. se nepočítá, jen se uvede');
   return null;
 });
 
