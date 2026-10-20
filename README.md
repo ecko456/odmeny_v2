@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.25.1
+
+- **Docházka: den s kódem nepřítomnosti se nepočítá jako docházka, ani když má hodiny.**
+  Buňka „8 D“ (8 hodin u dovolené) nebo „7,5 NEM“ je teď nepřítomnost, stejně jako
+  v Plánu a skutečnosti:
+  - není to odpracovaný den a hodiny u kódu se nepočítají do odpracovaných hodin, do Kafe
+    ani do využití fondu;
+  - je to absence: omluvená, když je kód v seznamu omluvené absence (Nastavení), jinak
+    neomluvená. Srážky a bonus za víkendy se podle toho přepočítají;
+  - kód o víkendu není víkendová směna;
+  - v kalendáři u člověka je den jako nepřítomnost a v popisku jsou hodiny u kódu
+    („D (8 h u kódu, nepočítají se)“).
+  Přepočítají se měsíce, které ještě nejsou vydané. Vydané měsíce mají uložený snímek a nemění
+  se. Data se nemění (verze dat zůstává 21).
+
 ## Co je nového ve verzi 2.25
 
 - **Matice dovedností: dovednost „Není nutností“.** U dovednosti ve skupině (Skupiny a pravidla)
@@ -104,7 +119,7 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
     (dovolená, nemoc, neomluveno…) se do odpracovaných hodin nepočítá, ani když má docházka u kódu
     hodiny (např. „8 D“). Takový den je omluvený (kód ze seznamu omluvené absence) nebo chybí;
     hodiny u něj jsou v listu Lidé jen pro informaci (např. „D (8 h)“ a sloupec Hodiny
-    u nepřítomnosti). Modul Docházka (Kafe, absence) počítá jako dřív.
+    u nepřítomnosti). Od verze 2.25.1 stejně počítá i modul Docházka.
   - **Schopní a v zaškolování zvlášť:** u každé skupiny i celkem plán hodin, odpracované hodiny
     a plnění zvlášť pro schopné a zvlášť pro lidi v zaškolování.
   - V Excelu je navíc **Omluveno h** (plánované hodiny dnů s dovolenou, nemocí…) a **plnění bez

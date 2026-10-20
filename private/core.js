@@ -618,10 +618,15 @@ function attendance(p,key){
   const emp=S.employees[key], sf=!!(emp&&emp.shortFri);
   const r={found:!!row,workDays:0,workHours:0,cappedHours:0,wkDays:0,wkHours:0,otWeek:0,
     missed:0,excusedDays:0,excusedHours:0,codes:{},cells:[],totalDays:0,totalHours:0,
-    shortFri:sf,fridays:0,absDays:0,shortHours:0,shortDays:0};
+    shortFri:sf,fridays:0,absDays:0,shortHours:0,shortDays:0,codedDays:0,codedHours:0};
   let fund=0;
   meta.days.forEach((d,i)=>{
-    const h=row?(row.h[i]||0):0, c=row?(row.c[i]||null):null;
+    const raw=row?(row.h[i]||0):0, c=row?(row.c[i]||null):null;
+    /* Oprava (2.25.1, přání uživatele, stejně jako Plán a skutečnost): den s kódem nepřítomnosti
+       je nepřítomnost i s hodinami („8 D“); hodiny u kódu se nepočítají jako odpracované (Kafe,
+       fond, víkendy, absence). Původní aplikace je brala jako práci. */
+    const h=c?0:raw;
+    if(c&&raw>0){r.codedDays++;r.codedHours+=raw;}
     /* Oprava: kód z buňky se porovnává stejně normalizovaný jako seznam (OČR = OCR). */
     const isEx=!!(c&&ex.has(norm(c).toUpperCase())), ds=dayShift(d,sf);
     if(c)r.codes[c]=(r.codes[c]||0)+1;
@@ -629,7 +634,8 @@ function attendance(p,key){
     if(d.work){
       fund+=ds;
       if(d.dow===5)r.fridays++;
-      /* absence = celý pracovní den bez docházky; kratší směna není absence (projeví se jen v hodinách a u Kafe) */
+      /* absence = celý pracovní den bez docházky (i den s kódem a hodinami, 2.25.1); kratší směna není
+         absence (projeví se jen v hodinách a u Kafe) */
       if(h>0){r.workDays++;r.workHours+=h;r.cappedHours+=Math.min(h,ds);
         r.otWeek+=Math.max(0,h-ds);
         if(h<ds-1e-9){r.shortDays++;r.shortHours+=ds-h;}
@@ -637,7 +643,7 @@ function attendance(p,key){
         if(!S.settings.excusedReducesFund)r.absDays++;
       }else{r.missed++;r.absDays++;}
     }else if(h>0){r.wkDays++;r.wkHours+=h;}
-    r.cells.push({d,h,c,isEx,ds});
+    r.cells.push({d,h,c,isEx,ds,ah:c?raw:0});   // ah = hodiny u kódu (jen pro informaci)
   });
   if(S.settings.excusedReducesFund)fund=Math.max(0,fund-r.excusedHours);
   r.fund=fund;
@@ -2418,7 +2424,7 @@ function profileData(key,fromId,toId){
       prod:prod?{total:prod.total,days,perDay:days?prod.total/days:null,perHour:a&&a.totalHours?prod.total/a.totalHours:null}:null,
       sanctions:sanFor(key,id).map(s=>({name:s.pct!=null?s.name:(s.reason||"Sankce"),pct:s.pct!=null?s.pct:null,points:s.pct==null?(+s.points||0):null,note:s.note||"",at:s.at,
         wage:!!s.wage,done:s.done?s.done.at:null})),
-      cells:a?a.cells.map(c=>({d:c.d.d,dow:c.d.dow,h:c.h,c:c.c||"",ex:!!c.isEx,wk:!!(c.d.weekend||c.d.hol),hol:c.d.hol||"",ds:c.ds})):null};
+      cells:a?a.cells.map(c=>({d:c.d.d,dow:c.d.dow,h:c.h,ah:c.ah||0,c:c.c||"",ex:!!c.isEx,wk:!!(c.d.weekend||c.d.hol),hol:c.d.hol||"",ds:c.ds})):null};
   }));
   const sum=f=>months.reduce((x,m)=>x+(+f(m)||0),0);
   const att=months.filter(m=>m.hasAtt);
@@ -2540,7 +2546,7 @@ function rulesDoc(){
   const general=[
     ["Dovednosti","Každá skupina má své dovednosti hodnocené na stupnici 0–4. Každá úroveň je 25 % (0 = 0 %, 4 = 100 %). Procento skupiny je průměr všech jejích dovedností: když má skupina dvě dovednosti a člověk umí jednu na úrovni 4 a druhou vůbec, má 50 %. Dovednost označená „není nutností“ se do průměru počítá jen čtvrtinovou vahou (nutná na 4 a nepovinná na 0 = 80 %) a u prémie s podmínkou „všechny dovednosti aspoň na úrovni“ se nevyžaduje."],
     ["Tabáky","Tabáky za dovednosti = maximum skupiny × procento dovedností, zaokrouhleno na celé. Docházka je podle pravidel skupiny sníží (srážka za absenci) nebo zvýší (bonus za víkendové směny navíc); případný strop skupiny se nepřekročí. Sankce strhávají "+SAN_PCTS[0]+"–"+SAN_PCTS[SAN_PCTS.length-1]+" % z nároku (po 5 %), každá aspoň jeden tabák; součet 100 % a víc znamená nic. Srážka ze mzdy benefity nekrátí, zpracuje se ve mzdách."],
-    ["Absence","Absence je celý pracovní den bez docházky; kratší směna absencí není. Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence: srážka pak není, ale ani bonus za víkend. Omluvená absence (kódy "+(st.excused||"—")+")"+(st.excusedReducesFund?" snižuje fond hodin.":" se počítá jako absence.")],
+    ["Absence","Absence je celý pracovní den bez docházky; den s kódem nepřítomnosti (dovolená, nemoc…) je absence i s hodinami u kódu (např. 8 D) a ty hodiny se nepočítají jako odpracované ani do Kafe. Kratší směna absencí není. Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence: srážka pak není, ale ani bonus za víkend. Omluvená absence (kódy "+(st.excused||"—")+")"+(st.excusedReducesFund?" snižuje fond hodin.":" se počítá jako absence.")],
     ["Kafe","Kafe dostane, kdo odpracuje aspoň fond hodin měsíce (pracovní dny × "+nf(st.shift)+" h"+(st.friShift&&st.friShift!==st.shift?"; kdo má zkrácený pátek, má v pátek plnou směnu "+nf(st.friShift)+" h":"")+"), pokud pro měsíc není nastaven jiný práh."],
   ];
   if(cut)general.push(["Bez nároku","Od "+cut+" "+dnW(cut)+" absence (po vyplnění víkendem) není nárok na tabáky, Kafe ani prémii."]);

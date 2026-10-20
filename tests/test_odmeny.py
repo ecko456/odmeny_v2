@@ -371,7 +371,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.25")
+        self.assertEqual(result["version"], "2.25.1")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

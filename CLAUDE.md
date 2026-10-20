@@ -34,6 +34,19 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 20. 10. 2026 (verze 2.25.1):
+
+- Uživatel: „Sjednoť i docházku, ať nepočítá 8D jako docházku.“ `attendance()`: buňka s kódem
+  je nepřítomnost i s hodinami (`h = c ? 0 : raw`, označeno `Oprava (2.25.1…)`). Omluvená, když
+  je kód v `excusedSet()`, jinak neomluvená (`missed`). Víkendová buňka s kódem není víkendová
+  směna. Hodiny u kódu jen pro informaci: `codedDays`, `codedHours`, v buňce `ah` (kalendáře
+  `calStrip` a `pfCalendar` je ukazují v popisku).
+  - Mění se tím Kafe (`totalHours`), absence, srážky a bonus za víkendy, `fundRatio`, využití.
+    Vydané měsíce mají snímek (`issued`), nemění se. Porovnání s původní aplikací prochází,
+    protože ukázková data žádné „hodiny + kód“ nemají.
+  - Test „Docházka (2.25.1)“ a nezávislá kontrola z 2.24.2 teď porovnává `workHours` přímo.
+  - `ODM_VERSION` 2.25.1, data beze změny (21).
+
 Stav k 19. 10. 2026 (verze 2.25):
 
 - **Dovednost „Není nutností“ a celkové skóre v reportu kapacit.** Uživatel: „u dovedností
@@ -79,8 +92,7 @@ Stav k 19. 10. 2026 (verze 2.24.2):
     odpracované hodiny.“ Buňka s kódem je nepřítomnost i s hodinami („8 D“): `kind` podle kódu
     (excused / code), odpracované hodiny buňky `w` = 0, hodiny u kódu jen `absH` (Excel: „D (8 h)“
     a sloupec Hodiny u nepřítomnosti). Všechny součty berou `c.w`, ne `c.h`.
-    **Docházka (`attendance`) počítá h > 0 s kódem dál jako práci** (Kafe, absence); sjednotit jen
-    na přání uživatele.
+    Docházku (`attendance`) uživatel nechal sjednotit ve 2.25.1 (viz výš).
   - Excel: Souhrn (týden po skupinách), Po dnech, Lidé (plnění u člověka, mimo plán h).
   - Test „Plán a skutečnost (2.24.2): nezávislá kontrola“ přepočítá vše ze surové docházky na
     ukázkových i náhodných datech (40 lidí, 2 měsíce, i dny „hodiny + kód“) a porovná
@@ -1051,7 +1063,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.24 | `c91b119` | Směny a kapacita – plán a skutečnost podle docházky za týden zpětně, Excel |
 | 2.24.1 | `2320230` | plán a skutečnost jen za pracovní dny (víkend a svátek se nepočítají) |
 | 2.24.2 | `77e4b94` | plán a skutečnost – opravené hodiny, schopní a v zaškolování zvlášť, hodiny jen ze dnů v práci, kontrola proti docházce |
-| 2.25 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: dovednost „Není nutností“ (váha ¼ i v tabácích), celkové skóre v reportu kapacit, Zkušení pracovníci a Pracovníci v zácviku (data verze 21) |
+| 2.25 | `2864d5e` | dovednost „Není nutností“ (váha ¼ i v tabácích), celkové skóre v reportu kapacit, Zkušení pracovníci a Pracovníci v zácviku (data verze 21) |
+| 2.25.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Docházka – den s kódem nepřítomnosti (i „8 D“) není docházka |
 
 Verze 2.1 přidala:
 
@@ -1430,7 +1443,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 64 testů: proti původní aplikaci + opravy + 2.1 až 2.25
+node tests/test_core.js                 # 65 testů: proti původní aplikaci + opravy + 2.1 až 2.25.1
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

@@ -1277,7 +1277,7 @@ function calStrip(a) {
     else if (c.h > 0) cls += ' part';
     else if (c.isEx || c.c) cls += ' abs';
     else cls += ' miss';
-    const title = `${DOW[c.d.dow]} ${c.d.d}.${c.d.m}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c ? c.c : 'nic')}${c.d.hol ? ` — ${c.d.hol}` : ''}`;
+    const title = `${DOW[c.d.dow]} ${c.d.d}.${c.d.m}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c ? `${c.c}${c.ah ? ` (${nf(c.ah, 2)} h u kódu, nepočítají se)` : ''}` : 'nic')}${c.d.hol ? ` — ${c.d.hol}` : ''}`;
     return `<div class="${cls}" title="${esc(title)}">${c.d.d}</div>`;
   }).join('')}</div></div>`;
 }
@@ -1882,7 +1882,7 @@ function ruleCard(p, kind) {
   const rules = p[kind];
   return `<div class="card" data-rules="${kind}">
     <h3>${pen ? 'Srážka za absenci' : 'Bonus za víkendy'}</h3>
-    <p class="small muted">${pen ? 'Absence = celý pracovní den bez docházky. Počítá se to, co zbyde po vyplnění víkendovými směnami: kdo absenci nadělá o víkendu, srážku nemá, ale nedostane ani bonus za víkend.' : 'Jen když nic nechybí. Počítají se víkendové směny, které nebylo potřeba na vyplnění absence.'}</p>
+    <p class="small muted">${pen ? 'Absence = celý pracovní den bez docházky; den s kódem nepřítomnosti je absence i s hodinami (např. 8 D). Počítá se to, co zbyde po vyplnění víkendovými směnami: kdo absenci nadělá o víkendu, srážku nemá, ale nedostane ani bonus za víkend.' : 'Jen když nic nechybí. Počítají se víkendové směny, které nebylo potřeba na vyplnění absence.'}</p>
     <div class="rules">${rules.length ? rules.map((r, i) => `<div class="rulerow" data-ri="${i}">
         <span class="rule-part"><span>${pen ? 'Dny absence' : 'Víkendové směny'} ≥</span><input type="number" data-rat value="${+r.at || 0}" min="1" max="31" step="1" aria-label="${pen ? 'Počet chybějících dnů' : 'Počet víkendových směn'}"></span>
         <span class="rule-part"><span>→ ${pen ? '−' : '+'}</span><input type="number" data-rt value="${+r.t || 0}" min="0" max="100" step="1" aria-label="Počet tabáků"><span>tab.</span></span>
@@ -2027,7 +2027,7 @@ function renderPositions() {
       ${skills.length ? `<div class="sk-list">${skills.map((x, i) => skillRowHtml(x, i, skills.length)).join('')}</div>` : '<p class="small muted">Skupina zatím nemá žádnou dovednost, takže nikdo v ní nemá tabáky za dovednosti. Přidej první.</p>'}
     </div>
     ${p.onlyKafe ? `<div class="note i">Kafe dostane, kdo odpracuje aspoň měsíční fond hodin (nebo práh nastavený u období v přehledu).${cutoffDays() ? ` Od ${cutoffDays()} dní absence po vyplnění víkendem nárok zaniká (Nastavení).` : ''}</div>` : `<div class="rule-grid">${ruleCard(p, 'penalty')}${ruleCard(p, 'bonus')}</div>
-    <div class="note i">Platí vždy nejvyšší splněný řádek. Absence je celý pracovní den bez docházky; kratší směna absence není (projeví se jen v hodinách u Kafe). Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence a víkend použitý na vyplnění se do bonusu nepočítá.${cutoffDays() ? ` Od ${cutoffDays()} dní absence neplatí nic, bez nároku na tabák i kafe (Nastavení).` : ' Hranici, od které člověk ztrácí nárok úplně, nastavíš v Nastavení.'}
+    <div class="note i">Platí vždy nejvyšší splněný řádek. Absence je celý pracovní den bez docházky; den s kódem nepřítomnosti (dovolená, nemoc…) je absence i s hodinami u kódu (např. 8 D) a ty hodiny se nepočítají ani do Kafe. Kratší směna absence není (projeví se jen v hodinách u Kafe). Každá odpracovaná víkendová nebo sváteční směna vyplní jeden den absence a víkend použitý na vyplnění se do bonusu nepočítá.${cutoffDays() ? ` Od ${cutoffDays()} dní absence neplatí nic, bez nároku na tabák i kafe (Nastavení).` : ' Hranici, od které člověk ztrácí nárok úplně, nastavíš v Nastavení.'}
       <div class="mt-s"><button class="btn sec small" type="button" id="posCopyRules">Použít srážky a bonusy u všech skupin</button></div></div>`}
     ${normCutEditorHtml(p)}
     <div class="card" id="tierCard">
@@ -4144,7 +4144,7 @@ function pfCalendar(cells) {
     else if (c.h > 0) cls += ' part';
     else if (c.ex || c.c) cls += ' abs';
     else cls += ' miss';
-    return `<div class="${cls}" title="${esc(`${DOW[c.dow]} ${c.d}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c || 'nic')}${c.hol ? ` — ${c.hol}` : ''}`)}">${c.d}</div>`;
+    return `<div class="${cls}" title="${esc(`${DOW[c.dow]} ${c.d}. ${c.h > 0 ? `${nf(c.h)} h` : c.c ? `${c.c}${c.ah ? ` (${nf(c.ah, 2)} h u kódu, nepočítají se)` : ''}` : 'nic'}${c.hol ? ` — ${c.hol}` : ''}`)}">${c.d}</div>`;
   }).join('')}</div></div>`;
 }
 

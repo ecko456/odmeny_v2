@@ -2601,15 +2601,16 @@ test('Plán a skutečnost (2.24.2): nezávislá kontrola hodin proti docházce (
       eq(tot[col('Zkušení pracovníci: odpracováno h')],x.total.ok.realH,wid+' Excel zkušení');eq(tot[col('Pracovníci v zácviku: odpracováno h')],x.total.tr.realH,wid+' Excel v zácviku');
       eq(tot[col('Mimo plán: h')],x.total.extraH,wid+' Excel mimo plán');
     });
-    // 4) Docházka: hodiny za pracovní dny měsíce (attendance().workHours, ta bere i hodiny u kódu)
-    //    minus hodiny u kódu nepřítomnosti = součet odpracovaného po týdnech
+    // 4) Docházka: hodiny za pracovní dny měsíce (attendance().workHours, od 2.25.1 také bez hodin
+    //    u kódu nepřítomnosti) = součet odpracovaného po týdnech; hodiny u kódu zvlášť (codedHours)
     months.forEach(m=>{const p=S.periods[m];
       Object.keys(p.rows).forEach(key=>{
         if(!S.employees[key])return;
         let sum=0;attWeeks().forEach(wid=>{const x=planReality(wid),r=x.rows.find(y=>y.key===key);if(!r)return;
           x.days.forEach((d,i)=>{if(d.iso.slice(0,7)===m&&d.has)sum+=r.cells[i].w;});});
-        const a=attendance(p,key),coded=a.cells.reduce((s,c)=>s+(c.d.work&&c.c&&c.h>0?c.h:0),0);
-        eq(sum,a.workHours-coded,m+' '+key+' Docházka: hodiny v pracovní dny bez nepřítomnosti');
+        const a=attendance(p,key),row=p.rows[key],coded=row.h.reduce((s,h,i)=>s+(row.c[i]?(+h||0):0),0);
+        eq(sum,a.workHours,m+' '+key+' Docházka: hodiny v pracovní dny bez nepřítomnosti');
+        eq(a.codedHours,coded,m+' '+key+' Docházka: hodiny u kódu nepřítomnosti');
       });});
   };
   // ukázková data
@@ -2641,6 +2642,40 @@ test('Plán a skutečnost (2.24.2): nezávislá kontrola hodin proti docházce (
   assert.ok(out.weeks >= 9, `týdnů ke kontrole: ${out.weeks}`);
   assert.ok(out.coded > 50, `dnů s kódem i hodinami v náhodných datech: ${out.coded}`);
   assert.deepStrictEqual(out.errs, [], `rozdíly (${out.n}): ${out.errs.join('; ')}`);
+  return null;
+});
+
+test('Docházka (2.25.1): den s kódem nepřítomnosti a hodinami („8 D“) je nepřítomnost, ne docházka', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = sanitizeState(blank());
+    const pos = S.positions[0];
+    S.employees.a = { key: 'a', first: 'a', last: 'a', positionId: pos.id, note: '' };
+    const days = Array.from({ length: 30 }, (_, i) => '2026-09-' + String(i + 1).padStart(2, '0'));
+    const h = days.map(iso => { const [y, m, d] = iso.split('-').map(Number); return mkDay(y, m, d).work ? 7.5 : 0; }), c = days.map(() => null);
+    const set = (d, v) => { const x = parseHours(v); h[d - 1] = x.h; c[d - 1] = x.code; };
+    set(1, '8 D');      // út: dovolená s hodinami → omluveno
+    set(2, '7,5 A');    // st: neomluvený kód s hodinami → absence
+    set(5, '8 D');      // so: kód o víkendu → není víkendová směna
+    set(12, 8);         // so: skutečná víkendová směna
+    const p = { id: '2026-09', days, rows: { a: { first: 'a', last: 'a', h, c } }, codes: {}, file: 't.xlsx', at: 1 };
+    S.periods['2026-09'] = p; S.current = '2026-09';
+    const a = attendance(p, 'a'), ev = evaluate(S.employees.a, p);
+    return JSON.stringify({ work: [a.workDays, a.workHours, a.cappedHours], abs: [a.excusedDays, a.missed, a.absDays], wk: [a.wkDays, a.wkHours],
+      total: [a.totalDays, a.totalHours], coded: [a.codedDays, a.codedHours], codes: a.codes, cell: [a.cells[0].h, a.cells[0].ah, a.cells[0].c, a.cells[0].isEx],
+      fund: periodMeta(p).fund, kafe: [ev.kafe, ev.kafeTh], att: [ev.at.gross, ev.at.filled, ev.at.missing] });
+  })()`));
+  // září 2026: 21 pracovních dnů (28. 9. svátek), fond 21 × 7,5 = 157,5 h
+  assert.deepStrictEqual(out.work, [19, 142.5, 142.5], 'pracovní dny s kódem nejsou odpracované, ani když mají hodiny');
+  assert.deepStrictEqual(out.abs, [1, 1, 2], '8 D = omluvená absence (D je v seznamu), 7,5 A = neomluvená; obě jsou absence');
+  assert.deepStrictEqual(out.wk, [1, 8], 'kód o víkendu není víkendová směna, skutečná směna ano');
+  assert.deepStrictEqual(out.total, [20, 150.5], 'odpracováno celkem bez hodin u kódu');
+  assert.deepStrictEqual(out.coded, [3, 23.5], 'hodiny u kódu zvlášť jen pro informaci');
+  assert.deepStrictEqual(out.codes, { D: 2, A: 1 });
+  assert.deepStrictEqual(out.cell, [0, 8, 'D', true], 'buňka kalendáře: 0 h odpracováno, 8 h u kódu');
+  assert.strictEqual(out.fund, 157.5);
+  assert.deepStrictEqual(out.kafe, [false, 157.5], 'Kafe: 150,5 h < fond 157,5 h (s hodinami u kódu by to bylo 174 h a Kafe by bylo)');
+  assert.deepStrictEqual(out.att, [2, 1, 1], 'absence 2, víkendová směna 1 vyplní, chybí 1');
   return null;
 });
 
