@@ -232,6 +232,18 @@ async function nav(page, view) {
   if (mxPdfText != null) {
     check(/MATICE DOVEDNOSTÍ/i.test(mxPdfText) && /1001/.test(mxPdfText) && /1002/.test(mxPdfText) && /nemoc/.test(mxPdfText) && /bez ID/.test(mxPdfText) && /HALA 2/.test(mxPdfText), `PDF matice obsahuje ID a nemoc: ${mxPdfText.slice(0, 400)}`);
     check(!who.names.some(n => mxPdfText.includes(n)) && !mxPdfText.includes(who.ex) && !mxPdfText.includes('9999'), `PDF matice bez jmen a bez vyřazeného: ${who.names.filter(n => mxPdfText.includes(n))}`);
+    check(!/Tab\. dov\.|benefity|Tabáky celkem/i.test(mxPdfText), 'PDF matice bez benefitů je čistě hodnoticí (2.25.2)');
+  }
+  // PDF s benefity (2.25.2): tabáky za dovednosti, tabáky celkem, Kafe a prémie za hodnocené období
+  await page.waitForSelector('#toast', { state: 'hidden' }).catch(() => {});
+  const mxBen = await download(page, '#btnMatrixPdfBen', 'matice-benefity.pdf');
+  check(mxBen.pdf && /^matice-dovednosti-benefity-\d{4}-\d{2}-\d{2}\.pdf$/.test(mxBen.name), `PDF matice s benefity: ${mxBen.name}`);
+  const mxBenText = pdfText(mxBen.path);
+  if (mxBenText != null) {
+    const want = await page.evaluate(() => { const r = allRows().find(x => x.e.wid === '1001'); return { per: periodName(curPeriod()), base: r.L.base, total: r.total }; });
+    check(/Matice dovedností a benefity/i.test(mxBenText) && /Tab\. dov\./.test(mxBenText) && /Tab\. celk\./.test(mxBenText) && /Kafe/.test(mxBenText) && /Prémie/.test(mxBenText)
+      && mxBenText.includes(`benefity za ${want.per}`) && /Tabáky celkem/.test(mxBenText), `PDF matice s benefity: ${mxBenText.slice(0, 500)}`);
+    check(!who.names.some(n => mxBenText.includes(n)), 'PDF s benefity bez jmen');
   }
   await page.uncheck('#matrixIds');
   await page.waitForFunction(() => P.matrixIds === false && /Dvořák|Novák/.test(document.querySelector('#matrixView').textContent));
@@ -259,7 +271,7 @@ async function nav(page, view) {
     check(/Kapacita dovedností podle směn/.test(capText) && /Zaučit skupinu 2/.test(capText) && /Frézování/.test(capText), `PDF kapacity: ${capText.slice(0, 300)}`);
     check(/úroveň aspoň 2/i.test(capText), 'PDF kapacity ukazuje práh 2');
     check(!/bez schopného|aspoň jeden schopný|bez zkušeného|aspoň jeden zkušený/i.test(capText), 'PDF kapacity bez upozornění na odpoledne bez zkušeného pracovníka (2.23)');
-    check(/Zkušení pracovníci/.test(capText) && /Pracovníci v zácviku/.test(capText) && !/schopn|zaškol/i.test(capText), 'PDF kapacity: pojmy Zkušení pracovníci a Pracovníci v zácviku (2.25)');
+    check(/Zkušení pracovníci/.test(capText) && /Pracovníci v zácviku/.test(capText) && !/schopn|zaškolování/i.test(capText), 'PDF kapacity: pojmy Zkušení pracovníci a Pracovníci v zácviku (2.25)');
     check(/HALA 2/.test(capText) && !/Odměny|ODMĚNY/.test(capText), `PDF kapacity: místo názvu aplikace HALA 2 (2.13): ${capText.slice(0, 200)}`);
   }
   // Report se pamatuje i po přepnutí záložek.
@@ -306,8 +318,8 @@ async function nav(page, view) {
     const want = cap.groups.flatMap(g => g.skills.flatMap(r => [r.A.amT, r.A.pmT, r.B.amT, r.B.pmT, ...(cap.head[''] ? [r.by[''].tr] : [])]));
     const g = cap.groups[0], r = g.skills[0];
     // řádky dovedností (řádky celkového skóre z 2.25 mají vlastní kontrolu)
-    return { want: want.filter(Boolean).length, sum: want.reduce((x, v) => x + v, 0), got: document.querySelectorAll('#capView .cap-table tr:not(.cap-score) .cap-tr').length,
-      text: [...document.querySelectorAll('#capView .cap-table tr:not(.cap-score) .cap-tr')].reduce((x, el) => x + parseInt(el.textContent, 10), 0),
+    return { want: want.filter(Boolean).length, sum: want.reduce((x, v) => x + v, 0), got: document.querySelectorAll('#capView .cap-table tr:not(.cap-score):not(.cap-train) .cap-tr').length,
+      text: [...document.querySelectorAll('#capView .cap-table tr:not(.cap-score):not(.cap-train) .cap-tr')].reduce((x, el) => x + parseInt(el.textContent, 10), 0),
       group: document.querySelector('#capView .cap-group p').textContent.includes(`zkušení ${g.ok}, v zácviku ${g.training}`), ok: g.ok + g.training === g.members,
       split: r.A.amT + r.A.pmT === r.by.R.tr + r.by.O.tr + r.by.S1.tr + r.by.S2.tr };
   });
@@ -412,6 +424,13 @@ async function nav(page, view) {
   const capPdfN = await download(page, '#capPdf', 'matice-kapacita-nutne.pdf');
   const capTextN = pdfText(capPdfN.path);
   if (capTextN != null) check(/Zkušení pracovníci/.test(capTextN) && /Pracovníci v zácviku/.test(capTextN) && /Nepovinné dovednosti \(1\): Programování/.test(capTextN), `PDF kapacit s celkovým skóre: ${capTextN.slice(0, 600)}`);
+  // průměr zaškolení (2.25.2): u pracovníků v zácviku Ø %, 100 % = úroveň zkušeného pracovníka
+  const trainUi = await page.evaluate(() => { const rep = S.capReport, cap = capacity(rep.groups, rep.thr, rep.hidden), g = cap.groups.find(x => x.training);
+    const card = [...document.querySelectorAll('#capView .cap-group')].find(c => c.querySelector('h3').textContent === g.p.name);
+    return { want: `Ø zaškolení ${nf(trainAvg(g.trS, g.training), 0)} %`, head: card.querySelector('p').textContent, row: card.querySelector('tr.cap-train').textContent.replace(/\s+/g, ' '),
+      notes: [...card.querySelectorAll('tr.cap-train small.cap-tr')].map(x => x.textContent) }; });
+  check(trainUi.head.includes(trainUi.want) && trainUi.row.includes(trainUi.want) && trainUi.notes.length > 0 && trainUi.notes.every(t => /^Ø \d+ %$/.test(t)), `průměr zaškolení v reportu: ${JSON.stringify(trainUi)}`);
+  if (capTextN != null) check(/Ø zaškolení \d+ %/.test(capTextN) && /Ø \d+ %/.test(capTextN), 'PDF kapacit: průměr zaškolení u pracovníků v zácviku');
   await page.selectOption('#capDetail', 'all');
   await page.waitForFunction(() => S.capReport.detail === 'all');
   check(await page.evaluate(s => { const r = document.querySelector(`#capView tr:has([data-capskill="${s}"])`); return !!r && r.classList.contains('cap-opt') && !r.querySelector('.cap-zero, .cap-one'); }, prog),

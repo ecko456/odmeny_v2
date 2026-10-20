@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.25.2
+
+- **Matice dovedností: PDF ve dvou variantách.** V záložce Matice jsou dvě tlačítka:
+  - **Matice do PDF**: čistě hodnoticí matice dovedností (jako dřív);
+  - **PDF s benefity**: navíc u každého člověka ve vlastní skupině tabáky za dovednosti, tabáky
+    celkem (po docházce, sankcích a ručních úpravách), Kafe a splněná prémie za hodnocené
+    období. V souhrnu oddělení i nahoře je součet tabáků a počet lidí s Kafe a s prémií.
+  Obě varianty uvádějí lidi jen číslem z evidence práce (ID).
+- **Směny a kapacita: průměr zaškolení.** U pracovníků v zácviku je vidět, jak daleko mají
+  k úrovni zkušeného pracovníka: **Ø zaškolení** = procento skupiny ÷ cílové procento
+  (úroveň z „Kdo se počítá jako zkušený pracovník“ × 25 %). 100 % znamená zkušený pracovník.
+  Příklad: při úrovni 3 (75 %) má člověk s 50 % zaškolení 67 %. Průměr je u skupiny, v každé
+  buňce ranní a odpolední směny (pod počtem lidí v zácviku) i u součtu oddělení, v aplikaci
+  i v PDF.
+
 ## Co je nového ve verzi 2.25.1
 
 - **Docházka: den s kódem nepřítomnosti se nepočítá jako docházka, ani když má hodiny.**

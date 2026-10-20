@@ -34,6 +34,22 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 20. 10. 2026 (verze 2.25.2):
+
+- Uživatel: „PDF report matice dovedností … dvě možnosti, s benefity a bez, čistě jen hodnoticí
+  matice … v kapacitách v PDF reportu ať u zaškolovaných ukazuje průměr zaškolení s tím, že 100 %
+  je dosáhnout nastavené úrovně ‚Kdo se počítá jako zkušený pracovník‘“.
+  - Matice: tlačítka `#btnMatrixPdf` (Matice do PDF, čistá) a `#btnMatrixPdfBen` (PDF s benefity).
+    `drawMatrix(doc, withBen)`: sloupce `BEN` mezi % a dovednostmi (Tab. dov. = `L.base`, Tab. celk.
+    = `total`, Kafe, Prémie = `tier.name` + `pct`), dovednosti začínají na `SK0`. Benefity jen
+    u `r.home` (zaučení odjinud je mají u své skupiny), z `allRows()` za `S.current`. Dlaždice
+    „Tabáky celkem · období“, v souhrnu oddělení součet. Soubor `matice-dovednosti-benefity-*.pdf`.
+  - Kapacity: `capacity()` má u `bySh[k].trS`, `score.A/B.amTs/pmTs`, `none.trS`, `g.trS` součet
+    zaškolení (`min(1, skillPct ÷ (thr × 25))`), `capScoreByDept` sčítá i `trS`. `trainAvg(sum, n)`
+    → % na desetiny, bez lidí `null`. Zobrazení `trainNote`/`trainCell`/`trainText` („Ø 58 %“,
+    „Ø zaškolení 58 %“) v aplikaci i v PDF (`trainCells`).
+  - `ODM_VERSION` 2.25.2, data beze změny (21).
+
 Stav k 20. 10. 2026 (verze 2.25.1):
 
 - Uživatel: „Sjednoť i docházku, ať nepočítá 8D jako docházku.“ `attendance()`: buňka s kódem
@@ -1064,7 +1080,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.24.1 | `2320230` | plán a skutečnost jen za pracovní dny (víkend a svátek se nepočítají) |
 | 2.24.2 | `77e4b94` | plán a skutečnost – opravené hodiny, schopní a v zaškolování zvlášť, hodiny jen ze dnů v práci, kontrola proti docházce |
 | 2.25 | `2864d5e` | dovednost „Není nutností“ (váha ¼ i v tabácích), celkové skóre v reportu kapacit, Zkušení pracovníci a Pracovníci v zácviku (data verze 21) |
-| 2.25.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Docházka – den s kódem nepřítomnosti (i „8 D“) není docházka |
+| 2.25.1 | `35c337a` | Docházka – den s kódem nepřítomnosti (i „8 D“) není docházka |
+| 2.25.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF matice s benefity a bez, průměr zaškolení u pracovníků v zácviku |
 
 Verze 2.1 přidala:
 
@@ -1443,7 +1460,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 65 testů: proti původní aplikaci + opravy + 2.1 až 2.25.1
+node tests/test_core.js                 # 66 testů: proti původní aplikaci + opravy + 2.1 až 2.25.2
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

@@ -3498,11 +3498,16 @@ function capThr() { return clamp(Math.round(+(S.capReport || blankCapReport()).t
    zkušených. Pojmy v reportech od 2.25 podle přání uživatele: zkušení pracovníci a pracovníci v zácviku. */
 const CAP_PRO = 'Zkušení pracovníci', CAP_TR = 'Pracovníci v zácviku';
 function capCell(n, risk, tr) { return `<td class="r num${risk && !n ? ' cap-zero' : risk && n === 1 ? ' cap-one' : ''}"><span class="cap-n">${n}</span>${tr ? `<small class="cap-tr">${tr} v zácviku</small>` : ''}</td>`; }
-/* Dva řádky celkového skóre skupiny (2.25): zkušení pracovníci (barva rizika) a pracovníci v zácviku. */
+/* Dva řádky celkového skóre skupiny (2.25): zkušení pracovníci (barva rizika) a pracovníci v zácviku,
+   u nich pod počtem průměr zaškolení (2.25.2; 100 % = úroveň zkušeného pracovníka). */
+function trainNote(sum, n) { const v = trainAvg(sum, n); return v == null ? '' : `Ø ${nf(v, 0)} %`; }
+function trainCell(n, sum) { return `<td class="r num"><span class="cap-n">${n}</span>${n ? `<small class="cap-tr" title="průměr zaškolení, 100 % = úroveň zkušeného pracovníka">${trainNote(sum, n)}</small>` : ''}</td>`; }
 function capScoreCells(sc, weeks, noShift, tr) {
-  const n = (x, k) => x[tr ? `${k}T` : k];
-  return weeks.map(w => capCell(n(sc[w.v], 'am'), !tr) + capCell(n(sc[w.v], 'pm'), !tr)).join('') + (noShift ? capCell(tr ? sc.none.tr : sc.none.n, false) : '');
+  if (tr) return weeks.map(w => trainCell(sc[w.v].amT, sc[w.v].amTs) + trainCell(sc[w.v].pmT, sc[w.v].pmTs)).join('') + (noShift ? trainCell(sc.none.tr, sc.none.trS) : '');
+  return weeks.map(w => capCell(sc[w.v].am, true) + capCell(sc[w.v].pm, true)).join('') + (noShift ? capCell(sc.none.n, false) : '');
 }
+/* Průměr zaškolení skupiny do textu: „, Ø zaškolení 58 %“, bez lidí v zácviku nic. */
+function trainText(x, prefix = ', Ø zaškolení ') { const v = trainAvg(x.trS, x.training); return v == null ? '' : `${prefix}${nf(v, 0)} %`; }
 /* Rozpis dovedností v reportu kapacit (2.25): need = nutné (nepovinné sbalené do jednoho řádku),
    all = všechny, none = jen celkové skóre. */
 const CAP_DETAILS = [['need', 'Celkové skóre a nutné dovednosti'], ['all', 'Celkové skóre a všechny dovednosti'], ['none', 'Jen celkové skóre']];
@@ -3526,14 +3531,14 @@ function capScoreHtml(cap, weeks, noShift) {
   // dva řádky za skupinu: zkušení pracovníci a pracovníci v zácviku; název skupiny přes oba
   const pair = (name, sub, x, weaker, cls) => `<tr class="cap-pro${cls}"><td rowspan="2"><b>${name}</b><small>${sub}</small></td><td class="cap-who">${CAP_PRO}</td>${capScoreCells(x.score || x, weeks, noShift)}<td rowspan="2" class="r">${weaker == null ? '' : weakerTag(weaker)}</td></tr>
     <tr class="cap-train${cls}"><td class="cap-who">${CAP_TR}</td>${capScoreCells(x.score || x, weeks, noShift, true)}</tr>`;
-  const people = x => `${peopleCount(x.members)} · zkušení ${x.ok} · v zácviku ${x.training}`;
+  const people = x => `${peopleCount(x.members)} · zkušení ${x.ok} · v zácviku ${x.training}${trainText(x, ' (Ø ')}${x.training ? ')' : ''}`;
   const body = depts.map(d => [
     capDeptHead(d, many) ? `<tr class="cap-dept"><td colspan="${span}">${esc(d.dept || 'Bez oddělení')}</td></tr>` : '',
     ...d.groups.map(g => pair(esc(g.p.name || '(bez názvu)'), `${people(g)}${g.opt ? ` · ${g.opt} ${g.opt === 1 ? 'nepovinná dovednost' : g.opt <= 4 ? 'nepovinné dovednosti' : 'nepovinných dovedností'} (váha ¼)` : ''}`, g, g.score.weaker, '')),
     d.total ? pair(`Celkem ${esc(d.dept)}`, people(d.total), d.total, null, ' cap-sum') : '',
   ].join('')).join('');
   const plans = cap.groups.filter(g => g.p.plan);
-  return `<div class="card cap-group cap-score-card"><div class="card-head"><div><h3>Celkové skóre po skupinách</h3><p class="small muted">${CAP_PRO} = členové skupiny s procentem skupiny aspoň ${cap.thr * 25} % (průměr dovedností aspoň úroveň ${cap.thr}); ${CAP_TR.toLowerCase()} = ostatní členové skupiny. Rozpis po dovednostech zapneš nahoře v Rozpisu dovedností.</p></div></div>
+  return `<div class="card cap-group cap-score-card"><div class="card-head"><div><h3>Celkové skóre po skupinách</h3><p class="small muted">${CAP_PRO} = členové skupiny s procentem skupiny aspoň ${cap.thr * 25} % (průměr dovedností aspoň úroveň ${cap.thr}); ${CAP_TR.toLowerCase()} = ostatní členové skupiny. Ø = průměrné zaškolení: procento skupiny ÷ ${cap.thr * 25} %, 100 % = zkušený pracovník. Rozpis po dovednostech zapneš nahoře v Rozpisu dovedností.</p></div></div>
     <div class="table-card flat cap-wrap"><table class="cap-table"><thead><tr class="cap-weeks"><th rowspan="2">Skupina</th><th rowspan="2">Pracovníci</th>${weeks.map(w => `<th colspan="2" class="cap-wk" title="${esc(capCompo(w.v))}">${esc(w.label)}<small>ranní skupina ${w.v === 'A' ? 1 : 2}, odpolední skupina ${w.v === 'A' ? 2 : 1}</small></th>`).join('')}${noShift ? '<th rowspan="2" class="r">Bez směny</th>' : ''}<th rowspan="2" class="r">Slabší skupina</th></tr>
       <tr>${weeks.map(() => '<th class="r">Ranní</th><th class="r">Odpolední</th>').join('')}</tr></thead>
     <tbody>${body}</tbody></table></div></div>
@@ -3584,7 +3589,7 @@ function renderCapacity() {
   const groupsHtml = detail === 'none' ? capScoreHtml(cap, weeks, noShift) : cap.groups.map(g => {
     const sc = g.score;
     const scoreRow = `<tr class="cap-score"><td><b>${CAP_PRO}</b><small>celkové skóre: procento skupiny aspoň ${cap.thr * 25} %</small></td>${capScoreCells(sc, weeks, noShift)}<td class="r">${weakerTag(sc.weaker)}</td></tr>
-      <tr class="cap-train cap-train-end"><td><b>${CAP_TR}</b><small>ostatní členové skupiny</small></td>${capScoreCells(sc, weeks, noShift, true)}<td></td></tr>`;
+      <tr class="cap-train cap-train-end"><td><b>${CAP_TR}</b><small>ostatní členové skupiny${trainText(g, ' · Ø zaškolení ')}</small></td>${capScoreCells(sc, weeks, noShift, true)}<td></td></tr>`;
     const { list, folded } = capSkillRows(g.p, detail);
     const rows = list.map(x => {
       const off = hiddenSet.has(x.id);
@@ -3597,14 +3602,14 @@ function renderCapacity() {
     }).join('');
     const foldRow = folded.length ? `<tr class="cap-fold"><td colspan="${span + 1}"><b>${detail === 'none' ? 'Dovednosti' : 'Nepovinné dovednosti'} (${folded.length}):</b> ${folded.map(x => esc(x.name)).join(', ')} · ${detail === 'none' ? 'rozpis je vypnutý, počítají se v celkovém skóre' : 'nejsou nutností, počítají se jen v celkovém skóre (váha ¼)'}</td></tr>` : '';
     const pct = k => (g.bySh[k].n ? `${nf(g.bySh[k].pct, 0)} % (${g.bySh[k].n})` : '—');
-    return `<div class="card cap-group"><div class="card-head"><div><h3>${esc(g.p.name)}</h3><p class="small muted">Ve skupině: ${peopleCount(g.members)}${g.members ? ` (zkušení ${g.ok}, v zácviku ${g.training})` : ''} · průměr dovedností podle směn: stálá ranní ${pct('R')}${g.bySh.O.n ? `, stálá odpolední ${pct('O')}` : ''}, skupina 1 ${pct('S1')}, skupina 2 ${pct('S2')}${g.bySh[''].n ? `, bez směny ${pct('')}` : ''}</p></div></div>
+    return `<div class="card cap-group"><div class="card-head"><div><h3>${esc(g.p.name)}</h3><p class="small muted">Ve skupině: ${peopleCount(g.members)}${g.members ? ` (zkušení ${g.ok}, v zácviku ${g.training}${trainText(g)})` : ''} · průměr dovedností podle směn: stálá ranní ${pct('R')}${g.bySh.O.n ? `, stálá odpolední ${pct('O')}` : ''}, skupina 1 ${pct('S1')}, skupina 2 ${pct('S2')}${g.bySh[''].n ? `, bez směny ${pct('')}` : ''}</p></div></div>
       ${g.p.plan ? `<div class="plan-in-cap"><p class="eyebrow">Plánovaná kapacita · ${planUnit(g.p.plan, g.p.plan.v)} na osobu za směnu</p>${planHtml(g.p)}</div>` : ''}
       <div class="table-card flat cap-wrap"><table class="cap-table"><thead><tr class="cap-weeks"><th rowspan="2">Dovednost</th>${weeks.map(w => `<th colspan="2" class="cap-wk" title="${esc(capCompo(w.v))}">${esc(w.label)}<small>ranní skupina ${w.v === 'A' ? 1 : 2}, odpolední skupina ${w.v === 'A' ? 2 : 1}</small></th>`).join('')}${noShift ? '<th rowspan="2" class="r">Bez směny</th>' : ''}<th rowspan="2" class="r">Slabší skupina</th></tr>
         <tr>${weeks.map(() => '<th class="r">Ranní</th><th class="r">Odpolední</th>').join('')}</tr></thead>
       <tbody>${scoreRow}${rows}${foldRow}</tbody></table></div></div>`;
   }).join('');
   box.innerHTML = `${controls}${tiles}
-    <div class="note i"><b>Jak číst report:</b> celkové skóre skupiny jsou dva řádky. <b>${CAP_PRO}</b> jsou členové skupiny, kteří mají procento skupiny aspoň ${cap.thr * 25} % (průměr dovedností aspoň úroveň ${cap.thr}; dovednosti, které nejsou nutností, mají v procentu čtvrtinovou váhu). <b>${CAP_TR}</b> jsou ostatní členové skupiny. Pod nimi jsou počty lidí, kteří jednotlivou dovednost zvládají aspoň na úrovni ${cap.thr} (${esc(STD_SCALE[cap.thr].name.toLowerCase())}); pod čísly zvlášť <b>v zácviku</b>: členové skupiny, kteří úrovně ještě nedosáhli, a lidé z jiných skupin, kteří dovednost mají ohodnocenou, ale pod touto úrovní. Do zkušených se nepočítají. V plánované kapacitě se počítají zkušení pracovníci skupiny. Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `<b>${esc(w.label)}</b>: ${esc(capCompo(w.v))}.`).join(' ')}${rep.s1am ? '' : ' Nastav nahoře, která skupina má tento týden ranní, a report ukáže konkrétní týdny.'}</div>
+    <div class="note i"><b>Jak číst report:</b> celkové skóre skupiny jsou dva řádky. <b>${CAP_PRO}</b> jsou členové skupiny, kteří mají procento skupiny aspoň ${cap.thr * 25} % (průměr dovedností aspoň úroveň ${cap.thr}; dovednosti, které nejsou nutností, mají v procentu čtvrtinovou váhu). <b>${CAP_TR}</b> jsou ostatní členové skupiny; <b>Ø</b> u nich je průměrné zaškolení: procento skupiny ÷ ${cap.thr * 25} %, takže 100 % znamená úroveň zkušeného pracovníka. Pod nimi jsou počty lidí, kteří jednotlivou dovednost zvládají aspoň na úrovni ${cap.thr} (${esc(STD_SCALE[cap.thr].name.toLowerCase())}); pod čísly zvlášť <b>v zácviku</b>: členové skupiny, kteří úrovně ještě nedosáhli, a lidé z jiných skupin, kteří dovednost mají ohodnocenou, ale pod touto úrovní. Do zkušených se nepočítají. V plánované kapacitě se počítají zkušení pracovníci skupiny. Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `<b>${esc(w.label)}</b>: ${esc(capCompo(w.v))}.`).join(' ')}${rep.s1am ? '' : ' Nastav nahoře, která skupina má tento týden ranní, a report ukáže konkrétní týdny.'}</div>
     ${risks.length ? `<div class="note e"><b>Odpoledne bez zkušeného pracovníka:</b><ul class="cap-risks">${risks.map(r => `<li><b>${esc(r.name)}</b> · ${r.parts.map(esc).join(' · ')}</li>`).join('')}</ul></div>` : `<div class="note i">${detail === 'none' ? 'Na každé odpolední směně je v každé skupině aspoň jeden zkušený pracovník.' : 'Na každé odpolední směně je u každé dovednosti aspoň jeden zkušený pracovník.'}</div>`}
     ${groupsHtml}
     <div class="card"><h3>Závěr a opatření</h3><p class="small muted">Text se uloží a vytiskne s reportem (např. koho zaučit a do kdy).</p>
@@ -3686,7 +3691,7 @@ function drawCapacity(doc) {
   const weeks = capWeeks(rep);
   k.header({ eyebrow: `${EXPORT_NAME} · MATICE DOVEDNOSTÍ`, right: `Stav k ${dayText(todayIso())}`, title: 'Kapacita dovedností podle směn',
     sub: `Zkušený pracovník = úroveň aspoň ${cap.thr} (${STD_SCALE[cap.thr].name.toLowerCase()}); pracovníci v zácviku zvlášť`,
-    meta: `Celkové skóre skupiny: ${CAP_PRO.toLowerCase()} = členové skupiny s průměrem dovedností aspoň na této úrovni (dovednosti, které nejsou nutností, mají v průměru čtvrtinovou váhu), ${CAP_TR.toLowerCase()} = ostatní členové skupiny.${detail === 'none' ? '' : ' Pod nimi počty lidí, kteří jednotlivou dovednost zvládají; pod čísly zvlášť lidé v zácviku (pod touto úrovní), do zkušených se nepočítají.'} Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `${w.label}: ${capCompo(w.v)}.`).join(' ')}` });
+    meta: `Celkové skóre skupiny: ${CAP_PRO.toLowerCase()} = členové skupiny s průměrem dovedností aspoň na této úrovni (dovednosti, které nejsou nutností, mají v průměru čtvrtinovou váhu), ${CAP_TR.toLowerCase()} = ostatní členové skupiny; Ø u nich je průměrné zaškolení (procento skupiny ÷ ${cap.thr * 25} %, 100 % = zkušený pracovník).${detail === 'none' ? '' : ' Pod nimi počty lidí, kteří jednotlivou dovednost zvládají; pod čísly zvlášť lidé v zácviku (pod touto úrovní), do zkušených se nepočítají.'} Stálá ranní je vždy ráno, stálá odpolední vždy odpoledne, skupiny 1 a 2 se střídají po týdnu. ${weeks.map(w => `${w.label}: ${capCompo(w.v)}.`).join(' ')}` });
   const noShift = cap.head[''] > 0;
   const hasO = cap.head.O > 0;
   k.tiles([['Stálá ranní', String(cap.head.R), 'lidí'], ...(hasO ? [['Stálá odpolední', String(cap.head.O), 'lidí']] : []), ['Skupina 1', String(cap.head.S1), 'lidí'], ['Skupina 2', String(cap.head.S2), 'lidí'], ['Bez směny', String(cap.head['']), 'lidí', cap.head[''] ? 'crit' : ''], ...(cap.sick ? [['Nemoc', String(cap.sick), 'nepočítají se', 'crit']] : [])]);
@@ -3708,7 +3713,7 @@ function drawCapacity(doc) {
     [...cells, [weaker == null ? '' : weaker ? `sk. ${weaker === 'S1' ? 1 : 2}` : '—']].forEach(([v, bad, tr], i) => {
       const w = cols[i + 1][0];
       k.text(v, x + w - 1.5, k.y + 0.4, 8.6, { align: 'right', bold: !!bad || !!strong, color: bad ? k.C.crit : k.C.ink });
-      if (tr) k.text(`v zácviku ${tr}`, x + w - 1.5, k.y + 0.4 + k.LH(8.6, 1.25), 6.6, { align: 'right', color: k.C.ink2 });
+      if (tr) k.text(typeof tr === 'string' ? tr : `v zácviku ${tr}`, x + w - 1.5, k.y + 0.4 + k.LH(8.6, 1.25), 6.6, { align: 'right', color: k.C.ink2 });
       x += w;
     });
     k.y += h;
@@ -3716,8 +3721,9 @@ function drawCapacity(doc) {
   };
   // celkové skóre: zkušení pracovníci (červeně, když nikdo) a zvlášť pracovníci v zácviku
   const scoreCells = sc => [...weeks.flatMap(w => [[String(sc[w.v].am), !sc[w.v].am], [String(sc[w.v].pm), !sc[w.v].pm]]), ...(noShift ? [[String(sc.none.n), false]] : [])];
-  const trainCells = sc => [...weeks.flatMap(w => [[String(sc[w.v].amT)], [String(sc[w.v].pmT)]]), ...(noShift ? [[String(sc.none.tr)]] : [])];
-  const whoText = x => `${peopleCount(x.members)} · zkušení ${x.ok} · v zácviku ${x.training}`;
+  // pracovníci v zácviku: pod počtem průměr zaškolení (2.25.2, 100 % = úroveň zkušeného pracovníka)
+  const trainCells = sc => [...weeks.flatMap(w => [[String(sc[w.v].amT), false, trainNote(sc[w.v].amTs, sc[w.v].amT)], [String(sc[w.v].pmT), false, trainNote(sc[w.v].pmTs, sc[w.v].pmT)]]), ...(noShift ? [[String(sc.none.tr), false, trainNote(sc.none.trS, sc.none.tr)]] : [])];
+  const whoText = x => `${peopleCount(x.members)} · zkušení ${x.ok} · v zácviku ${x.training}${trainText(x, ' (Ø zaškolení ')}${x.training ? ')' : ''}`;
   // upozornění „Odpoledne bez zkušeného pracovníka“ (dřív „bez schopného člověka“) do PDF nepatří (2.23, přání uživatele), jen do aplikace;
   // stejně tak plánovaná kapacita skupiny
   if (detail === 'none') {
@@ -3725,7 +3731,7 @@ function drawCapacity(doc) {
     const depts = capScoreByDept(cap), many = depts.length > 1;
     k.keep(() => {
       k.heading('Celkové skóre po skupinách', 11.5);
-      k.text(`${CAP_PRO}: procento skupiny aspoň ${cap.thr * 25} %; ${CAP_TR.toLowerCase()}: ostatní členové skupiny.`, k.M, k.y - 1, 8, { color: k.C.ink2 });
+      k.text(`${CAP_PRO}: procento skupiny aspoň ${cap.thr * 25} %; ${CAP_TR.toLowerCase()}: ostatní členové skupiny, Ø = průměrné zaškolení (100 % = zkušený pracovník).`, k.M, k.y - 1, 8, { color: k.C.ink2 });
       k.y += 5;
       head();
       depts.forEach(d => {
@@ -3751,11 +3757,11 @@ function drawCapacity(doc) {
     k.keep(() => {
       k.heading(g.p.name || 'Skupina', 11.5);
       const pr = s => (g.bySh[s].n ? `${nf(g.bySh[s].pct, 0)} %` : '—');
-      k.text(`Ve skupině: ${peopleCount(g.members)}${g.members ? ` (zkušení ${g.ok}, v zácviku ${g.training})` : ''} · průměr dovedností: stálá ranní ${pr('R')}${g.bySh.O.n ? `, stálá odpolední ${pr('O')}` : ''}, skupina 1 ${pr('S1')}, skupina 2 ${pr('S2')}`, k.M, k.y - 1, 8, { color: k.C.ink2 });
+      k.text(`Ve skupině: ${peopleCount(g.members)}${g.members ? ` (zkušení ${g.ok}, v zácviku ${g.training}${trainText(g)})` : ''} · průměr dovedností: stálá ranní ${pr('R')}${g.bySh.O.n ? `, stálá odpolední ${pr('O')}` : ''}, skupina 1 ${pr('S1')}, skupina 2 ${pr('S2')}`, k.M, k.y - 1, 8, { color: k.C.ink2 });
       k.y += 5;
       head();
       line(CAP_PRO, `celkové skóre: procento skupiny aspoň ${cap.thr * 25} %`, scoreCells(g.score), g.score.weaker, true);
-      line(CAP_TR, 'ostatní členové skupiny', trainCells(g.score), null, false);
+      line(CAP_TR, `ostatní členové skupiny${trainText(g, ' · Ø zaškolení ')}`, trainCells(g.score), null, false);
       const { list, folded } = capSkillRows(g.p, detail);
       list.forEach(x => {
         const r = g.skills.find(y => y.s.id === x.id);
@@ -3803,8 +3809,10 @@ function pdfIluo(k, cx, cy, r, n, color) {
   }
   doc.circle(cx, cy, r, 'S');
 }
-/** Matice podle filtru v záložce Matice (oddělení nebo skupina, směna). Vrací počet lidí bez ID. */
-function drawMatrix(doc) {
+/** Matice podle filtru v záložce Matice (oddělení nebo skupina, směna). Vrací počet lidí bez ID.
+    withBen (2.25.2): navíc benefity za hodnocené období (tabáky za dovednosti, tabáky celkem, Kafe,
+    prémie) u lidí ve vlastní skupině; bez něj čistě hodnoticí matice dovedností. */
+function drawMatrix(doc, withBen) {
   const k = pdfKit(doc);
   const C = k.C;
   const groups = S.positions.filter(p => isGroup(p) && groupSkills(p).length);
@@ -3820,16 +3828,25 @@ function drawMatrix(doc) {
   const nSkills = secs.reduce((a, x) => a + x.m.cols.length, 0);
   const weak = secs.reduce((a, x) => a + x.m.coverage.filter(c => c.ready < 2 && !c.opt).length, 0);
   const scope = f.group ? `Skupina ${f.group.name || '(bez názvu)'}${deptOf(f.group) !== f.group.name ? ` (${deptOf(f.group)})` : ''}` : f.dept ? `Oddělení ${f.dept}` : 'Všechna oddělení';
-  k.header({ eyebrow: `${EXPORT_NAME} · MATICE DOVEDNOSTÍ`, right: `Stav k ${dayText(todayIso())}`, title: 'Matice dovedností',
-    sub: `${scope} · ${shift === '*' ? 'všechny směny' : shiftName(shift).toLowerCase()}`,
-    meta: 'Zaměstnanci jsou uvedení jen číslem z evidence práce (ID), bez jmen. Vyřazení lidé a vedoucí pracovníci v reportu nejsou. Lidé v nemoci jsou označení, do počtů úrovní a kapacity se dočasně nepočítají. Úroveň 0–4, každá úroveň je 25 % dovednosti.' });
+  // benefity za hodnocené období (jen varianta s benefity)
+  const ben = withBen ? new Map(allRows().map(r => [r.e.key, r])) : null;
+  const per = withBen ? periodName(curPeriod()) : '';
+  const homeBen = withBen ? [...new Map(home.map(e => [e.key, ben.get(e.key)])).values()].filter(Boolean) : [];
+  k.header({ eyebrow: `${EXPORT_NAME} · MATICE DOVEDNOSTÍ`, right: `Stav k ${dayText(todayIso())}`, title: withBen ? 'Matice dovedností a benefity' : 'Matice dovedností',
+    sub: `${scope} · ${shift === '*' ? 'všechny směny' : shiftName(shift).toLowerCase()}${withBen ? ` · benefity za ${per}` : ''}`,
+    meta: `Zaměstnanci jsou uvedení jen číslem z evidence práce (ID), bez jmen. Vyřazení lidé a vedoucí pracovníci v reportu nejsou. Lidé v nemoci jsou označení, do počtů úrovní a kapacity se dočasně nepočítají. Úroveň 0–4, každá úroveň je 25 % dovednosti.${withBen ? ` Benefity za ${per} jen u lidí ve vlastní skupině: Tab. dov. = tabáky za dovednosti (maximum skupiny × procento), Tab. celk. = tabáky po docházce, sankcích a ručních úpravách, Kafe, Prémie = splněná varianta prémie (navýšení mzdy).` : ''}` });
   k.tiles([['Lidé v matici', String(home.length), 'bez zaučených odjinud'], ['Nemoc', String(sick), sick ? 'jen pro přehled, nepočítají se' : 'nikdo', sick ? 'crit' : ''],
     ['Dovednosti', String(nSkills), `${secs.length} oddělení`],
     ['Slabé dovednosti', String(weak), 'úroveň 3–4 má méně než 2 lidi', weak ? 'crit' : 'good'],
-    ...(noId ? [['Bez ID', String(noId), 'doplň ID v části Lidé', 'crit']] : [])]);
+    ...(noId ? [['Bez ID', String(noId), 'doplň ID v části Lidé', 'crit']] : []),
+    ...(withBen ? [[`Tabáky celkem · ${per}`, String(homeBen.reduce((a, r) => a + (r.kafeOnly ? 0 : r.total), 0)), `Kafe ${homeBen.filter(r => r.kafe).length} · prémie ${homeBen.filter(r => r.tier && r.tier.name).length} lidí`]] : [])]);
   if (!secs.length) { k.para('Ve vybraném oddělení a směně nikdo není.', k.M, k.CW, 10, { color: C.ink2 }); }
   const ID_W = 34, GRP_W = 40, PCT_W = 12, FIX = ID_W + GRP_W + PCT_W, RH = 5.6, HEAD = 36, GH = 5;
-  const maxCols = Math.max(1, Math.floor((k.CW - FIX) / 7));
+  // sloupce benefitů mezi % a dovednostmi: [nadpis, šířka, zarovnání]
+  const BEN = withBen ? [['Tab. dov.', 13, 'r'], ['Tab. celk.', 14, 'r'], ['Kafe', 10, 'c'], ['Prémie', 28, 'l']] : [];
+  const SK0 = FIX + BEN.reduce((a, c) => a + c[1], 0) + (withBen ? 2 : 0);   // začátek sloupců dovedností
+  const benX = i => k.M + FIX + 2 + BEN.slice(0, i).reduce((a, c) => a + c[1], 0);
+  const maxCols = Math.max(1, Math.floor((k.CW - SK0) / 7));
   secs.forEach(({ d, m }) => {
     const leads = leadPeople().length ? leadsOf(d) : null;
     const homeRows = m.rows.filter(r => r.home);
@@ -3837,13 +3854,15 @@ function drawMatrix(doc) {
     const avg = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
     const secWeak = m.coverage.filter(c => c.ready < 2 && !c.opt).length;
     const info = [`${peopleCount(homeRows.length)}${m.sick ? ` (v nemoci ${m.sick})` : ''}`, m.rows.length - homeRows.length ? `+${m.rows.length - homeRows.length} zaučení odjinud` : '',
-      `průměr dovedností ${avg != null ? `${nf(avg, 0)} %` : '—'}`, `${secWeak} z ${m.cols.length} ${m.cols.length === 1 ? 'dovednosti' : 'dovedností'} má na úrovni 3–4 méně než 2 lidi`].filter(Boolean).join(' · ');
+      `průměr dovedností ${avg != null ? `${nf(avg, 0)} %` : '—'}`, `${secWeak} z ${m.cols.length} ${m.cols.length === 1 ? 'dovednosti' : 'dovedností'} má na úrovni 3–4 méně než 2 lidi`,
+      ...(withBen ? (() => { const b = homeRows.map(r => ben.get(r.e.key)).filter(Boolean);
+        return [`tabáky celkem ${b.reduce((a, r) => a + (r.kafeOnly ? 0 : r.total), 0)}, Kafe ${b.filter(r => r.kafe).length}, prémie ${b.filter(r => r.tier && r.tier.name).length}`]; })() : [])].filter(Boolean).join(' · ');
     const chunks = [];
     for (let i = 0; i < m.cols.length; i += maxCols) chunks.push(i);
     chunks.forEach((start, ci) => {
       const cols = m.cols.slice(start, start + maxCols);
       const idx = cols.map((_, j) => start + j);
-      const cw = Math.min(12, (k.CW - FIX) / cols.length);
+      const cw = Math.min(12, (k.CW - SK0) / cols.length);
       const multi = new Set(cols.map(c => c.p.id)).size > 1 || m.groups.length > 1;
       // výška hlavičky podle nejdelšího názvu dovednosti (svisle), nejvýš HEAD; delší název do dvou řádků
       const colName = c => (c.s.opt ? `${c.s.name} *` : c.s.name);   // * = není nutností (2.25)
@@ -3859,7 +3878,7 @@ function drawMatrix(doc) {
       const drawHead = () => {
         const top = k.y;
         if (multi) {
-          let x = k.M + FIX;
+          let x = k.M + SK0;
           const spans = [];
           cols.forEach(c => { const last = spans[spans.length - 1]; if (last && last.p === c.p) last.n += 1; else spans.push({ p: c.p, n: 1 }); });
           spans.forEach(g => {
@@ -3873,10 +3892,11 @@ function drawMatrix(doc) {
         k.text('ID zaměstnance', k.M, base - k.mm(7.4) * 1.1, 7.4, { bold: true, color: C.ink2 });
         k.text('Skupina', k.M + ID_W, base - k.mm(7.4) * 1.1, 7.4, { bold: true, color: C.ink2 });
         k.text('%', k.M + FIX - 1.5, base - k.mm(7.4) * 1.1, 7.4, { bold: true, color: C.ink2, align: 'right' });
+        BEN.forEach(([t, w, al], i) => k.text(t, al === 'r' ? benX(i) + w - 1.5 : al === 'c' ? benX(i) + w / 2 : benX(i) + 1, base - k.mm(7.4) * 1.1, 7.4, { bold: true, color: C.ink2, align: al === 'r' ? 'right' : al === 'c' ? 'center' : 'left' }));
         if (!k.dry) {
           cols.forEach((c, j) => {
             const { size, lines } = label(colName(c));
-            const cx = k.M + FIX + j * cw + cw / 2 + k.mm(size) * 0.35;
+            const cx = k.M + SK0 + j * cw + cw / 2 + k.mm(size) * 0.35;
             const lh = k.mm(size) * 1.15;
             k.font(size, false, C.ink);
             // svislý text: první řádek vlevo, druhý vpravo
@@ -3891,7 +3911,7 @@ function drawMatrix(doc) {
         if (k.need(RH)) drawHead();
         if (o.bg) k.box(o.bg, k.M, k.y, k.CW, RH);
         k.mid(label, k.M + 1, k.y + RH / 2, 7.4, { bold: true, color: C.ink2 });
-        vals.forEach((v, j) => { const bad = !!o.risk && o.risk(v, j); k.mid(String(v), k.M + FIX + j * cw + cw / 2, k.y + RH / 2, 7.6, { align: 'center', bold: bad, color: bad ? C.crit : C.ink }); });
+        vals.forEach((v, j) => { const bad = !!o.risk && o.risk(v, j); k.mid(String(v), k.M + SK0 + j * cw + cw / 2, k.y + RH / 2, 7.6, { align: 'center', bold: bad, color: bad ? C.crit : C.ink }); });
         k.y += RH;
         k.hline(k.y, C.line, 0.15);
       };
@@ -3929,10 +3949,20 @@ function drawMatrix(doc) {
           const grp = `${r.pos ? r.pos.name || '(bez názvu)' : '—'}${r.home ? '' : ' · zaučení'}`;
           k.mid(k.split(grp, GRP_W - 2, 7.6)[0], k.M + ID_W, cy, 7.6, { color: r.home ? C.ink : C.ink2 });
           k.mid(r.pct != null ? `${nf(r.pct, 0)} %` : '—', k.M + FIX - 1.5, cy, 7.6, { align: 'right', color: C.ink2 });
+          if (withBen) {
+            // benefity jen ve vlastní skupině (zaučení odjinud je mají u své skupiny)
+            const b = r.home ? ben.get(r.e.key) : null;
+            const t = b && b.tier && b.tier.name ? `${b.tier.name}${+b.tier.pct ? ` +${nf(+b.tier.pct, 1)} %` : ''}` : '—';
+            const vals = !b ? ['', '', '', ''] : [b.kafeOnly ? 'jen Kafe' : String(b.L.base), b.kafeOnly ? '—' : String(b.total), b.att && b.att.found ? (b.kafe ? 'ano' : 'ne') : '—', t];
+            BEN.forEach(([, w, al], i) => {
+              const v = k.split(vals[i], w - 2, 7.6, i === 1)[0];
+              k.mid(v, al === 'r' ? benX(i) + w - 1.5 : al === 'c' ? benX(i) + w / 2 : benX(i) + 1, cy, 7.6, { align: al === 'r' ? 'right' : al === 'c' ? 'center' : 'left', bold: i === 1 && !!b, color: b && b.lost && i === 1 ? C.crit : i === 0 ? C.ink2 : C.ink });
+            });
+          }
           idx.forEach((jj, j) => {
             const c = m.cols[jj];
             const v = r.cells[jj];
-            const x = k.M + FIX + j * cw;
+            const x = k.M + SK0 + j * cw;
             const own = r.e.positionId === c.p.id;
             if (own && !sickRow) k.box(C.accSoft, x + 0.25, k.y + 0.25, cw - 0.5, RH - 0.5);
             const color = sickRow ? C.ink3 : own ? C.acc : C.ink2;
@@ -3974,14 +4004,14 @@ function drawMatrix(doc) {
   }, 30);
   k.need(26);
   k.signoff();
-  k.footer(`${EXPORT_NAME} · matice dovedností · jen ID zaměstnanců · ${dayText(todayIso())}`);
+  k.footer(`${EXPORT_NAME} · matice dovedností${withBen ? ` a benefity za ${per}` : ''} · jen ID zaměstnanců · ${dayText(todayIso())}`);
   return noId;
 }
-async function exportMatrixPdf(button) {
+async function exportMatrixPdf(button, withBen) {
   const noId = await withPdf(button, doc => {
-    doc.setProperties({ title: 'Matice dovedností', creator: EXPORT_NAME });
-    const n = drawMatrix(doc);
-    downloadFile(`matice-dovednosti-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
+    doc.setProperties({ title: withBen ? 'Matice dovedností a benefity' : 'Matice dovedností', creator: EXPORT_NAME });
+    const n = drawMatrix(doc, withBen);
+    downloadFile(`matice-dovednosti${withBen ? '-benefity' : ''}-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
     return n;
   }, 'landscape');
   if (noId) toast(`${noId === 1 ? '1 člověk nemá' : `${noId} ${noId <= 4 ? 'lidé nemají' : 'lidí nemá'}`} ID v evidenci práce, v PDF ${noId === 1 ? 'je' : 'jsou'} jako „bez ID“. ID doplníš v části Lidé.`, true);
@@ -4046,7 +4076,8 @@ function bindMatrixEvents() {
   });
   $('#btnMatrixXlsx').onclick = exportMatrix;
   $('#btnMatrixPrint').onclick = () => window.print();
-  $('#btnMatrixPdf').onclick = () => exportMatrixPdf($('#btnMatrixPdf'));
+  $('#btnMatrixPdf').onclick = () => exportMatrixPdf($('#btnMatrixPdf'), false);
+  $('#btnMatrixPdfBen').onclick = () => exportMatrixPdf($('#btnMatrixPdfBen'), true);
   $('#btnRulesPdf').onclick = exportRulesPdf;
 }
 

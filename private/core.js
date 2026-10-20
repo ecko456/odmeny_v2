@@ -999,21 +999,28 @@ function capacity(groupIds,thr,hidden){
         training:by.R.tr+by.O.tr+by.S1.tr+by.S2.tr+by[""].tr};
     });
     const members=people.filter(e=>e.positionId===p.id);
-    const bySh={};[...SHIFT_KEYS,""].forEach(k=>{const m=members.filter(e=>shiftOf(e)===k),ok=m.filter(e=>capableIn(e,p,thr)).length;
-      bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null,ok,tr:m.length-ok};});
+    /* zaškolení pracovníka v zácviku (2.25.2): procento skupiny ÷ cíl (úroveň zkušeného × 25 %), nejvýš 1;
+       trS = součet za lidi v zácviku, průměr = trS ÷ počet (zaokrouhluje až zobrazení) */
+    const prog=e=>Math.min(1,(skillPct(e,p)||0)/(thr*25));
+    const bySh={};[...SHIFT_KEYS,""].forEach(k=>{const m=members.filter(e=>shiftOf(e)===k),okL=m.filter(e=>capableIn(e,p,thr));
+      const trL=m.filter(e=>!capableIn(e,p,thr));
+      bySh[k]={n:m.length,pct:m.length?m.reduce((x,e)=>x+(skillPct(e,p)||0),0)/m.length:null,ok:okL.length,tr:trL.length,trS:trL.reduce((x,e)=>x+prog(e),0)};});
     const ok=members.filter(e=>capableIn(e,p,thr)).length;
     /* celkové skóre (2.25): schopní členové skupiny podle procenta skupiny (vážený průměr)
        na ranní a odpolední v obou variantách; pod nimi členové v zaškolování */
     const sh=k=>bySh[k];
-    const score={A:{am:sh("R").ok+sh("S1").ok,pm:sh("O").ok+sh("S2").ok,amT:sh("R").tr+sh("S1").tr,pmT:sh("O").tr+sh("S2").tr},
-      B:{am:sh("R").ok+sh("S2").ok,pm:sh("O").ok+sh("S1").ok,amT:sh("R").tr+sh("S2").tr,pmT:sh("O").tr+sh("S1").tr},
-      none:{n:sh("").ok,tr:sh("").tr},
+    const score={A:{am:sh("R").ok+sh("S1").ok,pm:sh("O").ok+sh("S2").ok,amT:sh("R").tr+sh("S1").tr,pmT:sh("O").tr+sh("S2").tr,amTs:sh("R").trS+sh("S1").trS,pmTs:sh("O").trS+sh("S2").trS},
+      B:{am:sh("R").ok+sh("S2").ok,pm:sh("O").ok+sh("S1").ok,amT:sh("R").tr+sh("S2").tr,pmT:sh("O").tr+sh("S1").tr,amTs:sh("R").trS+sh("S2").trS,pmTs:sh("O").trS+sh("S1").trS},
+      none:{n:sh("").ok,tr:sh("").tr,trS:sh("").trS},
       weaker:sh("S1").ok===sh("S2").ok?((sh("S1").pct||0)===(sh("S2").pct||0)?"":(sh("S1").pct||0)<(sh("S2").pct||0)?"S1":"S2"):sh("S1").ok<sh("S2").ok?"S1":"S2"};
-    return {p,skills,members:members.length,ok,training:members.length-ok,bySh,score,opt:groupSkills(p).filter(s=>s.opt).length};
+    const trS=Object.values(bySh).reduce((x,b)=>x+b.trS,0);
+    return {p,skills,members:members.length,ok,training:members.length-ok,trS,bySh,score,opt:groupSkills(p).filter(s=>s.opt).length};
   }).filter(g=>g.skills.length);
   return {thr,head,groups,sick:all.length-people.length};
 }
 
+/* Průměr zaškolení v % (2.25.2): součet zaškolení ÷ počet lidí v zácviku; bez lidí null. */
+function trainAvg(sum,n){return n>0?Math.round(sum/n*1000)/10:null;}
 /* Celkové skóre po odděleních (2.25): skupiny reportu kapacit seskupené podle oddělení v pořadí
    skupin; u oddělení s víc skupinami součet (člověk je jen v jedné skupině, nic se nezdvojí). */
 function capScoreByDept(cap){
@@ -1022,8 +1029,8 @@ function capScoreByDept(cap){
   const add=(a,b)=>{Object.keys(b).forEach(k=>{if(typeof b[k]==="number")a[k]=(a[k]||0)+b[k];});return a;};
   out.forEach(x=>{
     if(x.groups.length<2)return;
-    const t={members:0,ok:0,training:0,A:{},B:{},none:{}};
-    x.groups.forEach(g=>{t.members+=g.members;t.ok+=g.ok;t.training+=g.training;["A","B","none"].forEach(v=>add(t[v],g.score[v]));});
+    const t={members:0,ok:0,training:0,trS:0,A:{},B:{},none:{}};
+    x.groups.forEach(g=>{t.members+=g.members;t.ok+=g.ok;t.training+=g.training;t.trS+=g.trS;["A","B","none"].forEach(v=>add(t[v],g.score[v]));});
     x.total=t;
   });
   return out;

@@ -2478,7 +2478,7 @@ test('Není nutností (2.25): čtvrtinová váha v procentu, tabáky, prémie, k
   assert.deepStrictEqual(out.prem, [['všechny nutné dovednosti aspoň na úrovni 3', true], ['všechny nutné dovednosti aspoň na úrovni 3', true], ['všechny nutné dovednosti aspoň na úrovni 3', false]],
     'prémie „všechny dovednosti aspoň 3“ nepovinnou dovednost nevyžaduje (c má Programování na 0), nutnou ano (e má Seřízení na 0)');
   assert.deepStrictEqual(out.cap, { rows: [false, true, false], opt: 1, ok: 3, tr: 1,
-    A: { am: 2, pm: 1, amT: 0, pmT: 1 }, B: { am: 2, pm: 1, amT: 1, pmT: 0 }, none: { n: 0, tr: 0 }, weaker: 'S2' },
+    A: { am: 2, pm: 1, amT: 0, pmT: 1, amTs: 0, pmTs: 5 / 9 * 100 / 75 }, B: { am: 2, pm: 1, amT: 1, pmT: 0, amTs: 5 / 9 * 100 / 75, pmTs: 0 }, none: { n: 0, tr: 0, trS: 0 }, weaker: 'S2' },
     'celkové skóre: schopní podle váženého procenta na ranní a odpolední v obou variantách, v zaškolování zvlášť; slabší skupina 2 (stejně schopných, nižší průměr)');
   assert.ok(!out.risks.some(r => /Programování/.test(r)), `nepovinná dovednost není riziko směny: ${out.risks}`);
   assert.ok(out.risks.includes('pm:Seřízení'), `nutná dovednost riziko zůstává: ${out.risks}`);
@@ -2488,6 +2488,32 @@ test('Není nutností (2.25): čtvrtinová váha v procentu, tabáky, prémie, k
   assert.deepStrictEqual(out.legend, ['Nutnost', 'není nutností (váha ¼)', 'nutná'], 'Excel matice: sloupec Nutnost');
   assert.deepStrictEqual(out.roster, ['Nutnost', 'není nutností (váha ¼)'], 'Excel zařazení: sloupec Nutnost');
   assert.deepStrictEqual(out.conds, ['všechny nutné dovednosti aspoň 3', 'všechny dovednosti aspoň 3'], 'pravidla prémie (Excel, PDF): u skupiny s nepovinnými dovednostmi „nutné“, když jsou nepovinné všechny, platí všechny');
+  return null;
+});
+
+test('Kapacita (2.25.2): průměr zaškolení pracovníků v zácviku, 100 % = úroveň zkušeného pracovníka', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = sanitizeState(blank());
+    S.positions = [{ id: 'g1', name: 'CNC', dept: 'Obrobna', skillset: [{ id: 'k1', name: 'a' }, { id: 'k2', name: 'b' }], maxTab: 8, tiers: [], penalty: [], bonus: [] },
+      { id: 'g2', name: 'Fréza', dept: 'Obrobna', skillset: [{ id: 'f1', name: 'c' }], maxTab: 8, tiers: [], penalty: [], bonus: [] }];
+    S = sanitizeState(S);
+    const add = (key, o) => { S.employees[key] = { key, first: key, last: key, note: '', ...o }; };
+    add('a', { positionId: 'g1', shift: 'S1', rate: { k1: 4, k2: 4 } });   // zkušený
+    add('b', { positionId: 'g1', shift: 'S1', rate: { k1: 2, k2: 2 } });   // 50 % ÷ 75 % = 66,7 %
+    add('c', { positionId: 'g1', shift: 'S2', rate: { k1: 1, k2: 1 } });   // 25 % ÷ 75 % = 33,3 %
+    add('d', { positionId: 'g1', shift: 'S2' });                           // 0 %
+    add('e', { positionId: 'g2', shift: 'R', rate: { f1: 2 } });           // 50 % ÷ 75 % = 66,7 %
+    const at = thr => { const cap = capacity([], thr, []), g = cap.groups.find(x => x.p.id === 'g1'), d = capScoreByDept(cap)[0];
+      return { g: [g.training, trainAvg(g.trS, g.training)], A: [trainAvg(g.score.A.amTs, g.score.A.amT), trainAvg(g.score.A.pmTs, g.score.A.pmT)],
+        dept: [d.total.training, trainAvg(d.total.trS, d.total.training), trainAvg(d.total.A.amTs, d.total.A.amT)] }; };
+    return JSON.stringify({ t3: at(3), t2: at(2), none: trainAvg(0, 0) });
+  })()`));
+  assert.deepStrictEqual(out.t3.g, [3, 33.3], 'CNC: v zácviku b, c, d; průměr (66,7 + 33,3 + 0) ÷ 3 = 33,3 %');
+  assert.deepStrictEqual(out.t3.A, [66.7, 16.7], 'varianta A: ráno skupina 1 (b 66,7 %), odpoledne skupina 2 (c a d: 16,7 %)');
+  assert.deepStrictEqual(out.t3.dept, [4, 41.7, 66.7], 'oddělení Obrobna: CNC i Fréza dohromady (e 66,7 % ráno se stálou ranní)');
+  assert.deepStrictEqual(out.t2.g, [2, 25], 'při úrovni 2 (cíl 50 %) je b zkušený; c 50 %, d 0 % → 25 %');
+  assert.strictEqual(out.none, null, 'bez lidí v zácviku není průměr');
   return null;
 });
 
