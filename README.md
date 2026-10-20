@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.26
+
+- **Servis: protokol ve třech verzích.** U každého protokolu jsou tři tlačítka PDF:
+  - **Kompletní**: všechna zařízení, rozdělená do oddílů **Na opravu** a **K vyřazení**;
+  - **Na opravu**: čistý předávací protokol jen se zařízeními na opravu (pro servis);
+  - **K vyřazení**: protokol jen se zařízeními k vyřazení.
+  Tlačítko části, ve které nic není, je vypnuté. „Uložit a stáhnout PDF“ v editoru stáhne
+  kompletní verzi. Také karta protokolu v aplikaci má položky rozdělené na Na opravu
+  a K vyřazení.
+- **Servis: digitální podpis předávajícího.** Tlačítkem **Podepsat (Předal)** u protokolu se
+  otevře plocha pro podpis: napíšeš jméno a podepíšeš se myší, prstem nebo perem. Podpis se
+  uloží šifrovaně k protokolu (jako fotky v Protokolech, je i v záloze) a všechna tři PDF ho
+  mají nad čárou „Předal (jméno a podpis)“, pod ní jméno a „podepsáno digitálně“ s datem.
+  Podpis jde změnit nebo odebrat. Když se podepsaný protokol upraví, podpis se odebere,
+  protože podpis platí pro obsah, který byl podepsaný; vrácení ze servisu podpis neruší.
+  Jde o podpis rukou na obrazovce, ne o elektronický podpis s certifikátem.
+- Verze dat 22: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení (jinak by
+  podpis zahodila).
+
 ## Co je nového ve verzi 2.25.2
 
 - **Matice dovedností: PDF ve dvou variantách.** V záložce Matice jsou dvě tlačítka:

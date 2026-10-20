@@ -34,6 +34,23 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 20. 10. 2026 (verze 2.26):
+
+- Uživatel: „Servis … v PDF možnost stáhnout tři verze ‚Kompletní‘ ‚K vyřazení‘ ‚Na opravu‘ …
+  čistý protokol s položkami na opravu“ a „ať tam mohu dát digitální podpis do Předal (jméno
+  a podpis)“.
+  - Účel položky už v datech byl (`purpose 'repair'|'scrap'`). `SV_PARTS`, `svPartItems(x, part)`
+    → `[{it, j}]` (j = původní index, odkazy Vráceno míří na `x.items[j]`), opravy první.
+    `drawServiceProtocol(doc, x, part, sign)`, `SV_PART_DOC` (nadpis, soubor `-na-opravu`,
+    `-k-vyrazeni`, zápatí). Kompletní má oddíly jen když jsou obě části; v části se u položky
+    neopakuje „K opravě“. Karta protokolu: řádky `tr.sv-sec`, tlačítka `[data-svpdf][data-svpart]`.
+  - Podpis: `shipment.sign {file, name, at, by}` (čištění `svSignClean`, `SV_FILE_ID`), obrázek je
+    šifrovaný PNG přes `Vault.saveFile` (`signPad` kreslí pointer eventy, ořízne, max 900 × 300 px).
+    `svSignDialog`, `[data-svsign]`, `[data-svunsign]`, `svDropSignFile` (smaže soubor, když na něj
+    nic neodkazuje), `svFileIds` do zálohy. Úprava obsahu podepsaného protokolu (`svContentKey`)
+    podpis odebere; vrácení ne. Log `svsign:` (slučuje se jako ostatní změny).
+  - Verze dat 22 (`DATA_VERSION` = `CLIENT_VERSION` = `ODM_MIN_CLIENT`), `ODM_VERSION` 2.26.
+
 Stav k 20. 10. 2026 (verze 2.25.2):
 
 - Uživatel: „PDF report matice dovedností … dvě možnosti, s benefity a bez, čistě jen hodnoticí
@@ -816,8 +833,9 @@ Data `S.service` (`blankService`, čištění `cleanService` v `core.js`):
   `made` = rok výroby (2.22, text do 10 znaků);
   `iidBad`/`snBad` = číslo je nečitelné (text se pak neukládá), `mark` = dodatečné označení
   na spodní stěně horního krytu u řídicí jednotky (povinné, když jsou nečitelná obě čísla);
-- `shipments[≤ 2000]`: `{id 'sv…', no, year, date, to, note, by, at, items[≤ 60]}`, číslo
-  protokolu `svNo` = `rok/NNN` (`svNextNo` po letech);
+- `shipments[≤ 2000]`: `{id 'sv…', no, year, date, to, note, by, at, items[≤ 60], sign?}`, číslo
+  protokolu `svNo` = `rok/NNN` (`svNextNo` po letech); `sign` (2.26) = `{file, name, at, by}`,
+  digitální podpis předávajícího, obrázek je šifrovaný soubor (`Vault`);
 - `templates[≤ 300]` (2.22): vzory `{id 'tp…', kind, brand, model}`, prázdné a duplicitní
   (`svTplKey`: druh|značka|model malými písmeny) čištění zahodí;
 - položka: snímek údajů v době odeslání `{dev, kind, brand, model, made, iid, sn, iidBad, snBad, mark,
@@ -1081,7 +1099,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.24.2 | `77e4b94` | plán a skutečnost – opravené hodiny, schopní a v zaškolování zvlášť, hodiny jen ze dnů v práci, kontrola proti docházce |
 | 2.25 | `2864d5e` | dovednost „Není nutností“ (váha ¼ i v tabácích), celkové skóre v reportu kapacit, Zkušení pracovníci a Pracovníci v zácviku (data verze 21) |
 | 2.25.1 | `35c337a` | Docházka – den s kódem nepřítomnosti (i „8 D“) není docházka |
-| 2.25.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF matice s benefity a bez, průměr zaškolení u pracovníků v zácviku |
+| 2.25.2 | `41a5fa1` | PDF matice s benefity a bez, průměr zaškolení u pracovníků v zácviku |
+| 2.26 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – PDF Kompletní / Na opravu / K vyřazení, digitální podpis předávajícího (data verze 22) |
 
 Verze 2.1 přidala:
 
@@ -1193,7 +1212,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `21` (od 2.25):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `22` (od 2.26):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1460,7 +1479,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 66 testů: proti původní aplikaci + opravy + 2.1 až 2.25.2
+node tests/test_core.js                 # 67 testů: proti původní aplikaci + opravy + 2.1 až 2.26
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

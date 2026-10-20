@@ -2921,7 +2921,7 @@ function downloadFile(name, data, type) {
 async function downloadBackup() {
   try {
     await flushSave();
-    const file = await Vault.backup(S, [...lbFileIds(S), ...waPlanFileIds(S)]);
+    const file = await Vault.backup(S, [...lbFileIds(S), ...waPlanFileIds(S), ...svFileIds(S)]);
     downloadFile(`hala2-zaloha-${new Date().toISOString().slice(0, 10)}.odmeny`, JSON.stringify(file), 'application/json');
     toast('Záloha stažená. Je šifrovaná, otevře ji jen platná kartička.');
   } catch (error) { toast(error.message, true); }
@@ -7553,32 +7553,126 @@ function svShipmentsHtml() {
   const shown = ui.sv.all ? list : list.slice(0, SV_SHOW);
   return shown.map(x => svShipHtml(x)).join('') + (shown.length < list.length ? `<button class="btn sec" type="button" data-svall>Zobrazit všechny protokoly (${list.length})</button>` : '');
 }
+/* ---------- digitální podpis předávajícího (2.26) ----------
+   Podpis se kreslí do plochy (myš, prst, pero), ořízne se, uloží jako šifrovaný PNG (Vault.saveFile)
+   a protokol má jen {file, name, at, by}. PDF ho vloží nad čáru „Předal (jméno a podpis)“. */
+function svDropSignFile(id) {
+  // soubor smaž, až když na něj žádný protokol neodkazuje
+  if (id && !svc().shipments.some(x => x.sign && x.sign.file === id)) Vault.deleteFile(id).catch(() => {});
+}
+function signPad(canvas, hint) {
+  const ctx = canvas.getContext('2d');
+  let strokes = 0, last = null, drawing = false;
+  const r0 = canvas.getBoundingClientRect(), dpr = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = Math.round(r0.width * dpr); canvas.height = Math.round(r0.height * dpr);
+  ctx.scale(dpr, dpr);
+  Object.assign(ctx, { lineCap: 'round', lineJoin: 'round', lineWidth: 2.4, strokeStyle: '#14213d', fillStyle: '#14213d' });
+  const pos = e => { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left) * (r0.width / r.width), (e.clientY - r.top) * (r0.height / r.height)]; };
+  const line = p => { ctx.beginPath(); ctx.moveTo(last[0], last[1]); ctx.lineTo(p[0], p[1]); ctx.stroke(); last = p; };
+  canvas.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    try { canvas.setPointerCapture(e.pointerId); } catch (error) { /* starší prohlížeč */ }
+    drawing = true; last = pos(e); strokes += 1; hint.hidden = true;
+    canvas.closest('form')?.querySelector('.dlg-error')?.remove();   // hláška „podepiš se“ už neplatí
+    ctx.beginPath(); ctx.arc(last[0], last[1], 1.2, 0, Math.PI * 2); ctx.fill();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (!drawing) return;
+    (e.getCoalescedEvents ? e.getCoalescedEvents() : [e]).forEach(x => line(pos(x)));
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(n => canvas.addEventListener(n, () => { drawing = false; }));
+  return {
+    empty: () => !strokes,
+    clear: () => { ctx.clearRect(0, 0, r0.width, r0.height); strokes = 0; hint.hidden = false; },
+    /** Oříznutý podpis jako PNG (Uint8Array), nejvýš 900 × 300 px. */
+    png: () => {
+      const { width: W, height: H } = canvas, px = ctx.getImageData(0, 0, W, H).data;
+      let x0 = W, y0 = H, x1 = -1, y1 = -1;
+      for (let y = 0; y < H; y += 1) for (let x = 0; x < W; x += 1) if (px[(y * W + x) * 4 + 3] > 8) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      if (x1 < 0) return null;
+      const pad = Math.round(6 * dpr);
+      x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(W - 1, x1 + pad); y1 = Math.min(H - 1, y1 + pad);
+      const w = x1 - x0 + 1, h = y1 - y0 + 1, s = Math.min(1, 900 / w, 300 / h);
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(w * s)); out.height = Math.max(1, Math.round(h * s));
+      out.getContext('2d').drawImage(canvas, x0, y0, w, h, 0, 0, out.width, out.height);
+      const b64 = out.toDataURL('image/png').split(',')[1];
+      return Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+    },
+  };
+}
+async function svSignDialog(id) {
+  const c = svc();
+  const x = c.shipments.find(s => s.id === id);
+  if (!x) return;
+  const last = c.shipments.filter(s => s.sign).sort((a, b) => b.sign.at - a.sign.at)[0];
+  let pad = null;
+  const res = await dialog({
+    title: `Podpis předávajícího · protokol ${svNo(x)}`, ok: 'Uložit podpis', wide: true,
+    html: `<label class="field"><span>Předal (jméno)</span><input type="text" name="name" maxlength="80" autocomplete="name" value="${esc((x.sign && x.sign.name) || ui.sv.signName || (last && last.sign.name) || '')}" placeholder="jméno a příjmení"></label>
+      <div class="field"><span>Podpis</span><div class="sv-signpad"><canvas aria-label="Plocha pro podpis"></canvas><span class="sv-signhint">Podepiš se myší, prstem nebo perem</span></div></div>
+      <div class="row gap"><button class="btn ghost small" type="button" data-signclear>Smazat a podepsat znovu</button></div>
+      <p class="tiny muted">Podpis se uloží šifrovaně k protokolu a vloží se do všech PDF protokolu ke kolonce Předal (jméno a podpis). Když se protokol později upraví, podpis se odebere a je potřeba podepsat znovu.</p>`,
+    onOpen: dlg => { pad = signPad($('.sv-signpad canvas', dlg), $('.sv-signhint', dlg)); $('[data-signclear]', dlg).onclick = () => pad.clear(); },
+    validate: form => (!form.elements.namedItem('name').value.trim() ? 'Napiš jméno předávajícího.' : !pad || pad.empty() ? 'Podepiš se do plochy.' : null),
+  });
+  if (res.value !== 'ok') return;
+  const name = res.form.elements.namedItem('name').value.replace(/\s+/g, ' ').trim().slice(0, 80);
+  const png = pad && pad.png();
+  if (!png) return;
+  let file;
+  try { file = await Vault.saveFile(png); } catch (error) { toast(`Podpis se nepodařilo uložit: ${error.message}`, true); return; }
+  const old = x.sign && x.sign.file;
+  x.sign = { file, name, at: Date.now(), by: ui.me.label || '' };
+  ui.sv.signName = name;   // předvyplní se u dalšího podpisu (i když tenhle později zmizí)
+  save(); renderService();
+  if (old) svDropSignFile(old);
+  toast(`Podpis uložen: ${name}. PDF protokolu ho má v kolonce Předal.`);
+}
+/* Části protokolu (2.26): kompletní (oddíly Na opravu a K vyřazení), jen na opravu, jen k vyřazení.
+   svPartItems vrací položky s původním indexem j (odkazy Vráceno apod. míří na x.items[j]). */
+const SV_PARTS = [['all', 'Kompletní'], ['repair', 'Na opravu'], ['scrap', 'K vyřazení']];
+function svPartItems(x, part) {
+  const list = x.items.map((it, j) => ({ it, j }));
+  const rep = list.filter(({ it }) => it.purpose !== 'scrap'), scr = list.filter(({ it }) => it.purpose === 'scrap');
+  return part === 'repair' ? rep : part === 'scrap' ? scr : [...rep, ...scr];
+}
 function svShipHtml(x) {
   const c = svc();
   const outN = x.items.filter(i => !i.back && i.purpose !== 'scrap').length;
   const scrapN = x.items.filter(i => i.purpose === 'scrap').length;
+  const repN = x.items.length - scrapN;
+  const both = scrapN > 0 && repN > 0;   // oddíly jen, když jsou v protokolu obě části
   const today = todayIso();
-  const rows = x.items.map((i, j) => {
+  const sec = (t, n) => `<tr class="sv-sec"><th colspan="5">${t} <span class="muted">(${n})</span></th></tr>`;
+  const rows = svPartItems(x, 'all').map(({ it: i, j }, n) => {
     const dv = c.devices.find(d => d.id === i.dev);
     const days = daysBetween(x.date, i.back || today);
     const state = i.purpose === 'scrap' && !i.back ? '<span class="tag crit">k vyřazení</span>'
       : i.back
       ? `<span class="tag ok">vráceno ${esc(dayText(i.back))}</span><small>${days} ${denN(days)} na servisu${i.backNote ? ` · ${esc(i.backNote)}` : ''}</small><button class="linkish" type="button" data-svunback="${esc(x.id)}" data-j="${j}">zrušit vrácení</button>`
       : `<span class="tag warn">na servisu${days > 0 ? ` ${days} ${denN(days)}` : ''}</span><button class="btn sec small" type="button" data-svback="${esc(x.id)}" data-j="${j}">Vráceno</button>`;
-    return `<tr>
+    const row = `<tr>
       <td class="name" data-label="Zařízení"><b>${esc(svDevName(i))}</b>${i.made ? `<small class="sv-made">rok výroby ${esc(i.made)}</small>` : ''}${dv ? `<button class="linkish" type="button" data-svdev="${esc(dv.id)}">historie</button>` : ''}</td>
       <td data-label="Interní ID">${svIdCell(i.iid, i.iidBad)}</td>
       <td data-label="Výrobní číslo">${svIdCell(i.sn, i.snBad)}</td>
       <td class="sv-block" data-label="Závada">${svFaultText(i) ? esc(svFaultText(i)) : '<span class="muted">—</span>'}${i.iidBad && i.snBad ? `<small class="sv-mark">Dodatečně označeno na spodní stěně horního krytu, kde je řídicí jednotka: <b>${esc(i.mark)}</b></small>` : ''}</td>
       <td class="sv-state sv-block" data-label="Stav">${state}</td></tr>`;
+    return `${both && n === 0 ? sec('Na opravu', repN) : ''}${both && n === repN ? sec('K vyřazení', scrapN) : ''}${row}`;
   }).join('');
   return `<article class="card sv-ship${ui.sv.open === x.id ? ' fresh' : ''}" data-svship="${esc(x.id)}">
     <div class="card-head"><div><h3>Protokol ${esc(svNo(x))}</h3>
       <p class="small muted">${esc(dayText(x.date))} · ${x.to ? esc(x.to) : 'servis neuveden'} · ${x.items.length} zařízení${x.by ? ` · zapsal ${esc(x.by)}` : ''}</p>
-      ${x.note ? `<p class="small">${esc(x.note)}</p>` : ''}</div>
+      ${x.note ? `<p class="small">${esc(x.note)}</p>` : ''}
+      <p class="small sv-signline">${x.sign ? `<span class="tag ok">podepsáno</span> Předal: <b>${esc(x.sign.name)}</b>${x.sign.at ? ` · ${esc(dayText(todayIso(x.sign.at)))}` : ''}
+        <button class="linkish" type="button" data-svsign="${esc(x.id)}">změnit podpis</button><button class="linkish" type="button" data-svunsign="${esc(x.id)}">odebrat</button>`
+        : `<span class="muted">Předal: bez podpisu</span> <button class="btn sec small" type="button" data-svsign="${esc(x.id)}">Podepsat (Předal)</button>`}</p></div>
       <div class="row gap wrap sv-actions">${outN ? `<span class="tag warn">na servisu ${outN}</span>` : scrapN === x.items.length ? '' : '<span class="tag ok">vše vráceno</span>'}${scrapN ? `<span class="tag crit">k vyřazení ${scrapN}</span>` : ''}
         ${outN > 1 ? `<button class="btn sec small" type="button" data-svbackall="${esc(x.id)}">Vráceno vše</button>` : ''}
-        <button class="btn small" type="button" data-svpdf="${esc(x.id)}">PDF</button>
+        <span class="sv-pdfs" role="group" aria-label="PDF protokolu ${esc(svNo(x))}"><span class="small muted">PDF:</span>${SV_PARTS.map(([p, t]) => {
+          const n = p === 'all' ? x.items.length : p === 'scrap' ? scrapN : repN;
+          return `<button class="btn small${p === 'all' ? '' : ' sec'}" type="button" data-svpdf="${esc(x.id)}" data-svpart="${p}"${n ? '' : ` disabled title="V protokolu není žádné zařízení ${p === 'scrap' ? 'k vyřazení' : 'na opravu'}"`}>${t}${p === 'all' ? '' : ` (${n})`}</button>`;
+        }).join('')}</span>
         <button class="btn sec small" type="button" data-svedit="${esc(x.id)}">Upravit</button>
         <button class="icon-btn" type="button" data-svshipdel="${esc(x.id)}" title="Smazat protokol" aria-label="Smazat protokol ${esc(svNo(x))}">${I.x}</button></div></div>
     <div class="table-card flat"><table class="stack sv-items-tab"><thead><tr><th>Zařízení</th><th>Interní ID</th><th>Výrobní číslo</th><th>Závada</th><th>Stav</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -7797,11 +7891,12 @@ function svNums(list) {
   return n.length > 1 ? `${n.slice(0, -1).join(', ')} a ${n[n.length - 1]}` : String(n[0] || '');
 }
 function svCap(t) { return t ? t[0].toUpperCase() + t.slice(1) : t; }
+/* Obsah protokolu bez vrácení (to se zapisuje až po předání): podle něj se pozná úprava. */
+function svContentKey(x) { return JSON.stringify([x.date, x.to, x.note, x.items.map(i => [i.dev, i.kind, i.brand, i.model, i.made, i.iid, i.sn, i.iidBad, i.snBad, i.mark, i.purpose, i.faults, i.fault])]); }
 function svDraftDirty(d) {
   const ship = d.id && svc().shipments.find(x => x.id === d.id);
   const base = ship ? svDraftOf(ship) : svDraftNew();
-  const key = x => JSON.stringify([x.date, x.to, x.note, x.items.map(i => [i.dev, i.kind, i.brand, i.model, i.made, i.iid, i.sn, i.iidBad, i.snBad, i.mark, i.purpose, i.faults, i.fault])]);
-  return key(base) !== key({ ...d, date: ship ? d.date : base.date });
+  return svContentKey(base) !== svContentKey({ ...d, date: ship ? d.date : base.date });
 }
 async function svSaveDraft(pdf) {
   const d = ui.sv.draft;
@@ -7830,13 +7925,23 @@ async function svSaveDraft(pdf) {
         : 'Protokol má duplicity: stejné zařízení víckrát, nebo číslo, které v evidenci patří jinému zařízení. Jsou teď nahoře pod sebou a označené červeně. Odeber je, nebo oprav čísla.', true);
     return;
   }
+  const was = d.id && c.shipments.find(x => x.id === d.id);
+  const signedKey = was && was.sign ? svContentKey(was) : null;
   const { ship, created } = svSaveShipment(c, { ...d, items: keep.map(x => x.it) }, { by: ui.me.label || '', at: Date.now() });
+  // podpis předávajícího platí pro obsah, který podepsal: po změně protokolu se odebere (2.26)
+  let unsigned = '';
+  if (signedKey && ship.sign && svContentKey(ship) !== signedKey) {
+    const old = ship.sign;
+    delete ship.sign;
+    unsigned = old.name;
+    svDropSignFile(old.file);
+  }
   ui.sv.draft = null;
   ui.sv.tab = 'ship';
   ui.sv.open = ship.id;
   save();
   renderService();
-  toast(`Protokol ${svNo(ship)} uložen${created.length ? `, v evidenci ${created.length === 1 ? 'přibylo 1 zařízení' : `přibyla ${created.length} zařízení`}` : ''}.`);
+  toast(`Protokol ${svNo(ship)} uložen${created.length ? `, v evidenci ${created.length === 1 ? 'přibylo 1 zařízení' : `přibyla ${created.length} zařízení`}` : ''}.${unsigned ? ` Protokol se změnil, podpis předávajícího (${unsigned}) byl odebrán: podepiš ho znovu.` : ''}`, !!unsigned);
   if (pdf) exportServicePdf(ship.id);
 }
 
@@ -7902,7 +8007,7 @@ function bindService() {
       save(); renderService(); return;
     }
     const pdf = t.closest('[data-svpdf]');
-    if (pdf) { exportServicePdf(pdf.dataset.svpdf, pdf); return; }
+    if (pdf) { exportServicePdf(pdf.dataset.svpdf, pdf, pdf.dataset.svpart || 'all'); return; }
     const edit = t.closest('[data-svedit]');
     if (edit) {
       const x = svc().shipments.find(s => s.id === edit.dataset.svedit);
@@ -7915,7 +8020,21 @@ function bindService() {
       const x = c.shipments.find(s => s.id === sdel.dataset.svshipdel);
       if (!x || !(await confirmBox(`Smazat protokol ${svNo(x)}?`, `Protokol z ${dayText(x.date)} (${x.items.length} zařízení) zmizí i z historie zařízení. Zařízení v evidenci zůstanou.`, 'Smazat', true))) return;
       c.shipments = c.shipments.filter(s => s !== x);
-      save(); renderService(); return;
+      save(); renderService();
+      if (x.sign) svDropSignFile(x.sign.file);
+      return;
+    }
+    const sign = t.closest('[data-svsign]');
+    if (sign) { await svSignDialog(sign.dataset.svsign); return; }
+    const unsign = t.closest('[data-svunsign]');
+    if (unsign) {
+      const x = svc().shipments.find(s => s.id === unsign.dataset.svunsign);
+      if (!x || !x.sign || !(await confirmBox('Odebrat podpis?', `Podpis předávajícího (${x.sign.name}) zmizí z protokolu ${svNo(x)} i z jeho PDF.`, 'Odebrat', true))) return;
+      const old = x.sign;
+      delete x.sign;
+      save(); renderService();
+      svDropSignFile(old.file);
+      return;
     }
   });
   view.addEventListener('keydown', event => {
@@ -7980,14 +8099,25 @@ function bindService() {
 }
 
 /* ---------- PDF: předávací protokol (A4 na výšku) ---------- */
-function drawServiceProtocol(doc, x) {
+/* Předávací protokol (A4 na výšku). part (2.26): 'all' = kompletní, položky v oddílech Na opravu
+   a K vyřazení; 'repair' = jen na opravu (čistý protokol pro servis); 'scrap' = jen k vyřazení. */
+const SV_PART_DOC = {
+  all: { title: 'Předávací protokol', sub: 'Odeslání zařízení na servis', file: '', foot: 'předávací protokol' },
+  repair: { title: 'Předávací protokol – na opravu', sub: 'Odeslání zařízení na servis k opravě', file: '-na-opravu', foot: 'předávací protokol na opravu' },
+  scrap: { title: 'Protokol – zařízení k vyřazení', sub: 'Předání zařízení k vyřazení', file: '-k-vyrazeni', foot: 'protokol zařízení k vyřazení' },
+};
+function drawServiceProtocol(doc, x, part = 'all', sign = null) {
   const k = pdfKit(doc);
   const C = k.C;
-  k.header({ eyebrow: `${EXPORT_NAME} · ODESLÁNÍ NA SERVIS`, right: `Protokol č. ${svNo(x)}`, title: 'Předávací protokol', sub: 'Odeslání zařízení na servis' });
+  const P0 = SV_PART_DOC[part] || SV_PART_DOC.all;
+  const list = svPartItems(x, part);
+  k.header({ eyebrow: `${EXPORT_NAME} · ODESLÁNÍ NA SERVIS`, right: `Protokol č. ${svNo(x)}`, title: P0.title, sub: P0.sub });
   // údaje protokolu: dva sloupce popisek + hodnota
   const scrapN = x.items.filter(i => i.purpose === 'scrap').length;
-  const info = [['Datum odeslání', dayText(x.date)], ['Číslo protokolu', svNo(x)], ['Servis', x.to || '—'],
-    ['Počet zařízení', `${x.items.length}${scrapN ? ` (k opravě ${x.items.length - scrapN}, k vyřazení ${scrapN})` : ''}`]];
+  const repN = x.items.length - scrapN;
+  const count = part === 'repair' ? `${list.length} (na opravu)` : part === 'scrap' ? `${list.length} (k vyřazení)`
+    : `${x.items.length}${scrapN ? ` (k opravě ${repN}, k vyřazení ${scrapN})` : ''}`;
+  const info = [['Datum odeslání', dayText(x.date)], ['Číslo protokolu', svNo(x)], [part === 'scrap' ? 'Předáno komu' : 'Servis', x.to || '—'], ['Počet zařízení', count]];
   const cw = (k.CW - 6) / 2;
   for (let r = 0; r < info.length; r += 2) {
     const cells = info.slice(r, r + 2).map(([l, v]) => ({ l, lines: k.split(v, cw - 8, 11, true) }));
@@ -8011,11 +8141,23 @@ function drawServiceProtocol(doc, x) {
     k.y += 7.6;
   };
   const lh = k.LH(9, 1.3);
+  // oddíly jen v kompletním protokolu, když jsou v něm obě části
+  const both = part === 'all' && scrapN > 0 && repN > 0;
+  const section = (t, n, scrap) => {
+    k.need(7.4 + 6.4 + 7.6 + 12);   // nadpis oddílu s hlavičkou a první položkou na stejné straně
+    k.text(`${t} (${n})`, k.M, k.y + 0.8, 10.4, { bold: true, color: scrap ? C.crit : C.ink });
+    k.y += 7.4;
+  };
+  if (both) section('Na opravu', repN, false);
   head();
-  x.items.forEach((it, n) => {
+  list.forEach(({ it }, n) => {
+    if (both && n === repN) { k.y += 3; section('K vyřazení', scrapN, true); head(); }
     const vals = [[String(n + 1)], ...[it.kind, it.brand, it.model, it.made].map((v, i) => k.split(v || '—', cols[i + 1][0] - 3, 9)),
       it.iidBad ? ['nečitelné'] : k.split(it.iid || '—', cols[5][0] - 3, 9, true), it.snBad ? ['nečitelné'] : k.split(it.sn || '—', cols[6][0] - 3, 9, true)];
-    const sub = [{ t: `${it.purpose === 'scrap' ? 'K VYŘAZENÍ' : 'K opravě'}${svFaultText(it) ? ` · Závada: ${svFaultText(it)}` : ''}`, mark: false, scrap: it.purpose === 'scrap' }];
+    // v části (jen opravy nebo jen vyřazení) je účel daný nadpisem, u položky zůstane jen závada
+    const purpose = part === 'all' ? (it.purpose === 'scrap' ? 'K VYŘAZENÍ' : 'K opravě') : '';
+    const fault = svFaultText(it) ? `Závada: ${svFaultText(it)}` : '';
+    const sub = [purpose || fault ? { t: [purpose, fault].filter(Boolean).join(' · '), mark: false, scrap: part === 'all' && it.purpose === 'scrap' } : null].filter(Boolean);
     if (it.iidBad && it.snBad) sub.push({ t: `${SV_MARK_TEXT}${it.mark ? ` Dodatečné označení: ${it.mark}` : ''}`, mark: true });
     const subLines = sub.map(s => ({ ...s, lines: k.split(s.t, k.CW - cols[0][0] - 6, 8.2, s.mark || s.scrap) }));
     const h = Math.max(...vals.map(v => v.length)) * lh + 2.4 + subLines.reduce((a, s) => a + s.lines.length * k.LH(8.2, 1.3) + (s.mark ? 3.4 : 1), 0);
@@ -8041,27 +8183,45 @@ function drawServiceProtocol(doc, x) {
   k.y += 6;
   // potvrzení a podpisy
   k.keep(() => {
-    k.para('Předávající a přebírající svým podpisem potvrzují předání a převzetí uvedených zařízení k servisu.', k.M, k.CW, 9, { color: C.ink2 });
+    k.para(part === 'scrap' ? 'Předávající a přebírající svým podpisem potvrzují předání a převzetí uvedených zařízení k vyřazení.'
+      : 'Předávající a přebírající svým podpisem potvrzují předání a převzetí uvedených zařízení k servisu.', k.M, k.CW, 9, { color: C.ink2 });
     k.y += 4;
     const sw = (k.CW - 12) / 3;
-    ['Předal (jméno a podpis)', 'Převzal za servis (jméno a podpis)', 'Datum převzetí'].forEach((label, i) => {
+    const signed = !!(sign && x.sign);
+    ['Předal (jméno a podpis)', part === 'scrap' ? 'Převzal (jméno a podpis)' : 'Převzal za servis (jméno a podpis)', 'Datum převzetí'].forEach((label, i) => {
       const x0 = k.M + i * (sw + 6);
+      // digitální podpis předávajícího (2.26) nad čárou, jméno pod ní
+      if (i === 0 && signed && !k.dry) {
+        try {
+          const p = doc.getImageProperties(sign);
+          const sc = Math.min((sw - 2) / p.width, 13 / p.height), w = p.width * sc, h = p.height * sc;
+          doc.addImage(sign, 'PNG', x0 + 1, k.y + 13.4 - h, w, h, undefined, 'FAST');
+        } catch (error) { /* poškozený obrázek: PDF bez podpisu */ }
+      }
       k.hline(k.y + 14, C.line2, 0.3, x0, x0 + sw);
       k.text(label, x0, k.y + 15.6, 8, { color: C.ink3 });
+      if (i === 0 && signed) {
+        k.text(k.split(x.sign.name, sw, 9, true)[0], x0, k.y + 19.4, 9, { bold: true });
+        k.text(`podepsáno digitálně${x.sign.at ? ` ${dayText(todayIso(x.sign.at))}` : ''}`, x0, k.y + 23.4, 7.2, { color: C.ink3 });
+      }
     });
-    k.y += 24;
+    k.y += signed ? 29 : 24;
     k.text(`Protokol vystavil${x.by ? ` ${x.by}` : 'a aplikace'}, ${dayText(todayIso(x.at || Date.now()))}.`, k.M, k.y, 7.6, { color: C.ink3 });
     k.y += 5;
   }, 40);
-  k.footer(`${EXPORT_NAME} · předávací protokol ${svNo(x)} · odesláno ${dayText(x.date)}`);
+  k.footer(`${EXPORT_NAME} · ${P0.foot} ${svNo(x)} · odesláno ${dayText(x.date)}`);
 }
-async function exportServicePdf(id, button = null) {
+async function exportServicePdf(id, button = null, part = 'all') {
   const x = svc().shipments.find(s => s.id === id);
   if (!x) return;
+  const P0 = SV_PART_DOC[part] ? part : 'all';
+  if (!svPartItems(x, P0).length) { toast(`V protokolu ${svNo(x)} není žádné zařízení ${P0 === 'scrap' ? 'k vyřazení' : 'na opravu'}.`, true); return; }
+  let sign = null;
+  if (x.sign) { try { sign = await Vault.loadFile(x.sign.file); } catch (error) { toast('Podpis předávajícího se nepodařilo načíst, PDF bude bez něj.', true); } }
   await withPdf(button, doc => {
-    doc.setProperties({ title: `Předávací protokol ${svNo(x)}`, creator: EXPORT_NAME });
-    drawServiceProtocol(doc, x);
-    downloadFile(`servis-protokol-${svNo(x).replace('/', '-')}.pdf`, doc.output('blob'), 'application/pdf');
+    doc.setProperties({ title: `${SV_PART_DOC[P0].title} ${svNo(x)}`, creator: EXPORT_NAME });
+    drawServiceProtocol(doc, x, P0, sign);
+    downloadFile(`servis-protokol-${svNo(x).replace('/', '-')}${SV_PART_DOC[P0].file}.pdf`, doc.output('blob'), 'application/pdf');
   });
 }
 

@@ -148,10 +148,29 @@ async function confirm(page) {
     check(/Předávací protokol/i.test(t1) && /2026\/001/.test(t1) && /19\. 10\. 2026/.test(t1) && /Servis Brno/.test(t1) && /Makita/.test(t1) && /B-12/.test(t1) && /SN-001/.test(t1) && /X-9/.test(t1), `PDF údaje: ${t1.slice(0, 500)}`);
     check(/nečitelné/.test(t1) && /spodní stěně horního krytu/.test(t1) && /S-01/.test(t1) && /Převzal za servis/.test(t1) && /HALA 2/.test(t1) && !/Odměny/.test(t1), `PDF nečitelné, označení, podpisy: ${t1.slice(0, 900)}`);
     check(/K opravě · Závada: Nelze spustit, Přehřívá se, jiná: jiskří motor/.test(t1) && /K VYŘAZENÍ · Závada: Nadměrné rezonance – nejde dlouho držet v ruce, Poškozené zařízení/.test(t1) && /k opravě 2, k vyřazení 1/.test(t1), `PDF účel a závady: ${t1.slice(0, 1200)}`);
+    check(/Na opravu \(2\)/.test(t1) && /K vyřazení \(1\)/.test(t1) && t1.indexOf('Na opravu (2)') < t1.indexOf('K vyřazení (1)'), 'kompletní PDF: položky v oddílech Na opravu a K vyřazení (2.26)');
   }
   check(/na servisu 2/.test(await page.textContent('#svView .sv-ship')) && /k vyřazení 1/.test(await page.textContent('#svView .sv-ship')) && /Protokol 2026\/001/.test(await page.textContent('#svView'))
     && /Nelze spustit, Přehřívá se, jiná: jiskří motor/.test(await page.textContent('#svView .sv-ship')), 'karta protokolu: na servisu 2, k vyřazení 1, závady');
   check(await page.$$eval('#svView .sv-ship [data-svback]', els => els.length) === 2, 'k vyřazení se nevrací');
+  // oddíly a tři PDF (2.26): kompletní, jen na opravu (čistý protokol pro servis), jen k vyřazení
+  const secs = await page.$$eval('#svView .sv-ship tr.sv-sec', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
+  const order = await page.$$eval('#svView .sv-ship tbody tr:not(.sv-sec) td.name b', els => els.map(e => e.textContent));
+  check(JSON.stringify(secs) === JSON.stringify(['Na opravu (2)', 'K vyřazení (1)']) && /Pila/.test(order[2]), `karta: oddíly Na opravu a K vyřazení: ${JSON.stringify({ secs, order })}`);
+  const parts = await page.$$eval('#svView .sv-ship [data-svpdf]', els => els.map(e => [e.dataset.svpart, e.textContent.trim(), e.disabled]));
+  check(JSON.stringify(parts) === JSON.stringify([['all', 'Kompletní', false], ['repair', 'Na opravu (2)', false], ['scrap', 'K vyřazení (1)', false]]), `tlačítka PDF: ${JSON.stringify(parts)}`);
+  const pdfRep = await download(page, '#svView .sv-ship [data-svpart="repair"]', 'servis-na-opravu.pdf');
+  check(pdfRep.pdf && pdfRep.name === 'servis-protokol-2026-001-na-opravu.pdf', `PDF na opravu: ${pdfRep.name}`);
+  const tRep = pdfText(pdfRep.path);
+  if (tRep != null) check(/na opravu/i.test(tRep) && /2 \(na opravu\)/.test(tRep) && /Makita/.test(tRep) && /X-9/.test(tRep) && /Závada: Nelze spustit/.test(tRep)
+    && !/Festool|S-01|VYŘAZENÍ|vyřazení/.test(tRep) && !/K opravě ·/.test(tRep) && /Převzal za servis/.test(tRep), `PDF na opravu jen s opravami: ${tRep.slice(0, 900)}`);
+  const pdfScr = await download(page, '#svView .sv-ship [data-svpart="scrap"]', 'servis-k-vyrazeni.pdf');
+  check(pdfScr.pdf && pdfScr.name === 'servis-protokol-2026-001-k-vyrazeni.pdf', `PDF k vyřazení: ${pdfScr.name}`);
+  const tScr = pdfText(pdfScr.path);
+  if (tScr != null) check(/k vyřazení/i.test(tScr) && /1 \(k vyřazení\)/.test(tScr) && /Festool/.test(tScr) && /S-01/.test(tScr) && /Závada: Nadměrné rezonance/.test(tScr)
+    && !/Makita|Bosch|SN-001/.test(tScr) && /zařízení k vyřazení/.test(tScr), `PDF k vyřazení jen s vyřazením: ${tScr.slice(0, 900)}`);
+  const pdfAll = await download(page, '#svView .sv-ship [data-svpart="all"]', 'servis-kompletni.pdf');
+  check(pdfAll.pdf && pdfAll.name === 'servis-protokol-2026-001.pdf', `PDF kompletní z karty: ${pdfAll.name}`);
   await page.screenshot({ path: path.join(shots, '03-protokol.png'), fullPage: true });
 
   // Druhé odeslání: výběr z evidence, párování podle v. č. a označení, stejné zařízení dvakrát.
@@ -324,6 +343,60 @@ async function confirm(page) {
   await page.waitForTimeout(200);
   check(/Servis: odeslání 2026\/001/.test(await page.textContent('#dlg')), 'filtr Servis v historii změn');
   await page.click('#dlgCancel');
+
+  // Digitální podpis předávajícího (2.26): kreslení do plochy, šifrovaný PNG, PDF, odebrání po úpravě.
+  const card1 = '[data-svship]:has-text("Protokol 2026/001")';
+  check(/Předal: bez podpisu/.test(await page.textContent(card1)), 'protokol zatím bez podpisu');
+  await page.click(`${card1} [data-svsign]`);
+  await page.waitForSelector('#dlg[open] .sv-signpad canvas');
+  await page.fill('#dlg [name="name"]', 'Jan Novák');
+  await page.click('#dlgOk');
+  await page.waitForSelector('#dlg .dlg-error');
+  check(/Podepiš se do plochy/.test(await page.textContent('#dlg .dlg-error')), 'bez podpisu se neuloží');
+  const pad = await (await page.$('#dlg .sv-signpad canvas')).boundingBox();
+  await page.mouse.move(pad.x + 40, pad.y + 110);
+  await page.mouse.down();
+  for (let i = 1; i <= 26; i += 1) await page.mouse.move(pad.x + 40 + i * 13, pad.y + 110 - Math.sin(i / 2.5) * 38, { steps: 2 });
+  await page.mouse.up();
+  await page.screenshot({ path: path.join(shots, '05-podpis.png') });
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => S.service.shipments[0].sign && S.service.shipments[0].sign.name === 'Jan Novák');
+  await saved(page);
+  const signFile = await page.evaluate(async () => { const s = S.service.shipments[0].sign, b = await Vault.loadFile(s.file); return { id: s.file, png: b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47, len: b.length }; });
+  check(/^[0-9a-f]{32}$/.test(signFile.id) && signFile.png && signFile.len > 200, `podpis jako šifrovaný PNG: ${JSON.stringify(signFile)}`);
+  check(/podepsáno/.test(await page.textContent(card1)) && /Předal: Jan Novák/.test((await page.textContent(card1)).replace(/\s+/g, ' ')), 'karta: podepsáno, Předal: Jan Novák');
+  for (const part of ['all', 'repair', 'scrap']) {
+    const f = await download(page, `${card1} [data-svpart="${part}"]`, `servis-podpis-${part}.pdf`);
+    const raw = fs.readFileSync(f.path).toString('latin1');
+    check(/\/Subtype\s*\/Image/.test(raw), `PDF ${part}: obrázek podpisu`);
+    const tx = pdfText(f.path);
+    if (tx != null) check(/Předal \(jméno a podpis\)/.test(tx) && /Jan Novák/.test(tx) && /podepsáno digitálně/.test(tx), `PDF ${part}: jméno a podpis předávajícího: ${tx.slice(-500)}`);
+  }
+  await page.screenshot({ path: path.join(shots, '06-podepsano.png'), fullPage: true });
+  // úprava podepsaného protokolu podpis odebere a soubor smaže
+  await page.click(`${card1} [data-svedit]`);
+  await page.waitForSelector('.sv-editor h2:has-text("Upravit protokol 2026/001")');
+  await page.fill('[data-svd="note"]', 'doplněno po podpisu');
+  await page.click('[data-svsave="plain"]');
+  await page.waitForFunction(() => !ui.sv.draft && !S.service.shipments[0].sign);
+  check(/podpis předávajícího \(Jan Novák\) byl odebrán/.test(await page.textContent('#toast')), 'po úpravě upozornění na odebraný podpis');
+  await saved(page);
+  const gone = await page.evaluate(async id => { try { await Vault.loadFile(id); return false; } catch (error) { return true; } }, signFile.id);
+  check(gone, 'soubor odebraného podpisu je smazaný');
+  // 404 u smazaného souboru je tady záměr, ne chyba
+  for (let i = problems.length - 1; i >= 0; i -= 1) if (problems[i].includes(`HTTP 404`) && problems[i].includes(`id=${signFile.id}`)) problems.splice(i, 1);
+  // vrácení (po předání) podpis neodebere
+  await page.click(`${card1} [data-svsign]`);
+  await page.waitForSelector('#dlg[open] .sv-signpad canvas');
+  check(await page.inputValue('#dlg [name="name"]') === 'Jan Novák', 'jméno se předvyplní z posledního podpisu');
+  const pad2 = await (await page.$('#dlg .sv-signpad canvas')).boundingBox();
+  await page.mouse.move(pad2.x + 60, pad2.y + 100); await page.mouse.down(); await page.mouse.move(pad2.x + 300, pad2.y + 80, { steps: 10 }); await page.mouse.up();
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => !!S.service.shipments[0].sign);
+  await saved(page);
+
+  // historie změn slučuje opakované změny podpisu téhož protokolu do posledního stavu (texty hlídá test jádra)
+  check(await page.evaluate(() => S.log.some(x => x.kind === 'service' && x.text === 'Servis 2026/001: podepsal předávající Jan Novák')), 'historie změn: podpis předávajícího');
 
   // Telefon: seznam, evidence, editor a hlavní menu bez přetečení.
   await page.setViewportSize({ width: 390, height: 844 });

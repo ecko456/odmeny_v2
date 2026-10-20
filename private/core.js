@@ -1699,7 +1699,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=21;
+const DATA_VERSION=22;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service"];
@@ -4240,7 +4240,9 @@ function cleanService(o){
       return {dev:ids.has(i.dev)?i.dev:"",...ident(i),purpose:i.purpose==="scrap"?"scrap":"repair",
         faults:SV_FAULT_KEYS.filter(k=>Array.isArray(i.faults)&&i.faults.includes(k)),
         fault:str(i.fault,600),back:back&&back>=x.date?back:"",backNote:str(i.backNote,300)};
-    })}));
+    }),
+    /* digitální podpis předávajícího (2.26): obrázek je šifrovaný soubor (Vault), tady jen id, jméno a kdy */
+    ...(svSignClean(x.sign)?{sign:svSignClean(x.sign)}:{})}));
   /* vzory zařízení (2.22): druh, značka a model k rychlému vyplnění položky */
   const tkeys=new Set();
   const templates=(Array.isArray(o.templates)?o.templates:[]).filter(t=>t&&typeof t==="object").slice(0,300)
@@ -4445,6 +4447,15 @@ function svDevDups(svc){
 }
 /* Uložení odeslání (nové i upravené). Položky bez odkazu najdou zařízení v evidenci, nebo ho
    založí; evidence se doplní o novější údaje z položky. Vrací {ship, created[]}. */
+/* Podpis předávajícího (2.26): {file: id šifrovaného PNG, name, at, by}; bez platného id null. */
+const SV_FILE_ID=/^[0-9a-f]{32}$/;
+function svSignClean(x){
+  if(!x||typeof x!=="object"||!SV_FILE_ID.test(String(x.file||"")))return null;
+  const name=String(x.name==null?"":x.name).replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,80);
+  return name?{file:String(x.file),name,at:Number.isFinite(+x.at)?Math.max(0,+x.at):0,by:String(x.by==null?"":x.by).slice(0,60)}:null;
+}
+/* Soubory Servisu (podpisy) do zálohy. */
+function svFileIds(st){return [...new Set((((st||S).service||{}).shipments||[]).map(x=>x.sign&&x.sign.file).filter(Boolean))];}
 function svSaveShipment(svc,draft,meta){
   meta=meta||{};
   const clean=cleanService({devices:svc.devices,shipments:[{...draft,id:draft.id||"x",no:1,year:+String(draft.date).slice(0,4)}]});
@@ -4514,6 +4525,8 @@ function svChanges(A,B,add){
     const key=i=>JSON.stringify([i.dev,i.kind,i.brand,i.model,i.made,i.iid,i.sn,i.iidBad,i.snBad,i.mark,i.purpose,i.faults,i.fault]);
     if(o.date!==x.date||o.to!==x.to||o.note!==x.note||JSON.stringify(o.items.map(key))!==JSON.stringify(x.items.map(key)))
       add("service",head+": upraven protokol ("+dayText(x.date)+(x.to?", "+x.to:"")+", "+x.items.length+" zařízení)",{m:"svs:"+x.id});
+    const sa=o.sign||null,sb=x.sign||null;
+    if((sa&&sa.file)!==(sb&&sb.file))add("service",sb?head+": podepsal předávající "+sb.name+(sa?" (nový podpis)":""):head+": odebrán podpis předávajícího ("+sa.name+")",{m:"svsign:"+x.id});
     x.items.forEach(i=>{
       const p=o.items.find(y=>y.dev===i.dev);
       if(!p||p.back===i.back&&p.backNote===i.backNote)return;
