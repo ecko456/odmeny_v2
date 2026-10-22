@@ -34,6 +34,25 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 22. 10. 2026 (verze 2.28):
+
+- Uživatel: „1. možnost odmazat položky 2. importovat poslední záznamy k položkám … z excelu
+  CTRL + V … A QR kód … B datum a čas záznamu, C počet ks, D STAV 3. měnit pořadí položek …
+  přesouváním myší 4. dopsat ručně poznámku k položce 5. barevné schéma pro černobílý tisk“.
+  - Položka má `id` (`si…`, unikátní v seznamu, starším seznamům ho dá čištění), `note`
+    a `rec` (`{ts, when, qty, state, at, by}` nebo null). Core: `shRecBuild`, `shApplyRecs`,
+    `shLooksLikeRecs` (Ctrl+V pozná záznamy podle data ve sloupci B), `shParseWhen`,
+    `shMoveItem` (TOP se hýbou jen mezi sebou). Historie: `shr:` odebrání, `shn:` poznámka,
+    `shz:` záznamy, `sho:` pořadí.
+  - Přesouvání je vlastní (pointer events, ne HTML drag and drop): myš kdekoli na řádku mimo
+    pole, dotyk jen za úchyt `[data-shgrip]` (`touch-action: none`), šipky na úchytu,
+    u okraje okna se stránka posouvá. Při hledání vypnuté (`.sh-nodrag`).
+  - **`.sr-only` v hlavičce tabulky je absolutně umístěný.** Bez `position: relative` na
+    `.table-card` utekl z posuvné tabulky a stránka na monitoru 1280 px přetekla o 96 px.
+  - PDF jen v odstínech šedé (`SH_MONO`, přepíše i `k.C` kvůli zápatí). e2e to hlídá
+    vykreslením přes PyMuPDF (rozdíl barevných složek nejvýš 3).
+  - Verze dat 25, `ODM_VERSION` 2.28.
+
 Stav k 22. 10. 2026 (verze 2.27.1):
 
 - Uživatel: „A číslo objednávky, B název dílu, C EAN dílu, D index, E urgentní množství, G pokud
@@ -911,7 +930,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -920,14 +939,20 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 
 - `lists[≤ 30]`, nejnovější první: `{id 'sh…', at, by, file, sheet, items[≤ 1000]}`; `sheet` je
   název listu jen u sešitu s více listy, vložený seznam má `file` „vloženo ze schránky“;
-- položka `{order, name, ean, index, qty, top, op, link, code}`: texty tak, jak je ukazuje Excel
+- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec}` (`id`, `note`, `rec` od 2.28): texty tak, jak je ukazuje Excel
   (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
   `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
   jinak `""`, slouží jen ke klikání v aplikaci; `code` = activeBarcode z odkazu (`shCode`: text
   za `activeBarcode=` do `&` nebo `#`, dekóduje `%XX`, `shCodeClean`: tisknutelné ASCII bez
   mezer, nejvýš 120 znaků). Položka bez EANu i názvu se zahodí, TOP jsou vždy první
-  (`shTopFirst`, jinak pořadí ze souboru). Seznam ze 2.27 nemá `code`, čištění ho dopočítá
-  z `link`.
+  (`shTopFirst`, jinak pořadí ze souboru nebo ruční). Seznam ze 2.27 nemá `code`, čištění ho
+  dopočítá z `link`; seznamu ze 2.27.1 dá `id`, prázdnou `note` a `rec: null`.
+- `rec` = poslední záznam `{ts, when, qty, state, at, by}`: vloží se přes Ctrl+V (A QR kód,
+  B datum a čas, C počet ks, D stav). `shRecBuild(rows)` → `{recs: Map kód → záznam, rows, bad}`
+  (nadpisy přeskočí, na kód nejnovější), `shApplyRecs(list, recs, meta)` → `{matched, updated,
+  same, older, missing}` (stejný kód u více položek dostanou všechny, starší nepřepíše
+  novější). `shParseWhen`: `22.10.2026 9:15`, `22. 10. 26`, ISO, pořadové číslo dne Excelu.
+- `shMoveItem(list, id, to)`: přesun ve skupině (TOP / ostatní).
 
 Import (`shImportFile` v `app.js`): SheetJS, každý list přes `shSheetRows` (sloupce A–H, nejvýš
 20 000 řádků, `shCellText`: číselný EAN s formátem nul se vezme jako formátovaný text; `shCellLink`:
@@ -936,22 +961,28 @@ header, top, warn{noLink, noCode, noEan, skipped}}` (nadpisy `shIsHeader`: aspo�
 z A–E v prvních 15 řádcích; odkaz z C, jinak z jiné buňky řádku). Vezme se list s nejvíc
 položkami. CSV se odmítne (nemá odkazy). Společné uložení a zpráva `shAddList(r, src)`.
 
-Vložení (Ctrl+V): posluchač `paste` na dokumentu (jen pohled Shortage, ne v polích ani
+Vložení (Ctrl+V): `shPaste` rozhodne podle `shLooksLikeRecs`, jestli jde o poslední záznamy
+(`shPasteRecs`, k otevřenému seznamu; když nic nesedí, napíše, ke kterému seznamu kódy patří),
+nebo o nový seznam. Posluchač `paste` na dokumentu (jen pohled Shortage, ne v polích ani
 dialozích; pole `#shPaste` je cíl, vstup se maže). `shClipRows(html, text)` → `{plain, rows}`:
 HTML ze schránky bez `<style>`, `<script>` a atributů `style` přes DOMParser, buňky
 `table.rows`/`cells` (`<br>` = mezera, `colspan` doplní prázdné buňky, odkaz z `a[href]`),
 výřez bez `<table>` se obalí; bez HTML `shTsv` (core, buňky v uvozovkách). `shPaste`.
 
-UI (sekce „SHORTAGE“): `renderShortage` (dlaždice Seznam, Položek, TOP shortage, S QR kódem;
+UI (sekce „SHORTAGE“): `renderShortage` (dlaždice Seznam, Položek, TOP shortage, S QR kódem,
+Poslední záznam; řádek `tr[data-shid]` s úchytem, poznámkou `[data-shnote]` (uloží se při
+`change`) a odebráním `[data-shdelitem]` s potvrzením; přesouvání `shDragDown/Move/Mark/End`
+a `shGripKey`;
 karta seznamu s hledáním `#shQ` přes `shFilter` i podle operace a kódu, `[data-shpdf]`,
 `[data-shdel]` s potvrzením, přepínání seznamů `[data-shopen]`, stav `ui.sh`), tabulka
 `table.stack.sh-tab` (řádek `tr.sh-top`, štítek `.sh-toptag`, kód `.sh-code`, EAN je odkaz
 `target=_blank rel=noopener noreferrer`). Historie změn `shChanges` (klíče `shl:` nahrání, `shd:`
 smazání, aby se nesloučily; text „z toho N TOP“).
 
-PDF `drawShortage(doc, l)` (A4 na šířku, `withPdf(…, 'landscape')`): sloupce `SH_PDF_COLS`, řádek
+PDF `drawShortage(doc, l)` (A4 na šířku, `withPdf(…, 'landscape')`, od 2.28 černobílé `SH_MONO`):
+sloupce `SH_PDF_COLS` (Operace · poslední záznam, dopsaná poznámka nahoře v Poznámkách), řádek
 20 mm, QR 14 mm s kódem písmem pod ním (`pdfQr`: znaky mimo ASCII jako `%XX`, úroveň M, jinak L,
-okraj 2 moduly), TOP řádek podbarvený `critSoft` s pruhem a štítkem, hlavička tabulky na každé
+okraj 2 moduly), TOP řádek světle šedý s černým pruhem a štítkem, hlavička tabulky na každé
 stránce (`k.onPage`), čárkované linky na psaní ve Stav k 10:00, Stav k 13:00 a Poznámkách.
 Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
 
@@ -1183,7 +1214,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.25.2 | `41a5fa1` | PDF matice s benefity a bez, průměr zaškolení u pracovníků v zácviku |
 | 2.26 | `2abb107` | Servis – PDF Kompletní / Na opravu / K vyřazení, digitální podpis předávajícího (data verze 22) |
 | 2.27 | `16b12fd` | Shortage – import chybějících dílů z Excelu, PDF na šířku s QR kódem odkazu z EANu (data verze 23) |
-| 2.27.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – nové sloupce, TOP SHORTAGE nahoře, probíhající operace, do QR jen activeBarcode, vložení přes Ctrl+V (data verze 24) |
+| 2.27.1 | `2f75738` | Shortage – nové sloupce, TOP SHORTAGE nahoře, probíhající operace, do QR jen activeBarcode, vložení přes Ctrl+V (data verze 24) |
+| 2.28 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – odebrání položky, poslední záznamy přes Ctrl+V, přesouvání myší, poznámka, PDF pro černobílý tisk (data verze 25) |
 
 Verze 2.1 přidala:
 
@@ -1295,7 +1327,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `24` (od 2.27.1):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `25` (od 2.28):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1563,7 +1595,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 68 testů: proti původní aplikaci + opravy + 2.1 až 2.27
+node tests/test_core.js                 # 69 testů: proti původní aplikaci + opravy + 2.1 až 2.28
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1600,8 +1632,10 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     TOP, operace, druhý list) vyrobí v prohlížeči přes SheetJS, import a upozornění, TOP nahoře,
     hledání, PDF (na šířku, stránky, hlavička, žádné anotace odkazů), QR kódy vykreslí PyMuPDF
     a čte jsQR (záloha ZXing) a musí nést activeBarcode, Ctrl+V (událost `paste` s HTML jako
-    z Excelu a jen s textem, vložení do hledání nic nepřidá), další seznam, přepnutí, smazání,
-    historie, CSV, telefon, tmavý režim;
+    z Excelu a jen s textem, vložení do hledání nic nepřidá), 2.28: poslední záznamy přes Ctrl+V,
+    poznámka, odebrání, přetažení myší (i nad TOP nejde), šipky, PDF s úpravami jen v odstínech
+    šedé, monitor 1280 px bez přetečení; další seznam, přepnutí, smazání, historie, CSV, telefon,
+    tmavý režim;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;

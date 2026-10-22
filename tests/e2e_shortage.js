@@ -221,7 +221,7 @@ const ORDERED = [...ITEMS.filter(x => x.top), ...ITEMS.filter(x => !x.top)];
     const text = info.map(p => p.text).join(' ').replace(/\s+/g, ' ');
     check(info.every(p => p.w > p.h), 'všechny stránky A4 na šířku');
     check(info.length === 4, `25 položek na ${info.length} stránkách (7 + 8 + 8 + 2)`);
-    ['Chybějící díly', 'Stav k 10:00', 'Stav k 13:00', 'Poznámky', 'Urgentní', 'Číslo objednávky', 'Probíhající', 'QR kód', 'TOP SHORTAGE', '4 TOP SHORTAGE', '0012345678905', 'Těsnění víka převodovky', 'Šroub M8×25 DIN 912', 'OBJ-2026-04124', '1 200', 'CNC frézování', ITEMS[0].code, 'bez odkazu', 'odkaz bez activeBarcode', 'Strana 4 / 4']
+    ['Chybějící díly', 'Stav k 10:00', 'Stav k 13:00', 'Poznámky', 'Urgentní', 'Číslo objednávky', 'Operace · poslední', 'QR kód', 'TOP SHORTAGE', '4 TOP SHORTAGE', '0012345678905', 'Těsnění víka převodovky', 'Šroub M8×25 DIN 912', 'OBJ-2026-04124', '1 200', 'CNC frézování', ITEMS[0].code, 'bez odkazu', 'odkaz bez activeBarcode', 'Strana 4 / 4']
       .forEach(t => check(text.includes(t), `PDF obsahuje „${t}“`));
     check(info.slice(1).every(p => /Stav k 10:00/.test(p.text)), 'hlavička tabulky na každé stránce');
     // klikací odkazy ne: jsPDF 4.2 by v adrese přepsal & na &amp; (adresa by se otevřela špatně)
@@ -267,7 +267,7 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   check(/Vloženo 2 položky ze schránky, z toho 1 TOP SHORTAGE/.test(pmsg) && !/bez odkazů/.test(pmsg), `vložení ze schránky: ${pmsg}`);
   const pl = await page.evaluate(() => S.shortage.lists[0]);
   check(pl.file === 'vloženo ze schránky' && pl.items.length === 2, `vložený seznam: ${pl.file} ${pl.items.length}`);
-  check(JSON.stringify(pl.items[0]) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
+  check(JSON.stringify((({ id, note, rec, ...x }) => x)(pl.items[0])) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
     link: 'http://is.example/commission.production.detail/default/69001?activeBarcode=70001.980001.12345&componentProductionId=980001', code: '70001.980001.12345' }), `vložená položka: ${JSON.stringify(pl.items[0])}`);
   check(pl.items[1].qty === '1 500' && pl.items[1].op === 'Broušení' && !pl.items[1].top && pl.items[1].code === '70002.980002.12346', `sloučené buňky a mezery: ${JSON.stringify(pl.items[1])}`);
   check(await page.inputValue('#shPaste') === '', 'pole pro vložení zůstane prázdné');
@@ -291,6 +291,101 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   await page.waitForFunction(() => S.shortage.lists.length === 1);
   await saved(page);
 
+  // Úpravy položek (2.28): poslední záznamy ze schránky, poznámka, odebrání, přesouvání a PDF.
+  // Záznamy jsou text oddělený tabulátory (A QR kód, B datum a čas, C ks, D stav); kód ITEMS[5] dvakrát (platí novější), jeden kód mimo seznam.
+  const recText = ['QR kód\tDatum a čas\tPočet ks\tStav',
+    `${ITEMS[0].code}\t22.10.2026 9:15\t40\tBroušení hotovo`,
+    `${ITEMS[3].code}\t22.10.2026 10:05\t12\tČeká na materiál`,
+    `${ITEMS[5].code}\t22.10.2026 07:30\t3\tStarší záznam`,
+    `${ITEMS[5].code}\t22.10.2026 11:40\t8\tMontáž`,
+    '99999.111111.22222\t22.10.2026 9:00\t1\tNení v seznamu'].join('\r\n') + '\r\n';
+  await paste('', recText);
+  await page.waitForFunction(() => S.shortage.lists[0].items.filter(i => i.rec).length === 3);
+  const rmsg = await page.textContent('#shMsg');
+  check(/nový záznam u 3 položek/.test(rmsg) && /1 kód v seznamu není: 99999\.111111\.22222/.test(rmsg) && await page.evaluate(() => S.shortage.lists.length) === 1, `vložení posledních záznamů (nový seznam nevznikne): ${rmsg}`);
+  const recOf = code => page.evaluate(c => { const i = S.shortage.lists[0].items.find(x => x.code === c); return i && i.rec && [i.rec.qty, i.rec.state, i.rec.when]; }, code);
+  check(JSON.stringify(await recOf(ITEMS[5].code)) === JSON.stringify(['8', 'Montáž', '22. 10. 2026 11:40']), `novější záznam téhož kódu: ${JSON.stringify(await recOf(ITEMS[5].code))}`);
+  check(/Broušení hotovo/.test(await page.textContent(`#shView tbody tr:nth-child(5)`)) && /40 ks/.test(await page.textContent(`#shView tbody tr:nth-child(5)`)), 'poslední záznam v tabulce');
+  check(/Poslední záznam\s*3/.test(await page.textContent('#shView .stats')), 'dlaždice Poslední záznam');
+  await saved(page);
+  // poznámka k položce (Enter uloží)
+  const noteSel = `#shView [data-shnote="${await page.evaluate(c => S.shortage.lists[0].items.find(x => x.code === c).id, ITEMS[0].code)}"]`;
+  await page.fill(noteSel, '  Volat   dodavatele  ');
+  await page.press(noteSel, 'Enter');
+  await page.waitForFunction(c => S.shortage.lists[0].items.find(x => x.code === c).note === 'Volat dodavatele', ITEMS[0].code);
+  check(await page.inputValue(noteSel) === 'Volat dodavatele', 'poznámka bez zbytečných mezer');
+  await saved(page);
+  // odebrání položky (EAN s nulami)
+  await page.click(`#shView tr:has-text("0012345678905") [data-shdelitem]`);
+  await page.waitForSelector('#dlg[open]');
+  check(/0012345678905/.test(await page.textContent('#dlg')), 'potvrzení odebrání jmenuje položku');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => S.shortage.lists[0].items.length === 24 && document.querySelectorAll('#shView tbody tr').length === 24);
+  check(!(await page.evaluate(() => S.shortage.lists[0].items.some(i => i.ean === '0012345678905'))), 'položka odebraná');
+  await saved(page);
+  // přetažení myší: ITEMS[2] (6. řádek) nad ITEMS[0] (5. řádek, první mimo TOP)
+  const ids = () => page.evaluate(() => S.shortage.lists[0].items.map(i => i.ean));
+  const rowBox = async idx => { const r = page.locator('#shView tbody tr').nth(idx); await r.scrollIntoViewIfNeeded(); return r.boundingBox(); };
+  const drag = async (from, toY) => {
+    const b = await rowBox(from);
+    const x = b.x + b.width * 0.42, y = b.y + b.height / 2;   // sloupec Index: žádné pole ani odkaz
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x, y + 8, { steps: 2 });
+    await page.mouse.move(x, toY, { steps: 12 });
+    await page.waitForTimeout(60);
+    const marked = await page.locator('#shView tr.sh-drop-before, #shView tr.sh-drop-after').count();
+    await page.mouse.up();
+    return marked;
+  };
+  check((await ids())[5] === ITEMS[2].ean && (await ids())[4] === ITEMS[0].ean, `výchozí pořadí: ${(await ids()).slice(3, 7)}`);
+  const t4 = await rowBox(4);
+  const marked = await drag(5, t4.y + 6);
+  await page.waitForFunction(e => S.shortage.lists[0].items[4].ean === e, ITEMS[2].ean);
+  check(marked === 1, 'při tažení je vidět, kam položka padne');
+  check((await ids())[5] === ITEMS[0].ean && await page.locator('#shView tbody tr').nth(4).getAttribute('data-shid') === await page.evaluate(() => S.shortage.lists[0].items[4].id), 'přetažení myší změní pořadí v datech i v tabulce');
+  await saved(page);
+  // běžná položka nejde nad TOP SHORTAGE
+  const seventh = (await ids())[6];
+  const t0 = await rowBox(0);
+  await drag(6, t0.y + 4);
+  await page.waitForFunction(e => S.shortage.lists[0].items[4].ean === e, seventh);
+  check((await ids()).slice(0, 4).join() === ORDERED.slice(0, 4).map(x => x.ean).join(), `TOP zůstanou nahoře, běžná položka skončí hned pod nimi: ${(await ids()).slice(0, 6)}`);
+  const afterTop = await ids();
+  // šipkou na úchytu o jedno nahoru
+  const gripId = await page.evaluate(() => S.shortage.lists[0].items[7].id);
+  await page.focus(`#shView [data-shgrip="${gripId}"]`);
+  await page.keyboard.press('ArrowUp');
+  await page.waitForFunction(id => S.shortage.lists[0].items[6].id === id, gripId);
+  check(await page.evaluate(id => document.activeElement && document.activeElement.dataset.shgrip === id, gripId), 'po přesunu šipkou zůstane fokus na úchytu');
+  check((await ids())[7] === afterTop[6], 'šipka nahoru prohodí se sousedem');
+  // při hledání se nepřesouvá
+  await page.fill('#shQ', 'hřídel');
+  check(await page.evaluate(() => document.querySelector('#shView table.sh-tab').classList.contains('sh-nodrag')), 'při hledání je přesouvání vypnuté');
+  await page.fill('#shQ', '');
+  await saved(page);
+  await page.screenshot({ path: path.join(shots, '03b-upravy.png'), fullPage: true });
+  // PDF s poznámkou, záznamy a novým pořadím; jen odstíny šedé (černobílý tisk)
+  const pdf2 = await download(page, '[data-shpdf]', 'shortage-upravy.pdf');
+  const info2 = pdfInfo(pdf2.path);
+  if (info2) {
+    const text2 = info2.map(p => p.text).join(' ').replace(/\s+/g, ' ');
+    ['Volat dodavatele', 'Broušení hotovo · 40 ks', 'Montáž · 8 ks', '22. 10. 2026 11:40', 'Operace · poslední', '24 položek'].forEach(t => check(text2.includes(t), `PDF úprav obsahuje „${t}“`));
+    check(!text2.includes('0012345678905'), 'odebraná položka v PDF není');
+    check(text2.indexOf(ITEMS[2].order) < text2.indexOf(ITEMS[0].order), 'PDF má pořadí podle přesunu');
+    const gray = spawnSync('python3', ['-c', `import sys, pymupdf
+d = pymupdf.open(sys.argv[1]); worst = 0
+for p in d:
+    pix = p.get_pixmap(matrix=pymupdf.Matrix(1.5, 1.5), colorspace=pymupdf.csRGB); s = pix.samples
+    for i in range(0, len(s), 3):
+        r, g, b = s[i], s[i + 1], s[i + 2]
+        worst = max(worst, abs(r - g), abs(g - b), abs(r - b))
+print(worst)`, pdf2.path], { encoding: 'utf8', maxBuffer: 1 << 26 });
+    if (gray.status === 0) check(+gray.stdout.trim() <= 3, `PDF jen v odstínech šedé (největší rozdíl barevných složek ${gray.stdout.trim()})`);
+    spawnSync('python3', ['-c', `import pymupdf,sys
+d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+'/pdf-upravy-1.png')`, pdf2.path, shots]);
+  }
+
   // Další seznam, přepnutí na starší a smazání.
   const small = await page.evaluate(async () => {
     const X = await xlsx();
@@ -305,7 +400,7 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   check(/Nahráno 1 položka ze souboru odpoledne\.xlsx\./.test(await page.textContent('#shMsg')), `druhý import: ${await page.textContent('#shMsg')}`);
   check(await page.locator('#shView .sh-lists .chip').count() === 2 && await page.locator('#shView tbody tr').count() === 1, 'dva seznamy, ukázaný je nejnovější');
   await page.click('#shView .sh-lists .chip:nth-child(2)');
-  await page.waitForFunction(() => document.querySelectorAll('#shView tbody tr').length === 25);
+  await page.waitForFunction(() => document.querySelectorAll('#shView tbody tr').length === 24);
   check(true, 'přepnutí na starší seznam');
   await page.screenshot({ path: path.join(shots, '03-dva-seznamy.png'), fullPage: true });
   await saved(page);
@@ -316,13 +411,19 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   await saved(page);
   const log = await page.evaluate(() => S.log.filter(x => x.kind === 'shortage').map(x => x.text));
   check(log.some(t => /^Shortage: nahrán seznam .*\(25 položek, z toho 4 TOP, shortage-22-10\.xlsx\)$/.test(t)) && log.some(t => /^Shortage: nahrán seznam .*\(1 položka, odpoledne\.xlsx\)$/.test(t))
-    && log.some(t => /^Shortage: nahrán seznam .*\(2 položky, z toho 1 TOP, vloženo ze schránky\)$/.test(t)) && log.some(t => /^Shortage: smazán seznam .*25 položek/.test(t)), `historie změn: ${JSON.stringify(log)}`);
+    && log.some(t => /^Shortage: nahrán seznam .*\(2 položky, z toho 1 TOP, vloženo ze schránky\)$/.test(t)) && log.some(t => /^Shortage: smazán seznam .*24 položek/.test(t))
+    && log.some(t => /^Shortage: ze seznamu .* odebrána položka 0012345678905 Ložisko 6204-2RS$/.test(t)) && log.some(t => /^Shortage: poznámka k položce 8594000000101 Hřídel předlohová \(seznam .*\): Volat dodavatele$/.test(t))
+    && log.some(t => /^Shortage: poslední záznamy u 3 položek seznamu /.test(t)) && log.some(t => /^Shortage: změněno pořadí položek v seznamu /.test(t)), `historie změn: ${JSON.stringify(log)}`);
 
   // CSV nemá odkazy.
   await page.setInputFiles('#shFile', { name: 'seznam.csv', mimeType: 'text/csv', buffer: Buffer.from('EAN;Název\n123;Díl\n') });
   await page.waitForFunction(() => /CSV neobsahuje hypertextové odkazy/.test(document.querySelector('#shMsg').textContent));
   check(await page.evaluate(() => S.shortage.lists.length) === 1, 'CSV se nenahraje');
 
+  // Užší monitor: stránka nepřeteče, širokou tabulku jde posunout v kartě.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForTimeout(200);
+  check(await overflow(page) <= 1, `monitor 1280 px: přetečení stránky ${await overflow(page)} px`);
   // Telefon.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => showView('shortage'));

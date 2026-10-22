@@ -370,7 +370,7 @@ test('historie změn: kdo co změnil, slučování a návrat hodnoty', () => {
   assert.ok(out.late.some(t => t === 'Ruční úprava Novák Martin (' + m + '): +3 → 0'), 'po 10 minutách se neslučuje');
   assert.strictEqual(out.hasCurrent, false, 'vybrané období je osobní');
   assert.ok(!out.settings.includes('hiddenCols') && !out.settings.includes('lockMinutes'));
-  assert.strictEqual(out.v, 24);
+  assert.strictEqual(out.v, 25);
   return null;
 });
 
@@ -412,7 +412,7 @@ test('sanitizeState: oddělení, zaučení, historie zařazení a změn', () => 
   assert.deepStrictEqual(o.issued['2026-09']['c|d'], { at: 1, tabaky: 2, kafe: false });
   assert.strictEqual(o.log.length, 1);
   assert.deepStrictEqual(o.log[0], { at: 1, by: 'x'.repeat(60), card: '', kind: 'data', text: '<img src=x>', key: 'a|b', m: 'adj:1', p: 'P', v0: '1', v1: '2' });
-  assert.strictEqual(o.v, 24);
+  assert.strictEqual(o.v, 25);
   return null;
 });
 
@@ -546,7 +546,7 @@ test('aktualizace 2.0 → 2.1: data zůstanou beze změny', () => {
   assert.ok(out.again, 'opakované načtení nic nemění');
   assert.ok(out.defaults, 'nové volby mají výchozí hodnoty: s tabáky, bez navýšení a podmínek');
   assert.strictEqual(out.time, false, 'stará evidence práce nemá strávený čas');
-  assert.strictEqual(out.v, 24);
+  assert.strictEqual(out.v, 25);
   assert.ok(out.rows.every(r => r[5] === 0), 'bez nastavení nikdo nedostane navýšení');
   return null;
 });
@@ -779,7 +779,7 @@ test('aktualizace 2.3 → 2.4: pozice se převedou na skupiny, výpočty i data 
   assert.strictEqual(out.legacyText, 'CNC, úroveň 2 (Pokročilý); zaučení: Brusič 3 (Samostatný)');
   assert.deepStrictEqual(out.issued, { at: 7, tabaky: 6, kafe: true, pos: 'p_cnc', lvl: 4, pct: 100 });
   assert.deepStrictEqual(out.adjust, { 'novak|martin': 2 });
-  assert.strictEqual(out.v, 24);
+  assert.strictEqual(out.v, 25);
   assert.ok(out.log.some(t => t.startsWith('Novák Martin: původní zařazení z verze 2.3 převedeno do nové verze a smazáno (CNC, úroveň 2')), out.log.join(' | '));
   assert.strictEqual(out.pending, 7);
   return null;
@@ -958,7 +958,7 @@ test('Top 5: EAN v evidenci práce, souhrny po dnech a pracovnících', () => {
   assert.deepStrictEqual(out.st.Y.d['2026-10-05'], [0, 0, 1e9, 0, 0]);
   assert.deepStrictEqual(out.st.Y.w['petr dvorak']['2026-10-05'], [1, 2, 0, 0]);
   assert.deepStrictEqual(out.eff, { weeks: {}, cases: [], reports: [], settings: { min: 60, target: 85, d1: 14, d2: 30, unit: 'h' }, nos: {} });
-  assert.strictEqual(out.v, 24);
+  assert.strictEqual(out.v, 25);
   return null;
 });
 
@@ -1192,7 +1192,7 @@ test('aktualizace 2.1 → 2.2: data zůstanou beze změny, Top 5 začne prázdn�
   assert.ok(out.same, 'všechna data z verze 2.1 zůstanou beze změny');
   assert.deepStrictEqual(out.eff.cases, []);
   assert.deepStrictEqual(out.cols, [null, null], 'uložené sloupce importu bez EAN');
-  assert.strictEqual(out.v, 24);
+  assert.strictEqual(out.v, 25);
   assert.strictEqual(out.items, false, 'stará evidence práce položky nemá, Top 5 čeká na nový import s EAN');
   assert.deepStrictEqual(out.weeks, []);
   return null;
@@ -1309,7 +1309,7 @@ test('aktualizace 2.2 → 2.3: data zůstanou beze změny, Kontroly začnou prá
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(o2)), audit: neu.audit, v: neu.v })`));
   assert.ok(out.same, 'všechna data z verze 2.2 zůstanou beze změny');
   assert.deepStrictEqual(out.audit, { tasks: {}, plans: {}, settings: { pct: 25 } });
-  assert.strictEqual(out.v, 24);
+  assert.strictEqual(out.v, 25);
   return null;
 });
 
@@ -1326,7 +1326,7 @@ test('aktualizace 2.5 → 2.6: data zůstanou beze změny, přibude jen evidence
     const o2 = JSON.parse(JSON.stringify(old)); delete o2.v;
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(o2)), nos: neu.eff.nos, v: neu.v, cases: neu.eff.cases.map(x => x.no) })`));
   assert.ok(out.same, 'všechna data z verze 2.5 zůstanou beze změny');
-  assert.deepStrictEqual([out.nos, out.v, out.cases], [{}, 24, ['2026-001']]);
+  assert.deepStrictEqual([out.nos, out.v, out.cases], [{}, 25, ['2026-001']]);
   return null;
 });
 
@@ -1391,7 +1391,7 @@ test('aktualizace 2.6 → 2.7: data zůstanou beze změny, nikdo není vedoucí'
     const strip = st => { const x = JSON.parse(JSON.stringify(st)); delete x.v; return x; };
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(strip(old))), leads: Object.values(neu.employees).filter(isLead).length, v: neu.v })`));
   assert.ok(out.same, 'všechna data z verze 2.6 zůstanou beze změny');
-  assert.deepStrictEqual([out.leads, out.v], [0, 24]);
+  assert.deepStrictEqual([out.leads, out.v], [0, 25]);
   return null;
 });
 
@@ -1561,7 +1561,7 @@ test('aktualizace 2.9 → 2.10: data zůstanou beze změny, dovednosti vedoucíc
     const strip = st => { const x = JSON.parse(JSON.stringify(st)); delete x.v; delete x.leadSkills; return x; };
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(strip(old))), ls: neu.leadSkills, v: neu.v })`));
   assert.ok(out.same, 'všechna data z verze 2.9 zůstanou beze změny');
-  assert.deepStrictEqual([out.ls, out.v], [[], 24]);
+  assert.deepStrictEqual([out.ls, out.v], [[], 25]);
   return null;
 });
 
@@ -1664,7 +1664,7 @@ test('aktualizace 2.10 → 2.11: pracovní morálka jako podmínka, označení s
     JSON.stringify({ v: neu.v, same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(strip(old))),
       tiers: np.tiers.map(t => [t.moral, t.maxKt, t.skills, t.manual.map(m => m.text)]), marks: neu.marks[id],
       again: JSON.stringify(again.marks) === JSON.stringify(neu.marks) && JSON.stringify(again.positions) === JSON.stringify(neu.positions), custom })`));
-  assert.strictEqual(out.v, 24);
+  assert.strictEqual(out.v, 25);
   assert.ok(out.same, 'ostatní data z verze 2.10 zůstanou beze změny');
   assert.deepStrictEqual(out.tiers, [[true, null, [], ['Úklid pracoviště']], [true, null, [], []]], 'morálka je podmínka, vlastní bod zůstal, nové podmínky vypnuté');
   assert.deepStrictEqual(out.marks, { 'dvorak|petr': { moral: 'hádka s mistrem', m2: 'nepořádek' }, 'novak|martin': { moral: '' } }, 'označení morálky se převedlo i s důvodem');
@@ -1751,7 +1751,7 @@ test('aktualizace 2.11 → 2.12: data zůstanou beze změny, srážky za neprodu
     JSON.stringify({ same: JSON.stringify(canon(strip(neu))) === JSON.stringify(canon(strip(old))), done: neu.normCutDone, rules: neu.positions.filter(p => p.normCut).length, v: neu.v,
       pending: (S = neu, wageAllPending('2099-01-01').filter(x => x.kind === 'norm').length) })`));
   assert.ok(out.same, 'všechna data z verze 2.11 zůstanou beze změny');
-  assert.deepStrictEqual([out.done, out.rules, out.v, out.pending], [{}, 0, 24, 0]);
+  assert.deepStrictEqual([out.done, out.rules, out.v, out.pending], [{}, 0, 25, 0]);
   return null;
 });
 
@@ -1857,7 +1857,7 @@ test('Protokoly (2.16): intervaly úkonů, víkend a svátek, posun termínu, ř
     'Protokoly – Lis (L-01): odebrán úkon „Čištění“', 'Protokoly: smazán deník Lis (L-01)']);
   assert.deepStrictEqual(out.log2, [['Protokoly – Lis (L-01): upravené údaje – záznamů za den, fotka stroje', 'lbf'],
     ['Protokoly – Lis (L-01): fotky úkonu „Vizuální kontrola“ (1)', 'lbp'], ['Protokoly – Lis (L-01): změněno pořadí úkonů', 'lbo']], 'údaje stroje, fotky a pořadí úkonů');
-  assert.ok(out.blankHas && out.v === 24, 'nová data mají prázdné Protokoly, verze dat 24');
+  assert.ok(out.blankHas && out.v === 25, 'nová data mají prázdné Protokoly, verze dat 25');
   return null;
 });
 
@@ -1869,7 +1869,7 @@ test('aktualizace 2.15 → 2.16: data zůstanou beze změny, Protokoly začnou p
     const now = sanitizeState(JSON.parse(JSON.stringify(old)));
     const keep = JSON.parse(JSON.stringify(now)); delete keep.logbooks;
     JSON.stringify({ same: JSON.stringify(Object.assign({}, keep, { v: 0 })) === before, books: now.logbooks, v: now.v })`));
-  assert.deepStrictEqual(out, { same: true, books: [], v: 24 });
+  assert.deepStrictEqual(out, { same: true, books: [], v: 25 });
   return null;
 });
 
@@ -1998,7 +1998,7 @@ test('Audit (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víken
   assert.deepStrictEqual(out.log, ['Audit 1. 10. 2026 – Ranní, Brusiči: 6 → 7 (Chyběl záznam brigádníka)', 'Audit 2. 10. 2026 – Kusy – Broušení ručně: 450 → 470 (Oprava ze směnového hlášení)']);
   assert.deepStrictEqual(out.log2, ['Audit – Kontrola / balení / brigadýr / školitelé, neproduktivní pozice: ano → ne', 'Audit – operace „Kontrola výstupní“, skupina: Kontrola / balení / brigadýr / školitelé → bez skupiny']);
   assert.deepStrictEqual(out.dirty, [[['ok', 'ZZ', '']], [['o1', '']], { am: { plan: 0, total: null, abs: null }, pm: { plan: null, total: null }, g: { ok: [100000, 2] } }, ['2026-10-01'], ['am.total']]);
-  assert.ok(out.blank && out.v === 24);
+  assert.ok(out.blank && out.v === 25);
   return null;
 });
 
@@ -2010,7 +2010,7 @@ test('aktualizace 2.16 → 2.18: data zůstanou beze změny, Audit začne prázd
     const now = sanitizeState(JSON.parse(JSON.stringify(old)));
     const keep = JSON.parse(JSON.stringify(now)); delete keep.workAudit;
     JSON.stringify({ same: JSON.stringify(Object.assign({}, keep, { v: 0 })) === before, days: Object.keys(now.workAudit.days).length, groups: now.workAudit.groups.length, v: now.v })`));
-  assert.deepStrictEqual(out, { same: true, days: 0, groups: 7, v: 24 });
+  assert.deepStrictEqual(out, { same: true, days: 0, groups: 7, v: 25 });
   return null;
 });
 
@@ -2032,7 +2032,7 @@ test('aktualizace 2.17 → 2.18.1: Audit beze změny, přibude prázdný výrobn
       fresh: sanitizeState(demoData()).workAudit.target, t16: sanitizeState(v16).workAudit.target, own: sanitizeState(v16Own).workAudit.target, t17: sanitizeState(v17).workAudit.target })`));
   assert.ok(out.same, 'stávající Audit beze změny');
   assert.deepStrictEqual(out.plan, { tpl: null, tech: { words: ['G2', 'G'], mode: 'token' }, cap: { group: 'brus', perShift: 25 }, chunks: [], weeks: {}, items: 0, files: [], at: 0, by: '' });
-  assert.deepStrictEqual([out.target, out.v], [100, 24], 'požadavek pevně 100 lidí na pracovní den');
+  assert.deepStrictEqual([out.target, out.v], [100, 25], 'požadavek pevně 100 lidí na pracovní den');
   assert.deepStrictEqual([out.fresh, out.t16, out.own, out.t17], [100, 100, 90, null], 'nová data 100, z 2.18 100, vlastní číslo zůstane, „podle souboru“ od 2.18.1 zůstane');
   return null;
 });
@@ -2186,7 +2186,7 @@ test('Top 5 (2.19): komentáře o vývoji případu – přidání, úprava, sma
   assert.deepStrictEqual(out.clean.map(k => [k.id.length > 1, k.text.length, k.round, !!k.ed]), [[true, 2, 50, false], [true, 2000, 1, true]], 'čištění: prázdné a nesmyslné pryč, délka a kolo omezené');
   assert.strictEqual(out.clean[1].id, 'k1');
   assert.strictEqual(out.copy, false, 'vydaný report komentáře nekopíruje');
-  assert.deepStrictEqual([out.up, out.v], [[[]], 24], 'aktualizace 2.18 → 2.19: případy bez komentářů dostanou prázdný seznam');
+  assert.deepStrictEqual([out.up, out.v], [[[]], 25], 'aktualizace 2.18 → 2.19: případy bez komentářů dostanou prázdný seznam');
   return null;
 });
 
@@ -2263,7 +2263,7 @@ test('Servis (2.21): odeslání, zařízení z položek, párování, číslo pr
   assert.ok(out.log2.some(t => t === 'Servis 2026/001: vráceno ze servisu 25. 10. 2026 – Bruska · Makita GA5030 (ID B-12 · v. č. SN 001) (vyměněn vypínač)'), `vrácení v historii: ${out.log2}`);
   assert.deepStrictEqual(out.dirty, ['', true, 1, [['dv1', ''], ['', '2026-10-12']]], 'čištění: nečitelné ID bez textu, vrácení před odesláním pryč, neznámé zařízení bez odkazu, odeslání bez data pryč');
   assert.deepStrictEqual(out.blank, { devices: [], shipments: [], templates: [] });
-  assert.deepStrictEqual(out.up, [{ devices: [], shipments: [], templates: [] }, 24], 'aktualizace 2.20 → 2.21: Servis začne prázdný');
+  assert.deepStrictEqual(out.up, [{ devices: [], shipments: [], templates: [] }, 25], 'aktualizace 2.20 → 2.21: Servis začne prázdný');
   return null;
 });
 
@@ -2297,7 +2297,7 @@ test('Servis (2.26): digitální podpis předávajícího – čištění, úpra
   assert.deepStrictEqual(out.log1, ['Servis 2026/001: podepsal předávající Jan  Novák']);
   assert.deepStrictEqual(out.log2, ['Servis 2026/001: podepsal předávající Eva Malá (nový podpis)']);
   assert.deepStrictEqual(out.log3, ['Servis 2026/001: odebrán podpis předávajícího (Eva Malá)']);
-  assert.strictEqual(out.v, 24, 'verze dat 24: starší stránka podpis nesmaže');
+  assert.strictEqual(out.v, 25, 'verze dat 25: starší stránka podpis nesmaže');
   return null;
 });
 
@@ -2337,7 +2337,7 @@ test('Shortage (2.27, sloupce 2.27.1): import řádků, TOP nahoře, kód z odka
     const d = sharedState(S);
     const log = (x, y) => describeChanges(x, y, { at: 9, by: 'V', card: '' }).entries.filter(e => e.kind === 'shortage').map(e => e.text);
     return JSON.stringify({ r, noHeader: [noHeader.header, noHeader.items.length, noHeader.items[0].code], cl: [cl.lists.length, cl.lists[0].id, cl.lists[cl.lists.length - 1].id, cl.lists.map(l => l.items.length).sort((x, y) => y - x)[0], cl.lists[0].items[0].link, cl.lists[0].items[0].top],
-      old: old.lists[0].items, junk, keptB: [b.shortage.lists[0].items.length, b.shortage.lists[0].items.map(i => i.top)], log1: log(a, b), log2: log(b, d), blank: blank().shortage, up: sanitizeState({ v: 22 }).shortage,
+      old: old.lists[0].items.map(({ id, ...x }) => ({ ...x, idOk: /^si[a-z0-9]{5}$/.test(id) })), junk: junk.lists.map(l => ({ id: l.id, items: l.items.map(({ id, ...x }) => x) })), keptB: [b.shortage.lists[0].items.length, b.shortage.lists[0].items.map(i => i.top)], log1: log(a, b), log2: log(b, d), blank: blank().shortage, up: sanitizeState({ v: 22 }).shortage,
       unxml: ['https://x.cz/?a=1&amp;b=2&#38;c=&#x3C;3&gt;', 'bez entit', '&amp;amp;', '&#0;&#99999999;'].map(shUnxml),
       links: ['https://x.cz/a b', 'HTTP://X.CZ', 'www.x.cz', 'mailto:a@b.cz', '#List1!A1', 'https://x.cz/' + 'a'.repeat(2000)].map(shLink),
       codes: [L(1, '12345.678901.23456'), 'http://x/?ACTIVEBARCODE=12.3', 'http://x/?activeBarcode=', 'http://x/?activeBarcode=a%20b', 'http://x/?activeBarcode=%E0%A4%A', 'http://x/?activeBarcode=12#frag', 'http://x/?barcode=1', '', null, 'http://x/?activeBarcode=' + '1'.repeat(121)].map(shCode),
@@ -2354,11 +2354,11 @@ test('Shortage (2.27, sloupce 2.27.1): import řádků, TOP nahoře, kód z odka
   assert.deepStrictEqual([out.r.top, out.r.warn], [3, { noLink: 2, noCode: 1, noEan: 1, skipped: 1 }]);
   assert.deepStrictEqual(out.noHeader, [-1, 1, '9.9.9'], 'bez hlavičky se čte od prvního řádku');
   assert.deepStrictEqual(out.cl, [30, 'sh31', 'sh2', 1000, '', true], 'nejnovější první, 30 seznamů, 1000 položek (TOP z konce se dostane dopředu), ftp odkaz pryč');
-  assert.deepStrictEqual(out.old, [{ order: 'O', name: 'A', ean: '1', index: 'I', qty: '3', top: false, op: '', link: 'http://is.example/commission.production.detail/default/7?activeBarcode=70.71.72&componentProductionId=1', code: '70.71.72' },
-    { order: '', name: 'B', ean: '2', index: '', qty: '', top: false, op: '', link: 'https://erp.example/2', code: '' }], 'seznam ze 2.27: kód se dopočítá z odkazu, TOP ne, operace prázdná');
-  assert.deepStrictEqual(out.junk.lists.length, 1);
-  assert.match(out.junk.lists[0].id, /^sh[a-z0-9]{5}$/, 'neplatné id se nahradí');
-  assert.deepStrictEqual(out.junk.lists[0].items, [{ order: '', name: 'X Y', ean: '123', index: '', qty: '', top: false, op: 'Brus', link: 'https://ok.example/a', code: '' }], 'TOP jen true, kód s mezerou pryč');
+  assert.deepStrictEqual(out.old, [{ order: 'O', name: 'A', ean: '1', index: 'I', qty: '3', top: false, op: '', link: 'http://is.example/commission.production.detail/default/7?activeBarcode=70.71.72&componentProductionId=1', code: '70.71.72', note: '', rec: null, idOk: true },
+    { order: '', name: 'B', ean: '2', index: '', qty: '', top: false, op: '', link: 'https://erp.example/2', code: '', note: '', rec: null, idOk: true }], 'seznam ze 2.27: kód se dopočítá z odkazu, TOP ne, operace prázdná; 2.28: id, bez poznámky a záznamu');
+  assert.deepStrictEqual(out.junk.length, 1);
+  assert.match(out.junk[0].id, /^sh[a-z0-9]{5}$/, 'neplatné id se nahradí');
+  assert.deepStrictEqual(out.junk[0].items, [{ order: '', name: 'X Y', ean: '123', index: '', qty: '', top: false, op: 'Brus', link: 'https://ok.example/a', code: '', note: '', rec: null }], 'TOP jen true, kód s mezerou pryč');
   assert.deepStrictEqual(out.keptB, [7, [true, true, true, false, false, false, false]], 'seznam přežije uložení a načtení i s TOP');
   assert.deepStrictEqual(out.log1, ['Shortage: nahrán seznam 22. 10. 2026 8:05 (7 položek, z toho 3 TOP, shortage.xlsx)']);
   assert.deepStrictEqual(out.log2, ['Shortage: smazán seznam 22. 10. 2026 8:05 (7 položek, z toho 3 TOP, shortage.xlsx)']);
@@ -2367,7 +2367,72 @@ test('Shortage (2.27, sloupce 2.27.1): import řádků, TOP nahoře, kód z odka
   assert.deepStrictEqual(out.codes, ['12345.678901.23456', '12.3', '', '', '%E0%A4%A', '12', '', '', '', ''], 'activeBarcode: do &, bez # části, s mezerou nebo delší než 120 znaků ne');
   assert.deepStrictEqual(out.unxml, ['https://x.cz/?a=1&b=2&c=<3>', 'bez entit', '&amp;', '&#0;&#99999999;'], 'XML zápis v cíli odkazu ze souboru (SheetJS) se převede zpět');
   assert.deepStrictEqual(out.tsv, [['A', 'B'], ['víc\nřádků', 's "uvozovkami"'], ['', 'C']], 'text ze schránky: tabulátory, řádky, buňky v uvozovkách');
-  assert.strictEqual(out.v, 24, 'verze dat 24: starší stránka TOP, operaci ani kód nesmaže');
+  assert.strictEqual(out.v, 25, 'verze dat 25: starší stránka TOP, operaci, kód, poznámky ani záznamy nesmaže');
+});
+
+test('Shortage (2.28): poslední záznamy ze schránky, přesun, odebrání, poznámka, čištění a historie změn', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const c = text => ({ text, link: '' });
+    const it = (id, code, top, extra) => ({ id, order: 'O-' + id, name: 'Díl ' + id, ean: '859' + id, index: 'A', qty: '1', top: !!top, op: '', link: '', code, note: '', rec: null, ...(extra || {}) });
+    const list = () => ({ id: 'shL', at: new Date(2026, 9, 22, 6, 0).getTime(), by: 'V', file: 'f.xlsx', sheet: '', items: [it('t1', 'K1', true), it('t2', 'K2', true), it('a', 'K3'), it('b', 'K4'), it('c', ''), it('d', 'K3')] });
+    // data ze schránky: nadpisy, dva záznamy téhož kódu (platí novější), formáty data, kód mimo seznam, řádek bez kódu
+    const rows = [
+      [c('QR kód'), c('Datum a čas'), c('Počet ks'), c('Stav')],
+      [c('K1'), c('22.10.2026 9:15'), c('40'), c('Broušení hotovo')],
+      [c('K1'), c('22.10.2026 08:05:10'), c('10'), c('Starší')],
+      [c('K3'), c('2026-10-22 10:30'), c('12'), c('Elox')],
+      [c('K4'), c('22. 10. 26 7:00'), c('5 ks'), c('Montáž')],
+      [c('X9'), c('22.10.2026 9:00'), c('1'), c('?')],
+      [c(''), c('22.10.2026 9:00'), c('1'), c('bez kódu')],
+      [c('K2'), c('není datum'), c('3'), c('Čeká')],
+    ];
+    const recs = shRecBuild(rows);
+    const L = list();
+    const r1 = shApplyRecs(L, recs.recs, { at: 5, by: 'Vedoucí' });
+    const again = shApplyRecs(L, recs.recs, { at: 6, by: 'Vedoucí' });
+    const older = shApplyRecs(L, shRecBuild([[c('K1'), c('21.10.2026 9:15'), c('1'), c('Staré')]]).recs, { at: 7, by: 'V' });
+    // přesun: v rámci skupiny, TOP zůstanou nahoře
+    const M = list();
+    const ord = () => M.items.map(i => i.id).join();
+    const moves = [shMoveItem(M, 'c', 2), ord(), shMoveItem(M, 'a', 0), ord(), shMoveItem(M, 't2', 0), ord(), shMoveItem(M, 't2', 5), ord(), shMoveItem(M, 'zz', 1), shMoveItem(M, 'd', 5)];
+    // čištění: id unikátní v seznamu, poznámka a záznam
+    const cl = cleanShortage({ lists: [{ id: 'shC', at: 1, items: [{ id: 'x1', ean: '1', name: 'A', note: ' víc\\n  řádků ', rec: { ts: '5', when: 'w', qty: 3, state: 'S', at: 'x', by: 'B', extra: 1 } }, { id: 'x1', ean: '2', name: 'B', rec: 'text' }, { id: 'bad id', ean: '3', name: 'C' }] }] }).lists[0].items;
+    // historie změn: odebrání, poznámka, záznamy, pořadí
+    S = sanitizeState(demoData());
+    S.shortage.lists = [list()];
+    const a = sanitizeState(JSON.parse(JSON.stringify(sharedState(S))));
+    S = JSON.parse(JSON.stringify(a));
+    const l = S.shortage.lists[0];
+    l.items = l.items.filter(i => i.id !== 'b');
+    l.items.find(i => i.id === 'a').note = 'Volat dodavatele';
+    shApplyRecs(l, recs.recs, { at: 9, by: 'V' });
+    shMoveItem(l, 'd', 2);
+    const b = sharedState(S);
+    const log = (x, y) => describeChanges(x, y, { at: 9, by: 'V', card: '' }).entries.filter(e => e.kind === 'shortage').map(e => e.text);
+    const log1 = log(a, b);
+    const b2 = JSON.parse(JSON.stringify(b));
+    b2.shortage.lists[0].items.find(i => i.id === 'a').note = '';
+    return JSON.stringify({ rows: recs.rows, bad: recs.bad, recs: [...recs.recs.entries()], r1, again, older, recsOn: L.items.map(i => i.rec && [i.rec.qty, i.rec.state, i.rec.when, i.rec.by]), moves, cl, log1, log2: log(b, b2),
+      looks: [shLooksLikeRecs(rows), shLooksLikeRecs([[c('Objednávka'), c('Název'), c('EAN')], [c('OBJ-1'), c('Hřídel'), c('859')]]), shLooksLikeRecs([[c('K1'), c('22.10.2026 9:15')]]), shLooksLikeRecs([])],
+      when: ['22.10.2026 9:15', '22. 10. 2026', '31.2.2026 9:00', '22.10.2026 25:00', '2026-10-22T08:30:15', '45952.5', '12345', 'x'].map(v => { const t = shParseWhen(v); return t ? new Date(t).toISOString().slice(0, 16) + '|' + new Date(t).getHours() + ':' + new Date(t).getMinutes() : 0; }) });
+  })()`));
+  assert.deepStrictEqual([out.rows, out.bad], [6, 1], 'nadpisy se přeskočí, řádek bez kódu je chybný');
+  assert.deepStrictEqual(out.recs.map(([k, v]) => [k, v.qty, v.state, v.when]), [['K1', '40', 'Broušení hotovo', '22. 10. 2026 9:15'], ['K3', '12', 'Elox', '22. 10. 2026 10:30'], ['K4', '5 ks', 'Montáž', '22. 10. 2026 7:00'], ['X9', '1', '?', '22. 10. 2026 9:00'], ['K2', '3', 'Čeká', 'není datum']], 'na kód nejnovější řádek, datum jednotně, nečitelné datum jak je');
+  assert.deepStrictEqual(out.r1, { matched: 4, updated: 5, same: 0, older: 0, missing: ['X9'] }, 'stejný kód u dvou položek dostane záznam u obou');
+  assert.deepStrictEqual(out.again, { matched: 4, updated: 0, same: 5, older: 0, missing: ['X9'] }, 'stejné záznamy podruhé nic nemění');
+  assert.deepStrictEqual(out.older, { matched: 1, updated: 0, same: 0, older: 1, missing: [] }, 'starší záznam nepřepíše novější');
+  assert.deepStrictEqual(out.recsOn, [['40', 'Broušení hotovo', '22. 10. 2026 9:15', 'Vedoucí'], ['3', 'Čeká', 'není datum', 'Vedoucí'], ['12', 'Elox', '22. 10. 2026 10:30', 'Vedoucí'], ['5 ks', 'Montáž', '22. 10. 2026 7:00', 'Vedoucí'], null, ['12', 'Elox', '22. 10. 2026 10:30', 'Vedoucí']]);
+  assert.deepStrictEqual(out.moves, [true, 't1,t2,c,a,b,d', true, 't1,t2,a,c,b,d', true, 't2,t1,a,c,b,d', true, 't1,t2,a,c,b,d', false, false],
+    'přesun ve skupině; běžná položka nevyskočí mezi TOP, TOP nespadne pod ostatní; neznámá položka a stejné místo nic nedělají');
+  assert.deepStrictEqual(out.cl.map(i => [i.note, i.rec]), [['víc řádků', { ts: 5, when: 'w', qty: '3', state: 'S', at: 0, by: 'B' }], ['', null], ['', null]], 'poznámka na jeden řádek, záznam jen známá pole');
+  assert.strictEqual(out.cl[0].id, 'x1');
+  assert.ok(out.cl[1].id !== 'x1' && /^si[a-z0-9]{5}$/.test(out.cl[1].id) && /^si[a-z0-9]{5}$/.test(out.cl[2].id), 'duplicitní a neplatné id položky se nahradí');
+  assert.deepStrictEqual(out.log1, ['Shortage: ze seznamu 22. 10. 2026 6:00 odebrána položka 859b Díl b', 'Shortage: poznámka k položce 859a Díl a (seznam 22. 10. 2026 6:00): Volat dodavatele',
+    'Shortage: poslední záznamy u 4 položek seznamu 22. 10. 2026 6:00', 'Shortage: změněno pořadí položek v seznamu 22. 10. 2026 6:00']);
+  assert.deepStrictEqual(out.log2, ['Shortage: smazána poznámka k položce 859a Díl a (seznam 22. 10. 2026 6:00)']);
+  assert.deepStrictEqual(out.looks, [true, false, true, false], 'poslední záznamy se poznají podle data ve sloupci B');
+  assert.deepStrictEqual(out.when.map(w => w && w.split('|')[1]), ['9:15', '0:0', 0, 0, '8:30', '12:0', 0, 0], 'formáty data a času, neplatné datum 0');
 });
 
 test('Servis (2.22): rok výroby a vzory zařízení (druh, značka, model)', () => {

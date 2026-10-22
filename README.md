@@ -62,6 +62,26 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.28
+
+- **Shortage: odebrání položky.** Křížek na konci řádku položku po potvrzení odebere ze
+  seznamu. Je to v historii změn.
+- **Poslední záznamy přes Ctrl+V.** V Excelu označ řádky se záznamy (A QR kód, B datum
+  a čas, C počet ks, D stav; klidně i s nadpisy), Ctrl+C a v Shortage Ctrl+V. Aplikace pozná
+  podle data ve sloupci B, že jde o záznamy, a přiřadí je k položkám otevřeného seznamu podle
+  QR kódu (activeBarcode). U kódu, který je v záznamech víckrát, platí nejnovější. Starší
+  záznam nepřepíše novější, kódy, které v seznamu nejsou, aplikace vypíše. Záznam je
+  u položky v aplikaci (stav, ks, kdy) i v PDF ve sloupci Operace · poslední záznam.
+- **Pořadí položek přetažením.** Řádek chytni myší (kdekoli mimo pole a tlačítka)
+  a přetáhni. Na telefonu a tabletu se táhne za úchyt vlevo, z klávesnice šipkami nahoru
+  a dolů na úchytu. TOP SHORTAGE zůstávají vždy nahoře. Při hledání se nepřesouvá. Nové
+  pořadí platí i v PDF.
+- **Poznámka k položce.** Do pole Poznámka v řádku napiš text, uloží se po Enteru nebo
+  opuštění pole. V PDF je ve sloupci Poznámky, pod ní zůstane linka na psaní.
+- **PDF pro černobílý tisk.** Jen černá a odstíny šedé, tmavší linky, hlavička tabulky
+  šedá s černou linkou. TOP SHORTAGE má světle šedý řádek, černý pruh a černý štítek.
+- Verze dat 25: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.27.1
 
 - **Shortage: nové rozložení sloupců.** **A** číslo objednávky, **B** název dílu, **C** EAN

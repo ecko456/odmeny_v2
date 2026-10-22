@@ -1699,7 +1699,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=24;
+const DATA_VERSION=25;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -4553,11 +4553,13 @@ function svChanges(A,B,add){
 }
 
 /* ==========================================================================
-   SHORTAGE – chybějící díly z Excelu (2.27, sloupce 2.27.1)
+   SHORTAGE – chybějící díly z Excelu (2.27, sloupce 2.27.1, úpravy položek 2.28)
    Import: A = číslo objednávky, B = název dílu, C = EAN dílu (buňka má vložený hypertextový
    odkaz), D = index, E = urgentní množství, G = „TOP“ (TOP SHORTAGE, v seznamu vždy nahoře),
    H = probíhající operace. Každý import je samostatný seznam (snímek souboru), drží se
    posledních SH_MAX_LISTS. Do QR kódu v PDF jde jen activeBarcode z odkazu (shCode).
+   2.28: položka má id, poznámku (note) a poslední záznam (rec) vložený ze schránky
+   (A QR kód, B datum a čas, C počet ks, D stav); položky jde odebrat a přesouvat.
    ========================================================================== */
 const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000;
 function blankShortage(){return {lists:[]};}
@@ -4589,6 +4591,92 @@ function shCode(link){
   try{v=decodeURIComponent(v);}catch(e){/* nechá se, jak je */}
   return shCodeClean(v);
 }
+/** Poslední záznam položky {ts, when, qty, state, at, by}, nebo null. */
+function shRecClean(r,line){
+  if(!r||typeof r!=="object")return null;
+  const n=v=>Number.isFinite(+v)?Math.max(0,+v):0;
+  return {ts:n(r.ts),when:line(r.when,40),qty:line(r.qty,40),state:line(r.state,80),at:n(r.at),by:line(r.by,60)};
+}
+/** Datum a čas ze sloupce B („22.10.2026 9:15“, „22. 10. 26 9:15:30“, „2026-10-22 09:15“, pořadové číslo dne Excelu) → ms místního času, jinak 0. */
+function shParseWhen(v){
+  const s=String(v==null?"":v).trim();
+  let m,y,mo,d,h=0,mi=0,se=0;
+  if((m=s.match(/^(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4}|\d{2})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/))){d=+m[1];mo=+m[2];y=+m[3];if(y<100)y+=2000;h=+(m[4]||0);mi=+(m[5]||0);se=+(m[6]||0);}
+  else if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/))){y=+m[1];mo=+m[2];d=+m[3];h=+(m[4]||0);mi=+(m[5]||0);se=+(m[6]||0);}
+  else if(/^\d{5}(?:[.,]\d+)?$/.test(s)){
+    const x=parseFloat(s.replace(",","."));
+    if(x<20000||x>80000)return 0;
+    const days=Math.floor(x),secs=Math.round((x-days)*86400),b=new Date(1899,11,30+days);
+    return new Date(b.getFullYear(),b.getMonth(),b.getDate(),Math.floor(secs/3600),Math.floor(secs%3600/60),secs%60).getTime();
+  }
+  else return 0;
+  if(mo<1||mo>12||d<1||d>31||h>23||mi>59||se>59)return 0;
+  const t=new Date(y,mo-1,d,h,mi,se);
+  return t.getMonth()===mo-1&&t.getDate()===d?t.getTime():0;
+}
+/** „22. 10. 2026 8:15“ z časové značky. */
+function shWhenText(ts){const d=new Date(ts||0);return dayText(todayIso(ts||0))+" "+d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");}
+/** Řádky vypadají jako poslední záznamy (ve sloupci B je u většiny datum a čas), ne jako seznam. */
+function shLooksLikeRecs(rows){
+  const t=(r,c)=>String((r&&r[c]&&r[c].text)!=null?r[c].text:"").trim();
+  const data=(Array.isArray(rows)?rows:[]).filter(r=>[0,1,2,3].some(c=>t(r,c)));
+  const dated=data.filter(r=>t(r,0)&&shParseWhen(t(r,1))).length;
+  return dated>0&&dated*2>=data.length-1;
+}
+/**
+ * Poslední záznamy ze schránky: A QR kód (activeBarcode), B datum a čas, C počet ks, D stav.
+ * Ke každému kódu se vezme nejnovější řádek. Vrací {recs: Map kód → {ts, when, qty, state}, rows, bad}.
+ */
+function shRecBuild(rows){
+  const t=(r,c)=>String((r&&r[c]&&r[c].text)!=null?r[c].text:"").replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
+  const n=s=>String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+  const recs=new Map();let count=0,bad=0;
+  (Array.isArray(rows)?rows:[]).forEach(r=>{
+    const raw=t(r,0),when=t(r,1),qty=t(r,2),state=t(r,3);
+    if(!raw&&!when&&!qty&&!state)return;
+    const ts=shParseWhen(when),code=shCodeClean(raw);
+    if(!ts&&(/^(qr|kod|code|barcode)/.test(n(raw))||/datum|cas/.test(n(when))&&/stav/.test(n(state))))return;   // nadpisy
+    if(!code){bad++;return;}
+    count++;
+    const prev=recs.get(code);
+    if(!prev||ts>=prev.ts)recs.set(code,{ts,when:ts?shWhenText(ts):when.slice(0,40),qty:qty.slice(0,40),state:state.slice(0,80)});
+  });
+  return {recs,rows:count,bad};
+}
+/**
+ * Přiřadí poslední záznamy k položkám seznamu podle kódu. Novější nebo stejně starý záznam
+ * nahradí uložený, starší ne. Vrací {matched, updated, same, older, missing: [kódy, které v seznamu nejsou]}.
+ */
+function shApplyRecs(list,recs,meta){
+  const by=new Map();
+  list.items.forEach(i=>{if(i.code){if(!by.has(i.code))by.set(i.code,[]);by.get(i.code).push(i);}});
+  const out={matched:0,updated:0,same:0,older:0,missing:[]};
+  recs.forEach((r,code)=>{
+    const items=by.get(code);
+    if(!items){out.missing.push(code);return;}
+    out.matched++;
+    items.forEach(i=>{
+      const p=i.rec;
+      if(p&&p.ts===r.ts&&p.qty===r.qty&&p.state===r.state&&p.when===r.when){out.same++;return;}
+      if(p&&p.ts&&r.ts&&r.ts<p.ts){out.older++;return;}
+      i.rec={...r,at:(meta&&meta.at)||Date.now(),by:String((meta&&meta.by)||"").slice(0,60)};
+      out.updated++;
+    });
+  });
+  return out;
+}
+/** Přesune položku na index `to` (výsledné místo). TOP SHORTAGE zůstanou nahoře: položka se hýbe jen ve své skupině. */
+function shMoveItem(list,id,to){
+  const from=list.items.findIndex(i=>i.id===id);
+  if(from<0)return false;
+  const it=list.items[from],tops=list.items.filter(i=>i.top).length;
+  const lo=it.top?0:tops,hi=it.top?tops-1:list.items.length-1;
+  to=Math.max(lo,Math.min(hi,Math.round(+to||0)));
+  if(to===from)return false;
+  list.items.splice(from,1);
+  list.items.splice(to,0,it);
+  return true;
+}
 /** Položky TOP SHORTAGE první, jinak pořadí ze souboru. */
 function shTopFirst(items){return items.filter(i=>i.top).concat(items.filter(i=>!i.top));}
 function cleanShortage(o){
@@ -4597,11 +4685,15 @@ function cleanShortage(o){
   const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
   const lists=(Array.isArray(o.lists)?o.lists:[]).filter(l=>l&&typeof l==="object"&&Array.isArray(l.items)).map(l=>({
     id:uniq(l.id,"sh"),at:Number.isFinite(+l.at)?Math.max(0,+l.at):0,by:line(l.by,60),file:line(l.file,160),sheet:line(l.sheet,80),
-    // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu
-    items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
+    // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec
+    items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,op:line(i.op,120),link:shLink(i.link),
-      code:"code" in i?shCodeClean(i.code):shCode(i.link)})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
+      code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,300),rec:shRecClean(i.rec,line),_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
+  lists.forEach(l=>{
+    const ids=new Set();
+    l.items.forEach(i=>{let x=typeof i._id==="string"&&SAFE_ID.test(i._id)&&!ids.has(i._id)?i._id:uid("si");while(ids.has(x))x=uid("si");ids.add(x);i.id=x;delete i._id;});
+  });
   // nejnovější první; nad SH_MAX_LISTS se nejstarší zahodí
   lists.sort((a,b)=>b.at-a.at);
   return {lists:lists.slice(0,SH_MAX_LISTS)};
@@ -4654,7 +4746,7 @@ function shTsv(text){
   return rows;
 }
 /** „22. 10. 2026 8:15“ ze časové značky seznamu. */
-function shWhen(l){const d=new Date(l.at||0);return dayText(todayIso(l.at||0))+" "+d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");}
+function shWhen(l){return shWhenText(l.at||0);}
 function shItemsN(n){return n===1?"položka":n>=2&&n<=4?"položky":"položek";}
 function shChanges(A,B,add){
   A=A||blankShortage();B=B||blankShortage();
@@ -4663,6 +4755,21 @@ function shChanges(A,B,add){
   B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+what(l),{m:"shl:"+l.id});});
   // smazání má vlastní klíč, ať v historii zůstane i záznam o nahrání
   A.lists.forEach(l=>{if(!ib.has(l.id))add("shortage","Shortage: smazán seznam "+shWhen(l)+what(l),{m:"shd:"+l.id});});
+  // úpravy položek seznamu (2.28): odebrání, poznámka, poslední záznamy, pořadí
+  B.lists.forEach(l=>{
+    const o=A.lists.find(x=>x.id===l.id);
+    if(!o)return;
+    const label=i=>((i.ean||"")+" "+(i.name||"")).trim()||"bez názvu",ol=o.items.map(i=>i.id),nl=l.items.map(i=>i.id);
+    const oi=new Map(o.items.map(i=>[i.id,i])),ni=new Map(l.items.map(i=>[i.id,i]));
+    o.items.forEach(i=>{if(!ni.has(i.id))add("shortage","Shortage: ze seznamu "+shWhen(l)+" odebrána položka "+label(i),{m:"shr:"+l.id+":"+i.id});});
+    l.items.forEach(i=>{
+      const p=oi.get(i.id);
+      if(p&&(p.note||"")!==(i.note||""))add("shortage",i.note?"Shortage: poznámka k položce "+label(i)+" (seznam "+shWhen(l)+"): "+i.note:"Shortage: smazána poznámka k položce "+label(i)+" (seznam "+shWhen(l)+")",{m:"shn:"+l.id+":"+i.id});
+    });
+    const recN=l.items.filter(i=>oi.has(i.id)&&JSON.stringify(oi.get(i.id).rec||null)!==JSON.stringify(i.rec||null)).length;
+    if(recN)add("shortage","Shortage: poslední záznamy u "+recN+" "+(recN===1?"položky":"položek")+" seznamu "+shWhen(l),{m:"shz:"+l.id});
+    if(ol.filter(id=>ni.has(id)).join()!==nl.filter(id=>oi.has(id)).join())add("shortage","Shortage: změněno pořadí položek v seznamu "+shWhen(l),{m:"sho:"+l.id});
+  });
 }
 
 if(typeof module==="object"&&module.exports){

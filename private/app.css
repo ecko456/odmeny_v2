@@ -1914,7 +1914,7 @@ table.sv-dev-tab tr.dup:hover td { background: color-mix(in srgb, var(--crit) 14
   .sv-state small { margin-top: 4px; }
 }
 
-/* ---------- Shortage: chybějící díly z Excelu (2.27, TOP a kód z odkazu 2.27.1) ---------- */
+/* ---------- Shortage: chybějící díly z Excelu (2.27, TOP a kód z odkazu 2.27.1, úpravy položek 2.28) ---------- */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .sh-paste { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; padding: 12px 14px; border: 1.5px dashed var(--line-2); border-radius: 16px; background: var(--surface); color: var(--ink-2); font-size: 14px; cursor: text; }
 .sh-paste:focus-within { border-color: var(--acc); background: var(--acc-soft); }
@@ -1927,12 +1927,34 @@ table.sv-dev-tab tr.dup:hover td { background: color-mix(in srgb, var(--crit) 14
 .sh-card .card-head { align-items: flex-start; }
 .sh-search input { width: 240px; max-width: 100%; }
 table.sh-tab td { vertical-align: top; }
-table.sh-tab td.sh-ean { font-family: var(--mono); white-space: nowrap; }
-table.sh-tab td.sh-ean a { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+/* skryté popisky (.sr-only) v hlavičce jsou absolutní: bez toho by utekly z posuvné tabulky a stránka by přetekla */
+.sh-card .table-card { position: relative; }
+table.sh-tab .sh-ean { margin-top: 3px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+table.sh-tab .sh-ean a { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+/* přesouvání položek (2.28): myší kdekoli na řádku, dotykem za úchyt */
+table.sh-tab th.sh-gripc, table.sh-tab td.sh-gripc { width: 30px; padding-left: 4px; padding-right: 0; }
+.sh-grip { display: grid; place-items: center; width: 26px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--ink-3); cursor: grab; touch-action: none; }
+.sh-grip:hover, .sh-grip:focus-visible { background: var(--surface-3); color: var(--ink); }
+.sh-grip .icon { width: 16px; height: 16px; }
+@media (pointer: fine) { table.sh-tab:not(.sh-nodrag) tbody tr { cursor: grab; user-select: none; } }
+table.sh-tab tbody tr input { cursor: text; user-select: text; }
+table.sh-tab.sh-nodrag .sh-grip { visibility: hidden; }
+body.sh-drag, body.sh-drag * { cursor: grabbing !important; user-select: none !important; }
+table.sh-tab tr.sh-dragging td { opacity: .45; background: var(--acc-soft); }
+table.sh-tab tr.sh-drop-before td { box-shadow: inset 0 3px 0 var(--acc); }
+table.sh-tab tr.sh-drop-after td { box-shadow: inset 0 -3px 0 var(--acc); }
+table.sh-tab td.sh-opc { min-width: 130px; }
+.sh-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 13px; }
+.tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; }
+table.sh-tab td.sh-notec { min-width: 150px; }
+.sh-note { width: 100%; min-width: 130px; min-height: 34px; padding: 6px 9px; font-size: 13.5px; }
+table.sh-tab td.sh-actc, table.sh-tab th.sh-actc { width: 40px; text-align: right; }
+.sh-hint { margin: -4px 0 10px; }
 table.sh-tab td.sh-qty b { font-size: 15px; }
 table.sh-tab tr[hidden] { display: none; }
 table.sh-tab tr.sh-top td { background: color-mix(in srgb, var(--crit-soft) 70%, transparent); }
-table.sh-tab tr.sh-top td:first-child { box-shadow: inset 3px 0 0 var(--crit); color: var(--crit); font-weight: 700; }
+table.sh-tab tr.sh-top td:first-child { box-shadow: inset 3px 0 0 var(--crit); }
+table.sh-tab tr.sh-top td:nth-child(2) { color: var(--crit); font-weight: 700; }
 .tag.sh-toptag { background: var(--crit); color: var(--surface); font-weight: 800; letter-spacing: .03em; margin-right: 4px; }
 table.sh-tab td.sh-ord { white-space: nowrap; font-weight: 600; }
 .tag.sh-code { font-family: var(--mono); white-space: nowrap; }
@@ -1943,5 +1965,8 @@ table.sh-tab td.sh-ord { white-space: nowrap; font-weight: 600; }
   .sh-search, .sh-search input { width: 100%; }
   .sh-paste { flex-direction: column; align-items: stretch; gap: 8px; }
   .sh-paste textarea { flex-basis: auto; width: 100%; }
-  table.sh-tab td.sh-ean, table.sh-tab td.sh-ord, .tag.sh-code { white-space: normal; word-break: break-all; }
+  table.sh-tab .sh-ean, table.sh-tab td.sh-ord, .tag.sh-code { white-space: normal; word-break: break-all; }
+  table.sh-tab td.sh-gripc, table.sh-tab td.sh-actc { width: auto; text-align: left; }
+  table.sh-tab td.sh-opc, table.sh-tab td.sh-notec { min-width: 0; }
+  .sh-note { min-width: 0; }
 }

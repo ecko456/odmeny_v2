@@ -8358,12 +8358,40 @@ function shClipRows(html, text) {
 function shPaste(html, text) {
   const msg = $('#shMsg');
   const clip = shClipRows(html, text);
+  // poslední záznamy (A QR kód, B datum a čas, C ks, D stav) se poznají podle data ve sloupci B
+  if (shLooksLikeRecs(clip.rows)) { shPasteRecs(clip.rows); return; }
   const r = shBuild(clip.rows);
   if (!r.items.length) {
     msg.innerHTML = `<div class="note w">Ve schránce není tabulka se seznamem. Označ v Excelu řádky seznamu (klidně i s nadpisy), zkopíruj je (Ctrl+C) a vlož sem (Ctrl+V). ${esc(SH_NONE)}</div>`;
     return;
   }
   shAddList(r, { file: 'vloženo ze schránky', paste: true, plain: clip.plain });
+}
+/** Poslední záznamy ze schránky k položkám otevřeného seznamu (podle QR kódu). */
+function shPasteRecs(rows) {
+  const msg = $('#shMsg');
+  const l = shList();
+  const r = shRecBuild(rows);
+  if (!l) {
+    msg.innerHTML = '<div class="note w">Vložené řádky vypadají jako poslední záznamy (A QR kód, B datum a čas, C počet ks, D stav), ale zatím tu není žádný seznam. Nejdřív nahraj nebo vlož seznam dílů.</div>';
+    return;
+  }
+  if (!r.recs.size) {
+    msg.innerHTML = '<div class="note w">Ve vložených řádcích není žádný QR kód. Čeká se A QR kód, B datum a čas, C počet ks a D stav.</div>';
+    return;
+  }
+  const res = shApplyRecs(l, r.recs, { at: Date.now(), by: ui.me.label || '' });
+  if (res.updated) save();
+  renderShortage();
+  const other = !res.matched ? shc().lists.find(x => x !== l && x.items.some(i => i.code && r.recs.has(i.code))) : null;
+  const miss = res.missing.slice(0, 5).join(', ') + (res.missing.length > 5 ? ` a ${res.missing.length - 5} dalších` : '');
+  msg.innerHTML = `<div class="note ${res.updated ? 'i' : 'w'}">Poslední záznamy k seznamu z <b>${esc(shWhen(l))}</b>: ${res.updated ? `nový záznam u <b>${res.updated} ${res.updated === 1 ? 'položky' : 'položek'}</b>` : 'žádná položka se nezměnila'}.</div>${[
+    res.same ? `${res.same} ${shPl(res.same, 'položka má', 'položky mají', 'položek má')} stejný záznam, beze změny.` : '',
+    res.older ? `${res.older} ${shPl(res.older, 'vložený záznam je starší', 'vložené záznamy jsou starší', 'vložených záznamů je starších')} než uložený, ${res.older === 1 ? 'nepoužil se' : 'nepoužily se'}.` : '',
+    res.missing.length ? `${res.missing.length} ${shPl(res.missing.length, 'kód v seznamu není', 'kódy v seznamu nejsou', 'kódů v seznamu není')}: ${miss}.` : '',
+    other ? `Kódy patří k seznamu z ${shWhen(other)}. Otevři ho dole v Seznamech a vlož záznamy znovu.` : '',
+    r.bad ? `${r.bad} ${shPl(r.bad, 'řádek nemá', 'řádky nemají', 'řádků nemá')} platný QR kód ve sloupci A.` : '',
+  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}`;
 }
 
 function renderShortage() {
@@ -8375,47 +8403,137 @@ function renderShortage() {
     box.innerHTML = `<div class="card">${emptyState('Zatím žádný seznam', 'Tabulku z Excelu vlož přes Ctrl+V (do pole nahoře), nebo ji načti tlačítkem Nahrát Excel: ve sloupci A číslo objednávky, v B název dílu, v C EAN s vloženým odkazem, v D index, v E urgentní množství, v G „TOP“ pro TOP SHORTAGE a v H probíhající operace. Do QR kódu v PDF jde activeBarcode z odkazu.', '<button class="btn" type="button" data-shimport>Nahrát Excel</button>')}</div>`;
     return;
   }
-  const n = l.items.length, coded = l.items.filter(i => i.code).length, top = l.items.filter(i => i.top).length;
+  const n = l.items.length, coded = l.items.filter(i => i.code).length, top = l.items.filter(i => i.top).length, recs = l.items.filter(i => i.rec).length;
   const tiles = `<div class="stats">${[
     statTile('Seznam', esc(dayText(todayIso(l.at))), `nahráno v ${esc(shWhen(l).split(' ').pop())}${l.by ? ` · ${esc(l.by)}` : ''}`),
     statTile('Položek', String(n), l.file ? esc(l.file) : 'chybějící díly'),
     statTile('TOP shortage', String(top), top ? 'v seznamu nahoře' : 'žádná', top ? 'crit' : ''),
     statTile('S QR kódem', String(coded), coded === n ? 'všechny mají kód' : `bez kódu ${n - coded}`, coded === n ? '' : 'warn'),
+    statTile('Poslední záznam', String(recs), recs ? `z ${n} položek` : 'vlož přes Ctrl+V'),
   ].join('')}</div>`;
-  const rows = l.items.map((i, j) => `<tr class="${i.top ? 'sh-top' : ''}" data-shrow="${esc([i.order, i.name, i.ean, i.index, i.op, i.code, i.top ? 'top shortage' : ''].join(' ').toLowerCase())}">
+  const rows = l.items.map((i, j) => {
+    const rec = i.rec ? `<div class="sh-rec">${i.rec.state ? `<span class="tag sh-state">${esc(i.rec.state)}</span>` : ''}${i.rec.qty ? `<b>${esc(/^[\d\s.,]+$/.test(i.rec.qty) ? `${i.rec.qty} ks` : i.rec.qty)}</b>` : ''}<span class="muted">${esc(i.rec.when)}</span></div>` : '';
+    return `<tr class="${i.top ? 'sh-top' : ''}" data-shid="${esc(i.id)}" data-shrow="${esc([i.order, i.name, i.ean, i.index, i.op, i.code, i.note, i.rec ? i.rec.state : '', i.top ? 'top shortage' : ''].join(' ').toLowerCase())}">
+      <td class="sh-gripc"><button type="button" class="sh-grip" data-shgrip="${esc(i.id)}" title="Přesunout: přetáhni myší, nebo šipkami nahoru a dolů" aria-label="Přesunout položku ${esc(i.ean || i.name)}">${SH_GRIP}</button></td>
       <td class="num muted" data-label="#">${j + 1}</td>
       <td class="sh-ord" data-label="Číslo objednávky">${esc(i.order || '—')}</td>
-      <td class="name" data-label="Název dílu">${i.top ? '<span class="tag crit sh-toptag">TOP SHORTAGE</span> ' : ''}${esc(i.name || '—')}</td>
-      <td class="sh-ean" data-label="EAN">${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer">${esc(i.ean || 'odkaz')}</a>` : esc(i.ean || '—')}</td>
+      <td class="name" data-label="Název dílu">${i.top ? '<span class="tag crit sh-toptag">TOP SHORTAGE</span> ' : ''}${esc(i.name || '—')}<div class="sh-ean">EAN ${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" draggable="false">${esc(i.ean || 'odkaz')}</a>` : esc(i.ean || '—')}</div></td>
       <td data-label="Index">${esc(i.index || '—')}</td>
       <td class="num sh-qty" data-label="Urgentní množství"><b>${esc(i.qty || '—')}</b></td>
-      <td data-label="Probíhající operace">${esc(i.op || '—')}</td>
-      <td data-label="QR kód">${i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>'}</td></tr>`).join('');
+      <td class="sh-opc" data-label="Operace · poslední záznam">${esc(i.op || '—')}${rec}</td>
+      <td data-label="QR kód">${i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>'}</td>
+      <td class="sh-notec" data-label="Poznámka"><input type="text" class="sh-note" data-shnote="${esc(i.id)}" value="${esc(i.note || '')}" maxlength="300" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k položce ${esc(i.ean || i.name)}"></td>
+      <td class="sh-actc"><button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${I.x}</button></td></tr>`;
+  }).join('');
   const older = c.lists.length > 1 ? `<section class="card sh-lists"><h3>Seznamy</h3><div class="chips">${c.lists.map(x => `<button type="button" class="chip${x.id === l.id ? ' on' : ''}" data-shopen="${esc(x.id)}" aria-pressed="${x.id === l.id}">${esc(shWhen(x))} · ${x.items.length}</button>`).join('')}</div>
       <p class="tiny muted">Drží se posledních ${SH_MAX_LISTS} nahraných seznamů.</p></section>` : '';
   box.innerHTML = `${tiles}<article class="card sh-card">
       <div class="card-head"><div><h2>Seznam z ${esc(shWhen(l))}</h2>
         <p class="small muted">${n} ${shItemsN(n)}${top ? ` · ${top} TOP` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}</p></div>
         <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat objednávku, díl, EAN, operaci" autocomplete="off"></label>
-          <button class="btn small" type="button" data-shpdf="${esc(l.id)}">PDF k tisku</button>
+          <button class="btn small" type="button" data-shpdf="${esc(l.id)}"${n ? '' : ' disabled'}>PDF k tisku</button>
           <button class="icon-btn" type="button" data-shdel="${esc(l.id)}" title="Smazat seznam" aria-label="Smazat seznam z ${esc(shWhen(l))}">${I.x}</button></div></div>
-      <div class="table-card flat"><table class="stack sh-tab"><thead><tr><th>#</th><th>Číslo objednávky</th><th>Název dílu</th><th>EAN</th><th>Index</th><th class="num">Urgentní množství</th><th>Probíhající operace</th><th>QR kód</th></tr></thead><tbody>${rows}</tbody></table></div>
-      <p class="tiny muted sh-none" hidden>Nic neodpovídá hledání.</p>
+      <p class="tiny muted sh-hint">Pořadí změníš přetažením řádku myší (na telefonu za úchyt vlevo). TOP SHORTAGE zůstávají nahoře. Poslední záznamy vlož přes Ctrl+V: A QR kód, B datum a čas, C počet ks, D stav.</p>
+      <div class="table-card flat"><table class="stack sh-tab"><thead><tr><th class="sh-gripc"><span class="sr-only">Přesunout</span></th><th>#</th><th>Číslo objednávky</th><th>Název dílu · EAN</th><th>Index</th><th class="num">Urgentní množství</th><th>Operace · poslední záznam</th><th>QR kód</th><th>Poznámka</th><th class="sh-actc"><span class="sr-only">Odebrat</span></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="tiny muted sh-none"${n ? ' hidden' : ''}>${n ? 'Nic neodpovídá hledání.' : 'V seznamu nezbyla žádná položka.'}</p>
     </article>${older}`;
   shFilter();
 }
+const SH_GRIP = '<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
 function shFilter() {
   const q = (ui.sh.q || '').trim().toLowerCase();
   let shown = 0;
-  $$('#shView [data-shrow]').forEach(tr => { const on = !q || tr.dataset.shrow.includes(q); tr.hidden = !on; if (on) shown += 1; });
+  const rows = $$('#shView [data-shrow]');
+  rows.forEach(tr => { const on = !q || tr.dataset.shrow.includes(q); tr.hidden = !on; if (on) shown += 1; });
   const none = $('#shView .sh-none');
-  if (none) none.hidden = shown > 0;
+  if (none && rows.length) none.hidden = shown > 0;
+  // při hledání se nepřesouvá (skryté řádky by pořadí zmátly)
+  const tab = $('#shView table.sh-tab');
+  if (tab) tab.classList.toggle('sh-nodrag', !!q);
+}
+
+/* ---------- Přesouvání položek: myší kdekoli na řádku, dotykem za úchyt, šipkami na úchytu ---------- */
+let shDrag = null;
+function shDragDown(event) {
+  const tr = event.target.closest('#shView tbody tr[data-shid]');
+  if (!tr || event.button !== 0 || (ui.sh.q || '').trim()) return;
+  const grip = event.target.closest('[data-shgrip]');
+  if (!grip && (event.pointerType !== 'mouse' || event.target.closest('a, button, input, textarea, select, label'))) return;
+  if (grip) event.preventDefault();
+  shDrag = { id: tr.dataset.shid, tr, pid: event.pointerId, y0: event.clientY, y: event.clientY, on: false, to: null, vy: 0, timer: 0 };
+  window.addEventListener('pointermove', shDragMove);
+  window.addEventListener('pointerup', shDragEnd);
+  window.addEventListener('pointercancel', shDragEnd);
+}
+function shDragMove(event) {
+  const d = shDrag;
+  if (!d || event.pointerId !== d.pid) return;
+  d.y = event.clientY;
+  if (!d.on) {
+    if (Math.abs(d.y - d.y0) < 6) return;
+    d.on = true;
+    d.tr.classList.add('sh-dragging');
+    document.body.classList.add('sh-drag');
+    try { d.tr.setPointerCapture(d.pid); } catch (error) { /* bez zachycení */ }
+    // u okraje okna se stránka posouvá sama, ať jde položku přetáhnout i daleko
+    d.timer = setInterval(() => { if (d.vy) { window.scrollBy(0, d.vy); shDragMark(); } }, 30);
+  }
+  event.preventDefault();
+  d.vy = d.y < 70 ? -16 : d.y > window.innerHeight - 70 ? 16 : 0;
+  shDragMark();
+}
+function shDragMark() {
+  const d = shDrag, l = shList();
+  if (!d || !l) return;
+  const rows = $$('#shView tbody tr[data-shid]'), others = rows.filter(r => r !== d.tr);
+  let to = 0;
+  others.forEach(r => { const b = r.getBoundingClientRect(); if (d.y > b.top + b.height / 2) to += 1; });
+  const it = l.items.find(i => i.id === d.id), tops = l.items.filter(i => i.top).length;
+  if (!it) return;
+  d.to = Math.max(it.top ? 0 : tops, Math.min(it.top ? tops - 1 : l.items.length - 1, to));
+  rows.forEach(r => r.classList.remove('sh-drop-before', 'sh-drop-after'));
+  if (d.to < others.length) others[d.to].classList.add('sh-drop-before');
+  else if (others.length) others[others.length - 1].classList.add('sh-drop-after');
+}
+function shDragEnd(event) {
+  const d = shDrag;
+  if (!d || (event && event.pointerId !== d.pid)) return;
+  shDrag = null;
+  window.removeEventListener('pointermove', shDragMove);
+  window.removeEventListener('pointerup', shDragEnd);
+  window.removeEventListener('pointercancel', shDragEnd);
+  clearInterval(d.timer);
+  document.body.classList.remove('sh-drag');
+  if (!d.on) return;
+  // kliknutí po puštění myši nic nespustí
+  const block = e => { e.preventDefault(); e.stopPropagation(); };
+  window.addEventListener('click', block, { capture: true, once: true });
+  setTimeout(() => window.removeEventListener('click', block, { capture: true }), 80);
+  const l = shList();
+  if (event.type !== 'pointercancel' && l && d.to != null && shMoveItem(l, d.id, d.to)) save();
+  renderShortage();
+}
+function shGripKey(event) {
+  const grip = event.target.closest('[data-shgrip]');
+  if (!grip || !['ArrowUp', 'ArrowDown'].includes(event.key) || (ui.sh.q || '').trim()) return;
+  const l = shList();
+  const at = l ? l.items.findIndex(i => i.id === grip.dataset.shgrip) : -1;
+  if (at < 0) return;
+  event.preventDefault();
+  if (shMoveItem(l, grip.dataset.shgrip, at + (event.key === 'ArrowUp' ? -1 : 1))) {
+    save();
+    renderShortage();
+    const again = $(`#shView [data-shgrip="${CSS.escape(grip.dataset.shgrip)}"]`);
+    if (again) again.focus();
+  }
 }
 
 function bindShortage() {
   $('#shImport').onclick = () => $('#shFile').click();
   $('#shFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; shImportFile(f); };
   const view = $('#view-shortage');
+  view.addEventListener('pointerdown', shDragDown);
+  view.addEventListener('keydown', shGripKey);
   view.addEventListener('click', async event => {
     const t = event.target;
     if (t.closest('[data-shimport]')) { $('#shFile').click(); return; }
@@ -8423,6 +8541,16 @@ function bindShortage() {
     if (pdf) { exportShortagePdf(pdf.dataset.shpdf, pdf); return; }
     const open = t.closest('[data-shopen]');
     if (open) { ui.sh.open = open.dataset.shopen; ui.sh.q = ''; $('#shMsg').innerHTML = ''; renderShortage(); return; }
+    const delItem = t.closest('[data-shdelitem]');
+    if (delItem) {
+      const l = shList();
+      const it = l && l.items.find(i => i.id === delItem.dataset.shdelitem);
+      if (!it || !(await confirmBox('Odebrat položku?', `${[it.ean, it.name].filter(Boolean).join(' · ') || 'Položka'} zmizí ze seznamu z ${shWhen(l)}. Už stažené PDF zůstane.`, 'Odebrat', true))) return;
+      l.items = l.items.filter(i => i !== it);
+      save(); renderShortage();
+      toast('Položka je odebraná.');
+      return;
+    }
     const del = t.closest('[data-shdel]');
     if (del) {
       const c = shc();
@@ -8439,7 +8567,23 @@ function bindShortage() {
     if (event.target.id === 'shQ') { ui.sh.q = event.target.value; shFilter(); }
     if (event.target.id === 'shPaste') event.target.value = '';   // pole slouží jen pro Ctrl+V
   });
-  // Ctrl+V kdekoli v Shortage (mimo hledání a jiná pole) vloží tabulku z Excelu jako nový seznam
+  // poznámka k položce se uloží po opuštění pole nebo Enteru
+  view.addEventListener('change', event => {
+    const input = event.target.closest('[data-shnote]');
+    if (!input) return;
+    const l = shList();
+    const it = l && l.items.find(i => i.id === input.dataset.shnote);
+    if (!it) return;
+    const note = input.value.replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 300);
+    input.value = note;
+    if (note === (it.note || '')) return;
+    it.note = note;
+    save();
+    const row = input.closest('tr');
+    if (row) row.dataset.shrow = [it.order, it.name, it.ean, it.index, it.op, it.code, it.note, it.rec ? it.rec.state : '', it.top ? 'top shortage' : ''].join(' ').toLowerCase();
+  });
+  view.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.closest('[data-shnote]')) event.target.blur(); });
+  // Ctrl+V kdekoli v Shortage (mimo hledání a jiná pole) vloží tabulku z Excelu: seznam, nebo poslední záznamy
   document.addEventListener('paste', event => {
     if (!S || ui.view !== 'shortage' || document.querySelector('dialog[open]')) return;
     const t = event.target;
@@ -8478,10 +8622,14 @@ function pdfQr(doc, text, x, y, size) {
   }
   return true;
 }
-const SH_PDF_COLS = [['#', 7], ['QR kód', 21], ['Číslo objednávky', 30], ['Název dílu · EAN', 50], ['Index', 13], ['Urgentní množství', 19], ['Probíhající operace', 30], ['Stav k 10:00', 25], ['Stav k 13:00', 25], ['Poznámky', 0]];
+const SH_PDF_COLS = [['#', 7], ['QR kód', 21], ['Číslo objednávky', 30], ['Název dílu · EAN', 46], ['Index', 12], ['Urgentní množství', 18], ['Operace · poslední záznam', 38], ['Stav k 10:00', 24], ['Stav k 13:00', 24], ['Poznámky', 0]];
+/* Černobílý tisk (2.28): jen černá a odstíny šedé, linky tmavší, TOP SHORTAGE černý štítek a pruh. */
+const SH_MONO = { ink: [0, 0, 0], ink2: [45, 45, 45], ink3: [95, 95, 95], line: [150, 150, 150], line2: [95, 95, 95], head: [222, 222, 222], top: [236, 236, 236], write: [120, 120, 120] };
 function drawShortage(doc, l) {
   const k = pdfKit(doc);
-  const C = k.C;
+  // i zápatí a výchozí barva písma pdfKit jen v odstínech šedé
+  Object.assign(k.C, { ink: SH_MONO.ink, ink2: SH_MONO.ink2, ink3: SH_MONO.ink3, line: SH_MONO.line, line2: SH_MONO.line2 });
+  const C = SH_MONO;
   const widths = SH_PDF_COLS.map(x => x[1]);
   widths[widths.length - 1] = k.CW - widths.reduce((a, b) => a + b, 0);
   const xs = [];
@@ -8495,27 +8643,28 @@ function drawShortage(doc, l) {
     out[max - 1] = `${out[max - 1].replace(/\s*\S{0,3}$/, '')}…`;
     return out;
   };
-  const vlines = (top, h, color) => {
-    doc.setDrawColor(...color); doc.setLineWidth(0.2);
+  const vlines = (top, h) => {
+    doc.setDrawColor(...C.line); doc.setLineWidth(0.25);
     xs.slice(1).forEach(x => doc.line(x, top, x, top + h));
   };
   const head = () => {
-    k.box(C.soft3, k.M, k.y, k.CW, HEAD, 1.4);
+    k.box(C.head, k.M, k.y, k.CW, HEAD, 0);
+    doc.setDrawColor(...C.ink); doc.setLineWidth(0.5); doc.line(k.M, k.y + HEAD, k.M + k.CW, k.y + HEAD);
     SH_PDF_COLS.forEach(([t], i) => {
       const lines = k.split(t, widths[i] - 3, 7.2, true);
       const lh = k.LH(7.2, 1.15);
-      lines.forEach((line, j) => k.text(line, xs[i] + 1.6, k.y + (HEAD - lines.length * lh) / 2 + j * lh, 7.2, { bold: true, color: C.ink2 }));
+      lines.forEach((line, j) => k.text(line, xs[i] + 1.6, k.y + (HEAD - lines.length * lh) / 2 + j * lh, 7.2, { bold: true, color: C.ink }));
     });
     k.y += HEAD;
   };
   // kompaktní záhlaví, ať se na stránku vejde víc položek
-  k.text(`${EXPORT_NAME} · SHORTAGE`, k.M, k.y, 7.5, { bold: true, color: C.acc, space: 0.35 });
+  k.text(`${EXPORT_NAME} · SHORTAGE`, k.M, k.y, 7.5, { bold: true, color: C.ink, space: 0.35 });
   k.text(`Seznam z ${shWhen(l)} · ${n} ${shItemsN(n)}${tops ? ` · ${tops} TOP SHORTAGE` : ''}`, k.M + k.CW, k.y, 8.5, { color: C.ink2, align: 'right' });
   k.y += 5.5;
-  k.text('Chybějící díly', k.M, k.y, 17, { bold: true });
+  k.text('Chybějící díly', k.M, k.y, 17, { bold: true, color: C.ink });
   k.text('Stav doplň k 10:00 a k 13:00. QR kód nese activeBarcode z odkazu u EANu.', k.M + k.CW, k.y + 2.6, 8.5, { color: C.ink2, align: 'right' });
   k.y += 9;
-  doc.setDrawColor(...C.acc); doc.setLineWidth(0.7); doc.line(k.M, k.y, k.M + 28, k.y);
+  doc.setDrawColor(...C.ink); doc.setLineWidth(0.7); doc.line(k.M, k.y, k.M + 28, k.y);
   k.y += 4;
   k.onPage = head;
   head();
@@ -8523,41 +8672,53 @@ function drawShortage(doc, l) {
     k.need(ROW);
     const top = k.y;
     if (it.top) {
-      // TOP SHORTAGE: podbarvený řádek a pruh vlevo (při černobílém tisku zůstane nápis)
-      k.box(C.critSoft, k.M, top, k.CW, ROW, 0);
-      doc.setFillColor(...C.crit); doc.rect(k.M, top, 1.2, ROW, 'F');
+      // TOP SHORTAGE: světle šedý řádek, černý pruh vlevo a černý štítek
+      k.box(C.top, k.M, top, k.CW, ROW, 0);
+      doc.setFillColor(...C.ink); doc.rect(k.M, top, 1.4, ROW, 'F');
     }
-    vlines(top, ROW, C.line);
-    k.hline(top + ROW, C.line2, 0.25);
-    k.text(String(j + 1), xs[0] + 1.9, top + 2, 8, { color: it.top ? C.crit : C.ink3, bold: it.top });
+    vlines(top, ROW);
+    k.hline(top + ROW, C.line2, 0.35);
+    k.text(String(j + 1), xs[0] + 2, top + 2, 8, { color: it.top ? C.ink : C.ink3, bold: it.top });
     // QR nese jen activeBarcode; pod ním kód písmem pro opsání. Klikací odkaz v PDF ne,
     // jsPDF 4.2 by v adrese přepsal & na &amp;.
     const qx = xs[1] + (widths[1] - QR) / 2;
     if (it.code && pdfQr(doc, it.code, qx, top + 1, QR)) {
       let size = 5.6;
       while (size > 4 && k.width(it.code, size) > widths[1] - 1.6) size -= 0.4;
-      k.text(it.code, xs[1] + widths[1] / 2, top + 1 + QR + 0.7, size, { color: C.ink2, align: 'center' });
+      k.text(it.code, xs[1] + widths[1] / 2, top + 1 + QR + 0.7, size, { color: C.ink, align: 'center' });
     } else {
       k.split(it.link ? 'odkaz bez activeBarcode' : 'bez odkazu', widths[1] - 4, 6.8).forEach((line, i) => k.text(line, xs[1] + widths[1] / 2, top + ROW / 2 - 2 + i * 3, 6.8, { color: C.ink3, align: 'center' }));
     }
-    clip(it.order || '—', widths[2] - 3.6, 9, 4, true).forEach((line, i) => k.text(line, xs[2] + 1.8, top + 1.8 + i * k.LH(9, 1.25), 9, { bold: true }));
+    clip(it.order || '—', widths[2] - 3.6, 9, 4, true).forEach((line, i) => k.text(line, xs[2] + 1.8, top + 1.8 + i * k.LH(9, 1.25), 9, { bold: true, color: C.ink }));
     let y = top + 1.6;
     if (it.top) {
       const tw = k.width('TOP SHORTAGE', 6.2, true) + 3;
-      k.box(C.crit, xs[3] + 1.8, y, tw, 3.6, 0.9);
-      k.text('TOP SHORTAGE', xs[3] + 1.8 + 1.5, y + 0.75, 6.2, { bold: true, color: C.white, space: 0.1 });
+      k.box(C.ink, xs[3] + 1.8, y, tw, 3.6, 0.9);
+      k.text('TOP SHORTAGE', xs[3] + 1.8 + 1.5, y + 0.75, 6.2, { bold: true, color: [255, 255, 255], space: 0.1 });
       y += 4.6;
     }
     const nameLines = clip(it.name || '—', widths[3] - 3.6, 8.8, it.top ? 2 : 3);
     nameLines.forEach((line, i) => k.text(line, xs[3] + 1.8, y + i * k.LH(8.8, 1.22), 8.8, { color: C.ink }));
     y += nameLines.length * k.LH(8.8, 1.22) + 0.6;
     if (it.ean) k.text(`EAN ${it.ean}`, xs[3] + 1.8, y, 7.8, { color: C.ink2 });
-    clip(it.index || '—', widths[4] - 3.6, 8.8, 4).forEach((line, i) => k.text(line, xs[4] + 1.8, top + 1.8 + i * k.LH(8.8, 1.25), 8.8));
-    clip(it.qty || '—', widths[5] - 3.6, 12, 2, true).forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), 12, { bold: true, align: 'right' }));
-    clip(it.op || '—', widths[6] - 3.6, 8.4, 4).forEach((line, i) => k.text(line, xs[6] + 1.8, top + 1.8 + i * k.LH(8.4, 1.25), 8.4, { color: it.op ? C.ink : C.ink3 }));
-    // kolonky na psaní: stav k 10:00 a k 13:00 a dva řádky poznámek (tečkované linky)
-    [7, 8].forEach(c => k.hline(top + ROW - 4.5, C.line2, 0.2, xs[c] + 2.5, xs[c] + widths[c] - 2.5, [0.6, 0.9]));
-    [ROW - 11, ROW - 4.5].forEach(h => k.hline(top + h, C.line2, 0.2, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]));
+    clip(it.index || '—', widths[4] - 3.6, 8.8, 4).forEach((line, i) => k.text(line, xs[4] + 1.8, top + 1.8 + i * k.LH(8.8, 1.25), 8.8, { color: C.ink }));
+    clip(it.qty || '—', widths[5] - 3.6, 12, 2, true).forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), 12, { bold: true, align: 'right', color: C.ink }));
+    // operace nahoře, pod ní poslední záznam (stav, ks, kdy)
+    const opLines = clip(it.op || '—', widths[6] - 3.6, 8.4, it.rec ? 2 : 4);
+    opLines.forEach((line, i) => k.text(line, xs[6] + 1.8, top + 1.8 + i * k.LH(8.4, 1.25), 8.4, { color: it.op ? C.ink : C.ink3 }));
+    if (it.rec) {
+      const ry = top + 1.8 + opLines.length * k.LH(8.4, 1.25) + 1;
+      doc.setDrawColor(...C.line); doc.setLineWidth(0.2); doc.line(xs[6] + 1.8, ry - 0.5, xs[7] - 1.8, ry - 0.5);
+      const qty = it.rec.qty ? (/^[\d\s.,]+$/.test(it.rec.qty) ? `${it.rec.qty} ks` : it.rec.qty) : '';
+      clip([it.rec.state, qty].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, 7.8, 1, true).forEach((line, i) => k.text(line, xs[6] + 1.8, ry + 0.4 + i * k.LH(7.8, 1.2), 7.8, { bold: true, color: C.ink }));
+      k.text(it.rec.when || '', xs[6] + 1.8, top + ROW - 4, 6.8, { color: C.ink2 });
+    }
+    // kolonky na psaní: stav k 10:00 a k 13:00, poznámky (dopsaná poznámka nahoře, pod ní linka)
+    [7, 8].forEach(c => k.hline(top + ROW - 4.5, C.write, 0.25, xs[c] + 2.5, xs[c] + widths[c] - 2.5, [0.6, 0.9]));
+    if (it.note) {
+      clip(it.note, widths[9] - 3.6, 8, 2).forEach((line, i) => k.text(line, xs[9] + 1.8, top + 1.8 + i * k.LH(8, 1.22), 8, { color: C.ink }));
+      k.hline(top + ROW - 4.5, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]);
+    } else [ROW - 11, ROW - 4.5].forEach(h => k.hline(top + h, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]));
     k.y += ROW;
   });
   k.footer(`${EXPORT_NAME} · Shortage · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`);
