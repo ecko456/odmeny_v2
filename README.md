@@ -62,6 +62,29 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.29
+
+- **Shortage: poddíly z výrobního plánu.** Tlačítkem **Výrobní plán** nahraješ soubor
+  výrobního plánu (xlsx). Aplikace projde jeho **2. list**: A EAN sestavy, E EAN poddílu
+  (s vloženým odkazem jako EAN v seznamu), H index, M číslo objednávky, AM probíhající operace.
+  - Poddíl se vloží pod sestavu, když se EAN sestavy, index i číslo objednávky shodují
+    s položkou seznamu a operace je jedna z: Broušení – hala 2, Brush Hala 2, Frézování
+    Hala 2, Frézování VF-11, gravírování Hala 2, řez kotoučovou pilou 2, Odjehlení hala 2,
+    Label Hala 2, Lepení 3M-Hala 2, Pískování – hala 2, Leštění – hala 2. Na velikosti
+    písmen, diakritice a druhu pomlčky nezáleží.
+  - Víc řádků téhož poddílu se spojí do jednoho, operace se vypíšou za sebou.
+  - Poddíl má vlastní QR kód (activeBarcode z odkazu u EANu poddílu), kolonky Stav k 10:00
+    a 13:00, poznámku a poslední záznam (vkládá se stejně přes Ctrl+V podle QR kódu).
+  - V aplikaci i v PDF je poddíl hned pod svou sestavou (číslo 1.1, 1.2 …) a přesouvá se
+    s ní. Poddíl jde odebrat křížkem.
+  - Nahraný plán si okno pamatuje: každý další seznam nahraný nebo vložený ve stejném okně
+    se v plánu prohledá sám. U jiného seznamu stačí tlačítko „Najít poddíly v plánu“.
+  - Další nahrání plánu poddíly obnoví podle nového plánu. Poznámka a poslední záznam
+    u poddílu, který v plánu zůstal, se zachovají. Když nový plán k seznamu nenajde nic,
+    poddíly zůstanou.
+- Dlouhý stav posledního záznamu se v tabulce aplikace zalomí (dřív roztáhl tabulku).
+- Verze dat 27: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.28.1
 
 - **Shortage: celý poslední záznam v PDF.** Dlouhý stav posledního záznamu se v PDF

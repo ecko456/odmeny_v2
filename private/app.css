@@ -1945,11 +1945,19 @@ table.sh-tab tr.sh-drop-before td { box-shadow: inset 0 3px 0 var(--acc); }
 table.sh-tab tr.sh-drop-after td { box-shadow: inset 0 -3px 0 var(--acc); }
 table.sh-tab td.sh-opc { min-width: 130px; }
 .sh-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 13px; }
-.tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; }
+.tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; white-space: normal; overflow-wrap: anywhere; max-width: 100%; text-align: left; border-radius: 8px; }
 table.sh-tab td.sh-notec { min-width: 150px; }
 .sh-note { width: 100%; min-width: 130px; min-height: 34px; padding: 6px 9px; font-size: 13.5px; }
 table.sh-tab td.sh-actc, table.sh-tab th.sh-actc { width: 40px; text-align: right; }
 .sh-hint { margin: -4px 0 10px; }
+/* poddíly z výrobního plánu (2.29) */
+.sh-planinfo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--ink-2); }
+table.sh-tab tr.sh-hassub td { border-bottom-color: transparent; }
+table.sh-tab tr.sh-sub td { padding-top: 6px; padding-bottom: 6px; background: var(--surface-2); font-size: 13.5px; }
+table.sh-tab tr.sh-sub.sh-top td { background: color-mix(in srgb, var(--crit-soft) 45%, var(--surface-2)); }
+table.sh-tab tr.sh-sub td.sh-subord { color: var(--ink-3); font-weight: 500; }
+.sh-subarrow { display: inline-block; width: 10px; height: 9px; margin: 0 6px 2px 2px; border-left: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); vertical-align: middle; }
+.tag.sh-subtag { background: var(--surface-3); color: var(--ink); font-weight: 800; letter-spacing: .04em; }
 table.sh-tab td.sh-qty b { font-size: 15px; }
 table.sh-tab tr[hidden] { display: none; }
 table.sh-tab tr.sh-top td { background: color-mix(in srgb, var(--crit-soft) 70%, transparent); }

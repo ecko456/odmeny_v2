@@ -26,7 +26,7 @@
   const DEVICE_STORAGE = deviceStorageKey(root.location && root.location.pathname);
   const DATA_AAD = 'odmeny/data/v1';
   // Verze tvaru dat, kterou server žádá u zápisu (stará otevřená stránka nové údaje neumí).
-  const CLIENT_VERSION = '26';
+  const CLIENT_VERSION = '27';
 
   /* ------------------------------------------------------------ bajty */
 

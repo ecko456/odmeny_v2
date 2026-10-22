@@ -321,6 +321,8 @@
           <p class="lede">Seznam chybějících dílů z Excelu: A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index, E urgentní množství, G „TOP“ (TOP SHORTAGE, vždy nahoře) a H probíhající operace. PDF na šířku má u každé položky QR kód s activeBarcode z odkazu, kolonky Stav k 10:00 a Stav k 13:00 a místo na poznámky.</p>
         </div>
         <div class="page-actions noprint">
+          <button class="btn sec" type="button" id="shPlanBtn" title="Poddíly sestav z 2. listu výrobního plánu (A EAN sestavy, E EAN poddílu, H index, M objednávka, AM operace)">Výrobní plán</button>
+          <input type="file" id="shPlanFile" accept=".xlsx,.xlsm,.xls,.ods" hidden>
           <button class="btn" type="button" id="shImport">Nahrát Excel</button>
           <input type="file" id="shFile" accept=".xlsx,.xls,.xlsm,.ods" hidden>
         </div>

@@ -1699,7 +1699,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=26;
+const DATA_VERSION=27;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -4560,8 +4560,9 @@ function svChanges(A,B,add){
    posledních SH_MAX_LISTS. Do QR kódu v PDF jde jen activeBarcode z odkazu (shCode).
    2.28: položka má id, poznámku (note) a poslední záznam (rec) vložený ze schránky
    (A QR kód, B datum a čas, C počet ks, D stav); položky jde odebrat a přesouvat.
+   2.29: položka má poddíly (subs) z výrobního plánu, seznam údaj o plánu (plan).
    ========================================================================== */
-const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000;
+const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000,SH_MAX_SUBS=50;
 function blankShortage(){return {lists:[]};}
 /** Cíl odkazu ze souboru xlsx: SheetJS 0.18.5 v něm nechá XML zápis (&amp; místo &, &#38; …). */
 function shUnxml(s){
@@ -4649,7 +4650,8 @@ function shRecBuild(rows){
  */
 function shApplyRecs(list,recs,meta){
   const by=new Map();
-  list.items.forEach(i=>{if(i.code){if(!by.has(i.code))by.set(i.code,[]);by.get(i.code).push(i);}});
+  // položky i jejich poddíly (2.29)
+  list.items.forEach(it=>[it,...(it.subs||[])].forEach(i=>{if(i.code){if(!by.has(i.code))by.set(i.code,[]);by.get(i.code).push(i);}}));
   const out={matched:0,updated:0,same:0,older:0,missing:[]};
   recs.forEach((r,code)=>{
     const items=by.get(code);
@@ -4682,17 +4684,24 @@ function shTopFirst(items){return items.filter(i=>i.top).concat(items.filter(i=>
 function cleanShortage(o){
   o=o&&typeof o==="object"?o:{};
   const line=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().slice(0,max);
+  const num=v=>Number.isFinite(+v)?Math.max(0,+v):0;
   const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
+  // poddíl z výrobního plánu (2.29): EAN a odkaz poddílu, kód do QR, operace, poznámka, poslední záznam
+  const sub=s=>({id:"",ean:line(s.ean,60),link:shLink(s.link),code:"code" in s?shCodeClean(s.code):shCode(s.link),op:line(s.op,300),note:line(s.note,300),rec:shRecClean(s.rec,line),_id:s.id});
   const lists=(Array.isArray(o.lists)?o.lists:[]).filter(l=>l&&typeof l==="object"&&Array.isArray(l.items)).map(l=>({
-    id:uniq(l.id,"sh"),at:Number.isFinite(+l.at)?Math.max(0,+l.at):0,by:line(l.by,60),file:line(l.file,160),sheet:line(l.sheet,80),
-    // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec
+    id:uniq(l.id,"sh"),at:num(l.at),by:line(l.by,60),file:line(l.file,160),sheet:line(l.sheet,80),
+    plan:l.plan&&typeof l.plan==="object"?{file:line(l.plan.file,160),at:num(l.plan.at),by:line(l.plan.by,60)}:null,
+    // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec; ze 2.28 nemá subs
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,op:line(i.op,300),link:shLink(i.link),
-      code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,300),rec:shRecClean(i.rec,line),_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
+      code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,300),rec:shRecClean(i.rec,line),
+      subs:(Array.isArray(i.subs)?i.subs:[]).filter(s=>s&&typeof s==="object").map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
   lists.forEach(l=>{
-    const ids=new Set();
-    l.items.forEach(i=>{let x=typeof i._id==="string"&&SAFE_ID.test(i._id)&&!ids.has(i._id)?i._id:uid("si");while(ids.has(x))x=uid("si");ids.add(x);i.id=x;delete i._id;});
+    // id položek i poddílů jsou jedinečné v celém seznamu
+    const ids=new Set(),give=(x,p)=>{let v=typeof x._id==="string"&&SAFE_ID.test(x._id)&&!ids.has(x._id)?x._id:uid(p);while(ids.has(v))v=uid(p);ids.add(v);x.id=v;delete x._id;};
+    l.items.forEach(i=>give(i,"si"));
+    l.items.forEach(i=>i.subs.forEach(s=>give(s,"sp")));
   });
   // nejnovější první; nad SH_MAX_LISTS se nejstarší zahodí
   lists.sort((a,b)=>b.at-a.at);
@@ -4745,6 +4754,64 @@ function shTsv(text){
   if(cell||row.length){row.push(cell);rows.push(row);}
   return rows;
 }
+/* ---------- Poddíly z výrobního plánu (2.29) ----------
+   2. list plánu: A EAN sestavy, E EAN poddílu (s odkazem jako EAN v seznamu), H index,
+   M číslo objednávky, AM probíhající operace. Poddíl patří k položce seznamu se stejným
+   EANem, indexem i číslem objednávky a vloží se jen s operací ze SH_SUB_OPS. */
+const SH_SUB_OPS=["Broušení – hala 2","Brush Hala 2","Frézování Hala 2","Frézování VF-11","gravírování Hala 2","řez kotoučovou pilou 2","Odjehlení hala 2","Label Hala 2","Lepení 3M-Hala 2","Pískování – hala 2","Leštění – hala 2"];
+/** Operace bez diakritiky, malými, pomlčky jako mezery („Broušení – hala 2“ = „brouseni hala 2“). */
+function shOpNorm(s){return String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[‐-―−_\-]+/g," ").replace(/\s+/g," ").trim();}
+const SH_SUB_OPSET=new Set(SH_SUB_OPS.map(shOpNorm));
+function shSubOp(op){return SH_SUB_OPSET.has(shOpNorm(op));}
+/** Část klíče sestavy: bez mezer, velkými, číslo bez nul na začátku (EAN z plánu bývá číslo). */
+function shPlanKeyPart(v){let s=String(v==null?"":v).replace(/\s+/g,"").toUpperCase();if(/^\d+$/.test(s))s=s.replace(/^0+(?=\d)/,"");return s;}
+function shPlanKey(ean,index,order){return shPlanKeyPart(ean)+"|"+shPlanKeyPart(index)+"|"+shPlanKeyPart(order);}
+/** Prázdný přehled plánu: rows = klíč sestavy → [{ean, link, code, op}] (jen operace Hala 2), other = klíč → počet řádků s jinou operací. */
+function shPlanBlank(file){return {file:String(file||"").slice(0,160),at:Date.now(),sheet:"",total:0,rows:new Map(),other:new Map()};}
+/** Jeden řádek plánu (a EAN sestavy, e EAN poddílu, h index, m objednávka, op operace, link cíl odkazu u E). */
+function shPlanRow(plan,a,e,h,m,op,link){
+  if(!shPlanKeyPart(a)||!String(e==null?"":e).trim())return;
+  const k=shPlanKey(a,h,m);
+  if(!shSubOp(op)){plan.other.set(k,(plan.other.get(k)||0)+1);return;}
+  if(!plan.rows.has(k))plan.rows.set(k,[]);
+  const t=String(link||"").trim();
+  plan.rows.get(k).push({ean:String(e).replace(/\s+/g," ").trim().slice(0,60),link:shLink(t),code:shCode(t),op:String(op).replace(/\s+/g," ").trim().slice(0,120)});
+}
+/**
+ * Poddíly z plánu k položkám seznamu. U položky se poddíly nahradí podle plánu; poddíl, který
+ * v plánu zůstal, si nechá id, poznámku i poslední záznam. Víc operací téhož poddílu se spojí.
+ * Vrací {items (sestav s poddíly), subs, noCode, other (sestav jen s jinou operací), changed}.
+ */
+function shApplyPlan(list,plan){
+  const out={items:0,subs:0,noCode:0,other:0,changed:0};
+  list.items.forEach(it=>{
+    const k=shPlanKey(it.ean,it.index,it.order),rows=plan.rows.get(k)||[];
+    if(!rows.length&&plan.other.get(k))out.other++;
+    const by=new Map(),self=shPlanKeyPart(it.ean);
+    rows.forEach(r=>{
+      if(shPlanKeyPart(r.ean)===self)return;   // sestava sama sebe není poddíl
+      const key=shPlanKeyPart(r.ean)+"|"+r.code,x=by.get(key);
+      if(x){if(r.op&&!x.ops.includes(r.op))x.ops.push(r.op);if(!x.link&&r.link)x.link=r.link;}
+      else by.set(key,{ean:r.ean,link:r.link,code:r.code,ops:r.op?[r.op]:[]});
+    });
+    const old=new Map((it.subs||[]).map(s=>[shPlanKeyPart(s.ean)+"|"+s.code,s]));
+    const subs=[...by.entries()].slice(0,SH_MAX_SUBS).map(([key,x])=>{const p=old.get(key);return {id:p?p.id:"",ean:x.ean,link:x.link,code:x.code,op:x.ops.join(" · "),note:p?p.note:"",rec:p?p.rec:null};});
+    const sig=a=>JSON.stringify((a||[]).map(s=>[s.ean,s.code,s.op]));
+    if(sig(subs)!==sig(it.subs))out.changed++;
+    it.subs=subs;
+    if(subs.length){out.items++;out.subs+=subs.length;out.noCode+=subs.filter(s=>!s.code).length;}
+  });
+  return out;
+}
+/** Položka nebo poddíl seznamu podle id → {entry, item (sestava), sub (je poddíl)}. */
+function shEntry(list,id){
+  for(const it of (list&&list.items)||[]){
+    if(it.id===id)return {entry:it,item:it,sub:false};
+    const s=(it.subs||[]).find(x=>x.id===id);
+    if(s)return {entry:s,item:it,sub:true};
+  }
+  return null;
+}
 /** „22. 10. 2026 8:15“ ze časové značky seznamu. */
 function shWhen(l){return shWhenText(l.at||0);}
 function shItemsN(n){return n===1?"položka":n>=2&&n<=4?"položky":"položek";}
@@ -4755,18 +4822,29 @@ function shChanges(A,B,add){
   B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+what(l),{m:"shl:"+l.id});});
   // smazání má vlastní klíč, ať v historii zůstane i záznam o nahrání
   A.lists.forEach(l=>{if(!ib.has(l.id))add("shortage","Shortage: smazán seznam "+shWhen(l)+what(l),{m:"shd:"+l.id});});
-  // úpravy položek seznamu (2.28): odebrání, poznámka, poslední záznamy, pořadí
+  // úpravy položek seznamu (2.28): odebrání, poznámka, poslední záznamy, pořadí; poddíly z plánu (2.29)
   B.lists.forEach(l=>{
     const o=A.lists.find(x=>x.id===l.id);
     if(!o)return;
     const label=i=>((i.ean||"")+" "+(i.name||"")).trim()||"bez názvu",ol=o.items.map(i=>i.id),nl=l.items.map(i=>i.id);
     const oi=new Map(o.items.map(i=>[i.id,i])),ni=new Map(l.items.map(i=>[i.id,i]));
+    const subsOf=list=>new Map(list.items.flatMap(i=>(i.subs||[]).map(x=>[x.id,{s:x,i}])));
+    const os=subsOf(o),ns=subsOf(l),planChanged=JSON.stringify(o.plan||null)!==JSON.stringify(l.plan||null);
     o.items.forEach(i=>{if(!ni.has(i.id))add("shortage","Shortage: ze seznamu "+shWhen(l)+" odebrána položka "+label(i),{m:"shr:"+l.id+":"+i.id});});
     l.items.forEach(i=>{
       const p=oi.get(i.id);
       if(p&&(p.note||"")!==(i.note||""))add("shortage",i.note?"Shortage: poznámka k položce "+label(i)+" (seznam "+shWhen(l)+"): "+i.note:"Shortage: smazána poznámka k položce "+label(i)+" (seznam "+shWhen(l)+")",{m:"shn:"+l.id+":"+i.id});
     });
-    const recN=l.items.filter(i=>oi.has(i.id)&&JSON.stringify(oi.get(i.id).rec||null)!==JSON.stringify(i.rec||null)).length;
+    if(planChanged&&l.plan){
+      const n=l.items.reduce((a,i)=>a+(i.subs||[]).length,0),k=l.items.filter(i=>(i.subs||[]).length).length;
+      add("shortage","Shortage: poddíly z výrobního plánu "+(l.plan.file||"")+" u seznamu "+shWhen(l)+": "+n+" "+(n===1?"poddíl":n>=2&&n<=4?"poddíly":"poddílů")+" u "+k+" "+(k===1?"sestavy":"sestav"),{m:"shp:"+l.id});
+    }else os.forEach((x,id)=>{if(ni.has(x.i.id)&&!ns.has(id))add("shortage","Shortage: odebrán poddíl "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+" (seznam "+shWhen(l)+")",{m:"shr:"+l.id+":"+id});});
+    ns.forEach((x,id)=>{
+      const p=os.get(id);
+      if(p&&(p.s.note||"")!==(x.s.note||""))add("shortage",x.s.note?"Shortage: poznámka k poddílu "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+" (seznam "+shWhen(l)+"): "+x.s.note:"Shortage: smazána poznámka k poddílu "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+" (seznam "+shWhen(l)+")",{m:"shn:"+l.id+":"+id});
+    });
+    const recN=l.items.filter(i=>oi.has(i.id)&&JSON.stringify(oi.get(i.id).rec||null)!==JSON.stringify(i.rec||null)).length
+      +[...ns.entries()].filter(([id,x])=>os.has(id)&&JSON.stringify(os.get(id).s.rec||null)!==JSON.stringify(x.s.rec||null)).length;
     if(recN)add("shortage","Shortage: poslední záznamy u "+recN+" "+(recN===1?"položky":"položek")+" seznamu "+shWhen(l),{m:"shz:"+l.id});
     if(ol.filter(id=>ni.has(id)).join()!==nl.filter(id=>oi.has(id)).join())add("shortage","Shortage: změněno pořadí položek v seznamu "+shWhen(l),{m:"sho:"+l.id});
   });

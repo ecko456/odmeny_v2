@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 22. 10. 2026 (verze 2.29):
+
+- Uživatel: „některé urgenty mají poddíly … prolustrovat vždy výrobní plán … v 2. listu …
+  ve sloupci A je ean sestavy, E ean poddílu, H index, M číslo objednávky, AM probíhající
+  operace … shodu u EAN sestavy, index a číslo objednávky … jedna z možností u probíhající
+  operace“ (11 operací Hala 2, `SH_SUB_OPS`).
+  - Core: `item.subs[≤ 50]` = `{id 'sp…', ean, link, code, op, note, rec}`, `list.plan` =
+    `{file, at, by}` nebo null. `shPlanRow`, `shPlanKey` (bez mezer, velkými, čísla bez nul
+    na začátku: EAN z plánu bývá číslo), `shSubOp` (`shOpNorm`: bez diakritiky, pomlčky jako
+    mezery), `shApplyPlan` (nahradí poddíly podle plánu, zachová id/poznámku/záznam),
+    `shEntry`. `shApplyRecs` bere i poddíly. Historie: `shp:` plán, `shr:`/`shn:` i u poddílů.
+  - Čtení plánu (`shPlanFast` v `app.js`): stejný proud jako výrobní plán v Auditu (`waZip`,
+    `waXlsxSst`, `waXlsxCells`), jen sloupce A, E, H, M, AM a jen řádky s operací Hala 2.
+    Odkaz u E: `<hyperlinks>` na konci listu (i oblast E12:E20), cíl v
+    `xl/worksheets/_rels/sheetN.xml.rels` (čte se proudem, jen potřebná Id), jinak vzorec
+    HYPERLINK v `<f>`. Záloha SheetJS (`window.SH_PLAN_SHEETJS` ji vynutí v testu).
+  - Plán zůstává v paměti okna (`ui.sh.plan`), neukládá se. `shAddList` ho použije u nového
+    seznamu, `shUsePlan` nechá poddíly být, když plán k seznamu nenajde nic.
+  - Se skutečným plánem nikdo nezkoušel. e2e vyrábí plán přes SheetJS (2 010 řádků, odkazy
+    vložené i vzorcem, EAN číslem).
+  - Verze dat 27, `ODM_VERSION` 2.29.
+
 Stav k 22. 10. 2026 (verze 2.28.1):
 
 - Uživatel: „poslední záznam je občas moc dlouhý a v PDF pro tisk nejde vidět celý“.
@@ -938,7 +960,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -947,7 +969,8 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 
 - `lists[≤ 30]`, nejnovější první: `{id 'sh…', at, by, file, sheet, items[≤ 1000]}`; `sheet` je
   název listu jen u sešitu s více listy, vložený seznam má `file` „vloženo ze schránky“;
-- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec}` (`id`, `note`, `rec` od 2.28): texty tak, jak je ukazuje Excel
+- seznam má navíc `plan` (2.29): `{file, at, by}` posledního prohledaného výrobního plánu, nebo null;
+- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec, subs}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29): texty tak, jak je ukazuje Excel
   (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
   `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
   jinak `""`, slouží jen ke klikání v aplikaci; `code` = activeBarcode z odkazu (`shCode`: text
@@ -961,6 +984,8 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
   same, older, missing}` (stejný kód u více položek dostanou všechny, starší nepřepíše
   novější). `shParseWhen`: `22.10.2026 9:15`, `22. 10. 26`, ISO, pořadové číslo dne Excelu.
 - `shMoveItem(list, id, to)`: přesun ve skupině (TOP / ostatní).
+- `subs[≤ 50]` (2.29): poddíly z 2. listu výrobního plánu `{id 'sp…', ean, link, code, op, note, rec}`,
+  id jsou jedinečná v celém seznamu (položky i poddíly). Viz „Kde jsme skončili“ 2.29.
 
 Import (`shImportFile` v `app.js`): SheetJS, každý list přes `shSheetRows` (sloupce A–H, nejvýš
 20 000 řádků, `shCellText`: číselný EAN s formátem nul se vezme jako formátovaný text; `shCellLink`:
@@ -1224,7 +1249,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.27 | `16b12fd` | Shortage – import chybějících dílů z Excelu, PDF na šířku s QR kódem odkazu z EANu (data verze 23) |
 | 2.27.1 | `2f75738` | Shortage – nové sloupce, TOP SHORTAGE nahoře, probíhající operace, do QR jen activeBarcode, vložení přes Ctrl+V (data verze 24) |
 | 2.28 | `8d74714` | Shortage – odebrání položky, poslední záznamy přes Ctrl+V, přesouvání myší, poznámka, PDF pro černobílý tisk (data verze 25) |
-| 2.28.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – celý poslední záznam v PDF (řádek podle obsahu), stav do 400 znaků (data verze 26) |
+| 2.28.1 | `9c921cc` | Shortage – celý poslední záznam v PDF (řádek podle obsahu), stav do 400 znaků (data verze 26) |
+| 2.29 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – poddíly z výrobního plánu pod sestavou (2. list, shoda EAN + index + objednávka, operace Hala 2) (data verze 27) |
 
 Verze 2.1 přidala:
 
@@ -1336,7 +1362,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `26` (od 2.28.1):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `27` (od 2.29):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1604,7 +1630,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 69 testů: proti původní aplikaci + opravy + 2.1 až 2.28
+node tests/test_core.js                 # 70 testů: proti původní aplikaci + opravy + 2.1 až 2.29
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1643,7 +1669,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     a čte jsQR (záloha ZXing) a musí nést activeBarcode, Ctrl+V (událost `paste` s HTML jako
     z Excelu a jen s textem, vložení do hledání nic nepřidá), 2.28: poslední záznamy přes Ctrl+V,
     poznámka, odebrání, přetažení myší (i nad TOP nejde), šipky, PDF s úpravami jen v odstínech
-    šedé, monitor 1280 px bez přetečení; další seznam, přepnutí, smazání, historie, CSV, telefon,
+    šedé, monitor 1280 px bez přetečení; 2.29: výrobní plán (rychlé čtení i SheetJS), poddíly
+    pod sestavou, poznámka a záznam u poddílu, odebrání, PDF s poddíly, plán v paměti u dalšího
+    seznamu; další seznam, přepnutí, smazání, historie, CSV, telefon,
     tmavý režim;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
