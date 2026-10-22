@@ -3030,6 +3030,167 @@ test('Docházka (2.25.1): den s kódem nepřítomnosti a hodinami („8 D“) je
   return null;
 });
 
+test('Kapacity a zaškolení (2.30): vykázáno z docházky, plán ze zařazení, zkušení podle historie, vývoj zaškolení, výkon a Excel', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = sanitizeState(blank());
+    const sk = i => [{ id: 'k' + i + 'a', name: 'a' }, { id: 'k' + i + 'b', name: 'b' }];
+    S.positions = [{ id: 'g0', name: 'Brus', dept: 'Brus', skillset: sk(0), maxTab: 8, tiers: [], penalty: [], bonus: [] },
+      { id: 'g1', name: 'CNC', dept: 'CNC', skillset: sk(1), maxTab: 8, tiers: [], penalty: [], bonus: [] }];
+    S = sanitizeState(S);
+    const T = (d, h = 8) => new Date(2026, 8, d, h, 0).getTime();
+    const P = (key, pos, shift, r, extra = {}) => { S.employees[key] = { key, first: key.toUpperCase(), last: 'P' + key, note: '', positionId: pos, shift,
+      rate: pos ? { ['k' + pos.slice(1) + 'a']: r[0], ['k' + pos.slice(1) + 'b']: r[1] } : {}, ...extra }; };
+    P('a', 'g0', 'R', [4, 4], { wid: '11', hist: [{ at: T(1), pos: 'g0', lvl: null, pct: 100 }] });
+    P('b', 'g0', 'S1', [3, 3], { wid: '12', hist: [{ at: T(1), pos: 'g0', lvl: null, pct: 50 }, { at: T(16, 10), pos: 'g0', lvl: null, pct: 75 }] });
+    P('c', 'g1', 'S2', [2, 2], { wid: '13', hist: [{ at: T(2), pos: 'g1', lvl: null, pct: 25 }, { at: T(17, 9), pos: 'g1', lvl: null, pct: 50 }] });
+    P('d', 'g1', 'O', [4, 4], { sick: '2026-09-10' });
+    P('e', 'g0', 'R', [4, 4], { lead: [] });
+    P('f', null, 'R', [0, 0]);
+    P('g', 'g0', '', [1, 1], { excluded: true });
+    P('h', 'g1', 'R', [4, 3]);
+    S.capReport = { ...blankCapReport(), thr: 3, s1am: '2026-W38' };
+    // docházka září: 7,5 h v pracovní dny 1.–18. 9., od 21. 9. prázdno (zatím nenahráno)
+    const days = Array.from({ length: 30 }, (_, i) => '2026-09-' + String(i + 1).padStart(2, '0'));
+    const work = iso => { const [y, m, d] = iso.split('-').map(Number); return mkDay(y, m, d).work && d <= 18; };
+    const row = (key, fn) => { const h = [], c = []; days.forEach((iso, i) => { const v = fn(i + 1, work(iso)); h.push(v[0]); c.push(v[1]); }); return { first: key.toUpperCase(), last: 'P' + key, h, c }; };
+    const std = (d, w) => [w ? 7.5 : 0, null];
+    const rows = {
+      a: row('a', (d, w) => (d === 18 ? [0, null] : std(d, w))),
+      b: row('b', (d, w) => (d === 15 ? [0, 'D'] : std(d, w))),
+      c: row('c', (d, w) => (d === 14 ? [0, 'A'] : std(d, w))),
+      d: row('d', (d, w) => (w ? [0, 'NEM'] : [0, null])),
+      e: row('e', std), f: row('f', std), g: row('g', std),
+      x: row('x', (d, w) => (d === 14 ? [4, null] : [0, null])),
+    };
+    S.periods['2026-09'] = { days, rows, codes: {}, file: 'dochazka.xlsx', at: 1 };
+    S.prodMap = { 'prod a': 'a', 'prod b': 'b', 'prod c': 'c' };
+    const pr = (name, norm) => ({ name, total: 1, count: 1, days: {}, spent: norm, norm, nspent: norm });
+    S.production['2026-09'] = { id: '2026-09', time: true, names: { 'prod a': pr('Prod A', 7200), 'prod b': pr('Prod B', 4500), 'prod c': pr('Prod C', 3000) }, records: 3, total: 3, file: 'e.xlsx', at: 1 };
+    S = sanitizeState(S);
+    const now = new Date(2026, 8, 20, 12, 0).getTime();
+    const x = capTimeline('2026-09-14', '2026-10-02', { now });
+    const day = iso => x.days.find(d => d.iso === iso);
+    const pick = (c, ks) => ks.map(k => c[k]);
+    const K = ['planN', 'planOk', 'planTr', 'present', 'presOk', 'presTr', 'realH', 'okH', 'trH', 'excused', 'miss', 'sick', 'on', 'onOk', 'onTr'];
+    // nezávislé součty: celkem = skupiny, týden = dny, období = týdny
+    const errs = [];
+    const eq = (a, b, m) => { if (Math.abs(a - b) > 1e-6) errs.push(m + ': ' + a + ' ≠ ' + b); };
+    x.days.forEach(d => { CT_KEYS.forEach(k => eq(d.tot[k], d.cells.reduce((s, c) => s + c[k], 0), d.iso + ' ' + k));
+      d.cells.forEach((c, i) => { eq(c.planN, c.planOk + c.planTr, d.iso + ' g' + i + ' ok+tr');
+        if (d.kind === 'real') eq(c.planN, c.present + c.excused + c.miss, d.iso + ' g' + i + ' přišlo+omluveno+chybí'); }); });
+    x.weeks.forEach(w => CT_KEYS.forEach(k => eq(w.tot[k], x.days.filter(d => d.week === w.id).reduce((s, d) => s + d.tot[k], 0), w.id + ' ' + k)));
+    CT_KEYS.forEach(k => eq(x.total.tot[k], x.weeks.reduce((s, w) => s + w.tot[k], 0), 'období ' + k));
+    eq(x.total.tot.realH, x.real.tot.realH, 'odpracováno jen ve vykázaných dnech');
+    const sh = capTimelineSheets(x), sum = sh[0].rows, hdr = sum.findIndex(r => r[0] === 'Oddělení'), col = t => sum[hdr].indexOf(t), tot = sum.find(r => r[1] === 'Všechny skupiny');
+    return JSON.stringify({ errs, n: x.days.length, kinds: [x.real.n, x.plan.n, x.lastReal, x.firstPlan, x.pastPlan.length],
+      d14: [pick(day('2026-09-14').cells[0], K), pick(day('2026-09-14').cells[1], K), day('2026-09-14').cells[0].trSPres, day('2026-09-14').extraN, day('2026-09-14').extraH, day('2026-09-14').req, day('2026-09-14').met],
+      d15: pick(day('2026-09-15').cells[0], K), d16: pick(day('2026-09-16').cells[0], K), d17: [pick(day('2026-09-17').cells[1], K), day('2026-09-17').cells[1].trSPres],
+      d18: pick(day('2026-09-18').cells[0], K),
+      d21: [pick(day('2026-09-21').cells[0], K), pick(day('2026-09-21').cells[1], K), pick(day('2026-09-21').tot, ['am', 'pm', 'rot', 'noshift', 'planH'])],
+      hol: !!day('2026-09-28'), start: [x.start.groups.map(g => [g.n, g.ok, g.tr]), x.start.tot.n], end: [x.end.groups.map(g => [g.n, g.ok, g.tr, g.sick]), x.end.tot.ok],
+      dev: x.dev.map(r => [r.key, r.start.pct, r.end.pct, r.gain, r.became ? todayIso(r.became) : '', r.steps.length]), newOk: x.newOk,
+      missing: x.missing.map(m => [m.month, m.keys]), noGroup: x.noGroup, est: x.est, noHist: x.noHist,
+      months: x.months.map(m => [m.id, m.kind, m.n, m.roster.iso]),
+      perf: x.months[0].perf && [x.months[0].perf.tot.ok, x.months[0].perf.tot.tr, x.months[0].perf.tot.all, x.months[0].perf.idx.tot.all, x.months[0].perf.idx.tot.ok, x.months[0].perf.idx.tot.tr],
+      sheets: sh.map(s => s.name), excel: [tot[col('Lidí na konci')], tot[col('Zkušení')], tot[col('Odpracováno h')], tot[col('Výkon celkem (index)')]],
+      wk: x.weeks.map(w => [w.id, w.kind, w.n, w.req, w.met]) });
+  })()`));
+  assert.deepStrictEqual(out.errs, [], `součty: ${out.errs.slice(0, 10).join('; ')}`);
+  assert.deepStrictEqual(out.kinds, [5, 9, '2026-09-18', '2026-09-21', 0], 'vykázáno 14.–18. 9. (docházka), plán od 21. 9. (28. 9. svátek se nepočítá)');
+  assert.strictEqual(out.n, 14);
+  assert.strictEqual(out.hol, false, 'svátek 28. 9. v dnech není');
+  // 14. 9.: Brus a (zkušený), b (50 % podle historie, v zácviku), g (dnes vyřazený, v září v docházce); vedoucí e se nepočítá
+  assert.deepStrictEqual(out.d14[0], [3, 1, 2, 3, 1, 2, 22.5, 7.5, 15, 0, 0, 0, 3, 1, 2]);
+  // CNC: c s kódem A (neomluveno), d v nemoci (omluveno, dnes 100 % bez historie = zkušený), h v docházce chybí
+  assert.deepStrictEqual(out.d14[1], [2, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0]);
+  assert.ok(Math.abs(out.d14[2] - 1) < 1e-9, 'Ø zaškolení: b 50/75 + g 25/75 = 1');
+  assert.deepStrictEqual(out.d14.slice(3), [2, 11.5, 100, false], 'mimo skupiny f a x (11,5 h), požadavek 100 nesplněn');
+  assert.deepStrictEqual(out.d15, [3, 1, 2, 2, 1, 1, 15, 7.5, 7.5, 1, 0, 0, 2, 1, 1], '15. 9.: b dovolená (D) = omluveno');
+  assert.deepStrictEqual(out.d16, [3, 2, 1, 3, 2, 1, 22.5, 15, 7.5, 0, 0, 0, 3, 2, 1], '16. 9. 10:00 b na 75 % = zkušený');
+  assert.deepStrictEqual(out.d17[0], [2, 1, 1, 1, 0, 1, 7.5, 0, 7.5, 1, 0, 0, 1, 0, 1], '17. 9.: c v práci (50 % podle historie)');
+  assert.ok(Math.abs(out.d17[1] - 50 / 75) < 1e-6);
+  assert.deepStrictEqual(out.d18, [3, 2, 1, 2, 1, 1, 15, 7.5, 7.5, 0, 1, 0, 2, 1, 1], '18. 9.: a bez hodin a bez kódu = chybí');
+  // 21. 9. plán: dnešní zařazení, nemocný d mimo plán, vyřazený g ne, h ano; střídání W39 = skupina 2 ráno
+  assert.deepStrictEqual(out.d21[0], [2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0]);
+  assert.deepStrictEqual(out.d21[1], [2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1, 1]);
+  assert.deepStrictEqual(out.d21[2], [3, 1, 0, 0, 30], 'a, c, h ráno, b (skupina 1) odpoledne; 4 × 7,5 h');
+  assert.deepStrictEqual(out.start, [[[3, 1, 2], [2, 1, 1]], 5], 'stav 13. 9. z historie: h v docházce není, g ještě pracoval');
+  assert.deepStrictEqual(out.end, [[[2, 2, 0, 0], [3, 2, 1, 1]], 4], 'stav 2. 10. = dnešní zařazení');
+  assert.deepStrictEqual(out.dev, [['b', 50, 75, 25, '2026-09-16', 1], ['c', 25, 50, 25, '', 1]]);
+  assert.strictEqual(out.newOk, 1);
+  assert.deepStrictEqual(out.missing, [['2026-09', ['h']]]);
+  assert.deepStrictEqual([out.noGroup, out.est, out.noHist], [1, 0, 2], 'f bez skupiny; d a g bez historie (dnešní hodnocení)');
+  assert.deepStrictEqual(out.months, [['2026-09', 'mix', 12, '2026-09-30'], ['2026-10', 'plan', 2, '2026-10-02']]);
+  // výkon září: zkušení a+b 195 h normy ÷ 195 h, v zácviku c 50 ÷ 97,5; celkem 245 ÷ 292,5 = index 100
+  assert.ok(Math.abs(out.perf[0] - 1) < 1e-9 && Math.abs(out.perf[1] - 50 / 97.5) < 1e-9 && Math.abs(out.perf[2] - 245 / 292.5) < 1e-9, `výkon ${out.perf}`);
+  assert.deepStrictEqual(out.perf.slice(3), [100, 119.4, 61.2]);
+  assert.deepStrictEqual(out.sheets, ['Souhrn', 'Po dnech', 'Po týdnech', 'Po měsících', 'Vývoj zaškolení']);
+  assert.deepStrictEqual(out.excel, [5, 4, 127.5, 100], 'Excel Souhrn: lidé a zkušení na konci, odpracováno 14.–18. 9. (Brus 97,5 + CNC 30), výkon');
+  assert.deepStrictEqual(out.wk, [['2026-W38', 'real', 5, 5, 0], ['2026-W39', 'plan', 5, 5, 0], ['2026-W40', 'plan', 4, 4, 0]]);
+  return null;
+});
+
+test('Kapacity a zaškolení (2.30): nezávislá kontrola na náhodných datech (hodiny, počty, historie, plán)', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `JSON.stringify((()=>{
+    let seed=11;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+    S=sanitizeState(blank());
+    S.positions=[0,1,2].map(i=>({id:'g'+i,name:'S'+i,dept:'D'+(i%2),skillset:[{id:'k'+i+'a',name:'a'},{id:'k'+i+'b',name:'b',opt:i===2}],maxTab:8,tiers:[],penalty:[],bonus:[]}));
+    S=sanitizeState(S);
+    const shifts=['R','O','S1','S2',''];
+    for(let n=0;n<40;n++){const k='p'+n,g='g'+(n%3);
+      const hist=[];let t=new Date(2026,7,20).getTime();
+      for(let j=0;j<(n%4);j++){t+=Math.floor(rnd()*20+3)*864e5;hist.push({at:t,pos:j===2&&n%5===0?'g'+((n+1)%3):g,lvl:null,pct:Math.round(rnd()*4)*25});}
+      S.employees[k]={key:k,first:'J'+n,last:'P'+n,note:'',positionId:n%11===0?null:g,shift:shifts[n%5],shortFri:n%4===0,excluded:n%13===0,
+        rate:{['k'+(n%3)+'a']:n%5,['k'+(n%3)+'b']:(n*3)%5},hist,...(n%9===0?{sick:'2026-10-05'}:{})};
+      if(n%7===0)S.employees[k].lead=[];}
+    ['2026-09','2026-10'].forEach(m=>{const [y,mm]=m.split('-').map(Number);const len=new Date(y,mm,0).getDate();
+      const days=Array.from({length:len},(_,i)=>m+'-'+String(i+1).padStart(2,'0'));const rows={};
+      for(let n=0;n<42;n++){if(n===5&&m==='2026-10')continue;const k=n<40?'p'+n:'x'+n;const h=[],c=[];
+        days.forEach(iso=>{const d=+iso.slice(8);if(m==='2026-10'&&d>16){h.push(0);c.push(null);return;}
+          const r=rnd();if(r<0.08){h.push(0);c.push(['D','NEM','A','PN'][Math.floor(rnd()*4)]);}
+          else if(r<0.11){h.push(8);c.push('D');}else if(r<0.14){h.push(0);c.push(null);}else{h.push([7.5,6.5,8,4][Math.floor(rnd()*4)]);c.push(null);}});
+        rows[k]={first:'J'+n,last:'P'+n,h,c};}
+      S.periods[m]={days,rows,codes:{},file:'r.xlsx',at:1};});
+    S.capReport={...blankCapReport(),thr:3,s1am:'2026-W40'};
+    S=sanitizeState(S);
+    const now=new Date(2026,9,20,12).getTime(),x=capTimeline('2026-09-01','2026-11-30',{now});
+    const errs=[],eq=(a,b,m)=>{if(Math.abs(a-b)>1e-6)errs.push(m+': '+a+' ≠ '+b);},ex=excusedSet();
+    const gi=new Map(S.positions.map((p,i)=>[p.id,i]));
+    x.days.forEach(d=>{
+      if(d.kind==='real'){
+        const p=S.periods[d.month],i=p.days.indexOf(d.iso),ts=new Date(+d.iso.slice(0,4),+d.iso.slice(5,7)-1,+d.iso.slice(8),23,59,59,999).getTime();
+        const exp=S.positions.map(()=>({n:0,ok:0,pres:0,h:0}));
+        Object.entries(p.rows).forEach(([k,row])=>{const e=S.employees[k];if(!e||Array.isArray(e.lead))return;
+          let cur=null;(e.hist||[]).forEach(hh=>{if(hh.at<=ts)cur=hh;});const pos=cur?cur.pos:(e.hist&&e.hist.length?e.hist[0].pos:e.positionId);
+          if(!pos||!gi.has(pos))return;const g=exp[gi.get(pos)];
+          // procento: poslední zápis pro skupinu do konce dne, jinak nejbližší pozdější, jinak dnešní
+          const hs=(e.hist||[]).filter(hh=>hh.pos===pos&&hh.pct!=null);let pct=null;hs.forEach(hh=>{if(hh.at<=ts)pct=hh.pct;});
+          if(pct==null){const nx=hs.find(hh=>hh.at>ts);pct=nx?nx.pct:skillPct(e,S.positions[gi.get(pos)]);}
+          g.n++;if(pct>=75-1e-9)g.ok++;const w=!row.c[i]&&row.h[i]>0;if(w){g.pres++;g.h+=row.h[i];}});
+        exp.forEach((g,j)=>{const c=d.cells[j];eq(c.planN,g.n,d.iso+' g'+j+' v plánu');eq(c.planOk,g.ok,d.iso+' g'+j+' zkušení');eq(c.present,g.pres,d.iso+' g'+j+' přišlo');eq(c.realH,g.h,d.iso+' g'+j+' hodiny');});
+      }else{
+        S.positions.forEach((p,j)=>{const m=Object.values(S.employees).filter(e=>!e.excluded&&!Array.isArray(e.lead)&&e.positionId===p.id);
+          const live=m.filter(e=>!(e.sick&&e.sick<=d.iso));const c=d.cells[j];
+          eq(c.planN,live.length,d.iso+' g'+j+' plán');eq(c.sick,m.length-live.length,d.iso+' g'+j+' nemoc');
+          eq(c.planOk,live.filter(e=>skillPct(e,p)>=75-1e-9).length,d.iso+' g'+j+' plán zkušení');
+          eq(c.planH,live.reduce((s,e)=>s+dayShift(d.day,!!e.shortFri),0),d.iso+' g'+j+' plán h');
+          eq(c.realH,0,d.iso+' g'+j+' plán bez hodin');});
+      }
+    });
+    CT_KEYS.forEach(k=>eq(x.total.tot[k],x.months.reduce((s,m)=>s+m.tot[k],0),'měsíce '+k));
+    eq(x.total.n,x.real.n+x.plan.n,'dny');
+    const sh=capTimelineSheets(x);
+    return {errs:errs.slice(0,12),n:errs.length,real:x.real.n,plan:x.plan.n,dev:x.dev.length,est:x.est,months:x.months.length,rows:sh.map(s=>s.rows.length)};
+  })())`));
+  assert.deepStrictEqual(out.errs, [], `rozdíly (${out.n}): ${out.errs.join('; ')}`);
+  assert.ok(out.real >= 30 && out.plan >= 25, `vykázáno ${out.real}, plán ${out.plan}`);
+  assert.ok(out.dev >= 10, `lidí se změnou: ${out.dev}`);
+  assert.strictEqual(out.months, 3);
+  return `${out.real} vykázaných a ${out.plan} plánovaných dnů, ${out.dev} lidí se změnou`;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

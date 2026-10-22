@@ -1,0 +1,254 @@
+// Prohlížečový průchod záložkou Kapacity a zaškolení v Auditu (verze 2.30): vymyšlení lidé ve třech
+// skupinách, docházka za poslední čtyři měsíce do včerejška, historie hodnocení (zaškolování), nemoc,
+// vyřazený, vedoucí a lidé bez skupiny, evidence práce s normou. Kontroluje vykázané a plánované dny,
+// dlaždice, grafy s tooltipem, tabulky, vlastní období, PDF (text, jen ID, žádná jména) a Excel
+// (listy a součty proti výpočtu), telefon a tmavý režim. Všechna data jsou vymyšlená.
+// Spuštění stejně jako e2e_browser.js:
+//   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
+//   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
+//   NO_PROXY=127.0.0.1 PW=$(npm root -g)/playwright S=$S node tests/e2e_kapacity.js
+// Text PDF čte pypdf (bez něj PyMuPDF, bez obou se kontrola textu přeskočí). Snímky jsou v $S/oshots-ct.
+const { chromium } = require(process.env.PW);
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const S = process.env.S;
+const BASE = process.env.BASE || 'http://127.0.0.1:8490/';
+const shots = path.join(S, 'oshots-ct');
+const problems = [];
+const check = (ok, message) => { if (!ok) problems.push(message); };
+
+async function watch(page, label) {
+  page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
+  page.on('response', r => { if (r.status() >= 400) problems.push(`${label} HTTP ${r.status()} ${r.url()}`); });
+  page.on('pageerror', err => problems.push(`${label} pageerror: ${err.message}`));
+  await page.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', e => console.error(`CSP ${e.violatedDirective} ${e.blockedURI}`));
+  });
+}
+const saved = page => page.waitForFunction(() => !store.dirty && !store.saving && document.querySelector('#saveState').dataset.state === 'saved', null, { timeout: 15000 });
+async function download(page, selector, name) {
+  const [file] = await Promise.all([page.waitForEvent('download'), page.click(selector)]);
+  const target = path.join(S, name || file.suggestedFilename());
+  await file.saveAs(target);
+  return { name: file.suggestedFilename(), path: target, head: fs.readFileSync(target).slice(0, 5).toString() };
+}
+function pdfText(file) {
+  const py = `import sys, json
+try:
+    import pypdf
+    print(json.dumps([p.extract_text() or '' for p in pypdf.PdfReader(sys.argv[1]).pages]))
+except ImportError:
+    try:
+        import pymupdf
+        print(json.dumps([p.get_text() for p in pymupdf.open(sys.argv[1])]))
+    except ImportError:
+        print('null')`;
+  const r = spawnSync('python3', ['-c', py, file], { encoding: 'utf8' });
+  return r.status === 0 ? JSON.parse(r.stdout) : null;
+}
+function pdfPng(file, out) {
+  spawnSync('python3', ['-c', `import pymupdf,sys
+d=pymupdf.open(sys.argv[1])
+for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.6,1.6)).save(sys.argv[2]+'-'+str(i+1)+'.png')`, file, out]);
+}
+const overflow = page => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+// Vymyšlení lidé: příjmení × jména, tři skupiny, střídání směn.
+const LAST = ['Brusič', 'Fréza', 'Pískař', 'Kotouč', 'Vrták', 'Pilník', 'Soustruh', 'Hoblík', 'Svěrák', 'Kladivo', 'Šroubek', 'Matička'];
+const FIRST = ['Adam', 'Bára', 'Cyril'];
+
+(async () => {
+  fs.mkdirSync(shots, { recursive: true });
+  const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true });
+  const page = await ctx.newPage();
+  await watch(page, 'kapacity');
+  await page.goto(BASE);
+  await page.waitForSelector('#setupForm');
+  await page.fill('[name="token"]', fs.readFileSync(process.env.TOKEN_FILE || path.join(S, 'odme2e', 'setup-token.txt'), 'utf8').trim());
+  await page.fill('[name="label"]', 'Vedoucí haly');
+  await page.click('#setupForm button[type="submit"]');
+  await page.waitForSelector('.odm-card');
+  await page.check('#saved');
+  await page.click('#finish');
+  await page.waitForSelector('#skip');
+  await page.click('#skip');
+  await page.waitForSelector('#view-prehled.on');
+  await saved(page);
+
+  // Data: docházka od prvního dne měsíce před třemi měsíci do včerejška, historie hodnocení.
+  const seed = await page.evaluate(({ LAST, FIRST }) => {
+    let s = 5;
+    const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    const st = blank();
+    const sk = (id, names, opt = -1) => names.map((n, i) => ({ id: `${id}${i}`, name: n, desc: '', scale: null, ...(i === opt ? { opt: true } : {}) }));
+    const grp = (id, name, dept, skills) => { const p = mkPos(id, name, []); p.dept = dept; p.skillset = skills; p.maxTab = 8; p.tiers = []; return p; };
+    st.positions = [grp('g_brus', 'Brus', 'Brus', sk('kb', ['Rovinné broušení', 'Kulaté broušení', 'Měření'])),
+      grp('g_cnc', 'CNC', 'Obrobna', sk('kc', ['Seřízení', 'Programování'])), grp('g_pis', 'Písek', 'Tryskání', sk('kp', ['Tryskání', 'Balení'], 1))];
+    const today = todayIso();
+    const m0 = today.slice(0, 7);
+    const mAdd = (m, n) => { let [y, mm] = m.split('-').map(Number); mm += n; while (mm < 1) { mm += 12; y -= 1; } while (mm > 12) { mm -= 12; y += 1; } return `${y}-${String(mm).padStart(2, '0')}`; };
+    const from = `${mAdd(m0, -3)}-01`;
+    const startTs = new Date(+from.slice(0, 4), +from.slice(5, 7) - 1, 1, 8).getTime();
+    const nowTs = Date.now();
+    const shifts = ['R', 'S1', 'S2', 'O', 'S1', 'S2'];
+    const keys = [];
+    for (let n = 0; n < 36; n += 1) {
+      const g = st.positions[n % 3];
+      const key = `k${n}`;
+      keys.push(key);
+      const ids = g.skillset.map(x => x.id);
+      // dnešní hodnocení a cesta k němu: začátek o 1–2 úrovně níž, zvýšení v náhodné dny za poslední tři měsíce
+      const now = ids.map((_, i) => Math.min(4, 1 + ((n * 7 + i * 3) % 4)));
+      const rate = {};
+      ids.forEach((id, i) => { if (now[i]) rate[id] = now[i]; });
+      const e = { key, last: LAST[n % LAST.length], first: FIRST[Math.floor(n / LAST.length)], positionId: g.id, shift: shifts[n % 6], note: '', rate, wid: String(1000 + n) };
+      if (n === 30) e.lead = ['Brus'];
+      if (n === 31 || n === 32) { e.positionId = null; e.rate = {}; }
+      if (n === 33) e.excluded = true;
+      if (n === 34) e.sick = addDays(today, -4);
+      st.employees[key] = e;
+    }
+    st.workAudit.target = 22;
+    st.capReport = { ...blankCapReport(), thr: 3, s1am: isoWeek(today).id };
+    S = sanitizeState(st);
+    // historie: první zápis na začátku období s nižším procentem, pak zvýšení po krocích k dnešnímu
+    Object.values(S.employees).forEach((e, n) => {
+      const p = S.positions.find(x => x.id === e.positionId);
+      if (!p || isLead(e)) return;
+      const cur = skillPct(e, p);
+      const steps = n % 4;
+      const hist = [{ at: startTs, pos: p.id, lvl: null, pct: Math.max(0, cur - steps * 12.5) }];
+      for (let j = 1; j <= steps; j += 1) hist.push({ at: startTs + Math.floor((nowTs - startTs) * (j / (steps + 1)) * (0.8 + rnd() * 0.3)), pos: p.id, lvl: null, pct: cur - (steps - j) * 12.5 });
+      e.hist = hist;
+    });
+    // docházka po měsících do včerejška
+    for (let m = mAdd(m0, -3); m <= m0; m = mAdd(m, 1)) {
+      const [y, mm] = m.split('-').map(Number);
+      const len = new Date(y, mm, 0).getDate();
+      const days = Array.from({ length: len }, (_, i) => `${m}-${String(i + 1).padStart(2, '0')}`);
+      const rows = {};
+      Object.values(S.employees).forEach(e => {
+        const h = []; const c = [];
+        days.forEach(iso => {
+          const d = mkDay(y, mm, +iso.slice(8));
+          if (iso >= today || !d.work) { h.push(0); c.push(null); return; }
+          const r = rnd();
+          if (r < 0.03) { h.push(0); c.push('D'); } else if (r < 0.06) { h.push(0); c.push('NEM'); } else if (r < 0.07) { h.push(0); c.push('A'); } else { h.push(r < 0.5 ? 7.5 : 8); c.push(null); }
+        });
+        rows[e.key] = { first: e.first, last: e.last, h, c };
+      });
+      S.periods[m] = { id: m, y, m: mm, days, rows, codes: {}, file: `dochazka-${m}.xlsx`, at: Date.now(), headerRow: 1 };
+    }
+    // evidence práce s normou za minulý měsíc: zkušení zhruba 1,1 h normy na hodinu, ostatní 0,7
+    const pm = mAdd(m0, -1);
+    const names = {};
+    Object.values(S.employees).forEach(e => {
+      const p = S.positions.find(x => x.id === e.positionId);
+      const row = S.periods[pm].rows[e.key];
+      if (!p || !row) return;
+      const hours = row.h.reduce((a, v, i) => a + (row.c[i] ? 0 : v), 0);
+      const norm = Math.round(hours * 60 * (skillPct(e, p) >= 75 ? 1.1 : 0.7));
+      const nm = `${e.first} ${e.last}`;
+      names[nm.toLowerCase()] = { name: nm, total: 10, count: 5, days: {}, spent: norm, norm, nspent: norm };
+      S.prodMap[nm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')] = e.key;   // spárování jména z evidence práce
+    });
+    S.production[pm] = { id: pm, names, records: 100, total: 100, file: 'evidence.xlsx', at: Date.now(), time: true };
+    S = sanitizeState(S);
+    save();
+    renderAll();
+    return { today, from, m0, pm };
+  }, { LAST, FIRST });
+  await saved(page);
+
+  // Záložka v Auditu (nepotřebuje obsazenost ani výkaz práce).
+  await page.click('#nav [data-view="audit"]');
+  await page.click('#waTabs [data-watab="kapacity"]');
+  await page.waitForSelector('#waView .ct-charts');
+  const x = await page.evaluate(() => { const r = waCtRange(); const t = capTimeline(r.from, r.to);
+    return { r, real: t.real.n, plan: t.plan.n, lastReal: t.lastReal, firstPlan: t.firstPlan, start: t.start.tot, end: t.end.tot, dev: t.dev.length, newOk: t.newOk,
+      req: t.total.req, met: t.total.met, perf: !!t.perf, weeks: t.weeks.length, pastPlan: t.pastPlan.length, noGroup: t.noGroup }; });
+  check(x.r.from === seed.from && x.real > 40 && x.plan > 15, `výchozí období a dny: ${JSON.stringify(x)}`);
+  check(x.lastReal < seed.today && x.firstPlan >= seed.today && x.pastPlan === 0, `vykázáno do včerejška, plán od dneška: ${x.lastReal} / ${x.firstPlan}`);
+  check(x.dev >= 10 && x.newOk >= 1 && x.end.ok > x.start.ok, `vývoj zaškolení: ${JSON.stringify([x.dev, x.newOk, x.start, x.end])}`);
+  check(x.perf && x.noGroup === 2, `výkon z evidence práce a lidé bez skupiny: ${x.perf} ${x.noGroup}`);
+  const text = (await page.textContent('#waView')).replace(/\s+/g, ' ');
+  check(/Vykázáno \d+ pracovních dní z docházky/.test(text) && /plánováno \d+ pracovních dní/.test(text), 'popis vykázáno a plán');
+  check(/Podíl zkušených/.test(text) && /Pracovníci v zácviku/.test(text) && /Požadavek/.test(text) && /Zkušený proti zácviku/.test(text), 'dlaždice');
+  check(/2 lidé se směnou nemají skupinu/.test(text), 'upozornění na lidi bez skupiny');
+  check(await page.locator('#waView .ct-chart').count() === 2 && await page.locator('#waView .ct-chart path.ct-ok.plan').count() > 0 && await page.locator('#waView .ct-chart path.ct-ok:not(.plan)').count() > 0, 'grafy s vykázanými a plánovanými sloupci');
+  check(await page.locator('#waView .ct-chart .ct-now').count() >= 1 && await page.locator('#waView .ct-chart .ct-req').count() > 0, 'čára plánu a požadavek');
+  // tooltip
+  await page.hover('#waView .ct-chart:nth-of-type(2) .hit >> nth=0');
+  await page.waitForSelector('#waTipCt:not([hidden])');
+  check(/(Ø [\d,]+ na směně, z toho [\d,]+ zkušených|\d+ na směně, \d+ zkušených)/.test(await page.textContent('#waTipCt')), `tooltip: ${await page.textContent('#waTipCt')}`);
+  // tabulky
+  const gRows = await page.$eval('#waView .ct-card', card => [...card.querySelectorAll('tbody tr')].map(r => r.cells[0].textContent.trim()));
+  check(JSON.stringify(gRows.map(t => t.split(' ·')[0])) === JSON.stringify(['Brus', 'CNC', 'Písek', 'Celkem']), `skupiny: ${gRows}`);
+  const dev = await page.$$eval('#waView .ct-dev tbody tr', rows => rows.length);
+  check(dev === x.dev, `vývoj zaškolení v tabulce: ${dev}`);
+  check(/se stal[i]? zkušen/.test(text), 'souhrn nově zkušených');
+  check(await overflow(page) <= 1, `monitor: přetečení ${await overflow(page)} px`);
+  await page.screenshot({ path: path.join(shots, '01-kapacity.png'), fullPage: true });
+
+  // PDF: text, jen ID (bez jmen), tabulky a vysvětlivky.
+  const pdf = await download(page, '[data-wactpdf]', 'kapacity.pdf');
+  check(pdf.head === '%PDF-' && /^kapacity-zaskoleni-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.pdf$/.test(pdf.name), `PDF ${pdf.name}`);
+  const pages = pdfText(pdf.path);
+  if (pages) {
+    const t = pages.join(' ').replace(/\s+/g, ' ');
+    ['KAPACITY A ZAŠKOLENÍ', 'Kapacity a zaškolení', 'Podíl zkušených', 'Lidé ve skupinách', 'Na směně', 'PO SKUPINÁCH'.toLowerCase() ? 'Po skupinách' : '', 'Po týdnech', 'Vývoj zaškolení', 'ID 10', 'Zkušený pracovník', 'Výkon', 'plán →', 'CELKEM']
+      .filter(Boolean).forEach(s => check(t.includes(s), `PDF obsahuje „${s}“`));
+    check(!LAST.some(n => t.includes(n)), 'PDF bez příjmení (jen ID)');
+    check(pages.length >= 2, `PDF má ${pages.length} stran`);
+  }
+  pdfPng(pdf.path, path.join(shots, 'pdf'));
+
+  // Excel: listy a součty proti výpočtu.
+  const xl = await download(page, '[data-wactxlsx]', 'kapacity.xlsx');
+  check(xl.head.startsWith('PK') && /^kapacity-zaskoleni-.*\.xlsx$/.test(xl.name), `Excel ${xl.name}`);
+  const book = await page.evaluate(async b64 => {
+    const X = await xlsx();
+    const wb = X.read(Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)), { type: 'array' });
+    const sum = X.utils.sheet_to_json(wb.Sheets['Souhrn'], { header: 1 });
+    const hdr = sum.findIndex(r => r[0] === 'Oddělení');
+    const tot = sum.find(r => r[1] === 'Všechny skupiny');
+    const r = waCtRange(); const t = capTimeline(r.from, r.to);
+    const dev = X.utils.sheet_to_json(wb.Sheets['Vývoj zaškolení'], { header: 1 });
+    return { names: wb.SheetNames, lidi: tot[sum[hdr].indexOf('Lidí na konci')], ok: tot[sum[hdr].indexOf('Zkušení')], realH: tot[sum[hdr].indexOf('Odpracováno h')],
+      exp: [t.end.tot.n, t.end.tot.ok, Math.round(t.real.tot.realH * 100) / 100], devRows: dev.filter(r => r[2] && /^\d+$/.test(String(r[2]))).length, devExp: t.dev.length };
+  }, fs.readFileSync(xl.path).toString('base64'));
+  check(JSON.stringify(book.names) === JSON.stringify(['Souhrn', 'Po dnech', 'Po týdnech', 'Po měsících', 'Vývoj zaškolení']), `listy ${book.names}`);
+  check(JSON.stringify([book.lidi, book.ok, book.realH]) === JSON.stringify(book.exp), `Excel Souhrn ${[book.lidi, book.ok, book.realH]} ≠ ${book.exp}`);
+  check(book.devRows === book.devExp, `Excel Vývoj zaškolení: ${book.devRows} ≠ ${book.devExp}`);
+
+  // Vlastní období: jen budoucnost = jen plán; jen minulost = jen vykázáno.
+  const fut = { from: await page.evaluate(() => addDays(todayIso(), 7)), to: await page.evaluate(() => addDays(todayIso(), 30)) };
+  await page.fill('#waCtFrom', fut.from);
+  await page.fill('#waCtTo', fut.to);
+  await page.click('[data-waapply="waCt"]');
+  await page.waitForSelector('#waView .ct-charts');
+  const ft = (await page.textContent('#waView')).replace(/\s+/g, ' ');
+  check(/Žádný den s docházkou/.test(ft) && /plánováno/.test(ft) && await page.locator('#waView .ct-chart path.ct-ok:not(.plan)').count() === 0, 'budoucí období jen jako plán');
+  check(await page.evaluate(() => ui.wa.ctPre) === 'custom', 'vlastní období');
+  await page.click('[data-wactpre="m"]');
+  await page.waitForSelector('#waView .ct-charts');
+  check(await page.evaluate(() => { const r = waCtRange(); return r.from.endsWith('-01') && r.from.slice(0, 7) === todayIso().slice(0, 7); }), 'předvolba Tento měsíc');
+  await page.click('[data-wactpre="b3"]');
+  await page.waitForSelector('#waView .ct-charts');
+
+  // Telefon a tmavý režim.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(200);
+  check(await overflow(page) <= 1, `telefon: přetečení ${await overflow(page)} px`);
+  await page.screenshot({ path: path.join(shots, '02-telefon.png'), fullPage: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: path.join(shots, '03-tmavy.png'), fullPage: false });
+
+  await browser.close();
+  if (problems.length) { console.log(`PROBLÉMY (${problems.length}):\n- ${problems.join('\n- ')}`); process.exit(1); }
+  console.log('e2e Kapacity ok');
+})().catch(error => { console.error(error); process.exit(1); });

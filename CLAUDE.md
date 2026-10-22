@@ -34,6 +34,45 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 22. 10. 2026 (verze 2.30):
+
+- Uživatel (s přílohou: návrh „Report docházky – měsíční zaškolenost a výkon“ a týdenní souhrn KW42):
+  „v modulu Audit export kapacit jak historie podle docházky s reálnými čísly … tak i budoucnost
+  co plánujeme … export od do … co již má data z docházky bude vykázané a budoucí datumy jako
+  plánováno … jak se u koho kdy měnili zkušenosti … historie vývoje školení“.
+  - Příloha je zabalená HTML stránka (bundler, dvě vnořené stránky v Reactu). Rozbalit jde bez
+    prohlížeče: `<script type="__bundler/manifest">` (base64 + gzip) a `__bundler/template`.
+    Obsahuje název organizace a skutečné počty lidí: do repa nepatří, ani v testech.
+  - Core `capTimeline(from, to, {now})` (vedle Plánu a skutečnosti): jen pracovní dny; den je
+    `real`, když má v Docházce aspoň u někoho hodiny nebo kód (`attFilledDays`), jinak `plan`.
+    Vykázaný den: lidé s řádkem v docházce toho měsíce a skupinou podle `levelAt` ke konci dne,
+    bez vedoucích; přišel = hodiny bez kódu. Plán: dnešní `positionId`, bez vyřazených,
+    vedoucích a nemocných (`e.sick` je datum „od“, `sick <= den`), směna `slotOn` se střídáním.
+    Buňka `ctCell` (`CT_KEYS`): plán (planN/Ok/Tr/H), přítomní (present/presOk/presTr, realH,
+    okH/trH), excused, miss, sick, směny, `on*` = na směně (vykázáno přítomní, plán plán),
+    `rPlanH` = plán hodin jen ve vykázaných dnech (plnění), `trS*` = součet zaškolení v zácviku.
+  - Procento k datu `ctPctAt(e, pos, ts)`: poslední zápis `e.hist` pro tu skupinu do ts, jinak
+    nejbližší pozdější (`near`, odhad), jinak dnešní `skillPct` (`now`). Počty `est`, `noHist`.
+  - Výsledek: `days`, `weeks` (+ `roster`), `months` (+ `roster`, `perf`), `total`, `real`,
+    `plan`, `start`/`end` (`rosterAt`: stav skupin k datu, v minulosti z historie a jen lidé
+    v docházce toho měsíce), `dev` (vývoj zaškolení: změny `e.hist` v období, `became`, `lost`,
+    `steps`), `perf` (normohodiny `rec.norm` ÷ hodiny z docházky bez kódu, index první měsíc =
+    100), `missing` (lidé ze skupin bez řádku v docházce), `pastPlan`, `noGroup`, `newOk`.
+    `capTimelineSheets(x)`: Souhrn, Po dnech, Po týdnech, Po měsících, Vývoj zaškolení.
+  - UI: záložka Auditu `kapacity` (`WA_TABS`, běží i bez dat Auditu), `waCtRange` (`ui.wa.ctPre`
+    m | b3 | n2 | custom, `ctFrom`/`ctTo`, data `waCt`), `waCtHtml`, `ctBars` (skládané sloupce,
+    plán `.plan` světlejší s čárkovaným okrajem, `ct-req` požadavek, `ct-now` předěl), `ctPoints`
+    (měsíce od 3, jinak týdny; dny do 31, jinak Ø po týdnech), `exportCtXlsx`, `exportCtPdf`,
+    `drawCapTimeline`, `pdfCtBars`, `pdfCtTable` (hlavička se opakuje přes `k.onPage`, sloupec
+    s pruhem podílu). PDF: lidé jen s ID (jako matice 2.20). Barvy `--ch-acc`/`--ch-tab` prošly
+    validátorem dataviz (světlý, tmavý, bílý papír).
+  - Testy: core „Kapacity a zaškolení (2.30)“ (ruční scénář: historie, dovolená, nemoc,
+    vyřazený, vedoucí, bez skupiny, mimo docházku, výkon, Excel) a nezávislý přepočet na
+    náhodných datech; `e2e_kapacity.js`.
+  - Pozor: `pkill -f "php -S 127.0.0.1:8490"` ve `fresh.sh` zabije i shell, jehož příkaz ten text
+    obsahuje (třeba heredoc s hlavičkou e2e testu). Soubor zapsat zvlášť, test spustit zvlášť.
+  - `ODM_VERSION` 2.30, data beze změny (28).
+
 Stav k 22. 10. 2026 (verze 2.29.1):
 
 - Uživatel: „některé poddíly to nevložilo, že neodpovídá operace … pokud se u položky objeví
@@ -1050,7 +1089,7 @@ Sestava s viditelnými poddíly je nízký šedý řádek (`asm`) bez QR, zázna
 Položky jdou přes `shPdfItems(l)` (bez skrytých, číslování bez mezer; všechno skryté → hláška).
 Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
 
-## Audit (verze 2.17, 2.18)
+## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30)
 
 Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 
@@ -1111,6 +1150,11 @@ hodnota), `waCheckHtml`, `waDayDialog` (povinný důvod jen u nové hodnoty), `w
 nových operacích otevře Nastavení s filtrem bez skupiny), `bindWorkAudit`, `exportWaXlsx`,
 `exportWaPdf`, `pdfWaChart`, `pdfWaBalance` a `drawWorkAudit` (A4 na šířku, jen fakta a grafy).
 Tooltip hledá `.chart-tip` v nejbližším `.wa-charts` (přehled, bilance, plán).
+
+Kapacity a zaškolení (2.30, záložka `kapacity`): nepotřebuje data Auditu (bere jen `wa.target`
+a obsazenost jako požadavek a kontrolu), počítá `capTimeline` z Matice, Docházky a `e.hist`.
+Viz „Kde jsme skončili“ 2.30. Lidé na směně = jen lidé ze skupin Matice; skupiny Auditu
+(`wa.groups`) se s nimi nepárují.
 
 Výrobní plán v UI (sekce „VÝROBNÍ PLÁN“): soubory čte `waPlanOpen` (od 2.18.2 vlastní čtení
 xlsx po kouscích, jen vybrané sloupce; záloha SheetJS `dense`, kde je list ve 0.18 pole řádků
@@ -1282,7 +1326,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.28 | `8d74714` | Shortage – odebrání položky, poslední záznamy přes Ctrl+V, přesouvání myší, poznámka, PDF pro černobílý tisk (data verze 25) |
 | 2.28.1 | `9c921cc` | Shortage – celý poslední záznam v PDF (řádek podle obsahu), stav do 400 znaků (data verze 26) |
 | 2.29 | `16ffd5b` | Shortage – poddíly z výrobního plánu pod sestavou (2. list, shoda EAN + index + objednávka, operace Hala 2) (data verze 27) |
-| 2.29.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – poddíly s jinou operací podle posledního záznamu (kromě „Odesláno na WPA“), orientační řádek sestavy, Skrýt v PDF (data verze 28) |
+| 2.29.1 | `e18144f` | Shortage – poddíly s jinou operací podle posledního záznamu (kromě „Odesláno na WPA“), orientační řádek sestavy, Skrýt v PDF (data verze 28) |
+| 2.30 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – Kapacity a zaškolení od–do (vykázáno z docházky, plán ze zařazení, zkušení podle historie hodnocení, vývoj zaškolení, výkon, PDF a Excel) (data verze 28) |
 
 Verze 2.1 přidala:
 
@@ -1662,7 +1707,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 72 testů: proti původní aplikaci + opravy + 2.1 až 2.29.1
+node tests/test_core.js                 # 74 testů: proti původní aplikaci + opravy + 2.1 až 2.30
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1706,6 +1751,10 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     seznamu; 2.29.1: poddíl s jinou operací přidaný záznamem, „Odesláno na WPA“ nepřidá,
     orientační řádek sestavy (aplikace i PDF), Skrýt v PDF, tabulka na 1440 px bez posouvání;
     další seznam, přepnutí, smazání, historie, CSV, telefon, tmavý režim;
+  - `e2e_kapacity.js`: Kapacity a zaškolení v Auditu (2.30): vymyšlených 36 lidí, docházka za 4 měsíce
+    do včerejška, historie hodnocení, nemoc, vyřazený, vedoucí, bez skupiny, evidence práce s normou;
+    vykázáno a plán, dlaždice, grafy a tooltip, tabulky, vlastní období a předvolby, PDF (text, jen ID,
+    bez příjmení), Excel (listy a součty proti výpočtu), telefon a tmavý režim;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;

@@ -62,6 +62,37 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.30
+
+- **Audit: Kapacity a zaškolení.** Nová záložka v Auditu s exportem od–do (PDF a Excel) podle
+  vzoru měsíčního a týdenního reportu docházky. Nepotřebuje obsazenost ani výkaz práce, počítá
+  ze skupin Matice dovedností, z Docházky a z historie hodnocení.
+  - **Vykázáno a plán v jednom.** Pracovní den, pro který je v Docházce aspoň u jednoho člověka
+    hodina nebo kód, je vykázaný: kdo ze skupiny přišel (hodiny bez kódu nepřítomnosti), kolik
+    odpracoval, omluveno a chybí. Ostatní pracovní dny (budoucnost, ale i minulost bez nahrané
+    docházky, ta se ohlásí) jsou plánované podle dnešního zařazení, směn a střídání skupin 1 a 2;
+    nemocní, vyřazení a vedoucí se do plánu nepočítají. Víkendy a svátky se nepočítají.
+  - **Zkušení a v zácviku podle historie.** Ve vykázaných dnech se bere procento dovedností
+    platné v ten den (zapisuje se při každé změně hodnocení), v plánu dnešní. Zkušený pracovník =
+    aspoň úroveň z nastavení „Kdo se počítá jako zkušený pracovník“. U pracovníků v zácviku
+    Ø zaškolení (100 % = úroveň zkušeného).
+  - **Vývoj zaškolení:** komu se v období změnilo hodnocení, z kolika na kolik procent, kdy se
+    stal zkušeným a všechny změny po datech.
+  - Dlaždice (podíl zkušených, lidé ve skupinách, zkušení, v zácviku, požadavek z Auditu,
+    zkušený proti zácviku), graf lidí ve skupinách po měsících (u kratšího období po týdnech)
+    a graf lidí na směně po dnech (u delšího období Ø po týdnech) proti požadavku. Plán je
+    světlejší s čárkovaným okrajem.
+  - Tabulky po skupinách (lidé, zkušení, v zácviku, změna proti začátku, Ø na směně vykázáno
+    a plán, plnění hodin) a po týdnech.
+  - **Výkon** (když je evidence práce s normou): normohodiny ÷ odpracované hodiny z docházky,
+    zkušení, v zácviku a celkem, index první měsíc s výkonem = 100. Normy jednotlivců se neukazují.
+  - Předvolby období: tento měsíc, 3 měsíce zpět a 1 dopředu, od dneška 2 měsíce, nebo vlastní
+    od–do.
+  - PDF (A4 na šířku): souhrn, grafy, po skupinách, po týdnech, vývoj zaškolení **jen s ID
+    z evidence práce** (jako PDF matice) a vysvětlivky. Excel: Souhrn, Po dnech (i po skupinách),
+    Po týdnech, Po měsících, Vývoj zaškolení (se jmény).
+- Data beze změny (verze 28).
+
 ## Co je nového ve verzi 2.29.1
 
 - **Shortage: poddíly s jinou operací přidá poslední záznam.** Poddíl z výrobního plánu,

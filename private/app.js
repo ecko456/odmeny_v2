@@ -21,7 +21,7 @@ const ui = {
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
   sh: { open: null, q: '', plan: null },
-  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all' },
+  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -9015,7 +9015,7 @@ async function exportShortagePdf(id, button = null) {
    záložky, nahrání obou souborů, úpravy hodnot s důvodem, nastavení skupin a operací,
    PDF a Excel pro auditora.
    ========================================================================== */
-const WA_TABS = [['prehled', 'Přehled'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
+const WA_TABS = [['prehled', 'Přehled'], ['kapacity', 'Kapacity a zaškolení'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
 const WA_MODES = [['month', 'Měsíc'], ['week', 'Týden'], ['custom', 'Vlastní']];
 const WA_HIST = [[13, '13 týdnů'], [26, '26 týdnů'], [52, '52 týdnů'], [0, 'Vše']];
 const waN = (v, d = 0) => (v == null ? '—' : nf(v, d));
@@ -9077,6 +9077,7 @@ function renderWorkAudit() {
   const has = !!waSpan(S.workAudit);
   if (tab === 'nastaveni') { view.innerHTML = waSettingsHtml(); return; }
   if (tab === 'plan') { view.innerHTML = waPlanHtml(); setWidths(view); return; }
+  if (tab === 'kapacity') { view.innerHTML = waCtHtml(); setWidths(view); return; }   // nepotřebuje data Auditu
   if (!has) { view.innerHTML = waStartHtml(); return; }
   if (tab === 'prehled') { view.innerHTML = waHistHtml(); setWidths(view); return; }
   const r = waRange();
@@ -9183,6 +9184,7 @@ function waApplyDates(id) {
   if (from > to) [from, to] = [to, from];
   if (id === 'waH') Object.assign(ui.wa, { hist: 'custom', hFrom: from, hTo: to });
   else if (id === 'waPlan') Object.assign(ui.wa, { planRange: 'custom', pFrom: from, pTo: to });
+  else if (id === 'waCt') Object.assign(ui.wa, { ctPre: 'custom', ctFrom: from, ctTo: to });
   else Object.assign(ui.wa, { mode: 'custom', from, to });
   renderWorkAudit();
 }
@@ -9423,6 +9425,432 @@ function waLine({ title, sub, points, value, tone, tip, cap = null }) {
   const grid = [0, top / 2, top].map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${L - 6}" y="${(y(v) + 3.5).toFixed(1)}">${esc(nf(v, top < 10 ? 1 : 0))}</text>`).join('');
   return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}<path class="wa-line" d="${d}"/>${dots}${labels}${capT}${hits}</svg></figure>`;
+}
+
+/* ==========================================================================
+   KAPACITY A ZAŠKOLENÍ (2.30): export od–do podle vzoru uživatele
+   Dny s docházkou jsou vykázané (kdo přišel, kolik odpracoval), ostatní plánované (dnešní
+   zařazení a směny). Zkušení a v zácviku podle historie hodnocení, výpočet capTimeline v core.
+   ========================================================================== */
+const WA_CT_PRE = [['m', 'Tento měsíc'], ['b3', '3 měsíce zpět a 1 dopředu'], ['n2', 'Od dneška 2 měsíce']];
+function waMonthAdd(m, n) {
+  let [y, mm] = m.split('-').map(Number);
+  mm += n;
+  while (mm > 12) { mm -= 12; y += 1; }
+  while (mm < 1) { mm += 12; y -= 1; }
+  return `${y}-${String(mm).padStart(2, '0')}`;
+}
+function waCtRange() {
+  const t = todayIso();
+  const m0 = t.slice(0, 7);
+  if (ui.wa.ctPre === 'custom' && WA_ISO.test(ui.wa.ctFrom) && WA_ISO.test(ui.wa.ctTo)) return { from: ui.wa.ctFrom, to: ui.wa.ctTo };
+  if (ui.wa.ctPre === 'm') return { from: `${m0}-01`, to: waLastDay(m0) };
+  if (ui.wa.ctPre === 'n2') return { from: t, to: waLastDay(waMonthAdd(m0, 2)) };
+  return { from: `${waMonthAdd(m0, -3)}-01`, to: waLastDay(waMonthAdd(m0, 1)) };
+}
+const ctP = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
+const ctShareR = r => (r.n ? r.ok / r.n : null);    // podíl zkušených ve stavu skupin
+const ctTrainR = r => (r.tr ? r.trS / r.tr : null);  // Ø zaškolení pracovníků v zácviku (100 % = zkušený)
+const ctN = (v, d = 1) => (v == null ? '—' : nf(v, d));
+function ctKindTag(kind) {
+  return kind === 'real' ? '<span class="tag ct-realtag">vykázáno</span>' : kind === 'plan' ? '<span class="tag ct-plantag">plán</span>' : '<span class="tag ct-mixtag">vykázáno + plán</span>';
+}
+/* Skládané sloupce: zkušení dole, v zácviku nahoře (mezera 1,5 px), plán světlejší s čárkovaným
+   okrajem, požadavek čárkovaně, svislá čára odděluje vykázané od plánu.
+   points: {label, ok, tr, plan, ref, tip} */
+function ctBars({ title, sub, points }) {
+  const W = 640, H = 230, L = 34, R = 8, T = 24, B = 26, GAP = 1.5;
+  const max = Math.max(0, ...points.map(p => (p.ok || 0) + (p.tr || 0)), ...points.map(p => p.ref || 0));
+  const hasRef = points.some(p => p.ref);
+  const hasPlan = points.some(p => p.plan);
+  const leg = `<span class="wa-legend"><i class="sw ct-ok"></i>zkušení<i class="sw ct-tr"></i>v zácviku${hasPlan ? '<i class="sw ct-plansw"></i>plán' : ''}${hasRef ? '<i class="tk ct-reqsw"></i>požadavek' : ''}</span>`;
+  const cap = `<figcaption><b>${esc(title)}</b><span>${esc(sub)}</span>${leg}</figcaption>`;
+  if (!points.length || !max) return `<figure class="chart ct-chart">${cap}<div class="chart-empty">V tomto období nikdo ve skupinách.</div></figure>`;
+  const top = niceMax(max * 1.12);
+  const plotH = H - T - B;
+  const band = (W - L - R) / points.length;
+  const bw = Math.max(3, Math.min(38, band * 0.62));
+  const y = v => T + plotH - (Math.min(v, top) / top) * plotH;
+  const base = T + plotH;
+  const every = Math.ceil(points.length / 12);
+  const seg = (x, y0, y1, cls, round) => {
+    const h = y0 - y1;
+    if (h <= 0.2) return '';
+    const r = round ? Math.min(3, bw / 2, h) : 0;
+    const f = v => v.toFixed(1);
+    return `<path class="${cls}" d="M${f(x)} ${f(y0)}V${f(y1 + r)}${r ? `Q${f(x)} ${f(y1)} ${f(x + r)} ${f(y1)}H${f(x + bw - r)}Q${f(x + bw)} ${f(y1)} ${f(x + bw)} ${f(y1 + r)}` : `H${f(x + bw)}`}V${f(y0)}Z"/>`;
+  };
+  let cut = -1;
+  points.forEach((p, i) => { if (!p.plan) cut = i; });
+  const labelAll = points.length <= 16;
+  const marks = points.map((p, i) => {
+    const x = L + i * band + (band - bw) / 2;
+    const ok = p.ok || 0;
+    const tr = p.tr || 0;
+    const tot = ok + tr;
+    const pl = p.plan ? ' plan' : '';
+    const yOk = y(ok);
+    const yTop = y(tot);
+    let m = seg(x, base, yOk, `ct-ok${pl}`, !tr);
+    if (tr) m += seg(x, ok ? yOk - GAP : base, yTop, `ct-tr${pl}`, true);
+    const ref = p.ref ? `<line class="ct-req" x1="${(L + i * band).toFixed(1)}" x2="${(L + (i + 1) * band).toFixed(1)}" y1="${y(p.ref).toFixed(1)}" y2="${y(p.ref).toFixed(1)}"/>` : '';
+    const lab = (points.length - 1 - i) % every === 0 ? `<text class="xl" x="${(L + i * band + band / 2).toFixed(1)}" y="${H - 8}">${esc(p.label)}</text>` : '';
+    const capT = (labelAll || i === points.length - 1 || i === cut) && tot > 0 ? `<text class="cap" x="${(x + bw / 2).toFixed(1)}" y="${(Math.min(yTop, p.ref ? y(p.ref) : Infinity) - 5).toFixed(1)}">${esc(nf(tot, tot % 1 ? 1 : 0))}</text>` : '';
+    const hit = `<rect class="hit" x="${(L + i * band).toFixed(1)}" y="${T}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" data-tip="${esc(p.tip)}"/>`;
+    return m + ref + lab + capT + hit;
+  }).join('');
+  const nx = (L + (cut + 1) * band).toFixed(1);
+  const now = cut >= 0 && cut < points.length - 1 ? `<line class="ct-now" x1="${nx}" x2="${nx}" y1="${T - 14}" y2="${base}"/><text class="ct-nowl" x="${(+nx + 4).toFixed(1)}" y="${T - 7}">plán →</text>` : '';
+  const grid = [0, top / 2, top].map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${L - 6}" y="${(y(v) + 3.5).toFixed(1)}">${esc(nf(v, 0))}</text>`).join('');
+  return `<figure class="chart ct-chart">${cap}<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${title}, ${sub}`)}">${grid}${now}${marks}</svg></figure>`;
+}
+/* Body grafů: stav skupin po měsících (3 a víc měsíců) nebo po týdnech; lidé na směně po dnech
+   (do 31 pracovních dní) nebo Ø po týdnech. */
+function ctPoints(x) {
+  const rosterTip = (label, r) => `${label}: ${r.tot.n} ${lidiN(r.tot.n)} ve skupinách, ${r.tot.ok} zkušených (${ctP(ctShareR(r.tot))}), ${r.tot.tr} v zácviku${r.tot.tr ? `, Ø zaškolení ${ctP(ctTrainR(r.tot))}` : ''} · stav k ${dayText(r.iso)}${r.past ? '' : ' (plán = dnešní zařazení)'}`;
+  const byMonth = x.months.length >= 3;
+  const roster = (byMonth ? x.months : x.weeks).map(m => ({
+    label: byMonth ? monthShort(m.id) : `T${weekById(m.id).w}`, ok: m.roster.tot.ok, tr: m.roster.tot.tr, plan: !m.roster.past,
+    tip: rosterTip(byMonth ? monthLabel(m.id) : weekLong(m.id), m.roster),
+  }));
+  const byDay = x.days.length <= 31;
+  const reqTxt = (req, met) => (req ? ` · požadavek ${nf(req, 0)}${met == null ? '' : met ? ' (splněno)' : ' (nesplněno)'}` : '');
+  const shift = byDay
+    ? x.days.map(d => ({ label: `${d.day.d}. ${d.day.m}.`, ok: d.tot.onOk, tr: d.tot.onTr, plan: d.kind !== 'real', ref: d.req,
+      tip: `${DOW[d.day.dow]} ${dayText(d.iso)} (${CT_KIND[d.kind]}): ${d.tot.on} na směně, ${d.tot.onOk} zkušených, ${d.tot.onTr} v zácviku${reqTxt(d.req, d.met)}` }))
+    : x.weeks.map(w => ({ label: `T${weekById(w.id).w}`, ok: w.tot.onOk / w.n, tr: w.tot.onTr / w.n, plan: w.kind === 'plan', ref: w.reqAvg,
+      tip: `${weekLong(w.id)} (${CT_KIND[w.kind]}): Ø ${nf(w.tot.on / w.n, 1)} na směně, z toho ${nf(w.tot.onOk / w.n, 1)} zkušených${w.req ? ` · v normě ${w.met} z ${w.req} dní` : ''}` }));
+  return { roster, byMonth, shift, byDay };
+}
+function monthShort(id) { return `${['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'][+id.slice(5, 7) - 1]} ${id.slice(2, 4)}`; }
+function waCtHtml() {
+  const r = waCtRange();
+  const x = capTimeline(r.from, r.to);
+  const bar = `<div class="t5-weekbar wa-hist-bar">
+      <div class="chips" role="group" aria-label="Období">${WA_CT_PRE.map(([k, l]) => `<button type="button" class="chip${k === ui.wa.ctPre ? ' on' : ''}" data-wactpre="${k}" aria-pressed="${k === ui.wa.ctPre}">${l}</button>`).join('')}</div>
+      ${waDatesHtml('waCt', r)}
+      <span class="spacer"></span>
+      <button class="btn sec" type="button" data-wactxlsx${x && x.days.length ? '' : ' disabled'}>Excel</button>
+      <button class="btn" type="button" data-wactpdf${x && x.days.length ? '' : ' disabled'}>PDF</button>
+    </div>`;
+  if (!x || !x.groups.length) return `${bar}<div class="card">${emptyState('Matice dovedností nemá skupiny', 'Kapacity a zaškolení se počítají ze skupin Matice dovedností, z docházky a z historie hodnocení. Založ skupiny v části Skupiny a pravidla.')}</div>`;
+  if (!x.days.length) return `${bar}<div class="card">${emptyState('V období nejsou pracovní dny', 'Zvol delší období.')}</div>`;
+  const s = x.start.tot;
+  const e = x.end.tot;
+  const sign = v => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '±0');
+  const reqTone = !x.total.req ? '' : x.total.met / x.total.req >= 0.9 ? 'good' : x.total.met / x.total.req < 0.6 ? 'crit' : 'warn';
+  const pf = x.perf && x.perf.tot.ok != null && x.perf.tot.tr ? x.perf.tot.ok / x.perf.tot.tr : null;
+  const tiles = `<div class="stats wa-stats">${[
+    statTile('Podíl zkušených', ctP(ctShareR(e)), `na začátku ${ctP(ctShareR(s))} · stav k ${esc(dayText(x.end.iso))}`),
+    statTile('Lidé ve skupinách', String(e.n), `${sign(e.n - s.n)} proti ${esc(dayText(x.start.iso))}`),
+    statTile('Zkušení pracovníci', String(e.ok), `${sign(e.ok - s.ok)} proti začátku · ${x.newOk} ${x.newOk === 1 ? 'nově zkušený' : 'nově zkušených'}`, 'good'),
+    statTile('Pracovníci v zácviku', String(e.tr), e.tr ? `Ø zaškolení ${ctP(ctTrainR(e))}` : 'nikdo v zácviku', 'tab'),
+    x.total.req ? statTile('Požadavek', `${x.total.met}<em>z ${x.total.req} dní</em>`, `Ø na směně ${ctN(x.total.tot.on / x.total.n)} z požadavku ${ctN(x.total.reqAvg, 0)}`, reqTone) : '',
+    pf != null ? statTile('Zkušený proti zácviku', `${nf(pf, 1)}×`, 'výkon na odpracovanou hodinu') : '',
+  ].join('')}</div>`;
+  const kinds = `<p class="small ct-kinds">${x.real.n ? `<b>Vykázáno</b> ${x.real.n} ${pracDnyN(x.real.n)} z docházky${x.lastReal ? ` (do ${esc(dayText(x.lastReal))})` : ''}` : 'Žádný den s docházkou'} · ${x.plan.n ? `<b>plánováno</b> ${x.plan.n} ${pracDnyN(x.plan.n)}${x.firstPlan ? ` (od ${esc(dayText(x.firstPlan))})` : ''} podle dnešního zařazení a směn` : 'bez plánovaných dnů'}. Zkušený pracovník = dovednosti skupiny aspoň úroveň ${x.thr}, ve vykázaných dnech podle hodnocení platného v ten den.</p>`;
+  const notes = [
+    x.pastPlan.length ? `Docházka chybí pro ${x.pastPlan.length} ${pracDnyN(x.pastPlan.length)} v minulosti (${x.pastPlan.slice(0, 3).map(iso => dayText(iso, false)).join(', ')}${x.pastPlan.length > 3 ? ' …' : ''}), počítají se jako plán.` : '',
+    ...x.missing.map(m => `V docházce za ${monthLabel(m.month)} chybí ${m.keys.length} ${lidiN(m.keys.length)} ze skupin (jiné jméno, nebo tehdy nepracovali): ${m.keys.slice(0, 4).map(k => { const p = S.employees[k]; return p ? `${p.last} ${p.first}`.trim() : k; }).join(', ')}${m.keys.length > 4 ? ' …' : ''}.`),
+    x.noGroup ? `${x.noGroup} ${lidiN(x.noGroup)} se směnou ${x.noGroup === 1 ? 'nemá' : 'nemají'} skupinu v Matici dovedností, do kapacit se nepočítají.` : '',
+    x.est || x.noHist ? `Historie hodnocení: u ${x.est} ${lidiN(x.est)} odhad podle nejbližšího zápisu, u ${x.noHist} bez zápisu dnešní hodnocení (zápisy přibývají při každé změně hodnocení).` : '',
+    x.cut ? `Období je zkrácené na ${CT_MAX_DAYS} dní.` : '',
+  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('');
+  const pts = ctPoints(x);
+  const charts = `<div class="wa-charts ct-charts">
+      ${ctBars({ title: 'Lidé ve skupinách', sub: `stav ${pts.byMonth ? 'na konci měsíce' : 'na konci týdne'} · zkušení a v zácviku`, points: pts.roster })}
+      ${ctBars({ title: 'Na směně', sub: pts.byDay ? 'po pracovních dnech' : 'Ø na pracovní den po týdnech', points: pts.shift })}
+      <div class="chart-tip" id="waTipCt" hidden></div>
+    </div>`;
+  // po skupinách
+  const perf = !!x.perf;
+  const gRows = x.groups.map((g, i) => ({ g, i, e: x.end.groups[i], s: x.start.groups[i], R: x.real.groups[i], P: x.plan.groups[i], pf: perf ? x.perf.idx.groups[i] : null }))
+    .filter(r => r.e.n || r.s.n || r.R.planN || r.P.planN);
+  const tot = { g: null, e: x.end.tot, s: x.start.tot, R: x.real.tot, P: x.plan.tot, pf: perf ? x.perf.idx.tot : null };
+  const gLine = (r, sum) => `<tr${sum ? ' class="ct-sum"' : ''}>
+      <td class="name" data-label="Skupina"><b>${esc(r.g ? r.g.name || '(bez názvu)' : 'Celkem')}</b>${r.g && deptOf(r.g) !== r.g.name ? `<span class="muted small"> · ${esc(deptOf(r.g))}</span>` : ''}</td>
+      <td class="r num" data-label="Lidí">${r.e.n}</td>
+      <td class="r num ct-okc" data-label="Zkušení">${r.e.ok}</td>
+      <td class="r num ct-trc" data-label="V zácviku">${r.e.tr}</td>
+      <td class="r num" data-label="Podíl zkušených">${ctP(ctShareR(r.e))}</td>
+      <td class="r num" data-label="Zkušení proti začátku">${sign(r.e.ok - r.s.ok)}</td>
+      <td class="r num" data-label="Ø zaškolení">${r.e.tr ? ctP(ctTrainR(r.e)) : '—'}</td>
+      <td class="r num" data-label="Ø na směně (vykázáno)">${x.real.n ? ctN(r.R.on / x.real.n) : '—'}</td>
+      <td class="r num" data-label="Ø na směně (plán)">${x.plan.n ? ctN(r.P.on / x.plan.n) : '—'}</td>
+      <td class="r num" data-label="Plnění hodin">${ctP(ctFill(r.R))}</td>
+      ${perf ? `<td class="r num" data-label="Výkon zkušení">${ctN(r.pf.ok, 0)}</td><td class="r num" data-label="Výkon v zácviku">${ctN(r.pf.tr, 0)}</td><td class="r num" data-label="Výkon celkem"><b>${ctN(r.pf.all, 0)}</b></td>` : ''}</tr>`;
+  const groups = `<div class="card ct-card"><div class="card-head"><div><h3>Po skupinách</h3><p class="small muted">Lidé ve skupinách k ${esc(dayText(x.end.iso))}, změna proti ${esc(dayText(x.start.iso))}. Ø na směně za pracovní den, plnění hodin jen za vykázané dny${perf ? `; výkon = normohodiny ÷ odpracované hodiny, index ${esc(monthLabel(x.months.find(m => m.perf).id))} = 100` : ''}.</p></div></div>
+    <div class="table-card flat"><table class="stack ct-tab"><thead><tr><th>Skupina</th><th class="r">Lidí</th><th class="r">Zkušení</th><th class="r">V zácviku</th><th class="r">Podíl zkušených</th><th class="r">Zkušení proti začátku</th><th class="r">Ø zaškolení</th><th class="r">Ø na směně vykázáno</th><th class="r">Ø na směně plán</th><th class="r">Plnění hodin</th>${perf ? '<th class="r">Výkon zkušení</th><th class="r">Výkon v zácviku</th><th class="r">Výkon celkem</th>' : ''}</tr></thead>
+    <tbody>${gRows.map(rw => gLine(rw, false)).join('')}${gLine(tot, true)}</tbody></table></div></div>`;
+  // po týdnech
+  const weeks = `<div class="card ct-card"><div class="card-head"><div><h3>Po týdnech</h3><p class="small muted">Ø na pracovní den; vykázané dny podle docházky, ostatní podle plánu.</p></div></div>
+    <div class="table-card flat"><table class="stack ct-tab"><thead><tr><th>Týden</th><th>Stav</th><th class="r">Prac. dní</th><th class="r">Ø na směně</th><th class="r">Ø zkušení</th><th class="r">Ø v zácviku</th><th class="r">Podíl zkušených</th><th class="r">Ø zaškolení</th><th class="r">V normě</th><th class="r">Odpracováno / plán h</th><th class="r">Plnění hodin</th></tr></thead>
+    <tbody>${x.weeks.map(w => `<tr>
+      <td class="name" data-label="Týden"><b>${esc(weekName(w.id))}</b><span class="ct-wk">${esc(waShortRange({ id: w.id }, { want: true, from: w.from, to: w.to }))}</span></td>
+      <td data-label="Stav">${ctKindTag(w.kind)}</td>
+      <td class="r num" data-label="Pracovní dny">${w.n}</td>
+      <td class="r num" data-label="Ø na směně"><b>${ctN(w.tot.on / w.n)}</b></td>
+      <td class="r num ct-okc" data-label="Ø zkušení">${ctN(w.tot.onOk / w.n)}</td>
+      <td class="r num ct-trc" data-label="Ø v zácviku">${ctN(w.tot.onTr / w.n)}</td>
+      <td class="r num" data-label="Podíl zkušených">${ctP(ctShare(w.tot))}</td>
+      <td class="r num" data-label="Ø zaškolení">${w.tot.onTr ? ctP(w.tot.onTrS / w.tot.onTr) : '—'}</td>
+      <td class="r num" data-label="V normě">${w.req ? `${w.met}/${w.req}` : '—'}</td>
+      <td class="r num" data-label="Odpracováno / plán h">${w.real ? `${nf(w.tot.realH, 1)} / ${nf(w.tot.rPlanH, 1)}` : `— / ${nf(w.tot.planH, 1)}`}</td>
+      <td class="r num" data-label="Plnění hodin">${ctP(ctFill(w.tot))}</td></tr>`).join('')}</tbody></table></div></div>`;
+  // vývoj zaškolení
+  const st = v => (v.pos ? (v.ok ? '<span class="tag ok">zkušený</span>' : '<span class="tag ct-trtag">v zácviku</span>') : '<span class="tag">bez skupiny</span>');
+  const pctT = v => (v.pct == null ? '—' : `${nf(v.pct, 0)} %`);
+  const dev = x.dev.length ? `<div class="table-card flat"><table class="stack ct-tab ct-dev"><thead><tr><th>Kdo</th><th>Skupina</th><th class="r">Na začátku</th><th class="r">Na konci</th><th class="r">Změna</th><th>Stav</th><th>Změny hodnocení</th></tr></thead>
+    <tbody>${x.dev.map(d => `<tr>
+      <td class="name" data-label="Kdo"><b>${esc(`${d.last} ${d.first}`.trim())}</b>${d.wid ? `<span class="muted small"> · ID ${esc(d.wid)}</span>` : ''}${d.note ? `<span class="muted small"> · ${esc(d.note)}</span>` : ''}</td>
+      <td data-label="Skupina">${esc(d.end.pos ? d.end.pos.name : d.start.pos ? d.start.pos.name : '')}${d.start.pos && d.end.pos && d.start.pos !== d.end.pos ? `<span class="muted small"> (dřív ${esc(d.start.pos.name)})</span>` : ''}</td>
+      <td class="r num" data-label="Na začátku">${pctT(d.start)}</td>
+      <td class="r num" data-label="Na konci"><b>${pctT(d.end)}</b></td>
+      <td class="r num" data-label="Změna">${d.gain == null ? '—' : `${d.gain > 0 ? '+' : d.gain < 0 ? '−' : '±'}${nf(Math.abs(d.gain), 0)} b.`}</td>
+      <td data-label="Stav">${st(d.end)}${d.became ? `<span class="small"> od ${esc(dayText(todayIso(d.became)))}</span>` : ''}${d.lost ? `<span class="small muted"> · zpět v zácviku ${esc(dayText(todayIso(d.lost), false))}</span>` : ''}</td>
+      <td class="small" data-label="Změny hodnocení">${d.steps.map(s => `${esc(dayText(todayIso(s.at), false))} ${s.pct == null ? '' : `${nf(s.pct, 0)} %`}`).join(' → ')}</td></tr>`).join('')}</tbody></table></div>`
+    : `<p class="small muted">V tomto období se nikomu hodnocení dovedností nezměnilo.</p>`;
+  const devCard = `<div class="card ct-card"><div class="card-head"><div><h3>Vývoj zaškolení</h3><p class="small muted">Lidé, kterým se v období změnilo hodnocení dovedností (procento skupiny), od ${esc(dayText(x.start.iso))} do ${esc(dayText(x.to < x.today ? x.to : x.today))}. ${x.newOk} ${x.newOk === 1 ? 'se stal zkušeným pracovníkem' : 'se stali zkušenými pracovníky'}.</p></div></div>${dev}</div>`;
+  return `${bar}${kinds}${notes ? `<div class="ct-notes">${notes}</div>` : ''}${tiles}${charts}${groups}${weeks}${devCard}`;
+}
+/* ---------- PDF kapacit a zaškolení (2.30, A4 na šířku podle vzoru uživatele) ----------
+   Souhrn s dlaždicemi a dvěma grafy, po skupinách, po týdnech, vývoj zaškolení (lidé jen s ID
+   z evidence práce jako v PDF matice) a vysvětlivky. Barvy jako v aplikaci: zkušení --ch-acc,
+   v zácviku --ch-tab; plán světlejší s čárkovaným okrajem. */
+const CT_PDF = { ok: [0, 136, 118], tr: [176, 111, 18] };
+function ctMix(c, f) { return c.map(v => Math.round(v * f + 255 * (1 - f))); }
+async function exportCtPdf(button) {
+  const r = waCtRange();
+  const x = capTimeline(r.from, r.to);
+  if (!x || !x.days.length) { toast('V období nejsou pracovní dny.', true); return; }
+  await withPdf(button, doc => {
+    doc.setProperties({ title: `Kapacity a zaškolení · ${dayText(x.from)} – ${dayText(x.to)}`, creator: EXPORT_NAME });
+    drawCapTimeline(doc, x);
+    downloadFile(`kapacity-zaskoleni-${x.from}-${x.to}.pdf`, doc.output('blob'), 'application/pdf');
+  }, 'landscape');
+}
+/* Skládané sloupce do PDF (zkušení dole, v zácviku nahoře), požadavek čárkovaně. */
+function pdfCtBars(k, x0, y0, w, h, { title, sub, points }) {
+  const C = k.C;
+  const doc = k.doc;
+  k.text(title, x0, y0, 9.2, { bold: true });
+  k.text(sub, x0, y0 + 4.6, 6.8, { color: C.ink2 });
+  // legenda vpravo nahoře
+  let lx = x0 + w;
+  const legend = [['požadavek', 'req'], ['plán', 'plan'], ['v zácviku', CT_PDF.tr], ['zkušení', CT_PDF.ok]]
+    .filter(([, c]) => (c === 'req' ? points.some(p => p.ref) : c === 'plan' ? points.some(p => p.plan) : true));
+  legend.forEach(([t, c]) => {
+    const tw = k.width(t, 6.4);
+    lx -= tw;
+    k.text(t, lx, y0 + 0.6, 6.4, { color: C.ink2 });
+    lx -= 4.2;
+    if (c === 'req') { doc.setDrawColor(...C.ink); doc.setLineWidth(0.4); doc.setLineDashPattern([1, 0.8], 0); doc.line(lx, y0 + 1.9, lx + 3.2, y0 + 1.9); doc.setLineDashPattern([], 0); }
+    else if (c === 'plan') { k.box(ctMix(C.ink3, 0.25), lx, y0 + 0.5, 3, 3, 0.5); doc.setDrawColor(...C.ink3); doc.setLineWidth(0.2); doc.setLineDashPattern([0.6, 0.5], 0); doc.rect(lx, y0 + 0.5, 3, 3, 'S'); doc.setLineDashPattern([], 0); }
+    else k.box(c, lx, y0 + 0.5, 3, 3, 0.5);
+    lx -= 3;
+  });
+  const L = 9;
+  const top0 = y0 + 14;
+  const base = y0 + h - 5;
+  const max = Math.max(0, ...points.map(p => (p.ok || 0) + (p.tr || 0)), ...points.map(p => p.ref || 0));
+  if (!points.length || !max) { k.text('nikdo ve skupinách', x0 + w / 2, (top0 + base) / 2, 7, { align: 'center', color: C.ink3 }); return; }
+  const top = niceMax(max * 1.12);
+  const yy = v => base - (Math.min(v, top) / top) * (base - top0);
+  [0, top / 2, top].forEach(v => {
+    k.hline(yy(v), C.line, 0.15, x0 + L, x0 + w);
+    k.text(nf(v, 0), x0 + L - 1.4, yy(v) - 1.1, 5.8, { align: 'right', color: C.ink3 });
+  });
+  const n = points.length;
+  const band = (w - L) / n;
+  const bw = Math.min(14, band * 0.64);
+  const cx = i => x0 + L + band * i + band / 2;
+  const every = Math.ceil(n / 12);
+  let cut = -1;
+  points.forEach((p, i) => { if (!p.plan) cut = i; });
+  const seg = (i, v0, v1, color, plan) => {
+    const a = yy(v1);
+    const hh = yy(v0) - a;
+    if (hh <= 0.05) return;
+    k.box(plan ? ctMix(color, 0.3) : color, cx(i) - bw / 2, a, bw, hh);
+    if (plan) { doc.setDrawColor(...color); doc.setLineWidth(0.2); doc.setLineDashPattern([0.7, 0.5], 0); doc.rect(cx(i) - bw / 2, a, bw, hh, 'S'); doc.setLineDashPattern([], 0); }
+  };
+  points.forEach((p, i) => {
+    const ok = p.ok || 0;
+    const tr = p.tr || 0;
+    seg(i, 0, ok, CT_PDF.ok, p.plan);
+    if (tr) seg(i, ok, ok + tr, CT_PDF.tr, p.plan);
+    if (p.ref) { doc.setDrawColor(...C.ink); doc.setLineWidth(0.35); doc.setLineDashPattern([1.2, 0.9], 0); doc.line(cx(i) - band / 2, yy(p.ref), cx(i) + band / 2, yy(p.ref)); doc.setLineDashPattern([], 0); }
+    const tot = ok + tr;
+    if (tot > 0 && (n <= 16 || i === n - 1 || i === cut)) k.text(nf(tot, tot % 1 ? 1 : 0), cx(i), Math.min(yy(tot), p.ref ? yy(p.ref) : Infinity) - 3.6, 6.4, { bold: true, align: 'center' });
+    if ((n - 1 - i) % every === 0) k.text(p.label, cx(i), base + 1.3, 5.8, { align: 'center', color: C.ink3 });
+  });
+  if (cut >= 0 && cut < n - 1) {
+    const xx = x0 + L + band * (cut + 1);
+    doc.setDrawColor(...C.ink3); doc.setLineWidth(0.2); doc.setLineDashPattern([0.6, 0.8], 0); doc.line(xx, top0 - 3, xx, base); doc.setLineDashPattern([], 0);
+    k.text('plán →', xx + 1.2, top0 - 4.4, 6, { color: C.ink3 });
+  }
+}
+/* Tabulka do PDF: hlavička velkými písmeny s tmavou čarou (jako vzor), řádky s jemnou čarou,
+   poslední řádek (sum) s tmavou čarou nad ním. cols: [šířka, nadpis, 'r'|'l']. Hlavička se opakuje. */
+function pdfCtTable(k, cols, rows, { sum = null, size = 7.4, bar = null } = {}) {
+  const C = k.C;
+  const head = () => {
+    const lines = cols.map(c => k.split(c[1].toUpperCase(), c[0] - 2.4, 6, true));
+    const hh = Math.max(...lines.map(l => l.length)) * k.LH(6, 1.2) + 3;
+    let x = k.M;
+    cols.forEach((c, i) => {
+      lines[i].forEach((ln, j) => k.text(ln, c[2] === 'r' ? x + c[0] - 1.2 : x + 1.2, k.y + 1 + j * k.LH(6, 1.2), 6, { bold: true, color: C.ink2, align: c[2] === 'r' ? 'right' : 'left', space: 0.15 }));
+      x += c[0];
+    });
+    k.y += hh;
+    k.hline(k.y, C.ink, 0.5);
+    k.y += 0.6;
+  };
+  const line = (r, strong) => {
+    const cells = r.map((v, i) => k.split(v == null ? '' : String(v), cols[i][0] - 2.4, size, strong || i === 0));
+    const hh = Math.max(...cells.map(l => l.length)) * k.LH(size, 1.22) + 2.8;
+    k.need(hh + 1);   // nová stránka dostane hlavičku přes k.onPage
+    if (strong) k.hline(k.y, C.ink, 0.45);
+    let x = k.M;
+    cols.forEach((c, i) => {
+      if (bar && i === bar.col && r._share != null) {
+        const bw = c[0] - 16;
+        k.box(C.soft3, x + 1.2, k.y + hh / 2 - 0.8, bw, 1.6, 0.8);
+        k.box(CT_PDF.ok, x + 1.2, k.y + hh / 2 - 0.8, Math.max(0.6, bw * Math.min(1, r._share)), 1.6, 0.8);
+        k.text(cells[i][0], x + c[0] - 1.2, k.y + 1.6, size, { bold: true, align: 'right' });
+      } else cells[i].forEach((ln, j) => k.text(ln, c[2] === 'r' ? x + c[0] - 1.2 : x + 1.2, k.y + 1.6 + j * k.LH(size, 1.22), size, { bold: strong || i === 0, color: r._muted && i ? C.ink3 : C.ink, align: c[2] === 'r' ? 'right' : 'left' }));
+      x += c[0];
+    });
+    k.y += hh;
+    if (!strong) k.hline(k.y, C.line, 0.2);
+  };
+  k.need(22);
+  const keepOn = k.onPage;
+  head();
+  k.onPage = () => { if (keepOn) keepOn(); head(); };
+  rows.forEach(r => line(r, false));
+  if (sum) line(sum, true);
+  k.onPage = keepOn;
+  k.y += 5;
+}
+function drawCapTimeline(doc, x) {
+  const k = pdfKit(doc);
+  const C = k.C;
+  const sign = v => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '±0');
+  const pct = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
+  const s = x.start.tot;
+  const e = x.end.tot;
+  k.header({ eyebrow: `${EXPORT_NAME} · KAPACITY A ZAŠKOLENÍ`, right: `Stav k ${dayText(todayIso())}`, title: 'Kapacity a zaškolení',
+    sub: `${dayText(x.from)} – ${dayText(x.to)}`,
+    meta: `${x.real.n ? `Vykázáno ${x.real.n} ${pracDnyN(x.real.n)} z docházky${x.lastReal ? ` (do ${dayText(x.lastReal)})` : ''}` : 'Bez dnů s docházkou'}, ${x.plan.n ? `plánováno ${x.plan.n} ${pracDnyN(x.plan.n)} podle dnešního zařazení a směn` : 'bez plánovaných dnů'}. Zkušený pracovník = dovednosti skupiny aspoň úroveň ${x.thr}; ve vykázaných dnech podle hodnocení platného v ten den.` });
+  const pf = x.perf && x.perf.tot.ok != null && x.perf.tot.tr ? x.perf.tot.ok / x.perf.tot.tr : null;
+  const tiles = [
+    ['Podíl zkušených', pct(ctShareR(e)), `na začátku ${pct(ctShareR(s))}`, 'acc'],
+    ['Lidé ve skupinách', String(e.n), `${sign(e.n - s.n)} proti ${dayText(x.start.iso)}`],
+    ['Zkušení pracovníci', String(e.ok), `${sign(e.ok - s.ok)} proti začátku · ${x.newOk} nově`],
+    ['Pracovníci v zácviku', String(e.tr), e.tr ? `Ø zaškolení ${pct(ctTrainR(e))}` : 'nikdo v zácviku'],
+  ];
+  if (x.total.req) tiles.push(['Požadavek splněn', `${x.total.met} z ${x.total.req} dní`, `Ø na směně ${nf(x.total.tot.on / x.total.n, 1)} z ${nf(x.total.reqAvg, 0)}`, x.total.met / x.total.req >= 0.9 ? 'good' : x.total.met / x.total.req < 0.6 ? 'crit' : '']);
+  if (pf != null) tiles.push(['Zkušený proti zácviku', `${nf(pf, 1)}×`, 'výkon za hodinu práce']);
+  k.tiles(tiles);
+  const pts = ctPoints(x);
+  const cw = (k.CW - 8) / 2;
+  const ch = 54;
+  k.need(ch + 6);
+  const cy = k.y;
+  [[k.M, 'Lidé ve skupinách', `stav ${pts.byMonth ? 'na konci měsíce' : 'na konci týdne'}`, pts.roster], [k.M + cw + 8, 'Na směně', pts.byDay ? 'po pracovních dnech' : 'Ø na pracovní den po týdnech', pts.shift]].forEach(([cx, title, sub, points]) => {
+    k.box(C.white, cx, cy, cw, ch, 2);
+    doc.setDrawColor(...C.line); doc.setLineWidth(0.25); doc.roundedRect(cx, cy, cw, ch, 2, 2, 'S');
+    pdfCtBars(k, cx + 4, cy + 4, cw - 8, ch - 7, { title, sub, points });
+  });
+  k.y = cy + ch + 6;
+  // po skupinách
+  const perf = !!x.perf;
+  const gCols = [[54, 'Skupina'], [13, 'Lidí', 'r'], [16, 'Zkušení', 'r'], [16, 'V zácviku', 'r'], [38, 'Podíl zkušených', 'r'], [20, 'Zkušení proti začátku', 'r'],
+    [18, 'Ø zaškolení', 'r'], [20, 'Ø na směně vykázáno', 'r'], [20, 'Ø na směně plán', 'r'], [16, 'Plnění hodin', 'r']];
+  if (perf) gCols.push([14, 'Výkon zkuš.', 'r'], [14, 'Výkon zácvik', 'r'], [14, 'Výkon celkem', 'r']);
+  const fit = k.CW / gCols.reduce((a, c) => a + c[0], 0);
+  gCols.forEach(c => { c[0] *= fit; });
+  const gRow = (g, i) => {
+    const en = i < 0 ? x.end.tot : x.end.groups[i];
+    const st = i < 0 ? x.start.tot : x.start.groups[i];
+    const R = i < 0 ? x.real.tot : x.real.groups[i];
+    const P = i < 0 ? x.plan.tot : x.plan.groups[i];
+    const ix = perf ? (i < 0 ? x.perf.idx.tot : x.perf.idx.groups[i]) : null;
+    const row = [g ? g.name || '(bez názvu)' : 'CELKEM', en.n, en.ok, en.tr, pct(ctShareR(en)), sign(en.ok - st.ok), en.tr ? pct(ctTrainR(en)) : '—',
+      x.real.n ? nf(R.on / x.real.n, 1) : '—', x.plan.n ? nf(P.on / x.plan.n, 1) : '—', pct(ctFill(R))];
+    if (perf) row.push(ix.ok == null ? '—' : nf(ix.ok, 0), ix.tr == null ? '—' : nf(ix.tr, 0), ix.all == null ? '—' : nf(ix.all, 0));
+    row._share = ctShareR(en);
+    return row;
+  };
+  const gRows = x.groups.map((g, i) => [g, i]).filter(([, i]) => x.end.groups[i].n || x.start.groups[i].n || x.real.groups[i].planN || x.plan.groups[i].planN).map(([g, i]) => gRow(g, i));
+  // nadpis a tabulka skupin pohromadě (vejde-li se na jednu stránku)
+  k.keep(() => { k.heading(`Po skupinách — stav k ${dayText(x.end.iso)}`, 11.5); pdfCtTable(k, gCols, gRows, { sum: gRow(null, -1), bar: { col: 4 } }); }, 60);
+  // po týdnech
+  k.need(40);
+  k.heading('Po týdnech', 11.5);
+  const wCols = [[40, 'Týden'], [24, 'Stav'], [12, 'Dní', 'r'], [18, 'Ø na směně', 'r'], [18, 'Ø zkušení', 'r'], [18, 'Ø v zácviku', 'r'], [34, 'Podíl zkušených', 'r'],
+    [18, 'Ø zaškolení', 'r'], [16, 'V normě', 'r'], [22, 'Odpracováno h', 'r'], [20, 'Plán h', 'r'], [16, 'Plnění', 'r']];
+  const wf = k.CW / wCols.reduce((a, c) => a + c[0], 0);
+  wCols.forEach(c => { c[0] *= wf; });
+  const wRows = x.weeks.map(w => {
+    const row = [`${weekName(w.id)} · ${waShortRange({ id: w.id }, { want: true, from: w.from, to: w.to })}`, CT_KIND[w.kind], w.n, nf(w.tot.on / w.n, 1), nf(w.tot.onOk / w.n, 1), nf(w.tot.onTr / w.n, 1),
+      pct(ctShare(w.tot)), w.tot.onTr ? pct(w.tot.onTrS / w.tot.onTr) : '—', w.req ? `${w.met}/${w.req}` : '—', w.real ? nf(w.tot.realH, 1) : '—', nf(w.tot.planH, 1), pct(ctFill(w.tot))];
+    row._share = ctShare(w.tot);
+    row._muted = w.kind === 'plan';
+    return row;
+  });
+  pdfCtTable(k, wCols, wRows, { bar: { col: 6 } });
+  // vývoj zaškolení: jen ID z evidence práce (jako PDF matice, 2.20)
+  k.need(50);   // nadpis nezůstane sám dole na stránce
+  k.keep(() => { k.heading('Vývoj zaškolení', 11.5); k.para(`Lidé, kterým se od ${dayText(x.start.iso)} do ${dayText(x.to < x.today ? x.to : x.today)} změnilo hodnocení dovedností (procento skupiny). ${x.newOk} ${x.newOk === 1 ? 'se stal zkušeným pracovníkem' : 'se stali zkušenými pracovníky'}. Lidé jen s ID z evidence práce.`, k.M, k.CW, 8, { color: C.ink2 }); k.y += 2; }, 40);
+  if (x.dev.length) {
+    const vCols = [[22, 'ID'], [40, 'Skupina'], [18, 'Na začátku', 'r'], [18, 'Na konci', 'r'], [16, 'Změna', 'r'], [24, 'Stav'], [24, 'Zkušený od'], [103, 'Změny hodnocení']];
+    const vf = k.CW / vCols.reduce((a, c) => a + c[0], 0);
+    vCols.forEach(c => { c[0] *= vf; });
+    const vp = v => (v.pct == null ? '—' : `${nf(v.pct, 0)} %`);
+    pdfCtTable(k, vCols, [...x.dev].sort((a, b) => widCmp(a.e || a, b.e || b)).sort((a, b) => (x.groups.indexOf(a.end.pos) - x.groups.indexOf(b.end.pos))).map(d => [
+      d.wid ? `ID ${d.wid}` : 'bez ID', d.end.pos ? d.end.pos.name : d.start.pos ? d.start.pos.name : '', vp(d.start), vp(d.end),
+      d.gain == null ? '—' : `${d.gain > 0 ? '+' : d.gain < 0 ? '−' : ''}${nf(Math.abs(d.gain), 0)} b.`, d.end.pos ? (d.end.ok ? 'zkušený' : 'v zácviku') : 'bez skupiny',
+      d.became ? dayText(todayIso(d.became)) : '', d.steps.map(st => `${dayText(todayIso(st.at), false)} ${st.pct == null ? '' : `${nf(st.pct, 0)} %`}`).join(' → ')]), { size: 7 });
+  } else { k.text('V tomto období se nikomu hodnocení dovedností nezměnilo.', k.M, k.y, 8, { color: C.ink3 }); k.y += 8; }
+  // vysvětlivky (tři sloupce jako ve vzoru)
+  const defs = [
+    ['Zkušený pracovník', ` — procento dovedností skupiny aspoň úroveň ${x.thr} (${x.thr * 25} %). Ve vykázaných dnech a ve stavech v minulosti podle hodnocení platného v ten den (historie hodnocení), v plánu dnešní. Ostatní ve skupině jsou pracovníci v zácviku; Ø zaškolení = jejich procento ÷ ${x.thr * 25} %.`],
+    ['Vykázáno a plán', ` — vykázáno = pracovní den s nahranou docházkou (na směně = hodiny bez kódu nepřítomnosti), plán = ostatní pracovní dny podle dnešního zařazení, směn a střídání skupin 1 a 2, bez nemocných, vyřazených a vedoucích. Víkendy a svátky se nepočítají. Požadavek z Auditu.`],
+    [x.perf ? 'Výkon' : 'Lidé na směně', x.perf ? ` — normohodiny z evidence práce ÷ odpracované hodiny z docházky, jen lidé ve skupinách. Index: celkem za ${monthLabel(x.months.find(m => m.perf).id)} = 100. Kusy ani normy jednotlivců se neukazují.` : ' — jen lidé ze skupin Matice dovedností; kdo není v žádné skupině, se nepočítá. Vygenerováno ' + dayText(todayIso()) + '.'],
+  ];
+  const dw = (k.CW - 12) / 3;
+  const parts = defs.map(([b, t]) => k.split(b + t, dw, 7.2));
+  const dh = Math.max(...parts.map(p => p.length)) * k.LH(7.2, 1.4) + 6;
+  k.need(dh);
+  k.hline(k.y, C.line, 0.25);
+  k.y += 3;
+  parts.forEach((p, i) => {
+    const x0 = k.M + i * (dw + 6);
+    p.forEach((ln, j) => {
+      const y = k.y + j * k.LH(7.2, 1.4);
+      if (j === 0) { const bw = k.width(defs[i][0], 7.2, true); k.text(defs[i][0], x0, y, 7.2, { bold: true }); k.text(ln.slice(defs[i][0].length), x0 + bw, y, 7.2, { color: C.ink2 }); }
+      else k.text(ln, x0, y, 7.2, { color: C.ink2 });
+    });
+  });
+  k.y += dh;
+  k.footer(`${EXPORT_NAME} · Kapacity a zaškolení · ${dayText(x.from)} – ${dayText(x.to)}`);
+}
+async function exportCtXlsx() {
+  const r = waCtRange();
+  const x = capTimeline(r.from, r.to);
+  if (!x || !x.days.length) { toast('V období nejsou pracovní dny.', true); return; }
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    capTimelineSheets(x).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`kapacity-zaskoleni-${x.from}-${x.to}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
 }
 
 /* ---------- dny ---------- */
@@ -9830,6 +10258,11 @@ function bindWorkAudit() {
     if (pr) { ui.wa.planRange = pr.dataset.waplanrange; renderWorkAudit(); return; }
     const pdfBtn = t.closest('[data-wapdf]');
     if (pdfBtn) { exportWaPdf(pdfBtn); return; }
+    const ctPre = t.closest('[data-wactpre]');
+    if (ctPre) { ui.wa.ctPre = ctPre.dataset.wactpre; renderWorkAudit(); return; }
+    if (t.closest('[data-wactxlsx]')) { exportCtXlsx(); return; }
+    const ctPdf = t.closest('[data-wactpdf]');
+    if (ctPdf) { exportCtPdf(ctPdf); return; }
     const ogs = t.closest('[data-waogs]');
     if (ogs) {
       const o = S.workAudit.ops.find(x => x.id === ogs.closest('[data-wao]').dataset.wao);
