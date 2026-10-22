@@ -76,6 +76,9 @@ async function confirm(page) {
   await page.waitForSelector('#skip');
   await page.click('#skip');
   await page.waitForSelector('#view-prehled.on');
+  // první uložení po čisté instalaci se do historie nezapisuje; bez čekání by do něj podle
+  // rychlosti stroje spadl i první protokol a v historii by chyběl
+  await saved(page);
 
   // Prázdný modul.
   await page.click('#nav [data-view="servis"]');
@@ -335,7 +338,7 @@ async function confirm(page) {
   const log = await page.evaluate(() => S.log.filter(x => x.kind === 'service').map(x => x.text));
   check(log.some(t => /^Servis: odeslání 2026\/001 \(19\. 10\. 2026, Servis Brno\): 3 zařízení/.test(t)) && log.some(t => /vráceno ze servisu 25\. 10\. 2026/.test(t))
     && log.some(t => /smazán protokol 2026\/002/.test(t)) && log.some(t => /upravené údaje – poznámka/.test(t))
-    // nový vzor tu v historii není: bylo to první uložení po čisté instalaci (to se nezapisuje), text hlídá test jádra
+    // nový vzor se se smazáním téhož vzoru sloučil do posledního stavu (stejný klíč), text hlídá test jádra
     && log.some(t => t === 'Servis: smazán vzor zařízení Bruska · Makita GA5030'), `historie změn: ${JSON.stringify(log)}`);
   await page.click('#logBtn');
   await page.waitForSelector('#dlg[open] [data-lf="service"]');

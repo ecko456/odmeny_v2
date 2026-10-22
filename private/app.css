@@ -1914,8 +1914,13 @@ table.sv-dev-tab tr.dup:hover td { background: color-mix(in srgb, var(--crit) 14
   .sv-state small { margin-top: 4px; }
 }
 
-/* ---------- Shortage: chybějící díly z Excelu (2.27) ---------- */
+/* ---------- Shortage: chybějící díly z Excelu (2.27, TOP a kód z odkazu 2.27.1) ---------- */
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.sh-paste { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; padding: 12px 14px; border: 1.5px dashed var(--line-2); border-radius: 16px; background: var(--surface); color: var(--ink-2); font-size: 14px; cursor: text; }
+.sh-paste:focus-within { border-color: var(--acc); background: var(--acc-soft); }
+.sh-paste span { flex: 1 1 auto; }
+.sh-paste b { color: var(--ink); }
+.sh-paste textarea { flex: 0 0 240px; min-height: 40px; height: 40px; resize: none; overflow: hidden; }
 .sh-msg:empty { display: none; }
 .sh-msg { display: grid; gap: 8px; margin-bottom: 14px; }
 .sh-msg .note + .note { margin-top: 0; }
@@ -1926,10 +1931,17 @@ table.sh-tab td.sh-ean { font-family: var(--mono); white-space: nowrap; }
 table.sh-tab td.sh-ean a { color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
 table.sh-tab td.sh-qty b { font-size: 15px; }
 table.sh-tab tr[hidden] { display: none; }
+table.sh-tab tr.sh-top td { background: color-mix(in srgb, var(--crit-soft) 70%, transparent); }
+table.sh-tab tr.sh-top td:first-child { box-shadow: inset 3px 0 0 var(--crit); color: var(--crit); font-weight: 700; }
+.tag.sh-toptag { background: var(--crit); color: var(--surface); font-weight: 800; letter-spacing: .03em; margin-right: 4px; }
+table.sh-tab td.sh-ord { white-space: nowrap; font-weight: 600; }
+.tag.sh-code { font-family: var(--mono); white-space: nowrap; }
 .sh-lists { margin-top: 16px; }
 .sh-lists h3 { margin: 0 0 10px; }
 .sh-lists .tiny { margin: 10px 0 0; }
 @media (max-width: 760px) {
   .sh-search, .sh-search input { width: 100%; }
-  table.sh-tab td.sh-ean { white-space: normal; word-break: break-all; }
+  .sh-paste { flex-direction: column; align-items: stretch; gap: 8px; }
+  .sh-paste textarea { flex-basis: auto; width: 100%; }
+  table.sh-tab td.sh-ean, table.sh-tab td.sh-ord, .tag.sh-code { white-space: normal; word-break: break-all; }
 }

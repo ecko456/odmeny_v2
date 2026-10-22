@@ -318,13 +318,17 @@
         <div>
           <p class="eyebrow">Chybějící díly</p>
           <h1 id="shTitle">Shortage</h1>
-          <p class="lede">Seznam chybějících dílů z Excelu: ve sloupci A EAN s vloženým odkazem, v B název dílu, v C číslo objednávky, v D index a v E urgentní množství. PDF na šířku má u každé položky QR kód s odkazem z EANu, kolonky Stav k 10:00 a Stav k 13:00 a místo na poznámky.</p>
+          <p class="lede">Seznam chybějících dílů z Excelu: A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index, E urgentní množství, G „TOP“ (TOP SHORTAGE, vždy nahoře) a H probíhající operace. PDF na šířku má u každé položky QR kód s activeBarcode z odkazu, kolonky Stav k 10:00 a Stav k 13:00 a místo na poznámky.</p>
         </div>
         <div class="page-actions noprint">
           <button class="btn" type="button" id="shImport">Nahrát Excel</button>
           <input type="file" id="shFile" accept=".xlsx,.xls,.xlsm,.ods" hidden>
         </div>
       </header>
+      <label class="sh-paste noprint" for="shPaste">
+        <span><b>Vložit z Excelu</b> · označ v Excelu řádky seznamu (i s nadpisy), Ctrl+C, klikni sem a Ctrl+V. Odkazy z EANu se vloží také.</span>
+        <textarea id="shPaste" rows="1" placeholder="Sem vlož tabulku (Ctrl+V)" autocomplete="off" spellcheck="false"></textarea>
+      </label>
       <div id="shMsg" class="sh-msg noprint" aria-live="polite"></div>
       <div id="shView"></div>
     </section>

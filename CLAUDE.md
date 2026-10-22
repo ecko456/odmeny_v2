@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 22. 10. 2026 (verze 2.27.1):
+
+- Uživatel: „A číslo objednávky, B název dílu, C EAN dílu, D index, E urgentní množství, G pokud
+  zde bude ‚TOP‘, tak bude označeno jako TOP SHORTAGE a na seznamu bude vždy nahoře, H probíhající
+  operace … do QR vyextrahovat jen část … je to vždy za activeBarcode a končí &“ a „nejde udělat,
+  že bych tam tu tabulku vložil ctrl + v“.
+  - Položka má navíc `top` (bool), `op` (operace) a `code` (activeBarcode, `shCode`). TOP první
+    (`shTopFirst`) v `shBuild` i `cleanShortage`. Seznam ze 2.27 nemá `code`: čištění ho dopočítá
+    z `link`. Varování `noCode` místo `badLink`.
+  - Ctrl+V: `paste` na dokumentu, když je otevřený Shortage (mimo pole a dialogy), pole
+    `#shPaste`. `shClipRows(html, text)`: HTML ze schránky (Excel dává odkazy do `<a href>`)
+    přes DOMParser, styly a skripty se předem odstraní (jinak CSP hlásí porušení i v netečném
+    dokumentu), výřez bez `<table>` se obalí. Bez HTML `shTsv` (core). **Se skutečným Excelem
+    to nikdo nezkoušel**, test vkládá HTML ve tvaru, jaký Excel dává (CF_HTML, StartFragment).
+  - Odkazy ve vymyšlených datech testů a dokumentace mají host `is.example`, skutečnou adresu
+    informačního systému do repa nedávej.
+  - `e2e_servis.js` po přihlášení čeká na první uložení. Bez toho do něj (nezapisuje se do
+    historie) podle rychlosti stroje spadl i první protokol a kontrola historie občas selhala.
+  - Verze dat 24, `ODM_VERSION` 2.27.1.
+
 Stav k 22. 10. 2026 (verze 2.27):
 
 - Uživatel: „modul ‚Shortage‘ … importovat excel … A sloupec bude ean, B název dílu, C Číslo
@@ -891,32 +911,49 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1)
+
+Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
+E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
 
 Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 
 - `lists[≤ 30]`, nejnovější první: `{id 'sh…', at, by, file, sheet, items[≤ 1000]}`; `sheet` je
-  název listu jen u sešitu s více listy;
-- položka `{ean, link, name, order, index, qty}`: vše text tak, jak ho ukazuje Excel (EAN
-  s nulami na začátku, množství s formátem); `link` projde `shLink` (jen `http(s)://`,
-  `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků), jinak `""`.
-  Položka bez EANu i názvu se zahodí.
+  název listu jen u sešitu s více listy, vložený seznam má `file` „vloženo ze schránky“;
+- položka `{order, name, ean, index, qty, top, op, link, code}`: texty tak, jak je ukazuje Excel
+  (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
+  `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
+  jinak `""`, slouží jen ke klikání v aplikaci; `code` = activeBarcode z odkazu (`shCode`: text
+  za `activeBarcode=` do `&` nebo `#`, dekóduje `%XX`, `shCodeClean`: tisknutelné ASCII bez
+  mezer, nejvýš 120 znaků). Položka bez EANu i názvu se zahodí, TOP jsou vždy první
+  (`shTopFirst`, jinak pořadí ze souboru). Seznam ze 2.27 nemá `code`, čištění ho dopočítá
+  z `link`.
 
-Import (`shImportFile` v `app.js`): SheetJS, každý list přes `shSheetRows` (sloupce A–E, nejvýš
+Import (`shImportFile` v `app.js`): SheetJS, každý list přes `shSheetRows` (sloupce A–H, nejvýš
 20 000 řádků, `shCellText`: číselný EAN s formátem nul se vezme jako formátovaný text; `shCellLink`:
 `cell.l.Target` přes `shUnxml`, jinak vzorec `HYPERLINK("…")`) a `shBuild(rows)` → `{items, more,
-header, warn{noLink, badLink, noEan, skipped}}` (nadpisy `shIsHeader` v prvních 15 řádcích).
-Vezme se list s nejvíc položkami. CSV se odmítne (nemá odkazy). Zpráva v `#shMsg`.
+header, top, warn{noLink, noCode, noEan, skipped}}` (nadpisy `shIsHeader`: aspoň dva nadpisy
+z A–E v prvních 15 řádcích; odkaz z C, jinak z jiné buňky řádku). Vezme se list s nejvíc
+položkami. CSV se odmítne (nemá odkazy). Společné uložení a zpráva `shAddList(r, src)`.
 
-UI (sekce „SHORTAGE“): `renderShortage` (dlaždice, karta seznamu s hledáním `#shQ` přes `shFilter`,
-`[data-shpdf]`, `[data-shdel]` s potvrzením, přepínání seznamů `[data-shopen]`, stav `ui.sh`),
-tabulka `table.stack.sh-tab` (EAN je odkaz `target=_blank rel=noopener noreferrer`). Historie změn
-`shChanges` (klíče `shl:` nahrání, `shd:` smazání, aby se nesloučily).
+Vložení (Ctrl+V): posluchač `paste` na dokumentu (jen pohled Shortage, ne v polích ani
+dialozích; pole `#shPaste` je cíl, vstup se maže). `shClipRows(html, text)` → `{plain, rows}`:
+HTML ze schránky bez `<style>`, `<script>` a atributů `style` přes DOMParser, buňky
+`table.rows`/`cells` (`<br>` = mezera, `colspan` doplní prázdné buňky, odkaz z `a[href]`),
+výřez bez `<table>` se obalí; bez HTML `shTsv` (core, buňky v uvozovkách). `shPaste`.
+
+UI (sekce „SHORTAGE“): `renderShortage` (dlaždice Seznam, Položek, TOP shortage, S QR kódem;
+karta seznamu s hledáním `#shQ` přes `shFilter` i podle operace a kódu, `[data-shpdf]`,
+`[data-shdel]` s potvrzením, přepínání seznamů `[data-shopen]`, stav `ui.sh`), tabulka
+`table.stack.sh-tab` (řádek `tr.sh-top`, štítek `.sh-toptag`, kód `.sh-code`, EAN je odkaz
+`target=_blank rel=noopener noreferrer`). Historie změn `shChanges` (klíče `shl:` nahrání, `shd:`
+smazání, aby se nesloučily; text „z toho N TOP“).
 
 PDF `drawShortage(doc, l)` (A4 na šířku, `withPdf(…, 'landscape')`): sloupce `SH_PDF_COLS`, řádek
-20 mm, QR 16,5 mm (`pdfQr`: znaky mimo ASCII jako `%XX`, úroveň M, jinak L, okraj 2 moduly),
-hlavička tabulky na každé stránce (`k.onPage`), čárkované linky na psaní ve Stav k 10:00, Stav
-k 13:00 a Poznámkách. Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
+20 mm, QR 14 mm s kódem písmem pod ním (`pdfQr`: znaky mimo ASCII jako `%XX`, úroveň M, jinak L,
+okraj 2 moduly), TOP řádek podbarvený `critSoft` s pruhem a štítkem, hlavička tabulky na každé
+stránce (`k.onPage`), čárkované linky na psaní ve Stav k 10:00, Stav k 13:00 a Poznámkách.
+Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
 
 ## Audit (verze 2.17, 2.18)
 
@@ -1145,7 +1182,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.25.1 | `35c337a` | Docházka – den s kódem nepřítomnosti (i „8 D“) není docházka |
 | 2.25.2 | `41a5fa1` | PDF matice s benefity a bez, průměr zaškolení u pracovníků v zácviku |
 | 2.26 | `2abb107` | Servis – PDF Kompletní / Na opravu / K vyřazení, digitální podpis předávajícího (data verze 22) |
-| 2.27 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – import chybějících dílů z Excelu, PDF na šířku s QR kódem odkazu z EANu (data verze 23) |
+| 2.27 | `16b12fd` | Shortage – import chybějících dílů z Excelu, PDF na šířku s QR kódem odkazu z EANu (data verze 23) |
+| 2.27.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – nové sloupce, TOP SHORTAGE nahoře, probíhající operace, do QR jen activeBarcode, vložení přes Ctrl+V (data verze 24) |
 
 Verze 2.1 přidala:
 
@@ -1257,7 +1295,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `23` (od 2.27):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `24` (od 2.27.1):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1557,10 +1595,13 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     závady, rok výroby, vzory (uložení, duplicita, výběr, smazání), duplicitní zařízení (červeně
     při psaní, nahoru při uložení, číslo jiného zařízení, evidence; jiné ID se stejným v. č.
     při úpravě protokolu duplicita není), PDF přes pypdf, výběr z evidence, párování, vrácení, evidence, úprava, smazání, telefon;
-  - `e2e_shortage.js`: Shortage (2.27): Excel s odkazy (číselný EAN s nulami, vzorec HYPERLINK,
-    bez odkazu, odkaz `file:`, druhý list) vyrobí v prohlížeči přes SheetJS, import a upozornění,
+  - `e2e_shortage.js`: Shortage (2.27, 2.27.1): Excel s odkazy (číselný EAN s nulami, vzorec
+    HYPERLINK, bez odkazu, bez activeBarcode, activeBarcode na konci, odkaz v buňce objednávky,
+    TOP, operace, druhý list) vyrobí v prohlížeči přes SheetJS, import a upozornění, TOP nahoře,
     hledání, PDF (na šířku, stránky, hlavička, žádné anotace odkazů), QR kódy vykreslí PyMuPDF
-    a čte jsQR (záloha ZXing), další seznam, přepnutí, smazání, historie, CSV, telefon, tmavý režim;
+    a čte jsQR (záloha ZXing) a musí nést activeBarcode, Ctrl+V (událost `paste` s HTML jako
+    z Excelu a jen s textem, vložení do hledání nic nepřidá), další seznam, přepnutí, smazání,
+    historie, CSV, telefon, tmavý režim;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;

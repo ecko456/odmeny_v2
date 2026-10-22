@@ -62,6 +62,29 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.27.1
+
+- **Shortage: nové rozložení sloupců.** **A** číslo objednávky, **B** název dílu, **C** EAN
+  s vloženým hypertextovým odkazem, **D** index, **E** urgentní množství, **G** „TOP“ a **H**
+  probíhající operace. Sloupec F se nečte.
+- **TOP SHORTAGE.** Položka s „TOP“ ve sloupci G (velkými i malými písmeny) má štítek
+  TOP SHORTAGE a je v seznamu i v PDF vždy nahoře. V PDF má podbarvený řádek, červený pruh
+  a nápis, který zůstane čitelný i při černobílém tisku.
+- **Do QR kódu jde jen activeBarcode z odkazu.** Z odkazu
+  `…?activeBarcode=11111.222222.33333&componentProductionId=…` se vezme `11111.222222.33333`
+  (text za `activeBarcode=` do `&`). Pod QR kódem je kód i písmem, aby se dal opsat. Odkaz
+  bez activeBarcode QR kód nemá a aplikace na to po nahrání upozorní. Když odkaz není
+  u EANu, vezme se z jiné buňky řádku.
+- V tabulce aplikace jsou nové sloupce Probíhající operace a QR kód (kód z odkazu), hledá se
+  i podle operace a kódu. PDF má sloupec Probíhající operace.
+- **Vložení přes Ctrl+V.** V Excelu označ řádky seznamu (klidně i s nadpisy), dej Ctrl+C,
+  klikni v Shortage do pole „Vložit z Excelu“ a dej Ctrl+V. Seznam se vloží i s odkazy, soubor
+  není potřeba ukládat. Když schránka nese jen text (bez odkazů), seznam se vloží, ale bez QR
+  kódů a aplikace na to upozorní.
+- Seznamy nahrané ve verzi 2.27 zůstanou, kód pro QR se jim dopočítá z uloženého odkazu.
+- Verze dat 24: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení (jinak by
+  zahodila TOP, operaci a kód).
+
 ## Co je nového ve verzi 2.27
 
 - **Nový modul Shortage (chybějící díly).** V menu pod Servisem. Tlačítkem **Nahrát Excel**

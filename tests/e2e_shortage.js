@@ -1,8 +1,10 @@
-// Prohlížečový průchod modulem Shortage (verze 2.27): import Excelu (A EAN s vloženým odkazem,
-// B název dílu, C číslo objednávky, D index, E urgentní množství), titulek a hlavička nad daty,
-// EAN s nulami na začátku, vzorec HYPERLINK, řádky bez odkazu a s odkazem, který není webová
-// adresa, druhý list v sešitu, hledání, PDF na šířku (text, odkazy, QR kódy přečtené zpátky
-// z vykresleného PDF), další seznam, přepnutí, smazání, historie změn, CSV, telefon a tmavý režim.
+// Prohlížečový průchod modulem Shortage (verze 2.27, sloupce 2.27.1): import Excelu (A číslo
+// objednávky, B název dílu, C EAN s vloženým odkazem, D index, E urgentní množství, G TOP,
+// H probíhající operace), titulek a hlavička nad daty, EAN s nulami na začátku, vzorec HYPERLINK,
+// řádky bez odkazu, s odkazem bez activeBarcode a s odkazem v jiné buňce, TOP SHORTAGE nahoře,
+// druhý list v sešitu, hledání, PDF na šířku (text, žádné odkazy, QR kódy s activeBarcode přečtené
+// zpátky z vykresleného PDF), vložení tabulky ze schránky (HTML jako z Excelu i jen text), další
+// seznam, přepnutí, smazání, historie změn, CSV, telefon a tmavý režim.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
@@ -99,14 +101,22 @@ async function confirm(page) {
   await page.waitForSelector('#dlg', { state: 'hidden' });
 }
 
-// 25 vymyšlených dílů: odkaz vložený v buňce EAN, u 3. položky vzorec HYPERLINK, 5. a 12. bez
-// odkazu, 9. s odkazem na síťový disk (file:), 2. EAN jako číslo s nulami na začátku.
+// 25 vymyšlených dílů: odkaz vložený v buňce EAN (jako z IS, activeBarcode uprostřed), u 3. položky
+// vzorec HYPERLINK, 5. a 12. bez odkazu, 9. s odkazem bez activeBarcode, 7. s activeBarcode na konci
+// odkazu, 10. s odkazem v buňce objednávky, 2. EAN jako číslo s nulami na začátku. TOP: 4., 11., 18.
+// a 21. („top“ malými písmeny).
 const NAMES = ['Hřídel předlohová', 'Ložisko 6204-2RS', 'Těsnění víka převodovky', 'Šroub M8×25 DIN 912', 'Pružina tlačná', 'Kryt řemene', 'Čep páky', 'Matice samojistná M10', 'Příruba čerpadla', 'Ozubené kolo z = 32'];
+const OPS = ['Broušení', 'Montáž', 'Elox', 'CNC frézování', ''];
 const ITEMS = Array.from({ length: 25 }, (_, i) => {
   const ean = i === 1 ? '0012345678905' : String(8594000000000 + 101 * (i + 1));
-  const link = i === 4 || i === 11 ? '' : i === 8 ? 'file:///\\\\server\\vykresy\\dil-9.pdf' : `https://erp.example.cz/dil/${ean}?sklad=H2&poradi=${i + 1}`;
-  return { ean, link, name: `${NAMES[i % NAMES.length]}${i >= 10 ? ` ${Math.floor(i / 10) + 1}` : ''}`, order: `OBJ-2026-${String(4100 + i).padStart(5, '0')}`, index: 'ABCD'[i % 4], qty: i === 2 ? 1200 : (i * 7) % 50 + 1 };
+  const code = i === 4 || i === 11 || i === 8 ? '' : `${61000 + i}.${962000 + i * 7}.${73800 + i * 3}`;
+  const link = i === 4 || i === 11 ? '' : i === 8 ? `https://erp.example.cz/dil/${ean}?sklad=H2`
+    : `http://is.example/commission.production.detail/default/${68700 + i}?activeBarcode=${code}${i === 6 ? '' : `&componentProductionId=${962000 + i * 7}`}`;
+  return { ean, link, code, top: [3, 10, 17, 20].includes(i), topText: i === 20 ? 'top' : 'TOP', op: OPS[i % OPS.length], linkInOrder: i === 9,
+    name: `${NAMES[i % NAMES.length]}${i >= 10 ? ` ${Math.floor(i / 10) + 1}` : ''}`, order: `OBJ-2026-${String(4100 + i).padStart(5, '0')}`, index: 'ABCD'[i % 4], qty: i === 2 ? 1200 : (i * 7) % 50 + 1 };
 });
+// pořadí v seznamu a v PDF: TOP SHORTAGE první
+const ORDERED = [...ITEMS.filter(x => x.top), ...ITEMS.filter(x => !x.top)];
 
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
@@ -131,25 +141,29 @@ const ITEMS = Array.from({ length: 25 }, (_, i) => {
   // Prázdný modul.
   await page.click('#nav [data-view="shortage"]');
   await page.waitForSelector('#view-shortage.on #shView .empty');
-  check(/Zatím žádný seznam/.test(await page.textContent('#shView')) && /sloupci A EAN/.test(await page.textContent('#shView')), 'prázdný stav s popisem sloupců');
+  check(/Zatím žádný seznam/.test(await page.textContent('#shView')) && /ve sloupci A číslo objednávky/.test(await page.textContent('#shView')) && /Ctrl\+V/.test(await page.textContent('#shView')), 'prázdný stav s popisem sloupců a vložení');
   await page.screenshot({ path: path.join(shots, '01-prazdny.png') });
 
   // Sešit Excelu vyrobí SheetJS v prohlížeči: titulek, hlavička, 25 položek a druhý list.
   const xlsxB64 = await page.evaluate(async items => {
     const X = await xlsx();
-    const ws = X.utils.aoa_to_sheet([['Shortage HALA 2 – 22. 10. 2026'], [], ['EAN', 'Název dílu', 'Číslo objednávky', 'Index', 'Urgentní množství']]);
+    const ws = X.utils.aoa_to_sheet([['Shortage HALA 2 – 22. 10. 2026'], [], ['Číslo objednávky', 'Název dílu', 'EAN', 'Index', 'Urgentní množství', 'Sklad', 'TOP', 'Probíhající operace']]);
     items.forEach((it, i) => {
       const r = i + 3;
-      const a = X.utils.encode_cell({ r, c: 0 });
+      const a = X.utils.encode_cell({ r, c: 2 });
       ws[a] = i === 1 ? { t: 'n', v: Number(it.ean), z: '0000000000000' } : { t: 's', v: it.ean };
+      ws[X.utils.encode_cell({ r, c: 0 })] = { t: 's', v: it.order };
       if (i === 2) ws[a].f = `HYPERLINK("${it.link}","${it.ean}")`;
+      else if (it.linkInOrder) ws[X.utils.encode_cell({ r, c: 0 })].l = { Target: it.link };
       else if (it.link) ws[a].l = { Target: it.link, Tooltip: 'Detail dílu' };
       ws[X.utils.encode_cell({ r, c: 1 })] = { t: 's', v: it.name };
-      ws[X.utils.encode_cell({ r, c: 2 })] = { t: 's', v: it.order };
       ws[X.utils.encode_cell({ r, c: 3 })] = { t: 's', v: it.index };
       ws[X.utils.encode_cell({ r, c: 4 })] = { t: 'n', v: it.qty };
+      ws[X.utils.encode_cell({ r, c: 5 })] = { t: 's', v: 'H2' };
+      if (it.top) ws[X.utils.encode_cell({ r, c: 6 })] = { t: 's', v: it.topText };
+      if (it.op) ws[X.utils.encode_cell({ r, c: 7 })] = { t: 's', v: it.op };
     });
-    ws['!ref'] = X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: items.length + 2, c: 4 } });
+    ws['!ref'] = X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: items.length + 2, c: 7 } });
     const wb = X.utils.book_new();
     X.utils.book_append_sheet(wb, X.utils.aoa_to_sheet([['Poznámka'], ['Seznam je na prvním listu.']]), 'Info');
     X.utils.book_append_sheet(wb, ws, 'Shortage');
@@ -160,19 +174,29 @@ const ITEMS = Array.from({ length: 25 }, (_, i) => {
   await page.setInputFiles('#shFile', { name: 'shortage-22-10.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(xlsxB64, 'base64') });
   await page.waitForSelector('#shView table.sh-tab');
   const msg = await page.textContent('#shMsg');
-  check(/Nahráno 25 položek ze souboru shortage-22-10\.xlsx \(list Shortage\)/.test(msg), `zpráva o importu: ${msg}`);
-  check(/2 položky nemají v EAN odkaz/.test(msg) && /1 položka má odkaz, který není webová adresa/.test(msg), `upozornění na odkazy: ${msg}`);
+  check(/Nahráno 25 položek ze souboru shortage-22-10\.xlsx \(list Shortage\), z toho 4 TOP SHORTAGE/.test(msg), `zpráva o importu: ${msg}`);
+  check(/2 položky nemají hypertextový odkaz/.test(msg) && /1 položka má odkaz bez activeBarcode/.test(msg), `upozornění na odkazy: ${msg}`);
   const st = await page.evaluate(() => S.shortage.lists.map(l => ({ n: l.items.length, file: l.file, sheet: l.sheet, by: l.by, items: l.items })));
   check(st.length === 1 && st[0].n === 25 && st[0].sheet === 'Shortage' && st[0].by === 'Vedoucí skladu', `uložený seznam: ${JSON.stringify(st.map(x => [x.n, x.sheet, x.by]))}`);
   const it = st[0].items;
-  check(it[1].ean === '0012345678905', `EAN s nulami na začátku: ${it[1].ean}`);
-  check(it[0].link === ITEMS[0].link && it[2].link === ITEMS[2].link, 'odkaz vložený v buňce i vzorec HYPERLINK');
-  check(!it[4].link && !it[8].link && !it[11].link, 'bez odkazu a s odkazem file: → bez QR');
-  check(it[2].qty === '1 200' && it[0].qty === '1' && it[0].order === 'OBJ-2026-04100' && it[0].index === 'A', `množství a objednávka: ${JSON.stringify(it[2])}`);
-  check(await page.locator('#shView tbody tr').count() === 25, 'tabulka má 25 řádků');
-  const a0 = page.locator('#shView tbody tr').first().locator('a');
+  check(JSON.stringify(it.map(x => x.ean)) === JSON.stringify(ORDERED.map(x => x.ean)), `TOP SHORTAGE nahoře, jinak pořadí ze souboru: ${it.map(x => x.ean.slice(-4)).join(' ')}`);
+  check(JSON.stringify(it.map(x => x.top)) === JSON.stringify(ORDERED.map(x => x.top)), 'TOP i malými písmeny');
+  check(JSON.stringify(it.map(x => x.code)) === JSON.stringify(ORDERED.map(x => x.code)), `kód z activeBarcode: ${JSON.stringify(it.map(x => x.code).slice(0, 6))}`);
+  check(JSON.stringify(it.map(x => x.op)) === JSON.stringify(ORDERED.map(x => x.op)), 'probíhající operace ze sloupce H');
+  const byEan = e => it.find(x => x.ean === e);
+  check(byEan('0012345678905'), 'EAN s nulami na začátku');
+  check(byEan(ITEMS[0].ean).link === ITEMS[0].link && byEan(ITEMS[2].ean).link === ITEMS[2].link && byEan(ITEMS[9].ean).link === ITEMS[9].link, 'odkaz vložený v buňce, vzorec HYPERLINK i odkaz v buňce objednávky');
+  check(byEan(ITEMS[6].ean).code === ITEMS[6].code && !byEan(ITEMS[8].ean).code && byEan(ITEMS[8].ean).link === ITEMS[8].link, 'activeBarcode na konci odkazu; odkaz bez activeBarcode nemá kód, ale zůstane klikací');
+  const q2 = byEan(ITEMS[2].ean);
+  check(q2.qty === '1 200' && byEan(ITEMS[0].ean).qty === '1' && byEan(ITEMS[0].ean).order === 'OBJ-2026-04100' && byEan(ITEMS[0].ean).index === 'A', `množství a objednávka: ${JSON.stringify(q2)}`);
+  check(await page.locator('#shView tbody tr').count() === 25 && await page.locator('#shView tbody tr.sh-top').count() === 4, 'tabulka má 25 řádků, 4 TOP');
+  check(await page.locator('#shView tbody tr').nth(3).evaluate(tr => tr.classList.contains('sh-top')) && !(await page.locator('#shView tbody tr').nth(4).evaluate(tr => tr.classList.contains('sh-top'))), 'TOP řádky jsou první');
+  check(/TOP SHORTAGE/.test(await page.textContent('#shView tbody tr:first-child')), 'štítek TOP SHORTAGE');
+  const a0 = page.locator('#shView tbody tr').nth(4).locator('a');
   check(await a0.getAttribute('href') === ITEMS[0].link && await a0.getAttribute('target') === '_blank' && /noopener/.test(await a0.getAttribute('rel')), 'EAN v tabulce otevře odkaz v nové kartě');
-  check(/Bez odkazu\s*3/.test(await page.textContent('#shView .stats')), 'dlaždice: 3 bez odkazu');
+  check((await page.textContent('#shView tbody tr:nth-child(5)')).includes(ITEMS[0].code), 'kód pro QR v tabulce');
+  const tilesText = (await page.textContent('#shView .stats')).replace(/\s+/g, ' ');
+  check(/TOP shortage\s*4/.test(tilesText) && /S QR kódem\s*22\s*bez kódu 3/.test(tilesText), `dlaždice: ${tilesText}`);
   await page.screenshot({ path: path.join(shots, '02-seznam.png'), fullPage: true });
 
   // Hledání v seznamu.
@@ -180,6 +204,10 @@ const ITEMS = Array.from({ length: 25 }, (_, i) => {
   check(await page.locator('#shView tbody tr:not([hidden])').count() === 3, 'hledání najde tři ložiska');
   await page.fill('#shQ', '04117');
   check(await page.locator('#shView tbody tr:not([hidden])').count() === 1, 'hledání podle čísla objednávky');
+  await page.fill('#shQ', 'elox');
+  check(await page.locator('#shView tbody tr:not([hidden])').count() === 5, 'hledání podle operace');
+  await page.fill('#shQ', ITEMS[7].code);
+  check(await page.locator('#shView tbody tr:not([hidden])').count() === 1, 'hledání podle kódu');
   await page.fill('#shQ', 'nic takového');
   check(await page.isVisible('#shView .sh-none'), 'nic nenalezeno');
   await page.fill('#shQ', '');
@@ -193,7 +221,7 @@ const ITEMS = Array.from({ length: 25 }, (_, i) => {
     const text = info.map(p => p.text).join(' ').replace(/\s+/g, ' ');
     check(info.every(p => p.w > p.h), 'všechny stránky A4 na šířku');
     check(info.length === 4, `25 položek na ${info.length} stránkách (7 + 8 + 8 + 2)`);
-    ['Chybějící díly', 'Stav k 10:00', 'Stav k 13:00', 'Poznámky', 'Urgentní', 'Číslo objednávky', 'QR kód', '0012345678905', 'Těsnění víka převodovky', 'Šroub M8×25 DIN 912', 'OBJ-2026-04124', '1 200', 'bez odkazu', 'Strana 4 / 4']
+    ['Chybějící díly', 'Stav k 10:00', 'Stav k 13:00', 'Poznámky', 'Urgentní', 'Číslo objednávky', 'Probíhající', 'QR kód', 'TOP SHORTAGE', '4 TOP SHORTAGE', '0012345678905', 'Těsnění víka převodovky', 'Šroub M8×25 DIN 912', 'OBJ-2026-04124', '1 200', 'CNC frézování', ITEMS[0].code, 'bez odkazu', 'odkaz bez activeBarcode', 'Strana 4 / 4']
       .forEach(t => check(text.includes(t), `PDF obsahuje „${t}“`));
     check(info.slice(1).every(p => /Stav k 10:00/.test(p.text)), 'hlavička tabulky na každé stránce');
     // klikací odkazy ne: jsPDF 4.2 by v adrese přepsal & na &amp; (adresa by se otevřela špatně)
@@ -205,8 +233,8 @@ const ITEMS = Array.from({ length: 25 }, (_, i) => {
       // pořadí položek po stránkách: 7, 8, 8, 2
       let idx = 0; const got = [];
       [7, 8, 8, 2].forEach((n, pi) => { for (let r = 0; r < n; r += 1) { got.push({ i: idx, text: (read.find(c => c.page === pi && c.row === r) || {}).text || null }); idx += 1; } });
-      const bad = got.filter(g => (ITEMS[g.i].link && g.i !== 8 ? g.text !== ITEMS[g.i].link : g.text !== null));
-      check(!bad.length, `QR kódy v PDF nesou odkaz z EANu (špatně: ${JSON.stringify(bad.slice(0, 3))})`);
+      const bad = got.filter(g => g.text !== (ORDERED[g.i].code || null));
+      check(!bad.length, `QR kódy v PDF nesou activeBarcode z odkazu (špatně: ${JSON.stringify(bad.slice(0, 3))})`);
       check(got.filter(g => g.text).length === 22, `přečteno ${got.filter(g => g.text).length} QR kódů z 22`);
     } else console.log('PyMuPDF chybí, QR v PDF se nekontroluje');
     spawnSync('python3', ['-c', `import pymupdf,sys
@@ -214,13 +242,60 @@ d=pymupdf.open(sys.argv[1])
 for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'/pdf-strana-{i+1}.png')`, pdf.path, shots]);
   } else console.log('pypdf ani PyMuPDF nejsou, text PDF se nekontroluje');
 
-  // Další seznam, přepnutí na starší a smazání.
+  // Vložení ze schránky (Ctrl+V): HTML jako z Excelu (hlavička CF_HTML, StartFragment, odkaz v <a>
+  // s &amp;, nezlomitelné mezery, zalomení v buňce, sloučené buňky) a pak jen text bez odkazů.
   await page.evaluate(() => { const l = S.shortage.lists[0]; l.at -= 3 * 3600 * 1000; });   // první seznam je „ráno“
   await saved(page).catch(() => {});
+  const clipHtml = `Version:0.9\r\nStartHTML:0000000105\r\n<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+<head><meta http-equiv=Content-Type content="text/html; charset=utf-8"><style>.xl65 {mso-number-format:"\\@";}</style></head>
+<body link="#0563C1" vlink="#954F72"><table border=0 cellpadding=0 cellspacing=0 width=900 style='border-collapse:collapse'>
+<col width=120><col width=200><!--StartFragment-->
+ <tr height=20><td height=20>Číslo objednávky</td><td>Název dílu</td><td>EAN</td><td>Index</td><td>Urgentní množství</td><td></td><td>TOP</td><td>Probíhající operace</td></tr>
+ <tr height=20><td height=20 class=xl65>OBJ-2026-09001</td><td>Víko&nbsp;skříně<br style='mso-data-placement:same-cell'>velké</td><td class=xl66><a href="http://is.example/commission.production.detail/default/69001?activeBarcode=70001.980001.12345&amp;componentProductionId=980001"><span style='font-size:11pt'>8591111111111</span></a></td><td>B</td><td align=right>3</td><td></td><td>TOP</td><td>Lakování</td></tr>
+ <tr height=20><td height=20>OBJ-2026-09002</td><td>Kryt ventilu</td><td><a href="http://is.example/commission.production.detail/default/69002?activeBarcode=70002.980002.12346&amp;componentProductionId=980002">8591111111128</a></td><td>A</td><td align=right>1&nbsp;500</td><td colspan=2></td><td>Broušení</td></tr>
+<!--EndFragment--></table></body></html>`;
+  const paste = (html, text) => page.evaluate(([h, t]) => {
+    const dt = new DataTransfer();
+    if (h) dt.setData('text/html', h);
+    dt.setData('text/plain', t);
+    document.querySelector('#shPaste').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+  }, [html, text]);
+  await page.click('#shPaste');
+  await paste(clipHtml, 'Číslo objednávky\tNázev dílu\tEAN\nOBJ-2026-09001\tVíko skříně\t8591111111111\n');
+  await page.waitForFunction(() => S.shortage.lists.length === 2);
+  const pmsg = await page.textContent('#shMsg');
+  check(/Vloženo 2 položky ze schránky, z toho 1 TOP SHORTAGE/.test(pmsg) && !/bez odkazů/.test(pmsg), `vložení ze schránky: ${pmsg}`);
+  const pl = await page.evaluate(() => S.shortage.lists[0]);
+  check(pl.file === 'vloženo ze schránky' && pl.items.length === 2, `vložený seznam: ${pl.file} ${pl.items.length}`);
+  check(JSON.stringify(pl.items[0]) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
+    link: 'http://is.example/commission.production.detail/default/69001?activeBarcode=70001.980001.12345&componentProductionId=980001', code: '70001.980001.12345' }), `vložená položka: ${JSON.stringify(pl.items[0])}`);
+  check(pl.items[1].qty === '1 500' && pl.items[1].op === 'Broušení' && !pl.items[1].top && pl.items[1].code === '70002.980002.12346', `sloučené buňky a mezery: ${JSON.stringify(pl.items[1])}`);
+  check(await page.inputValue('#shPaste') === '', 'pole pro vložení zůstane prázdné');
+  await page.screenshot({ path: path.join(shots, '03a-vlozeno.png'), fullPage: true });
+  await saved(page);
+  // jen text (bez HTML): seznam se vloží, ale upozorní, že odkazy a QR chybí
+  await page.click('#shView [data-shdel]');
+  await confirm(page);
+  await page.waitForFunction(() => S.shortage.lists.length === 1);
+  await paste('', 'Číslo objednávky\tNázev dílu\tEAN\tIndex\tUrgentní množství\t\tTOP\tProbíhající operace\r\nOBJ-1\t"Díl\ts tabulátorem"\t8590000000011\tA\t2\t\tTOP\tMontáž\r\n');
+  await page.waitForFunction(() => S.shortage.lists.length === 2);
+  check(/Vloženo 1 položka ze schránky/.test(await page.textContent('#shMsg')) && /jen text bez odkazů/.test(await page.textContent('#shMsg')), `vložený text: ${await page.textContent('#shMsg')}`);
+  check(await page.evaluate(() => { const i = S.shortage.lists[0].items[0]; return i.top && i.op === 'Montáž' && !i.code && i.ean === '8590000000011' && i.name === 'Díl s tabulátorem'; }), 'text ze schránky: sloupce sedí (i buňka v uvozovkách), kód chybí');
+  // Ctrl+V v hledání nic nevloží
+  await page.focus('#shQ');
+  await page.evaluate(() => { const dt = new DataTransfer(); dt.setData('text/plain', 'a\tb\tc'); document.querySelector('#shQ').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); });
+  check(await page.evaluate(() => S.shortage.lists.length) === 2, 'vložení do hledání seznam nepřidá');
+  await saved(page);
+  await page.click('#shView [data-shdel]');
+  await confirm(page);
+  await page.waitForFunction(() => S.shortage.lists.length === 1);
+  await saved(page);
+
+  // Další seznam, přepnutí na starší a smazání.
   const small = await page.evaluate(async () => {
     const X = await xlsx();
-    const ws = X.utils.aoa_to_sheet([['EAN', 'Název dílu', 'Číslo objednávky', 'Index', 'Urgentní množství'], ['8591111111111', 'Víko skříně', 'OBJ-77', 'B', 3]]);
-    ws.A2.l = { Target: 'https://erp.example.cz/dil/8591111111111' };
+    const ws = X.utils.aoa_to_sheet([['Číslo objednávky', 'Název dílu', 'EAN', 'Index', 'Urgentní množství'], ['OBJ-77', 'Víko skříně', '8591111111111', 'B', 3]]);
+    ws.C2.l = { Target: 'http://is.example/commission.production.detail/default/1?activeBarcode=1.2.3&componentProductionId=2' };
     const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'List1');
     const bytes = new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' }));
     let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); }); return btoa(bin);
@@ -240,7 +315,8 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   check(true, 'smazání seznamu');
   await saved(page);
   const log = await page.evaluate(() => S.log.filter(x => x.kind === 'shortage').map(x => x.text));
-  check(log.some(t => /^Shortage: nahrán seznam .*\(25 položek, shortage-22-10\.xlsx\)$/.test(t)) && log.some(t => /^Shortage: nahrán seznam .*\(1 položka, odpoledne\.xlsx\)$/.test(t)) && log.some(t => /^Shortage: smazán seznam .*25 položek/.test(t)), `historie změn: ${JSON.stringify(log)}`);
+  check(log.some(t => /^Shortage: nahrán seznam .*\(25 položek, z toho 4 TOP, shortage-22-10\.xlsx\)$/.test(t)) && log.some(t => /^Shortage: nahrán seznam .*\(1 položka, odpoledne\.xlsx\)$/.test(t))
+    && log.some(t => /^Shortage: nahrán seznam .*\(2 položky, z toho 1 TOP, vloženo ze schránky\)$/.test(t)) && log.some(t => /^Shortage: smazán seznam .*25 položek/.test(t)), `historie změn: ${JSON.stringify(log)}`);
 
   // CSV nemá odkazy.
   await page.setInputFiles('#shFile', { name: 'seznam.csv', mimeType: 'text/csv', buffer: Buffer.from('EAN;Název\n123;Díl\n') });

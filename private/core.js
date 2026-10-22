@@ -1699,7 +1699,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=23;
+const DATA_VERSION=24;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -4553,10 +4553,11 @@ function svChanges(A,B,add){
 }
 
 /* ==========================================================================
-   SHORTAGE – chybějící díly z Excelu (2.27)
-   Import: A = EAN (buňka má vložený hypertextový odkaz), B = název dílu, C = číslo objednávky,
-   D = index, E = urgentní množství. Každý import je samostatný seznam (snímek souboru), drží se
-   posledních SH_MAX_LISTS. Odkaz z EANu jde do QR kódu v PDF, aby si ho operátor načetl telefonem.
+   SHORTAGE – chybějící díly z Excelu (2.27, sloupce 2.27.1)
+   Import: A = číslo objednávky, B = název dílu, C = EAN dílu (buňka má vložený hypertextový
+   odkaz), D = index, E = urgentní množství, G = „TOP“ (TOP SHORTAGE, v seznamu vždy nahoře),
+   H = probíhající operace. Každý import je samostatný seznam (snímek souboru), drží se
+   posledních SH_MAX_LISTS. Do QR kódu v PDF jde jen activeBarcode z odkazu (shCode).
    ========================================================================== */
 const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000;
 function blankShortage(){return {lists:[]};}
@@ -4569,52 +4570,88 @@ function shUnxml(s){
     return n>0&&n<=0x10FFFF?String.fromCodePoint(n):m;
   });
 }
-/** Odkaz pro QR: jen webová adresa (http, https; „www.…“ dostane https://), jinak "". */
+/** Odkaz do tabulky v aplikaci: jen webová adresa (http, https; „www.…“ dostane https://), jinak "". */
 function shLink(v){
   let s=String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g,"").trim();
   if(/^www\./i.test(s))s="https://"+s;
   return s.length<=2000&&/^https?:\/\/[^\s<>"]+$/i.test(s)?s:"";
 }
+/** Kód do QR: tisknutelné znaky bez mezer (ASCII), nejvýš 120, jinak "". */
+function shCodeClean(v){
+  const s=String(v==null?"":v).trim();
+  return /^[\x21-\x7E]{1,120}$/.test(s)?s:"";
+}
+/** Kód do QR z odkazu: hodnota parametru activeBarcode (za „activeBarcode=“ do „&“), jinak "". */
+function shCode(link){
+  const m=String(link==null?"":link).match(/activeBarcode=([^&#]*)/i);
+  if(!m)return "";
+  let v=m[1];
+  try{v=decodeURIComponent(v);}catch(e){/* nechá se, jak je */}
+  return shCodeClean(v);
+}
+/** Položky TOP SHORTAGE první, jinak pořadí ze souboru. */
+function shTopFirst(items){return items.filter(i=>i.top).concat(items.filter(i=>!i.top));}
 function cleanShortage(o){
   o=o&&typeof o==="object"?o:{};
   const line=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().slice(0,max);
   const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
   const lists=(Array.isArray(o.lists)?o.lists:[]).filter(l=>l&&typeof l==="object"&&Array.isArray(l.items)).map(l=>({
     id:uniq(l.id,"sh"),at:Number.isFinite(+l.at)?Math.max(0,+l.at):0,by:line(l.by,60),file:line(l.file,160),sheet:line(l.sheet,80),
-    items:l.items.filter(i=>i&&typeof i==="object").map(i=>({ean:line(i.ean,60),link:shLink(i.link),name:line(i.name,200),
-      order:line(i.order,80),index:line(i.index,40),qty:line(i.qty,40)})).filter(i=>i.ean||i.name).slice(0,SH_MAX_ITEMS),
+    // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu
+    items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
+      index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,op:line(i.op,120),link:shLink(i.link),
+      code:"code" in i?shCodeClean(i.code):shCode(i.link)})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
   // nejnovější první; nad SH_MAX_LISTS se nejstarší zahodí
   lists.sort((a,b)=>b.at-a.at);
   return {lists:lists.slice(0,SH_MAX_LISTS)};
 }
-/** Řádek s nadpisy sloupců (EAN, Název dílu, …), ne položka. */
-function shIsHeader(ean,name,qty){
+/** Řádek s nadpisy sloupců (Číslo objednávky, Název dílu, EAN …), ne položka: aspoň dva nadpisy, v E žádná číslice. */
+function shIsHeader(t){
   const n=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
-  return /\bean\b|kod|carov/.test(n(ean))||/nazev|^dil\b/.test(n(name))&&!/\d/.test(String(qty||""));
+  const re=[/objedn|zakaz/,/nazev|^dil\b|popis/,/\bean\b|kod|carov/,/^index\b/,/mnozstv|^ks\b|pocet/];
+  return re.filter((r,i)=>r.test(n(t[i]))).length>=2&&!/\d/.test(String(t[4]||""));
 }
 /**
  * Řádky listu → položky seznamu. rows[r][c] = {text, link}: text jak ho ukazuje Excel,
- * link = cíl hypertextového odkazu buňky (jen u sloupce A). Nadpisy sloupců se poznají
- * v prvních 15 řádcích (nad nimi může být titulek). Vrací {items, more, header, warn}.
+ * link = cíl hypertextového odkazu buňky. Odkaz se bere z EANu (C), když tam není, z jiné
+ * buňky řádku. Nadpisy sloupců se poznají v prvních 15 řádcích (nad nimi může být titulek).
+ * Vrací {items, more, header, top, warn}; položky TOP SHORTAGE jsou první.
  */
 function shBuild(rows){
   rows=Array.isArray(rows)?rows:[];
   const t=(r,c)=>String((r&&r[c]&&r[c].text)!=null?r[c].text:"").replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
   let header=-1;
-  for(let i=0;i<Math.min(rows.length,15);i++)if(shIsHeader(t(rows[i],0),t(rows[i],1),t(rows[i],4))){header=i;break;}
-  const items=[],warn={noLink:0,badLink:0,noEan:0,skipped:0};
+  for(let i=0;i<Math.min(rows.length,15);i++)if(shIsHeader([0,1,2,3,4].map(c=>t(rows[i],c)))){header=i;break;}
+  const items=[],warn={noLink:0,noCode:0,noEan:0,skipped:0};
   rows.forEach((r,ri)=>{
     if(ri<=header)return;
-    const ean=t(r,0),name=t(r,1),order=t(r,2),index=t(r,3),qty=t(r,4);
-    if(!ean&&!name&&!order&&!index&&!qty)return;
+    const order=t(r,0),name=t(r,1),ean=t(r,2),index=t(r,3),qty=t(r,4),op=t(r,7);
+    if(!order&&!name&&!ean&&!index&&!qty&&!op)return;
     if(!ean&&!name){warn.skipped++;return;}
-    const raw=String((r[0]&&r[0].link)||"").trim(),link=shLink(raw);
-    if(!raw)warn.noLink++;else if(!link)warn.badLink++;
+    const cell=c=>String((r&&r[c]&&r[c].link)||"").trim();
+    const raw=cell(2)||[0,1,3,4,5,6,7].map(cell).find(Boolean)||"",code=shCode(raw);
+    if(!raw)warn.noLink++;else if(!code)warn.noCode++;
     if(!ean)warn.noEan++;
-    items.push({ean,link,name,order,index,qty});
+    items.push({order,name,ean,index,qty,top:/^top\b/i.test(t(r,6)),op,link:shLink(raw),code});
   });
-  return {items:items.slice(0,SH_MAX_ITEMS),more:Math.max(0,items.length-SH_MAX_ITEMS),header,warn};
+  const all=shTopFirst(items);
+  return {items:all.slice(0,SH_MAX_ITEMS),more:Math.max(0,all.length-SH_MAX_ITEMS),header,top:items.filter(i=>i.top).length,warn};
+}
+/** Text ze schránky (buňky oddělené tabulátorem, řádky novým řádkem, Excel dává do uvozovek buňky s tabulátorem nebo zalomením). */
+function shTsv(text){
+  const rows=[],s=String(text==null?"":text).replace(/\r\n?/g,"\n");
+  let row=[],cell="",q=false;
+  for(let i=0;i<s.length;i++){
+    const ch=s[i];
+    if(q){if(ch==='"'){if(s[i+1]==='"'){cell+='"';i++;}else q=false;}else cell+=ch;}
+    else if(ch==='"'&&cell==="")q=true;
+    else if(ch==="\t"){row.push(cell);cell="";}
+    else if(ch==="\n"){row.push(cell);rows.push(row);row=[];cell="";}
+    else cell+=ch;
+  }
+  if(cell||row.length){row.push(cell);rows.push(row);}
+  return rows;
 }
 /** „22. 10. 2026 8:15“ ze časové značky seznamu. */
 function shWhen(l){const d=new Date(l.at||0);return dayText(todayIso(l.at||0))+" "+d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");}
@@ -4622,9 +4659,10 @@ function shItemsN(n){return n===1?"položka":n>=2&&n<=4?"položky":"položek";}
 function shChanges(A,B,add){
   A=A||blankShortage();B=B||blankShortage();
   const ia=new Set(A.lists.map(l=>l.id)),ib=new Set(B.lists.map(l=>l.id));
-  B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+(l.file?", "+l.file:"")+")",{m:"shl:"+l.id});});
+  const what=l=>{const n=l.items.length,top=l.items.filter(i=>i.top).length;return " ("+n+" "+shItemsN(n)+(top?", z toho "+top+" TOP":"")+(l.file?", "+l.file:"")+")";};
+  B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+what(l),{m:"shl:"+l.id});});
   // smazání má vlastní klíč, ať v historii zůstane i záznam o nahrání
-  A.lists.forEach(l=>{if(!ib.has(l.id))add("shortage","Shortage: smazán seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+(l.file?", "+l.file:"")+")",{m:"shd:"+l.id});});
+  A.lists.forEach(l=>{if(!ib.has(l.id))add("shortage","Shortage: smazán seznam "+shWhen(l)+what(l),{m:"shd:"+l.id});});
 }
 
 if(typeof module==="object"&&module.exports){
