@@ -34,6 +34,14 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 22. 10. 2026 (verze 2.28.1):
+
+- Uživatel: „poslední záznam je občas moc dlouhý a v PDF pro tisk nejde vidět celý“.
+  `drawShortage` počítá výšku řádku z obsahu (`lay(it)` → řádky a `h`, nejméně 20 mm):
+  poslední záznam bez ořezu (nejvýš 16 řádků), operace 8, název a objednávka 6, poznámka 12;
+  linky na psaní jsou u spodku řádku. Stav záznamu se v datech držel jen 80 znaků, teď 400,
+  operace 300. Verze dat 26, `ODM_VERSION` 2.28.1.
+
 Stav k 22. 10. 2026 (verze 2.28):
 
 - Uživatel: „1. možnost odmazat položky 2. importovat poslední záznamy k položkám … z excelu
@@ -947,7 +955,7 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
   mezer, nejvýš 120 znaků). Položka bez EANu i názvu se zahodí, TOP jsou vždy první
   (`shTopFirst`, jinak pořadí ze souboru nebo ruční). Seznam ze 2.27 nemá `code`, čištění ho
   dopočítá z `link`; seznamu ze 2.27.1 dá `id`, prázdnou `note` a `rec: null`.
-- `rec` = poslední záznam `{ts, when, qty, state, at, by}`: vloží se přes Ctrl+V (A QR kód,
+- `rec` = poslední záznam `{ts, when, qty, state (do 400 znaků), at, by}`: vloží se přes Ctrl+V (A QR kód,
   B datum a čas, C počet ks, D stav). `shRecBuild(rows)` → `{recs: Map kód → záznam, rows, bad}`
   (nadpisy přeskočí, na kód nejnovější), `shApplyRecs(list, recs, meta)` → `{matched, updated,
   same, older, missing}` (stejný kód u více položek dostanou všechny, starší nepřepíše
@@ -981,7 +989,7 @@ smazání, aby se nesloučily; text „z toho N TOP“).
 
 PDF `drawShortage(doc, l)` (A4 na šířku, `withPdf(…, 'landscape')`, od 2.28 černobílé `SH_MONO`):
 sloupce `SH_PDF_COLS` (Operace · poslední záznam, dopsaná poznámka nahoře v Poznámkách), řádek
-20 mm, QR 14 mm s kódem písmem pod ním (`pdfQr`: znaky mimo ASCII jako `%XX`, úroveň M, jinak L,
+nejméně 20 mm, vyšší podle obsahu (`lay`, 2.28.1), QR 14 mm s kódem písmem pod ním (`pdfQr`: znaky mimo ASCII jako `%XX`, úroveň M, jinak L,
 okraj 2 moduly), TOP řádek světle šedý s černým pruhem a štítkem, hlavička tabulky na každé
 stránce (`k.onPage`), čárkované linky na psaní ve Stav k 10:00, Stav k 13:00 a Poznámkách.
 Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
@@ -1215,7 +1223,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.26 | `2abb107` | Servis – PDF Kompletní / Na opravu / K vyřazení, digitální podpis předávajícího (data verze 22) |
 | 2.27 | `16b12fd` | Shortage – import chybějících dílů z Excelu, PDF na šířku s QR kódem odkazu z EANu (data verze 23) |
 | 2.27.1 | `2f75738` | Shortage – nové sloupce, TOP SHORTAGE nahoře, probíhající operace, do QR jen activeBarcode, vložení přes Ctrl+V (data verze 24) |
-| 2.28 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – odebrání položky, poslední záznamy přes Ctrl+V, přesouvání myší, poznámka, PDF pro černobílý tisk (data verze 25) |
+| 2.28 | `8d74714` | Shortage – odebrání položky, poslední záznamy přes Ctrl+V, přesouvání myší, poznámka, PDF pro černobílý tisk (data verze 25) |
+| 2.28.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – celý poslední záznam v PDF (řádek podle obsahu), stav do 400 znaků (data verze 26) |
 
 Verze 2.1 přidala:
 
@@ -1327,7 +1336,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `25` (od 2.28):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `26` (od 2.28.1):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

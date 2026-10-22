@@ -1699,7 +1699,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=25;
+const DATA_VERSION=26;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -4595,7 +4595,7 @@ function shCode(link){
 function shRecClean(r,line){
   if(!r||typeof r!=="object")return null;
   const n=v=>Number.isFinite(+v)?Math.max(0,+v):0;
-  return {ts:n(r.ts),when:line(r.when,40),qty:line(r.qty,40),state:line(r.state,80),at:n(r.at),by:line(r.by,60)};
+  return {ts:n(r.ts),when:line(r.when,40),qty:line(r.qty,40),state:line(r.state,400),at:n(r.at),by:line(r.by,60)};
 }
 /** Datum a čas ze sloupce B („22.10.2026 9:15“, „22. 10. 26 9:15:30“, „2026-10-22 09:15“, pořadové číslo dne Excelu) → ms místního času, jinak 0. */
 function shParseWhen(v){
@@ -4639,7 +4639,7 @@ function shRecBuild(rows){
     if(!code){bad++;return;}
     count++;
     const prev=recs.get(code);
-    if(!prev||ts>=prev.ts)recs.set(code,{ts,when:ts?shWhenText(ts):when.slice(0,40),qty:qty.slice(0,40),state:state.slice(0,80)});
+    if(!prev||ts>=prev.ts)recs.set(code,{ts,when:ts?shWhenText(ts):when.slice(0,40),qty:qty.slice(0,40),state:state.slice(0,400)});
   });
   return {recs,rows:count,bad};
 }
@@ -4687,7 +4687,7 @@ function cleanShortage(o){
     id:uniq(l.id,"sh"),at:Number.isFinite(+l.at)?Math.max(0,+l.at):0,by:line(l.by,60),file:line(l.file,160),sheet:line(l.sheet,80),
     // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
-      index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,op:line(i.op,120),link:shLink(i.link),
+      index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,op:line(i.op,300),link:shLink(i.link),
       code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,300),rec:shRecClean(i.rec,line),_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
   lists.forEach(l=>{

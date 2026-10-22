@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.28.1
+
+- **Shortage: celý poslední záznam v PDF.** Dlouhý stav posledního záznamu se v PDF
+  vypíše celý, řádek se podle potřeby zvětší (stejně dlouhá operace, název nebo poznámka).
+  Dřív se záznam ořízl na jeden řádek.
+- Stav posledního záznamu se ukládá až do 400 znaků (dřív 80), probíhající operace do 300.
+- Verze dat 26: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení (jinak by
+  dlouhý stav zkrátila).
+
 ## Co je nového ve verzi 2.28
 
 - **Shortage: odebrání položky.** Křížek na konci řádku položku po potvrzení odebere ze

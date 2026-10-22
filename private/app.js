@@ -8668,16 +8668,36 @@ function drawShortage(doc, l) {
   k.y += 4;
   k.onPage = head;
   head();
+  // výška řádku podle obsahu (nejméně ROW): dlouhý poslední záznam, operace, název nebo poznámka se vypíšou celé
+  const PAD = 1.8, recQty = r => (r.qty ? (/^[\d\s.,]+$/.test(r.qty) ? `${r.qty} ks` : r.qty) : '');
+  const lay = it => {
+    const L = {
+      order: clip(it.order || '—', widths[2] - 3.6, 9, 6, true),
+      name: clip(it.name || '—', widths[3] - 3.6, 8.8, 6),
+      index: clip(it.index || '—', widths[4] - 3.6, 8.8, 4),
+      qty: clip(it.qty || '—', widths[5] - 3.6, 12, 2, true),
+      op: clip(it.op || '—', widths[6] - 3.6, 8.4, 8),
+      rec: it.rec ? clip([it.rec.state, recQty(it.rec)].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, 7.8, 16, true) : [],
+      note: it.note ? clip(it.note, widths[9] - 3.6, 8, 12) : [],
+    };
+    L.h = Math.max(ROW,
+      PAD + L.order.length * k.LH(9, 1.25) + PAD,
+      1.6 + (it.top ? 4.6 : 0) + L.name.length * k.LH(8.8, 1.22) + 0.6 + (it.ean ? k.LH(7.8, 1.2) : 0) + PAD,
+      PAD + L.op.length * k.LH(8.4, 1.25) + (it.rec ? 1.4 + L.rec.length * k.LH(7.8, 1.2) + 0.3 + k.LH(6.8, 1.2) : 0) + PAD,
+      it.note ? PAD + L.note.length * k.LH(8, 1.22) + 1.5 + 4.5 : 0);
+    return L;
+  };
   l.items.forEach((it, j) => {
-    k.need(ROW);
+    const L = lay(it), H = L.h;
+    k.need(H);
     const top = k.y;
     if (it.top) {
       // TOP SHORTAGE: světle šedý řádek, černý pruh vlevo a černý štítek
-      k.box(C.top, k.M, top, k.CW, ROW, 0);
-      doc.setFillColor(...C.ink); doc.rect(k.M, top, 1.4, ROW, 'F');
+      k.box(C.top, k.M, top, k.CW, H, 0);
+      doc.setFillColor(...C.ink); doc.rect(k.M, top, 1.4, H, 'F');
     }
-    vlines(top, ROW);
-    k.hline(top + ROW, C.line2, 0.35);
+    vlines(top, H);
+    k.hline(top + H, C.line2, 0.35);
     k.text(String(j + 1), xs[0] + 2, top + 2, 8, { color: it.top ? C.ink : C.ink3, bold: it.top });
     // QR nese jen activeBarcode; pod ním kód písmem pro opsání. Klikací odkaz v PDF ne,
     // jsPDF 4.2 by v adrese přepsal & na &amp;.
@@ -8689,7 +8709,7 @@ function drawShortage(doc, l) {
     } else {
       k.split(it.link ? 'odkaz bez activeBarcode' : 'bez odkazu', widths[1] - 4, 6.8).forEach((line, i) => k.text(line, xs[1] + widths[1] / 2, top + ROW / 2 - 2 + i * 3, 6.8, { color: C.ink3, align: 'center' }));
     }
-    clip(it.order || '—', widths[2] - 3.6, 9, 4, true).forEach((line, i) => k.text(line, xs[2] + 1.8, top + 1.8 + i * k.LH(9, 1.25), 9, { bold: true, color: C.ink }));
+    L.order.forEach((line, i) => k.text(line, xs[2] + 1.8, top + PAD + i * k.LH(9, 1.25), 9, { bold: true, color: C.ink }));
     let y = top + 1.6;
     if (it.top) {
       const tw = k.width('TOP SHORTAGE', 6.2, true) + 3;
@@ -8697,29 +8717,26 @@ function drawShortage(doc, l) {
       k.text('TOP SHORTAGE', xs[3] + 1.8 + 1.5, y + 0.75, 6.2, { bold: true, color: [255, 255, 255], space: 0.1 });
       y += 4.6;
     }
-    const nameLines = clip(it.name || '—', widths[3] - 3.6, 8.8, it.top ? 2 : 3);
-    nameLines.forEach((line, i) => k.text(line, xs[3] + 1.8, y + i * k.LH(8.8, 1.22), 8.8, { color: C.ink }));
-    y += nameLines.length * k.LH(8.8, 1.22) + 0.6;
+    L.name.forEach((line, i) => k.text(line, xs[3] + 1.8, y + i * k.LH(8.8, 1.22), 8.8, { color: C.ink }));
+    y += L.name.length * k.LH(8.8, 1.22) + 0.6;
     if (it.ean) k.text(`EAN ${it.ean}`, xs[3] + 1.8, y, 7.8, { color: C.ink2 });
-    clip(it.index || '—', widths[4] - 3.6, 8.8, 4).forEach((line, i) => k.text(line, xs[4] + 1.8, top + 1.8 + i * k.LH(8.8, 1.25), 8.8, { color: C.ink }));
-    clip(it.qty || '—', widths[5] - 3.6, 12, 2, true).forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), 12, { bold: true, align: 'right', color: C.ink }));
-    // operace nahoře, pod ní poslední záznam (stav, ks, kdy)
-    const opLines = clip(it.op || '—', widths[6] - 3.6, 8.4, it.rec ? 2 : 4);
-    opLines.forEach((line, i) => k.text(line, xs[6] + 1.8, top + 1.8 + i * k.LH(8.4, 1.25), 8.4, { color: it.op ? C.ink : C.ink3 }));
+    L.index.forEach((line, i) => k.text(line, xs[4] + 1.8, top + PAD + i * k.LH(8.8, 1.25), 8.8, { color: C.ink }));
+    L.qty.forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), 12, { bold: true, align: 'right', color: C.ink }));
+    // operace nahoře, pod ní celý poslední záznam (stav · ks) a kdy
+    L.op.forEach((line, i) => k.text(line, xs[6] + 1.8, top + PAD + i * k.LH(8.4, 1.25), 8.4, { color: it.op ? C.ink : C.ink3 }));
     if (it.rec) {
-      const ry = top + 1.8 + opLines.length * k.LH(8.4, 1.25) + 1;
+      const ry = top + PAD + L.op.length * k.LH(8.4, 1.25) + 1;
       doc.setDrawColor(...C.line); doc.setLineWidth(0.2); doc.line(xs[6] + 1.8, ry - 0.5, xs[7] - 1.8, ry - 0.5);
-      const qty = it.rec.qty ? (/^[\d\s.,]+$/.test(it.rec.qty) ? `${it.rec.qty} ks` : it.rec.qty) : '';
-      clip([it.rec.state, qty].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, 7.8, 1, true).forEach((line, i) => k.text(line, xs[6] + 1.8, ry + 0.4 + i * k.LH(7.8, 1.2), 7.8, { bold: true, color: C.ink }));
-      k.text(it.rec.when || '', xs[6] + 1.8, top + ROW - 4, 6.8, { color: C.ink2 });
+      L.rec.forEach((line, i) => k.text(line, xs[6] + 1.8, ry + 0.4 + i * k.LH(7.8, 1.2), 7.8, { bold: true, color: C.ink }));
+      k.text(it.rec.when || '', xs[6] + 1.8, ry + 0.4 + L.rec.length * k.LH(7.8, 1.2) + 0.3, 6.8, { color: C.ink2 });
     }
     // kolonky na psaní: stav k 10:00 a k 13:00, poznámky (dopsaná poznámka nahoře, pod ní linka)
-    [7, 8].forEach(c => k.hline(top + ROW - 4.5, C.write, 0.25, xs[c] + 2.5, xs[c] + widths[c] - 2.5, [0.6, 0.9]));
+    [7, 8].forEach(c => k.hline(top + H - 4.5, C.write, 0.25, xs[c] + 2.5, xs[c] + widths[c] - 2.5, [0.6, 0.9]));
     if (it.note) {
-      clip(it.note, widths[9] - 3.6, 8, 2).forEach((line, i) => k.text(line, xs[9] + 1.8, top + 1.8 + i * k.LH(8, 1.22), 8, { color: C.ink }));
-      k.hline(top + ROW - 4.5, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]);
-    } else [ROW - 11, ROW - 4.5].forEach(h => k.hline(top + h, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]));
-    k.y += ROW;
+      L.note.forEach((line, i) => k.text(line, xs[9] + 1.8, top + PAD + i * k.LH(8, 1.22), 8, { color: C.ink }));
+      k.hline(top + H - 4.5, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]);
+    } else [H - 11, H - 4.5].forEach(h => k.hline(top + h, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]));
+    k.y += H;
   });
   k.footer(`${EXPORT_NAME} · Shortage · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`);
 }

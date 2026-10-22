@@ -293,9 +293,11 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
 
   // Úpravy položek (2.28): poslední záznamy ze schránky, poznámka, odebrání, přesouvání a PDF.
   // Záznamy jsou text oddělený tabulátory (A QR kód, B datum a čas, C ks, D stav); kód ITEMS[5] dvakrát (platí novější), jeden kód mimo seznam.
+  // dlouhý stav (2.28.1): v PDF se řádek zvětší a vypíše celý
+  const LONG_STATE = 'Čeká na materiál od dodavatele, náhradní díl je objednaný, dodávka na sklad haly 2 ve čtvrtek ráno, potom hned na broušení a kontrolu rozměrů';
   const recText = ['QR kód\tDatum a čas\tPočet ks\tStav',
     `${ITEMS[0].code}\t22.10.2026 9:15\t40\tBroušení hotovo`,
-    `${ITEMS[3].code}\t22.10.2026 10:05\t12\tČeká na materiál`,
+    `${ITEMS[3].code}\t22.10.2026 10:05\t12\t${LONG_STATE}`,
     `${ITEMS[5].code}\t22.10.2026 07:30\t3\tStarší záznam`,
     `${ITEMS[5].code}\t22.10.2026 11:40\t8\tMontáž`,
     '99999.111111.22222\t22.10.2026 9:00\t1\tNení v seznamu'].join('\r\n') + '\r\n';
@@ -370,7 +372,7 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   const info2 = pdfInfo(pdf2.path);
   if (info2) {
     const text2 = info2.map(p => p.text).join(' ').replace(/\s+/g, ' ');
-    ['Volat dodavatele', 'Broušení hotovo · 40 ks', 'Montáž · 8 ks', '22. 10. 2026 11:40', 'Operace · poslední', '24 položek'].forEach(t => check(text2.includes(t), `PDF úprav obsahuje „${t}“`));
+    ['Volat dodavatele', 'Broušení hotovo · 40 ks', 'Montáž · 8 ks', '22. 10. 2026 11:40', 'Operace · poslední', '24 položek', `${LONG_STATE} · 12 ks`, '22. 10. 2026 10:05'].forEach(t => check(text2.includes(t), `PDF úprav obsahuje „${t}“`));
     check(!text2.includes('0012345678905'), 'odebraná položka v PDF není');
     check(text2.indexOf(ITEMS[2].order) < text2.indexOf(ITEMS[0].order), 'PDF má pořadí podle přesunu');
     const gray = spawnSync('python3', ['-c', `import sys, pymupdf
