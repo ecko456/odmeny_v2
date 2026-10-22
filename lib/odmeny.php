@@ -18,8 +18,8 @@ declare(strict_types=1);
 
 // Verze aplikace. Klient posílá verzi svého tvaru dat v hlavičce X-Odmeny-Client;
 // stránka otevřená ještě před aktualizací už nesmí uložit data ve starém tvaru.
-const ODM_VERSION = '2.26';
-const ODM_MIN_CLIENT = 22;
+const ODM_VERSION = '2.27';
+const ODM_MIN_CLIENT = 23;
 const ODM_SESSION_COOKIE = 'odmeny_session';
 const ODM_SESSION_HOURS = 12;
 const ODM_IDLE_MINUTES = 60;

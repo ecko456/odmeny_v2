@@ -20,6 +20,7 @@ const ui = {
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
+  sh: { open: null, q: '' },
   wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
@@ -377,6 +378,7 @@ function renderAll() {
   if (ui.view === 'domu') renderHome();
   if (ui.view === 'protokoly') renderLogbooks();
   if (ui.view === 'servis') renderService();
+  if (ui.view === 'shortage') renderShortage();
   if (ui.view === 'audit') renderWorkAudit(); else renderWaBadge();
   renderSaveState();
   renderLogBadge();
@@ -395,6 +397,7 @@ function showView(name) {
   if (name === 'domu') renderHome();
   if (name === 'protokoly') renderLogbooks();
   if (name === 'servis') renderService();
+  if (name === 'shortage') renderShortage();
   if (name === 'audit') renderWorkAudit();
   closeFab();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
@@ -541,7 +544,7 @@ function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm'
 function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
 function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
 function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
-const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['top5', 'Top 5'], ['matice', 'Matice'], ['dochazka', 'Docházka'], ['vyroba', 'Výroba'], ['audit', 'Audit'], ['nastaveni', 'Nastavení']];
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['dochazka', 'Docházka'], ['vyroba', 'Výroba'], ['audit', 'Audit'], ['nastaveni', 'Nastavení']];
 
 function homeTileMeta(view, sd) {
   const p = curPeriod();
@@ -562,6 +565,7 @@ function homeTileMeta(view, sd) {
     }
     case 'audit': { const sp = waSpan(S.workAudit); return sp ? `data do ${dayText(sp.to, false)}` : 'lidé v práci a kusy'; }
     case 'servis': { const c = svc(), n = c.devices.filter(d => svHistory(c, d.id).out).length; return n ? `na servisu ${n}` : c.shipments.length ? 'vše je zpátky' : 'předávací protokoly'; }
+    case 'shortage': { const l = shc().lists[0]; return l ? `${l.items.length} ${shItemsN(l.items.length)} · ${dayText(todayIso(l.at), false)}` : 'nahrát seznam'; }
     default: return 'pravidla a zálohy';
   }
 }
@@ -3108,11 +3112,12 @@ const LOG_ICON = {
   logbook: svg('<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19M9 7.5h6M9 11h6"/>'),
   workaudit: svg('<path d="M3.5 20.5h11M6 16.5v-5M10 16.5V8"/><circle cx="16.5" cy="10.5" r="4"/><path d="m19.4 13.4 2.6 2.6"/>'),
   service: svg('<path d="M15 4.5a4.5 4.5 0 0 0-4.3 5.8L4 17a2.1 2.1 0 0 0 3 3l6.7-6.7A4.5 4.5 0 0 0 19.5 9l-2.7 2.7-3-.6-.6-3z"/>'),
+  shortage: svg('<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 9v4.5M12 16.5v.1"/>'),
   data: svg('<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>'),
 };
 const LOG_FILTERS = [
   ['all', 'Vše', null],
-  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit', 'logbook', 'workaudit', 'service']],
+  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit', 'logbook', 'workaudit', 'service', 'shortage']],
   ['people', 'Lidé a úrovně', ['person', 'level']],
   ['sanction', 'Sankce', ['sanction']],
   ['tab', 'Tabáky a výdej', ['adjust', 'issue']],
@@ -3123,6 +3128,7 @@ const LOG_FILTERS = [
   ['logbook', 'Protokoly', ['logbook']],
   ['workaudit', 'Audit', ['workaudit']],
   ['service', 'Servis', ['service']],
+  ['shortage', 'Shortage', ['shortage']],
 ];
 
 function unseenLog() {
@@ -6729,6 +6735,7 @@ function bindEvents() {
   bindPhoneUi();
   bindLogbooks();
   bindService();
+  bindShortage();
   bindWorkAudit();
 
   // Filtry přehledu jsou osobní: pamatují se jen pro tuto kartičku.
@@ -8223,6 +8230,262 @@ async function exportServicePdf(id, button = null, part = 'all') {
     drawServiceProtocol(doc, x, P0, sign);
     downloadFile(`servis-protokol-${svNo(x).replace('/', '-')}${SV_PART_DOC[P0].file}.pdf`, doc.output('blob'), 'application/pdf');
   });
+}
+
+/* ==========================================================================
+   SHORTAGE: chybějící díly z Excelu (verze 2.27)
+   Data a převod řádků jsou v core.js (S.shortage, shBuild, cleanShortage). Tady je import
+   souboru (text buňky a cíl jejího hypertextového odkazu), seznam a PDF na šířku: QR kód
+   s odkazem z EANu, urgentní množství, Stav k 10:00, Stav k 13:00 a místo na poznámky.
+   ========================================================================== */
+function shc() { if (!S.shortage) S.shortage = blankShortage(); return S.shortage; }
+function shList() { const c = shc(); return c.lists.find(l => l.id === ui.sh.open) || c.lists[0] || null; }
+
+/** Text buňky, jak ho ukazuje Excel. EAN a čísla objednávek zůstanou celá (i s nulami na začátku). */
+function shCellText(cell, qty) {
+  if (!cell || cell.v == null || cell.v === '') return '';
+  if (cell.t === 'n') {
+    if (qty) return nf(cell.v, 3);
+    const w = String(cell.w || '').trim();
+    if (/^\d+$/.test(w)) return w;
+    return Number.isInteger(cell.v) ? String(cell.v) : (w || String(cell.v));
+  }
+  return String(cell.t === 's' || cell.w == null ? cell.v : cell.w);
+}
+/** Cíl hypertextového odkazu buňky: vložený odkaz (Vložit → Odkaz), nebo vzorec HYPERLINK("…"). */
+function shCellLink(cell) {
+  if (!cell) return '';
+  if (cell.l && cell.l.Target) return shUnxml(cell.l.Target);
+  const m = String(cell.f || '').match(/HYPERLINK\(\s*"([^"]+)"/i);
+  return m ? shUnxml(m[1]) : '';
+}
+/** List sešitu → řádky pro shBuild: sloupce A–E (text), u A i odkaz. */
+function shSheetRows(X, ws) {
+  const ref = ws && ws['!ref'];
+  if (!ref) return [];
+  const range = X.utils.decode_range(ref);
+  const rows = [];
+  for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 20000); r += 1) {
+    const row = [];
+    for (let c = 0; c <= 4; c += 1) {
+      const cell = ws[X.utils.encode_cell({ r, c })];
+      row.push({ text: shCellText(cell, c === 4), link: c === 0 ? shCellLink(cell) : '' });
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+async function shImportFile(file) {
+  if (!file) return;
+  const msg = $('#shMsg');
+  if (/\.(csv|txt)$/i.test(file.name)) {
+    msg.innerHTML = '<div class="note w">CSV neobsahuje hypertextové odkazy, takže by v PDF chyběly QR kódy. Nahraj soubor Excelu (xlsx).</div>';
+    return;
+  }
+  try {
+    const X = await xlsx();
+    const wb = X.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellHTML: false, cellStyles: false });
+    let best = null;
+    wb.SheetNames.forEach(name => {
+      const r = shBuild(shSheetRows(X, wb.Sheets[name]));
+      if (!best || r.items.length > best.r.items.length) best = { name, r };
+    });
+    if (!best || !best.r.items.length) {
+      msg.innerHTML = `<div class="note w">V souboru <b>${esc(file.name)}</b> není žádná položka. Čeká se EAN ve sloupci A a název dílu v B (C číslo objednávky, D index, E urgentní množství).</div>`;
+      return;
+    }
+    const c = shc();
+    const list = { id: uid('sh'), at: Date.now(), by: ui.me.label || '', file: file.name, sheet: wb.SheetNames.length > 1 ? best.name : '', items: best.r.items };
+    const dropped = Math.max(0, c.lists.length + 1 - SH_MAX_LISTS);
+    S.shortage = cleanShortage({ lists: [list, ...c.lists] });
+    ui.sh.open = list.id;
+    ui.sh.q = '';
+    save();
+    renderShortage();
+    const n = list.items.length, w = best.r.warn;
+    msg.innerHTML = `<div class="note i">Nahráno <b>${n} ${shItemsN(n)}</b> ze souboru <b>${esc(file.name)}</b>${list.sheet ? ` (list ${esc(list.sheet)})` : ''}.</div>${[
+      w.noLink ? `${w.noLink} ${w.noLink === 1 ? 'položka nemá' : w.noLink <= 4 ? 'položky nemají' : 'položek nemá'} v EAN odkaz, v PDF ${w.noLink === 1 ? 'bude' : 'budou'} bez QR kódu.` : '',
+      w.badLink ? `${w.badLink} ${w.badLink === 1 ? 'položka má' : w.badLink <= 4 ? 'položky mají' : 'položek má'} odkaz, který není webová adresa (http, https), QR se pro ${w.badLink === 1 ? 'ni' : 'ně'} nevytvoří.` : '',
+      w.noEan ? `${w.noEan} ${w.noEan === 1 ? 'položka nemá' : 'položek nemá'} EAN (je jen název dílu).` : '',
+      best.r.more ? `Načetlo se prvních ${SH_MAX_ITEMS} položek, ${best.r.more} dalších se nevešlo.` : '',
+      dropped ? `Drží se posledních ${SH_MAX_LISTS} seznamů, nejstarší se smazal.` : '',
+    ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}`;
+  } catch (error) {
+    msg.innerHTML = `<div class="note w">Soubor se nepodařilo otevřít: ${esc(error.message)}</div>`;
+  }
+}
+
+function renderShortage() {
+  const box = $('#shView');
+  if (!box || !S) return;
+  const c = shc();
+  const l = shList();
+  if (!l) {
+    box.innerHTML = `<div class="card">${emptyState('Zatím žádný seznam', 'Tlačítkem Nahrát Excel načteš seznam chybějících dílů: ve sloupci A EAN s vloženým odkazem, v B název dílu, v C číslo objednávky, v D index a v E urgentní množství. Z odkazu v EANu se v PDF udělá QR kód.', '<button class="btn" type="button" data-shimport>Nahrát Excel</button>')}</div>`;
+    return;
+  }
+  const n = l.items.length, linked = l.items.filter(i => i.link).length;
+  const tiles = `<div class="stats">${[
+    statTile('Seznam', esc(dayText(todayIso(l.at))), `nahráno v ${esc(shWhen(l).split(' ').pop())}${l.by ? ` · ${esc(l.by)}` : ''}`),
+    statTile('Položek', String(n), l.file ? esc(l.file) : 'chybějící díly'),
+    statTile('S QR kódem', String(linked), linked === n ? 'všechny mají odkaz' : `z ${n}`),
+    statTile('Bez odkazu', String(n - linked), n - linked ? 'v PDF bez QR kódu' : 'žádná', n - linked ? 'warn' : ''),
+  ].join('')}</div>`;
+  const rows = l.items.map((i, j) => `<tr data-shrow="${esc([i.ean, i.name, i.order, i.index].join(' ').toLowerCase())}">
+      <td class="num muted" data-label="#">${j + 1}</td>
+      <td class="sh-ean" data-label="EAN">${i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer">${esc(i.ean || 'odkaz')}</a>` : esc(i.ean || '—')}</td>
+      <td class="name" data-label="Název dílu">${esc(i.name || '—')}</td>
+      <td data-label="Číslo objednávky">${esc(i.order || '—')}</td>
+      <td data-label="Index">${esc(i.index || '—')}</td>
+      <td class="num sh-qty" data-label="Urgentní množství"><b>${esc(i.qty || '—')}</b></td>
+      <td data-label="QR">${i.link ? '<span class="tag ok">QR</span>' : '<span class="tag warn">bez odkazu</span>'}</td></tr>`).join('');
+  const older = c.lists.length > 1 ? `<section class="card sh-lists"><h3>Seznamy</h3><div class="chips">${c.lists.map(x => `<button type="button" class="chip${x.id === l.id ? ' on' : ''}" data-shopen="${esc(x.id)}" aria-pressed="${x.id === l.id}">${esc(shWhen(x))} · ${x.items.length}</button>`).join('')}</div>
+      <p class="tiny muted">Drží se posledních ${SH_MAX_LISTS} nahraných seznamů.</p></section>` : '';
+  box.innerHTML = `${tiles}<article class="card sh-card">
+      <div class="card-head"><div><h2>Seznam z ${esc(shWhen(l))}</h2>
+        <p class="small muted">${n} ${shItemsN(n)}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}</p></div>
+        <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat EAN, díl, objednávku" autocomplete="off"></label>
+          <button class="btn small" type="button" data-shpdf="${esc(l.id)}">PDF k tisku</button>
+          <button class="icon-btn" type="button" data-shdel="${esc(l.id)}" title="Smazat seznam" aria-label="Smazat seznam z ${esc(shWhen(l))}">${I.x}</button></div></div>
+      <div class="table-card flat"><table class="stack sh-tab"><thead><tr><th>#</th><th>EAN</th><th>Název dílu</th><th>Číslo objednávky</th><th>Index</th><th class="num">Urgentní množství</th><th>QR</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="tiny muted sh-none" hidden>Nic neodpovídá hledání.</p>
+    </article>${older}`;
+  shFilter();
+}
+function shFilter() {
+  const q = (ui.sh.q || '').trim().toLowerCase();
+  let shown = 0;
+  $$('#shView [data-shrow]').forEach(tr => { const on = !q || tr.dataset.shrow.includes(q); tr.hidden = !on; if (on) shown += 1; });
+  const none = $('#shView .sh-none');
+  if (none) none.hidden = shown > 0;
+}
+
+function bindShortage() {
+  $('#shImport').onclick = () => $('#shFile').click();
+  $('#shFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; shImportFile(f); };
+  const view = $('#view-shortage');
+  view.addEventListener('click', async event => {
+    const t = event.target;
+    if (t.closest('[data-shimport]')) { $('#shFile').click(); return; }
+    const pdf = t.closest('[data-shpdf]');
+    if (pdf) { exportShortagePdf(pdf.dataset.shpdf, pdf); return; }
+    const open = t.closest('[data-shopen]');
+    if (open) { ui.sh.open = open.dataset.shopen; ui.sh.q = ''; $('#shMsg').innerHTML = ''; renderShortage(); return; }
+    const del = t.closest('[data-shdel]');
+    if (del) {
+      const c = shc();
+      const l = c.lists.find(x => x.id === del.dataset.shdel);
+      if (!l || !(await confirmBox('Smazat seznam?', `Seznam z ${shWhen(l)} (${l.items.length} ${shItemsN(l.items.length)}) zmizí z aplikace. Už stažené PDF zůstane.`, 'Smazat', true))) return;
+      c.lists = c.lists.filter(x => x !== l);
+      if (ui.sh.open === l.id) ui.sh.open = null;
+      $('#shMsg').innerHTML = '';
+      save(); renderShortage();
+      toast('Seznam je smazaný.');
+    }
+  });
+  view.addEventListener('input', event => { if (event.target.id === 'shQ') { ui.sh.q = event.target.value; shFilter(); } });
+}
+
+/* ---------- PDF: A4 na šířku, místo na psaní ---------- */
+/** QR kód jako vektor (obdélníky po úsecích řádku); vrací false, když se text do QR nevejde. */
+function pdfQr(doc, text, x, y, size) {
+  if (!window.qrcode) return false;
+  // QR nese bajty: znaky mimo ASCII se zapíšou jako %XX (adresa zůstane stejná)
+  const data = String(text).replace(/[^\x00-\x7F]/g, ch => encodeURIComponent(ch));
+  let qr = null;
+  for (const level of ['M', 'L']) {
+    try { qr = window.qrcode(0, level); qr.addData(data, 'Byte'); qr.make(); break; } catch (error) { qr = null; }
+  }
+  if (!qr) return false;
+  const n = qr.getModuleCount(), quiet = 2, cell = size / (n + 2 * quiet);
+  doc.setFillColor(255, 255, 255);
+  doc.rect(x, y, size, size, 'F');
+  doc.setFillColor(0, 0, 0);
+  for (let r = 0; r < n; r += 1) {
+    for (let c = 0; c < n;) {
+      if (!qr.isDark(r, c)) { c += 1; continue; }
+      let e = c;
+      while (e < n && qr.isDark(r, e)) e += 1;
+      // o chlup vyšší, ať mezi řádky v prohlížeči PDF nesvítí tenké mezery
+      doc.rect(x + (quiet + c) * cell, y + (quiet + r) * cell, (e - c) * cell, cell + 0.02, 'F');
+      c = e;
+    }
+  }
+  return true;
+}
+const SH_PDF_COLS = [['#', 7], ['QR kód', 21], ['EAN · název dílu', 54], ['Číslo objednávky', 32], ['Index', 16], ['Urgentní množství', 21], ['Stav k 10:00', 30], ['Stav k 13:00', 30], ['Poznámky', 0]];
+function drawShortage(doc, l) {
+  const k = pdfKit(doc);
+  const C = k.C;
+  const widths = SH_PDF_COLS.map(x => x[1]);
+  widths[widths.length - 1] = k.CW - widths.reduce((a, b) => a + b, 0);
+  const xs = [];
+  widths.reduce((x, w, i) => { xs[i] = x; return x + w; }, k.M);
+  const ROW = 20, QR = 16.5, HEAD = 9.5;
+  const n = l.items.length;
+  const clip = (text, w, size, max, bold) => {
+    const lines = k.split(text, w, size, bold);
+    if (lines.length <= max) return lines;
+    const out = lines.slice(0, max);
+    out[max - 1] = `${out[max - 1].replace(/\s*\S{0,3}$/, '')}…`;
+    return out;
+  };
+  const vlines = (top, h, color) => {
+    doc.setDrawColor(...color); doc.setLineWidth(0.2);
+    xs.slice(1).forEach(x => doc.line(x, top, x, top + h));
+  };
+  const head = () => {
+    k.box(C.soft3, k.M, k.y, k.CW, HEAD, 1.4);
+    SH_PDF_COLS.forEach(([t], i) => {
+      const lines = k.split(t, widths[i] - 3, 7.2, true);
+      const lh = k.LH(7.2, 1.15);
+      lines.forEach((line, j) => k.text(line, xs[i] + 1.6, k.y + (HEAD - lines.length * lh) / 2 + j * lh, 7.2, { bold: true, color: C.ink2 }));
+    });
+    k.y += HEAD;
+  };
+  // kompaktní záhlaví, ať se na stránku vejde víc položek
+  k.text(`${EXPORT_NAME} · SHORTAGE`, k.M, k.y, 7.5, { bold: true, color: C.acc, space: 0.35 });
+  k.text(`Seznam z ${shWhen(l)} · ${n} ${shItemsN(n)}`, k.M + k.CW, k.y, 8.5, { color: C.ink2, align: 'right' });
+  k.y += 5.5;
+  k.text('Chybějící díly', k.M, k.y, 17, { bold: true });
+  k.text('Stav doplň k 10:00 a k 13:00. QR kód otevře odkaz z EANu.', k.M + k.CW, k.y + 2.6, 8.5, { color: C.ink2, align: 'right' });
+  k.y += 9;
+  doc.setDrawColor(...C.acc); doc.setLineWidth(0.7); doc.line(k.M, k.y, k.M + 28, k.y);
+  k.y += 4;
+  k.onPage = head;
+  head();
+  l.items.forEach((it, j) => {
+    k.need(ROW);
+    const top = k.y;
+    vlines(top, ROW, C.line);
+    k.hline(top + ROW, C.line2, 0.25);
+    k.text(String(j + 1), xs[0] + 1.6, top + 2, 8, { color: C.ink3 });
+    // Odkaz nese jen QR kód: klikací odkaz v PDF ne, jsPDF 4.2 by v adrese přepsal & na &amp;.
+    if (!it.link || !pdfQr(doc, it.link, xs[1] + (widths[1] - QR) / 2, top + (ROW - QR) / 2, QR)) {
+      k.split(it.link ? 'odkaz je moc dlouhý' : 'bez odkazu', widths[1] - 4, 6.8).forEach((line, i) => k.text(line, xs[1] + widths[1] / 2, top + ROW / 2 - 2 + i * 3, 6.8, { color: C.ink3, align: 'center' }));
+    }
+    k.text(it.ean || '—', xs[2] + 1.8, top + 1.8, 9.6, { bold: true });
+    clip(it.name || '', widths[2] - 3.6, 8.4, 3).forEach((line, i) => k.text(line, xs[2] + 1.8, top + 6.6 + i * k.LH(8.4, 1.25), 8.4, { color: C.ink2 }));
+    clip(it.order || '—', widths[3] - 3.6, 8.8, 4).forEach((line, i) => k.text(line, xs[3] + 1.8, top + 1.8 + i * k.LH(8.8, 1.25), 8.8));
+    clip(it.index || '—', widths[4] - 3.6, 8.8, 4).forEach((line, i) => k.text(line, xs[4] + 1.8, top + 1.8 + i * k.LH(8.8, 1.25), 8.8));
+    clip(it.qty || '—', widths[5] - 3.6, 12, 2, true).forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), 12, { bold: true, align: 'right' }));
+    // kolonky na psaní: stav k 10:00 a k 13:00 a dva řádky poznámek (tečkované linky)
+    [6, 7].forEach(c => k.hline(top + ROW - 4.5, C.line2, 0.2, xs[c] + 2.5, xs[c] + widths[c] - 2.5, [0.6, 0.9]));
+    [ROW - 11, ROW - 4.5].forEach(h => k.hline(top + h, C.line2, 0.2, xs[8] + 2.5, xs[8] + widths[8] - 2.5, [0.6, 0.9]));
+    k.y += ROW;
+  });
+  k.footer(`${EXPORT_NAME} · Shortage · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`);
+}
+async function exportShortagePdf(id, button = null) {
+  const l = shc().lists.find(x => x.id === id);
+  if (!l || !l.items.length) return;
+  await withPdf(button, doc => {
+    doc.setProperties({ title: `Shortage · chybějící díly ${shWhen(l)}`, subject: l.file || 'Shortage', creator: EXPORT_NAME });
+    drawShortage(doc, l);
+    const d = new Date(l.at);
+    downloadFile(`shortage-${todayIso(l.at)}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.pdf`, doc.output('blob'), 'application/pdf');
+  }, 'landscape');
 }
 
 /* ==========================================================================

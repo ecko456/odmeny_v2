@@ -91,9 +91,11 @@ function compare(beforeJson, afterJson) {
     if (Array.isArray(c.cases)) c.cases = c.cases.map(x => { if (!('comments' in x)) return x; const y = { ...x }; same(y.comments, [], `komentáře ${y.no}`); delete y.comments; return y; });
     return c;
   };
-  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks', 'workAudit', 'service'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
+  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks', 'workAudit', 'service', 'shortage'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
   // 2.21 prázdný Servis (evidence zařízení a odeslání)
   if ('service' in b) same({ devices: [], shipments: [], templates: [], ...(a.service || {}) }, b.service, 'service');
+  // 2.27 prázdný Shortage (seznamy chybějících dílů)
+  if ('shortage' in b) same({ lists: [], ...(a.shortage || {}) }, b.shortage, 'shortage');
   // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu,
   // 2.16 prázdné Protokoly, 2.17 prázdný Audit
   if ('leadSkills' in b) same(a.leadSkills || [], b.leadSkills, 'leadSkills');

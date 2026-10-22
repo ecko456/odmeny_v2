@@ -34,6 +34,23 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 22. 10. 2026 (verze 2.27):
+
+- Uživatel: „modul ‚Shortage‘ … importovat excel … A sloupec bude ean, B název dílu, C Číslo
+  objednávky, D index, E urgentní množství … export do PDF … prostor pro poznámky, a stav
+  k 10:00 a k 13:00 … ean má vždy v sobě vložený hypertextový odkaz a ten bych potřeboval mít
+  i v QR kódu … orientaci na ležato“.
+  - Nový modul `S.shortage` (viz oddíl Shortage níže), pohled `shortage` pod Servisem, dlaždice
+    v hlavním menu telefonu, filtr a ikona v historii změn.
+  - **SheetJS 0.18.5 nechává v `cell.l.Target` entity XML** (`&amp;`), proto `shUnxml`.
+  - **jsPDF 4.2.1 v URI odkazu (`doc.link`) přepíše `&` na `&amp;`**, odkaz s parametry by vedl
+    jinam. PDF proto klikací odkazy nemá, jen QR kódy (e2e hlídá, že anotace odkazů chybí).
+  - QR kreslí `pdfQr` z qrcode-generatoru (`window.qrcode`, načítá index.php) jako vyplněné
+    obdélníky, úroveň M, a když se nevejde, L. Ověřeno vykreslením PDF (PyMuPDF) a čtením
+    jsQR. **ZXing JS některé platné symboly nepřečte** (verze 4, 33 modulů, i ideálně
+    vykreslený); jsQR je přečte, proto e2e čte nejdřív jsQR.
+  - Verze dat 23 (`DATA_VERSION` = `CLIENT_VERSION` = `ODM_MIN_CLIENT`), `ODM_VERSION` 2.27.
+
 Stav k 20. 10. 2026 (verze 2.26):
 
 - Uživatel: „Servis … v PDF možnost stáhnout tři verze ‚Kompletní‘ ‚K vyřazení‘ ‚Na opravu‘ …
@@ -874,6 +891,33 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
+## Shortage (verze 2.27)
+
+Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
+
+- `lists[≤ 30]`, nejnovější první: `{id 'sh…', at, by, file, sheet, items[≤ 1000]}`; `sheet` je
+  název listu jen u sešitu s více listy;
+- položka `{ean, link, name, order, index, qty}`: vše text tak, jak ho ukazuje Excel (EAN
+  s nulami na začátku, množství s formátem); `link` projde `shLink` (jen `http(s)://`,
+  `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků), jinak `""`.
+  Položka bez EANu i názvu se zahodí.
+
+Import (`shImportFile` v `app.js`): SheetJS, každý list přes `shSheetRows` (sloupce A–E, nejvýš
+20 000 řádků, `shCellText`: číselný EAN s formátem nul se vezme jako formátovaný text; `shCellLink`:
+`cell.l.Target` přes `shUnxml`, jinak vzorec `HYPERLINK("…")`) a `shBuild(rows)` → `{items, more,
+header, warn{noLink, badLink, noEan, skipped}}` (nadpisy `shIsHeader` v prvních 15 řádcích).
+Vezme se list s nejvíc položkami. CSV se odmítne (nemá odkazy). Zpráva v `#shMsg`.
+
+UI (sekce „SHORTAGE“): `renderShortage` (dlaždice, karta seznamu s hledáním `#shQ` přes `shFilter`,
+`[data-shpdf]`, `[data-shdel]` s potvrzením, přepínání seznamů `[data-shopen]`, stav `ui.sh`),
+tabulka `table.stack.sh-tab` (EAN je odkaz `target=_blank rel=noopener noreferrer`). Historie změn
+`shChanges` (klíče `shl:` nahrání, `shd:` smazání, aby se nesloučily).
+
+PDF `drawShortage(doc, l)` (A4 na šířku, `withPdf(…, 'landscape')`): sloupce `SH_PDF_COLS`, řádek
+20 mm, QR 16,5 mm (`pdfQr`: znaky mimo ASCII jako `%XX`, úroveň M, jinak L, okraj 2 moduly),
+hlavička tabulky na každé stránce (`k.onPage`), čárkované linky na psaní ve Stav k 10:00, Stav
+k 13:00 a Poznámkách. Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
+
 ## Audit (verze 2.17, 2.18)
 
 Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
@@ -1100,7 +1144,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.25 | `2864d5e` | dovednost „Není nutností“ (váha ¼ i v tabácích), celkové skóre v reportu kapacit, Zkušení pracovníci a Pracovníci v zácviku (data verze 21) |
 | 2.25.1 | `35c337a` | Docházka – den s kódem nepřítomnosti (i „8 D“) není docházka |
 | 2.25.2 | `41a5fa1` | PDF matice s benefity a bez, průměr zaškolení u pracovníků v zácviku |
-| 2.26 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – PDF Kompletní / Na opravu / K vyřazení, digitální podpis předávajícího (data verze 22) |
+| 2.26 | `2abb107` | Servis – PDF Kompletní / Na opravu / K vyřazení, digitální podpis předávajícího (data verze 22) |
+| 2.27 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – import chybějících dílů z Excelu, PDF na šířku s QR kódem odkazu z EANu (data verze 23) |
 
 Verze 2.1 přidala:
 
@@ -1212,7 +1257,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `22` (od 2.26):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `23` (od 2.27):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1262,6 +1307,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook`);
   - `logbooks[]` (2.16): Protokoly (viz níže);
   - `service` (2.21, 2.22): Servis, evidence zařízení, odeslání a vzory (viz níže);
+  - `shortage` (2.27): Shortage, nahrané seznamy chybějících dílů (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -1344,7 +1390,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `vyroba`, `top5`, `kontroly`, `protokoly`, `servis` (2.21), `audit`, `nastaveni`
+  `vyroba`, `top5`, `kontroly`, `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
   (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
@@ -1479,7 +1525,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 67 testů: proti původní aplikaci + opravy + 2.1 až 2.26
+node tests/test_core.js                 # 68 testů: proti původní aplikaci + opravy + 2.1 až 2.27
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1511,6 +1557,10 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     závady, rok výroby, vzory (uložení, duplicita, výběr, smazání), duplicitní zařízení (červeně
     při psaní, nahoru při uložení, číslo jiného zařízení, evidence; jiné ID se stejným v. č.
     při úpravě protokolu duplicita není), PDF přes pypdf, výběr z evidence, párování, vrácení, evidence, úprava, smazání, telefon;
+  - `e2e_shortage.js`: Shortage (2.27): Excel s odkazy (číselný EAN s nulami, vzorec HYPERLINK,
+    bez odkazu, odkaz `file:`, druhý list) vyrobí v prohlížeči přes SheetJS, import a upozornění,
+    hledání, PDF (na šířku, stránky, hlavička, žádné anotace odkazů), QR kódy vykreslí PyMuPDF
+    a čte jsQR (záloha ZXing), další seznam, přepnutí, smazání, historie, CSV, telefon, tmavý režim;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;

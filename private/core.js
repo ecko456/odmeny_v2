@@ -123,7 +123,7 @@ function save(){_prodIdx=null;_effCache=null;if(typeof onStateChange==="function
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),service:blankService(),v:DATA_VERSION};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),service:blankService(),shortage:blankShortage(),v:DATA_VERSION};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -1699,10 +1699,10 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=22;
+const DATA_VERSION=23;
 const LOG_MAX=2000;
 const HIST_MAX=200;
-const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service"];
+const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
 function sanitizeState(input){
   const o=(input&&typeof input==="object"&&!Array.isArray(input))?input:{};
   const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
@@ -1996,6 +1996,8 @@ function sanitizeState(input){
   out.workAudit=cleanWorkAudit(o.workAudit);
   /* Servis – odeslání zařízení na servis (2.21): starší data ho nemají, začíná prázdný */
   out.service=cleanService(o.service);
+  /* Shortage – chybějící díly z Excelu (2.27): starší data ho nemají, začíná prázdný */
+  out.shortage=cleanShortage(o.shortage);
   // data před 2.18.1: požadavek lidí je pevných 100 (zadání), dřív se bral jen ze souboru
   if(!(+o.v>=17)&&out.workAudit.target==null)out.workAudit.target=WA_TARGET;
   out.v=DATA_VERSION;
@@ -2322,6 +2324,7 @@ function describeChanges(a,b,meta){
   lbChanges(a.logbooks||[],b.logbooks||[],add);
   waChanges(a.workAudit,b.workAudit,add);
   svChanges(a.service,b.service,add);
+  shChanges(a.shortage,b.shortage,add);
   return {entries,hist};
 }
 
@@ -4547,6 +4550,81 @@ function svChanges(A,B,add){
   const ta=A.templates||[],tb=B.templates||[];
   tb.forEach(t=>{if(!ta.some(y=>y.id===t.id))add("service","Servis: nový vzor zařízení "+svDevName(t),{m:"svt:"+t.id});});
   ta.forEach(t=>{if(!tb.some(y=>y.id===t.id))add("service","Servis: smazán vzor zařízení "+svDevName(t),{m:"svt:"+t.id});});
+}
+
+/* ==========================================================================
+   SHORTAGE – chybějící díly z Excelu (2.27)
+   Import: A = EAN (buňka má vložený hypertextový odkaz), B = název dílu, C = číslo objednávky,
+   D = index, E = urgentní množství. Každý import je samostatný seznam (snímek souboru), drží se
+   posledních SH_MAX_LISTS. Odkaz z EANu jde do QR kódu v PDF, aby si ho operátor načetl telefonem.
+   ========================================================================== */
+const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000;
+function blankShortage(){return {lists:[]};}
+/** Cíl odkazu ze souboru xlsx: SheetJS 0.18.5 v něm nechá XML zápis (&amp; místo &, &#38; …). */
+function shUnxml(s){
+  return String(s==null?"":s).replace(/&(amp|lt|gt|quot|apos|#\d{1,7}|#x[0-9a-f]{1,6});/gi,(m,e)=>{
+    const k=e.toLowerCase(),named={amp:"&",lt:"<",gt:">",quot:'"',apos:"'"};
+    if(named[k])return named[k];
+    const n=k[1]==="x"?parseInt(k.slice(2),16):parseInt(k.slice(1),10);
+    return n>0&&n<=0x10FFFF?String.fromCodePoint(n):m;
+  });
+}
+/** Odkaz pro QR: jen webová adresa (http, https; „www.…“ dostane https://), jinak "". */
+function shLink(v){
+  let s=String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g,"").trim();
+  if(/^www\./i.test(s))s="https://"+s;
+  return s.length<=2000&&/^https?:\/\/[^\s<>"]+$/i.test(s)?s:"";
+}
+function cleanShortage(o){
+  o=o&&typeof o==="object"?o:{};
+  const line=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().slice(0,max);
+  const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
+  const lists=(Array.isArray(o.lists)?o.lists:[]).filter(l=>l&&typeof l==="object"&&Array.isArray(l.items)).map(l=>({
+    id:uniq(l.id,"sh"),at:Number.isFinite(+l.at)?Math.max(0,+l.at):0,by:line(l.by,60),file:line(l.file,160),sheet:line(l.sheet,80),
+    items:l.items.filter(i=>i&&typeof i==="object").map(i=>({ean:line(i.ean,60),link:shLink(i.link),name:line(i.name,200),
+      order:line(i.order,80),index:line(i.index,40),qty:line(i.qty,40)})).filter(i=>i.ean||i.name).slice(0,SH_MAX_ITEMS),
+  }));
+  // nejnovější první; nad SH_MAX_LISTS se nejstarší zahodí
+  lists.sort((a,b)=>b.at-a.at);
+  return {lists:lists.slice(0,SH_MAX_LISTS)};
+}
+/** Řádek s nadpisy sloupců (EAN, Název dílu, …), ne položka. */
+function shIsHeader(ean,name,qty){
+  const n=s=>String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase();
+  return /\bean\b|kod|carov/.test(n(ean))||/nazev|^dil\b/.test(n(name))&&!/\d/.test(String(qty||""));
+}
+/**
+ * Řádky listu → položky seznamu. rows[r][c] = {text, link}: text jak ho ukazuje Excel,
+ * link = cíl hypertextového odkazu buňky (jen u sloupce A). Nadpisy sloupců se poznají
+ * v prvních 15 řádcích (nad nimi může být titulek). Vrací {items, more, header, warn}.
+ */
+function shBuild(rows){
+  rows=Array.isArray(rows)?rows:[];
+  const t=(r,c)=>String((r&&r[c]&&r[c].text)!=null?r[c].text:"").replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
+  let header=-1;
+  for(let i=0;i<Math.min(rows.length,15);i++)if(shIsHeader(t(rows[i],0),t(rows[i],1),t(rows[i],4))){header=i;break;}
+  const items=[],warn={noLink:0,badLink:0,noEan:0,skipped:0};
+  rows.forEach((r,ri)=>{
+    if(ri<=header)return;
+    const ean=t(r,0),name=t(r,1),order=t(r,2),index=t(r,3),qty=t(r,4);
+    if(!ean&&!name&&!order&&!index&&!qty)return;
+    if(!ean&&!name){warn.skipped++;return;}
+    const raw=String((r[0]&&r[0].link)||"").trim(),link=shLink(raw);
+    if(!raw)warn.noLink++;else if(!link)warn.badLink++;
+    if(!ean)warn.noEan++;
+    items.push({ean,link,name,order,index,qty});
+  });
+  return {items:items.slice(0,SH_MAX_ITEMS),more:Math.max(0,items.length-SH_MAX_ITEMS),header,warn};
+}
+/** „22. 10. 2026 8:15“ ze časové značky seznamu. */
+function shWhen(l){const d=new Date(l.at||0);return dayText(todayIso(l.at||0))+" "+d.getHours()+":"+String(d.getMinutes()).padStart(2,"0");}
+function shItemsN(n){return n===1?"položka":n>=2&&n<=4?"položky":"položek";}
+function shChanges(A,B,add){
+  A=A||blankShortage();B=B||blankShortage();
+  const ia=new Set(A.lists.map(l=>l.id)),ib=new Set(B.lists.map(l=>l.id));
+  B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+(l.file?", "+l.file:"")+")",{m:"shl:"+l.id});});
+  // smazání má vlastní klíč, ať v historii zůstane i záznam o nahrání
+  A.lists.forEach(l=>{if(!ib.has(l.id))add("shortage","Shortage: smazán seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+(l.file?", "+l.file:"")+")",{m:"shd:"+l.id});});
 }
 
 if(typeof module==="object"&&module.exports){

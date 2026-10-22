@@ -62,6 +62,28 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.27
+
+- **Nový modul Shortage (chybějící díly).** V menu pod Servisem. Tlačítkem **Nahrát Excel**
+  nahraješ seznam (xlsx, xls, xlsm, ods): sloupec **A** je EAN s vloženým hypertextovým
+  odkazem, **B** název dílu, **C** číslo objednávky, **D** index a **E** urgentní množství.
+  Řádek s nadpisy nahoře aplikace pozná a přeskočí, ze souboru s více listy vezme list
+  s nejvíc položkami. Odkaz se bere z hypertextového odkazu v buňce EAN (i ze vzorce
+  HYPERLINK). Po nahrání aplikace napíše, kolik položek načetla a které nemají odkaz.
+- V aplikaci je tabulka seznamu s hledáním (EAN, díl, objednávka) a EAN je klikací odkaz.
+  Uchovává se posledních 30 seznamů, mezi nimi se přepíná pod tabulkou, seznam jde smazat.
+  Nahrání i smazání je v historii změn.
+- **PDF k tisku na šířku.** U každé položky je QR kód s odkazem z EANu (operátor ho načte
+  telefonem a otevře stejnou stránku jako kliknutím na EAN v Excelu), EAN, název, číslo
+  objednávky, index, urgentní množství a prázdné kolonky **Stav k 10:00**, **Stav k 13:00**
+  a **Poznámky** s linkami na psaní. Hlavička tabulky se opakuje na každé stránce.
+  Položka bez odkazu má místo QR kódu „bez odkazu“.
+- CSV nahrát nejde, protože hypertextové odkazy neuchová.
+- Odkazy v PDF nejsou klikací, jen QR kódy. Knihovna PDF by v odkazu přepsala znak `&`
+  a odkaz s parametry by vedl jinam.
+- Verze dat 23: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení (jinak by
+  seznamy zahodila).
+
 ## Co je nového ve verzi 2.26
 
 - **Servis: protokol ve třech verzích.** U každého protokolu jsou tři tlačítka PDF:
