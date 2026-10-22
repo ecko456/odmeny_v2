@@ -8384,11 +8384,14 @@ function shPasteRecs(rows) {
     return;
   }
   const res = shApplyRecs(l, r.recs, { at: Date.now(), by: ui.me.label || '' });
-  if (res.updated) save();
+  if (res.added) S.shortage = cleanShortage(S.shortage);   // id nově přidaných poddílů
+  if (res.updated || res.added) save();
   renderShortage();
   const other = !res.matched ? shc().lists.find(x => x !== l && x.items.some(i => i.code && r.recs.has(i.code))) : null;
   const miss = res.missing.slice(0, 5).join(', ') + (res.missing.length > 5 ? ` a ${res.missing.length - 5} dalších` : '');
-  msg.innerHTML = `<div class="note ${res.updated ? 'i' : 'w'}">Poslední záznamy k seznamu z <b>${esc(shWhen(l))}</b>: ${res.updated ? `nový záznam u <b>${res.updated} ${res.updated === 1 ? 'položky' : 'položek'}</b>` : 'žádná položka se nezměnila'}.</div>${[
+  const what = [res.updated ? `nový záznam u <b>${res.updated} ${res.updated === 1 ? 'položky' : 'položek'}</b>` : '', res.added ? `podle záznamu přidán${res.added === 1 ? '' : 'o'} <b>${res.added} ${shSubsN(res.added)}</b> s jinou operací` : ''].filter(Boolean).join(', ');
+  msg.innerHTML = `<div class="note ${res.updated || res.added ? 'i' : 'w'}">Poslední záznamy k seznamu z <b>${esc(shWhen(l))}</b>: ${what || 'žádná položka se nezměnila'}.</div>${[
+    res.wpa ? `${res.wpa} ${res.wpa === 1 ? 'poddíl má' : res.wpa <= 4 ? 'poddíly mají' : 'poddílů má'} záznam „Odesláno na WPA“, ${res.wpa === 1 ? 'nepřidal se' : 'nepřidaly se'}.` : '',
     res.same ? `${res.same} ${shPl(res.same, 'položka má', 'položky mají', 'položek má')} stejný záznam, beze změny.` : '',
     res.older ? `${res.older} ${shPl(res.older, 'vložený záznam je starší', 'vložené záznamy jsou starší', 'vložených záznamů je starších')} než uložený, ${res.older === 1 ? 'nepoužil se' : 'nepoužily se'}.` : '',
     res.missing.length ? `${res.missing.length} ${shPl(res.missing.length, 'kód v seznamu není', 'kódy v seznamu nejsou', 'kódů v seznamu není')}: ${miss}.` : '',
@@ -8400,7 +8403,8 @@ function shPasteRecs(rows) {
 /* ---------- Poddíly z výrobního plánu (2.29) ----------
    Čte se 2. list plánu proudem jako výrobní plán v Auditu (waZip, waXlsxSst, waXlsxCells), jen
    sloupce A, E, H, M a AM. Odkaz u EANu poddílu (E) je v <hyperlinks> na konci listu a cíl
-   v rels listu; berou se jen pro řádky s operací Hala 2. Jiné soubory (xls, ods) přečte SheetJS.
+   v rels listu (2.29.1 i pro řádky s jinou operací: čekající poddíly přidá poslední záznam
+   podle kódu). Jiné soubory (xls, ods) přečte SheetJS.
    Nahraný plán zůstane v paměti okna (ui.sh.plan) a prohledá se i u dalších seznamů. */
 const SH_PC = { a: 0, e: 4, h: 7, m: 12, am: 38 };
 async function shPlanFast(b, plan, progress) {
@@ -8420,7 +8424,7 @@ async function shPlanFast(b, plan, progress) {
   const sst = await waXlsxSst(b, zip.get('xl/sharedstrings.xml'));
   const want = new Set(Object.values(SH_PC));
   const keep = [];
-  const byRef = new Map();   // „E12“ → řádek s operací Hala 2, čeká na odkaz
+  const byRef = new Map();   // „E12“ → řádek, čeká na odkaz
   let last = -1;
   const rows = block => {
     let m;
@@ -8433,10 +8437,9 @@ async function shPlanFast(b, plan, progress) {
       const v = waXlsxCells(m[2], sst, want);
       const a = v[SH_PC.a], e = v[SH_PC.e], op = v[SH_PC.am];
       if (a == null || e == null || e === '') continue;
-      if (!shSubOp(op)) { shPlanRow(plan, a, e, v[SH_PC.h], v[SH_PC.m], op, ''); continue; }
       const x = { a, e, h: v[SH_PC.h], m: v[SH_PC.m], op, rid: '', link: '' };
-      // vzorec HYPERLINK("…") v buňce E
-      const cell = new RegExp(`<(?:\\w+:)?c\\b[^>]*\\br="E${i + 1}"[^>]*>([\\s\\S]*?)</(?:\\w+:)?c>`).exec(m[2] || '');
+      // vzorec HYPERLINK("…") v buňce E (hledá se jen v řádku, který nějaký vzorec má)
+      const cell = (m[2] || '').includes('<f') && new RegExp(`<(?:\\w+:)?c\\b[^>]*\\br="E${i + 1}"[^>]*>([\\s\\S]*?)</(?:\\w+:)?c>`).exec(m[2] || '');
       const f = cell && /<(?:\w+:)?f\b[^>]*>([\s\S]*?)<\/(?:\w+:)?f>/.exec(cell[1]);
       const hl = f && /HYPERLINK\(\s*"([^"]+)"/i.exec(waXml(f[1]));
       if (hl) x.link = hl[1];
@@ -8528,7 +8531,8 @@ function shPlanNote(res, plan, auto) {
   if (res.kept) return `<div class="note w">${head}: k položkám seznamu nenašel žádný poddíl, poddíly zůstaly beze změny.</div>`;
   return `<div class="note ${res.subs ? 'i' : 'w'}">${head}: ${res.subs ? `<b>${res.subs} ${shSubsN(res.subs)}</b> u ${res.items} ${res.items === 1 ? 'sestavy' : 'sestav'}` : 'k položkám seznamu žádný poddíl s operací Hala 2'}.</div>${[
     res.noCode ? `${res.noCode} ${res.noCode === 1 ? 'poddíl nemá' : res.noCode <= 4 ? 'poddíly nemají' : 'poddílů nemá'} u EANu odkaz s activeBarcode, v PDF ${res.noCode === 1 ? 'bude' : 'budou'} bez QR kódu.` : '',
-    res.other ? `U ${res.other} ${res.other === 1 ? 'sestavy jsou' : 'sestav jsou'} v plánu poddíly jen s jinou operací, ty se nevložily.` : '',
+    res.cands ? `${res.cands} ${res.cands === 1 ? 'poddíl' : res.cands <= 4 ? 'poddíly' : 'poddílů'} s jinou operací ${res.cands === 1 ? 'čeká' : 'čekají'} na poslední záznam: přidá ${res.cands === 1 ? 'ho' : 'je'} vložený záznam s ${res.cands === 1 ? 'jeho' : 'jejich'} QR kódem (kromě „Odesláno na WPA“).` : '',
+    res.other && !res.cands ? `U ${res.other} ${res.other === 1 ? 'sestavy jsou' : 'sestav jsou'} v plánu poddíly jen s jinou operací a bez odkazu, ty se nevložily.` : '',
     !plan.rows.size && !plan.other.size ? `Ve ${plan.sheet ? `listu ${plan.sheet}` : 'souboru'} nejsou řádky plánu. Čeká se A EAN sestavy, E EAN poddílu, H index, M číslo objednávky a AM probíhající operace.` : '',
   ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}`;
 }
@@ -8561,6 +8565,7 @@ function renderShortage() {
   }
   const n = l.items.length, coded = l.items.filter(i => i.code).length, top = l.items.filter(i => i.top).length, recs = l.items.filter(i => i.rec).length;
   const subsN = l.items.reduce((a, i) => a + (i.subs || []).length, 0);
+  const hidN = l.items.reduce((a, i) => a + (i.pdfHide ? 1 + (i.subs || []).length : (i.subs || []).filter(x => x.pdfHide).length), 0);
   const tiles = `<div class="stats">${[
     statTile('Seznam', esc(dayText(todayIso(l.at))), `nahráno v ${esc(shWhen(l).split(' ').pop())}${l.by ? ` · ${esc(l.by)}` : ''}`),
     statTile('Položek', String(n), subsN ? `+ ${subsN} ${shSubsN(subsN)} z plánu` : l.file ? esc(l.file) : 'chybějící díly'),
@@ -8574,18 +8579,19 @@ function renderShortage() {
     const rec = recHtml(i);
     const self = [i.order, i.name, i.ean, i.index, i.op, i.code, i.note, i.rec ? i.rec.state : '', i.top ? 'top shortage' : ''].join(' ');
     // poddíly z výrobního plánu pod sestavou (2.29): při hledání se ukážou se sestavou
-    const subs = (i.subs || []).map((x, k) => `<tr class="sh-sub${i.top ? ' sh-top' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shrow="${esc([self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : ''].join(' ').toLowerCase())}">
+    const subs = (i.subs || []).map((x, k) => `<tr class="sh-sub${i.top ? ' sh-top' : ''}${x.pdfHide || i.pdfHide ? ' sh-pdfoff' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shrow="${esc([self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : ''].join(' ').toLowerCase())}">
       <td class="sh-gripc"></td>
       <td class="num muted" data-label="#">${j + 1}.${k + 1}</td>
       <td class="sh-ord sh-subord" data-label="Číslo objednávky"><span class="sh-subarrow" aria-hidden="true"></span>${esc(i.order || '—')}</td>
-      <td class="name" data-label="Poddíl"><span class="tag sh-subtag">PODDÍL</span><div class="sh-ean">${eanHtml(x)}</div></td>
+      <td class="name" data-label="Poddíl"><span class="tag sh-subtag">PODDÍL</span>${x.byRec ? ' <span class="tag sh-rectag" title="Operace není Hala 2, poddíl přidal poslední záznam">podle záznamu</span>' : ''}<div class="sh-ean">${eanHtml(x)}</div></td>
       <td data-label="Index">${esc(i.index || '—')}</td>
       <td class="num sh-qty" data-label="Urgentní množství"><span class="muted">—</span></td>
       <td class="sh-opc" data-label="Operace · poslední záznam">${esc(x.op || '—')}${recHtml(x)}</td>
       <td data-label="QR kód">${x.code ? `<span class="tag ok sh-code">${esc(x.code)}</span>` : '<span class="tag warn">bez kódu</span>'}</td>
       <td class="sh-notec" data-label="Poznámka"><input type="text" class="sh-note" data-shnote="${esc(x.id)}" value="${esc(x.note || '')}" maxlength="300" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k poddílu ${esc(x.ean || x.code)}"></td>
-      <td class="sh-actc"><button class="icon-btn small" type="button" data-shdelsub="${esc(x.id)}" title="Odebrat poddíl" aria-label="Odebrat poddíl ${esc(x.ean || x.code)}">${I.x}</button></td></tr>`).join('');
-    return `<tr class="${i.top ? 'sh-top' : ''}${subs ? ' sh-hassub' : ''}" data-shid="${esc(i.id)}" data-shrow="${esc([self, ...(i.subs || []).flatMap(x => [x.ean, x.code])].join(' ').toLowerCase())}">
+      <td class="sh-actc">${shHideBtn(x)}<button class="icon-btn small" type="button" data-shdelsub="${esc(x.id)}" title="Odebrat poddíl" aria-label="Odebrat poddíl ${esc(x.ean || x.code)}">${I.x}</button></td></tr>`).join('');
+    // sestava s poddíly je jen orientační: bez QR kódu a pole na poznámku (2.29.1)
+    return `<tr class="${i.top ? 'sh-top' : ''}${subs ? ' sh-hassub' : ''}${i.pdfHide ? ' sh-pdfoff' : ''}" data-shid="${esc(i.id)}" data-shrow="${esc([self, ...(i.subs || []).flatMap(x => [x.ean, x.code])].join(' ').toLowerCase())}">
       <td class="sh-gripc"><button type="button" class="sh-grip" data-shgrip="${esc(i.id)}" title="Přesunout: přetáhni myší, nebo šipkami nahoru a dolů" aria-label="Přesunout položku ${esc(i.ean || i.name)}">${SH_GRIP}</button></td>
       <td class="num muted" data-label="#">${j + 1}</td>
       <td class="sh-ord" data-label="Číslo objednávky">${esc(i.order || '—')}</td>
@@ -8593,9 +8599,9 @@ function renderShortage() {
       <td data-label="Index">${esc(i.index || '—')}</td>
       <td class="num sh-qty" data-label="Urgentní množství"><b>${esc(i.qty || '—')}</b></td>
       <td class="sh-opc" data-label="Operace · poslední záznam">${esc(i.op || '—')}${rec}</td>
-      <td data-label="QR kód">${i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>'}</td>
-      <td class="sh-notec" data-label="Poznámka"><input type="text" class="sh-note" data-shnote="${esc(i.id)}" value="${esc(i.note || '')}" maxlength="300" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k položce ${esc(i.ean || i.name)}"></td>
-      <td class="sh-actc"><button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${I.x}</button></td></tr>${subs}`;
+      <td data-label="QR kód">${subs ? '<span class="small muted">sestava</span>' : i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>'}</td>
+      <td class="sh-notec" data-label="Poznámka">${subs ? (i.note ? `<span class="small">${esc(i.note)}</span>` : '') : `<input type="text" class="sh-note" data-shnote="${esc(i.id)}" value="${esc(i.note || '')}" maxlength="300" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k položce ${esc(i.ean || i.name)}">`}</td>
+      <td class="sh-actc">${shHideBtn(i)}<button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${I.x}</button></td></tr>${subs}`;
   }).join('');
   const pl = ui.sh.plan;
   const planInfo = l.plan ? `Poddíly podle výrobního plánu ${esc(l.plan.file)} (${esc(shWhenText(l.plan.at))}): ${subsN} ${shSubsN(subsN)}.` : 'Poddíly sestav doplníš tlačítkem Výrobní plán nahoře.';
@@ -8604,16 +8610,23 @@ function renderShortage() {
       <p class="tiny muted">Drží se posledních ${SH_MAX_LISTS} nahraných seznamů.</p></section>` : '';
   box.innerHTML = `${tiles}<article class="card sh-card">
       <div class="card-head"><div><h2>Seznam z ${esc(shWhen(l))}</h2>
-        <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}</p></div>
+        <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}${hidN ? ` · <b>${hidN} skryt${hidN === 1 ? 'á' : hidN <= 4 ? 'é' : 'ých'} v PDF</b>` : ''}</p></div>
         <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat objednávku, díl, EAN, operaci" autocomplete="off"></label>
           <button class="btn small" type="button" data-shpdf="${esc(l.id)}"${n ? '' : ' disabled'}>PDF k tisku</button>
           <button class="icon-btn" type="button" data-shdel="${esc(l.id)}" title="Smazat seznam" aria-label="Smazat seznam z ${esc(shWhen(l))}">${I.x}</button></div></div>
-      <p class="tiny muted sh-hint">Pořadí změníš přetažením řádku myší (na telefonu za úchyt vlevo), poddíly jdou se sestavou. TOP SHORTAGE zůstávají nahoře. Poslední záznamy vlož přes Ctrl+V: A QR kód, B datum a čas, C počet ks, D stav.</p>
+      <p class="tiny muted sh-hint">Pořadí změníš přetažením řádku myší (na telefonu za úchyt vlevo), poddíly jdou se sestavou. TOP SHORTAGE zůstávají nahoře. Poslední záznamy vlož přes Ctrl+V: A QR kód, B datum a čas, C počet ks, D stav. Oko na konci řádku položku skryje v PDF (sestavu i s poddíly).</p>
       <p class="small sh-planinfo">${planInfo}${planUse}</p>
       <div class="table-card flat"><table class="stack sh-tab"><thead><tr><th class="sh-gripc"><span class="sr-only">Přesunout</span></th><th>#</th><th>Číslo objednávky</th><th>Název dílu · EAN</th><th>Index</th><th class="num">Urgentní množství</th><th>Operace · poslední záznam</th><th>QR kód</th><th>Poznámka</th><th class="sh-actc"><span class="sr-only">Odebrat</span></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="tiny muted sh-none"${n ? ' hidden' : ''}>${n ? 'Nic neodpovídá hledání.' : 'V seznamu nezbyla žádná položka.'}</p>
     </article>${older}`;
   shFilter();
+}
+/* Rychlé tlačítko „Skrýt v PDF“ (2.29.1): položka i poddíl zůstanou v aplikaci, jen se nevytisknou. */
+const SH_EYE = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>';
+const SH_EYE_OFF = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.6A9.6 9.6 0 0 1 12 5.5C18 5.5 21.5 12 21.5 12a17 17 0 0 1-3.2 3.9M6.2 6.6C3.9 8.3 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1"/><path d="M9.9 9.9a2.8 2.8 0 0 0 4.2 4.2"/></svg>';
+function shHideBtn(x) {
+  const off = x.pdfHide === true;
+  return `<button class="icon-btn small sh-hidebtn${off ? ' on' : ''}" type="button" data-shpdfhide="${esc(x.id)}" aria-pressed="${off}" title="${off ? 'Skryto v PDF: klikni a znovu se vytiskne' : 'Skrýt v PDF'}" aria-label="${off ? 'Zobrazit v PDF' : 'Skrýt v PDF'} ${esc(x.ean || x.name || x.code || '')}">${off ? SH_EYE_OFF : SH_EYE}</button>`;
 }
 const SH_GRIP = '<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
 function shFilter() {
@@ -8731,6 +8744,16 @@ function bindShortage() {
       $('#shMsg').innerHTML = shPlanNote(res, ui.sh.plan, false);
       return;
     }
+    const hide = t.closest('[data-shpdfhide]');
+    if (hide) {
+      const l = shList();
+      const hit = l && shEntry(l, hide.dataset.shpdfhide);
+      if (!hit) return;
+      hit.entry.pdfHide = !hit.entry.pdfHide;
+      save(); renderShortage();
+      toast(hit.entry.pdfHide ? (hit.sub ? 'Poddíl se nevytiskne v PDF.' : (hit.entry.subs || []).length ? 'Sestava i její poddíly se nevytisknou v PDF.' : 'Položka se nevytiskne v PDF.') : 'Znovu se vytiskne v PDF.');
+      return;
+    }
     const delSub = t.closest('[data-shdelsub]');
     if (delSub) {
       const l = shList();
@@ -8825,7 +8848,7 @@ function pdfQr(doc, text, x, y, size) {
 }
 const SH_PDF_COLS = [['#', 7], ['QR kód', 21], ['Číslo objednávky', 30], ['Název dílu · EAN', 46], ['Index', 12], ['Urgentní množství', 18], ['Operace · poslední záznam', 38], ['Stav k 10:00', 24], ['Stav k 13:00', 24], ['Poznámky', 0]];
 /* Černobílý tisk (2.28): jen černá a odstíny šedé, linky tmavší, TOP SHORTAGE černý štítek a pruh. */
-const SH_MONO = { ink: [0, 0, 0], ink2: [45, 45, 45], ink3: [95, 95, 95], line: [150, 150, 150], line2: [95, 95, 95], head: [222, 222, 222], top: [236, 236, 236], write: [120, 120, 120] };
+const SH_MONO = { ink: [0, 0, 0], ink2: [45, 45, 45], ink3: [95, 95, 95], line: [150, 150, 150], line2: [95, 95, 95], head: [222, 222, 222], top: [236, 236, 236], asm: [246, 246, 246], write: [120, 120, 120] };
 function drawShortage(doc, l) {
   const k = pdfKit(doc);
   // i zápatí a výchozí barva písma pdfKit jen v odstínech šedé
@@ -8836,7 +8859,9 @@ function drawShortage(doc, l) {
   const xs = [];
   widths.reduce((x, w, i) => { xs[i] = x; return x + w; }, k.M);
   const ROW = 20, QR = 14, HEAD = 9.5;
-  const n = l.items.length, tops = l.items.filter(i => i.top).length, subsN = l.items.reduce((a, i) => a + (i.subs || []).length, 0);
+  // skryté v PDF (2.29.1): položka i s poddíly, nebo jen poddíl
+  const items = shPdfItems(l);
+  const n = items.length, tops = items.filter(i => i.top).length, subsN = items.reduce((a, i) => a + i.subs.length, 0);
   const clip = (text, w, size, max, bold) => {
     const lines = k.split(text, w, size, bold);
     if (lines.length <= max) return lines;
@@ -8871,9 +8896,20 @@ function drawShortage(doc, l) {
   head();
   // výška řádku podle obsahu (nejméně ROW): dlouhý poslední záznam, operace, název nebo poznámka se vypíšou celé
   const PAD = 1.8, recQty = r => (r.qty ? (/^[\d\s.,]+$/.test(r.qty) ? `${r.qty} ks` : r.qty) : '');
-  // parent = sestava, když jde o poddíl z výrobního plánu (2.29)
+  // parent = sestava, když jde o poddíl z výrobního plánu (2.29); sestava s poddíly je jen
+  // orientační řádek bez QR kódu, kolonek na psaní a poznámek (2.29.1)
   const lay = (it, parent) => {
     const src = parent || it;
+    const asm = !parent && (it.subs || []).length > 0;   // jen viditelné poddíly (shPdfItems)
+    if (asm) {
+      const A = {
+        asm, order: clip(it.order || '—', widths[2] - 3.6, 9, 2, true), name: clip(it.name || '—', widths[3] - 3.6, 8.8, 2),
+        index: clip(it.index || '—', widths[4] - 3.6, 8.8, 2), qty: clip(it.qty || '—', widths[5] - 3.6, 11, 1, true), op: clip(it.op || '—', widths[6] - 3.6, 8.4, 2), rec: [],
+        note: it.note ? clip(it.note, widths[9] - 3.6, 8, 4) : [],   // dříve dopsaná poznámka se neztratí
+      };
+      A.h = Math.max(11, PAD + A.order.length * k.LH(9, 1.25) + PAD, 1.6 + (it.top ? 4.6 : 0) + A.name.length * k.LH(8.8, 1.22) + 0.6 + (it.ean ? k.LH(7.8, 1.2) : 0) + 1.4, PAD + A.op.length * k.LH(8.4, 1.25) + PAD, PAD + A.note.length * k.LH(8, 1.22) + PAD);
+      return A;
+    }
     const L = {
       order: clip(src.order || '—', widths[2] - (parent ? 7.2 : 3.6), parent ? 7.8 : 9, 6, !parent),
       name: parent ? [] : clip(it.name || '—', widths[3] - 3.6, 8.8, 6),
@@ -8890,22 +8926,24 @@ function drawShortage(doc, l) {
       it.note ? PAD + L.note.length * k.LH(8, 1.22) + 1.5 + 4.5 : 0);
     return L;
   };
-  const row = (it, num, parent) => {
+  // keep: výška řádku, který musí být na stejné stránce (sestava nezůstane dole bez poddílu)
+  const row = (it, num, parent, keep = 0) => {
     const L = lay(it, parent), H = L.h, top0 = !!(parent || it).top;
-    k.need(H);
+    k.need(H + keep);
     const top = k.y;
     if (top0) {
       // TOP SHORTAGE: světle šedý řádek, černý pruh vlevo a černý štítek (i u poddílů sestavy)
       k.box(C.top, k.M, top, k.CW, H, 0);
       doc.setFillColor(...C.ink); doc.rect(k.M, top, 1.4, H, 'F');
-    }
+    } else if (L.asm) k.box(C.asm, k.M, top, k.CW, H, 0);
     vlines(top, H);
     k.hline(top + H, parent ? C.line : C.line2, parent ? 0.25 : 0.35);
     k.text(num, xs[0] + 2, top + 2, parent ? 7 : 8, { color: top0 ? C.ink : C.ink3, bold: top0 && !parent });
     // QR nese jen activeBarcode; pod ním kód písmem pro opsání. Klikací odkaz v PDF ne,
     // jsPDF 4.2 by v adrese přepsal & na &amp;.
     const qx = xs[1] + (widths[1] - QR) / 2;
-    if (it.code && pdfQr(doc, it.code, qx, top + 1, QR)) {
+    if (L.asm) k.text('sestava', xs[1] + widths[1] / 2, top + PAD + 0.4, 7, { color: C.ink3, align: 'center' });
+    else if (it.code && pdfQr(doc, it.code, qx, top + 1, QR)) {
       let size = 5.6;
       while (size > 4 && k.width(it.code, size) > widths[1] - 1.6) size -= 0.4;
       k.text(it.code, xs[1] + widths[1] / 2, top + 1 + QR + 0.7, size, { color: C.ink, align: 'center' });
@@ -8929,16 +8967,21 @@ function drawShortage(doc, l) {
     y += L.name.length * k.LH(8.8, 1.22) + (L.name.length ? 0.6 : 0);
     if (it.ean) k.text(`EAN ${it.ean}`, xs[3] + 1.8, y, parent ? 8.4 : 7.8, { color: parent ? C.ink : C.ink2, bold: !!parent });
     L.index.forEach((line, i) => k.text(line, xs[4] + 1.8, top + PAD + i * k.LH(8.8, 1.25), 8.8, { color: parent ? C.ink2 : C.ink }));
-    L.qty.forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), 12, { bold: true, align: 'right', color: C.ink }));
+    L.qty.forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), L.asm ? 11 : 12, { bold: true, align: 'right', color: C.ink }));
     // operace nahoře, pod ní celý poslední záznam (stav · ks) a kdy
     L.op.forEach((line, i) => k.text(line, xs[6] + 1.8, top + PAD + i * k.LH(8.4, 1.25), 8.4, { color: it.op ? C.ink : C.ink3 }));
-    if (it.rec) {
+    if (it.rec && !L.asm) {
       const ry = top + PAD + L.op.length * k.LH(8.4, 1.25) + 1;
       doc.setDrawColor(...C.line); doc.setLineWidth(0.2); doc.line(xs[6] + 1.8, ry - 0.5, xs[7] - 1.8, ry - 0.5);
       L.rec.forEach((line, i) => k.text(line, xs[6] + 1.8, ry + 0.4 + i * k.LH(7.8, 1.2), 7.8, { bold: true, color: C.ink }));
       k.text(it.rec.when || '', xs[6] + 1.8, ry + 0.4 + L.rec.length * k.LH(7.8, 1.2) + 0.3, 6.8, { color: C.ink2 });
     }
-    // kolonky na psaní: stav k 10:00 a k 13:00, poznámky (dopsaná poznámka nahoře, pod ní linka)
+    // kolonky na psaní: stav k 10:00 a k 13:00, poznámky (dopsaná poznámka nahoře, pod ní linka); sestava s poddíly je nemá
+    if (L.asm) {
+      L.note.forEach((line, i) => k.text(line, xs[9] + 1.8, top + PAD + i * k.LH(8, 1.22), 8, { color: C.ink }));
+      k.y += H;
+      return;
+    }
     [7, 8].forEach(c => k.hline(top + H - 4.5, C.write, 0.25, xs[c] + 2.5, xs[c] + widths[c] - 2.5, [0.6, 0.9]));
     if (it.note) {
       L.note.forEach((line, i) => k.text(line, xs[9] + 1.8, top + PAD + i * k.LH(8, 1.22), 8, { color: C.ink }));
@@ -8946,15 +8989,18 @@ function drawShortage(doc, l) {
     } else [H - 11, H - 4.5].forEach(h => k.hline(top + h, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]));
     k.y += H;
   };
-  l.items.forEach((it, j) => {
-    row(it, String(j + 1), null);
-    (it.subs || []).forEach((x, i) => row(x, `${j + 1}.${i + 1}`, it));
+  items.forEach((it, j) => {
+    row(it, String(j + 1), null, it.subs.length ? lay(it.subs[0], it).h : 0);
+    it.subs.forEach((x, i) => row(x, `${j + 1}.${i + 1}`, it));
   });
   k.footer(`${EXPORT_NAME} · Shortage · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`);
 }
+/** Položky do PDF bez skrytých; poddíly jen viditelné. */
+function shPdfItems(l) { return l.items.filter(i => !i.pdfHide).map(i => ({ ...i, subs: (i.subs || []).filter(x => !x.pdfHide) })); }
 async function exportShortagePdf(id, button = null) {
   const l = shc().lists.find(x => x.id === id);
   if (!l || !l.items.length) return;
+  if (!shPdfItems(l).length) { toast('Všechny položky jsou skryté v PDF.', true); return; }
   await withPdf(button, doc => {
     doc.setProperties({ title: `Shortage · chybějící díly ${shWhen(l)}`, subject: l.file || 'Shortage', creator: EXPORT_NAME });
     drawShortage(doc, l);

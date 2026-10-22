@@ -34,6 +34,30 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 22. 10. 2026 (verze 2.29.1):
+
+- Uživatel: „některé poddíly to nevložilo, že neodpovídá operace … pokud se u položky objeví
+  záznam, tak ho to přidá, jedinou výjimkou je záznam obsahující ‚Odesláno na WPA‘“; „položku
+  se sestavou můžeš částečně skrýt, … nepotřebuji vidět QR apod. … zajímá mě jen ten poddíl“;
+  „rychlé tlačítko ‚Skrýt v PDF‘“.
+  - Čekající poddíly: řádky plánu s jinou operací, ale s kódem (`shPlanRow` → `plan.other`
+    počet, `plan.cands`), se uloží k položce jako `cands[≤ 100]` = `{ean, link, code, op}`.
+    `shApplyRecs` kód, který není v položkách ani poddílech, hledá v `cands`: přidá poddíl
+    s `byRec: true` a záznamem a vyřadí ho z `cands`; stav s „Odesláno na WPA“ (`shWpa`, bez
+    diakritiky) ne. Výsledek má navíc `added`, `wpa`. Historie `sha:`.
+  - `shApplyPlan` dá položce nové `cands` (bez těch, co už jsou poddílem). Poddíl `byRec`
+    zůstane, dokud je jeho klíč v `cands`; poddíly drží `id`, `note`, `rec`, `byRec`, `pdfHide`.
+  - `shPlanFast` teď drží odkazy u všech řádků (i jiné operace), regex na vzorec běží jen
+    u buněk s `<f`.
+  - Sestava s poddíly: v tabulce místo QR „sestava“ a bez pole poznámky. V PDF (`lay` → `asm`)
+    nízký řádek (≥ 11 mm, `SH_MONO.asm` šedá), bez QR, záznamu a linek; jen když má viditelné poddíly.
+    `row(…, keep)`: sestava potřebuje na stránce místo i pro první poddíl.
+  - `pdfHide` u položky i poddílu, tlačítko `shHideBtn` (`[data-shpdfhide]`, oko) před ×.
+    `shPdfItems(l)` je jediný zdroj pro PDF (počty, číslování bez mezer). Historie `shh:`.
+  - Nadpisy `table.sh-tab th` se zalomí (`white-space: normal`): se dvěma tlačítky tabulka
+    na 1440 px přetékala o 64 px a × bylo schované. e2e to hlídá.
+  - Verze dat 28, `ODM_VERSION` 2.29.1.
+
 Stav k 22. 10. 2026 (verze 2.29):
 
 - Uživatel: „některé urgenty mají poddíly … prolustrovat vždy výrobní plán … v 2. listu …
@@ -960,7 +984,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -970,7 +994,7 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 - `lists[≤ 30]`, nejnovější první: `{id 'sh…', at, by, file, sheet, items[≤ 1000]}`; `sheet` je
   název listu jen u sešitu s více listy, vložený seznam má `file` „vloženo ze schránky“;
 - seznam má navíc `plan` (2.29): `{file, at, by}` posledního prohledaného výrobního plánu, nebo null;
-- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec, subs}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29): texty tak, jak je ukazuje Excel
+- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec, subs, cands, pdfHide}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1): texty tak, jak je ukazuje Excel
   (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
   `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
   jinak `""`, slouží jen ke klikání v aplikaci; `code` = activeBarcode z odkazu (`shCode`: text
@@ -981,11 +1005,14 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 - `rec` = poslední záznam `{ts, when, qty, state (do 400 znaků), at, by}`: vloží se přes Ctrl+V (A QR kód,
   B datum a čas, C počet ks, D stav). `shRecBuild(rows)` → `{recs: Map kód → záznam, rows, bad}`
   (nadpisy přeskočí, na kód nejnovější), `shApplyRecs(list, recs, meta)` → `{matched, updated,
-  same, older, missing}` (stejný kód u více položek dostanou všechny, starší nepřepíše
-  novější). `shParseWhen`: `22.10.2026 9:15`, `22. 10. 26`, ISO, pořadové číslo dne Excelu.
+  same, older, added, wpa, missing}` (stejný kód u více položek dostanou všechny, starší nepřepíše
+  novější; kód z `cands` přidá poddíl, kromě stavu „Odesláno na WPA“). `shParseWhen`: `22.10.2026 9:15`, `22. 10. 26`, ISO, pořadové číslo dne Excelu.
 - `shMoveItem(list, id, to)`: přesun ve skupině (TOP / ostatní).
-- `subs[≤ 50]` (2.29): poddíly z 2. listu výrobního plánu `{id 'sp…', ean, link, code, op, note, rec}`,
-  id jsou jedinečná v celém seznamu (položky i poddíly). Viz „Kde jsme skončili“ 2.29.
+- `subs[≤ 50]` (2.29): poddíly z 2. listu výrobního plánu `{id 'sp…', ean, link, code, op, note, rec,
+  byRec, pdfHide}` (`byRec`: přidal ho poslední záznam, 2.29.1), id jsou jedinečná v celém seznamu
+  (položky i poddíly). Viz „Kde jsme skončili“ 2.29.
+- `cands[≤ 100]` (2.29.1): poddíly z plánu s jinou operací `{ean, link, code, op}`, čekají na
+  poslední záznam. `pdfHide` (2.29.1): položka nebo poddíl se nevytiskne (`shPdfItems`).
 
 Import (`shImportFile` v `app.js`): SheetJS, každý list přes `shSheetRows` (sloupce A–H, nejvýš
 20 000 řádků, `shCellText`: číselný EAN s formátem nul se vezme jako formátovaný text; `shCellLink`:
@@ -1010,13 +1037,17 @@ karta seznamu s hledáním `#shQ` přes `shFilter` i podle operace a kódu, `[da
 `[data-shdel]` s potvrzením, přepínání seznamů `[data-shopen]`, stav `ui.sh`), tabulka
 `table.stack.sh-tab` (řádek `tr.sh-top`, štítek `.sh-toptag`, kód `.sh-code`, EAN je odkaz
 `target=_blank rel=noopener noreferrer`). Historie změn `shChanges` (klíče `shl:` nahrání, `shd:`
-smazání, aby se nesloučily; text „z toho N TOP“).
+smazání, aby se nesloučily; text „z toho N TOP“; 2.29.1 `sha:` poddíl podle záznamu, `shh:` Skrýt
+v PDF). Sestava s poddíly má místo QR „sestava“ a bez pole poznámky, poddíl `byRec` štítek
+„podle záznamu“, řádek skrytý v PDF `tr.sh-pdfoff`, tlačítko `shHideBtn` `[data-shpdfhide]`.
 
 PDF `drawShortage(doc, l)` (A4 na šířku, `withPdf(…, 'landscape')`, od 2.28 černobílé `SH_MONO`):
 sloupce `SH_PDF_COLS` (Operace · poslední záznam, dopsaná poznámka nahoře v Poznámkách), řádek
 nejméně 20 mm, vyšší podle obsahu (`lay`, 2.28.1), QR 14 mm s kódem písmem pod ním (`pdfQr`: znaky mimo ASCII jako `%XX`, úroveň M, jinak L,
 okraj 2 moduly), TOP řádek světle šedý s černým pruhem a štítkem, hlavička tabulky na každé
 stránce (`k.onPage`), čárkované linky na psaní ve Stav k 10:00, Stav k 13:00 a Poznámkách.
+Sestava s viditelnými poddíly je nízký šedý řádek (`asm`) bez QR, záznamu a linek (2.29.1).
+Položky jdou přes `shPdfItems(l)` (bez skrytých, číslování bez mezer; všechno skryté → hláška).
 Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
 
 ## Audit (verze 2.17, 2.18)
@@ -1250,7 +1281,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.27.1 | `2f75738` | Shortage – nové sloupce, TOP SHORTAGE nahoře, probíhající operace, do QR jen activeBarcode, vložení přes Ctrl+V (data verze 24) |
 | 2.28 | `8d74714` | Shortage – odebrání položky, poslední záznamy přes Ctrl+V, přesouvání myší, poznámka, PDF pro černobílý tisk (data verze 25) |
 | 2.28.1 | `9c921cc` | Shortage – celý poslední záznam v PDF (řádek podle obsahu), stav do 400 znaků (data verze 26) |
-| 2.29 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – poddíly z výrobního plánu pod sestavou (2. list, shoda EAN + index + objednávka, operace Hala 2) (data verze 27) |
+| 2.29 | `16ffd5b` | Shortage – poddíly z výrobního plánu pod sestavou (2. list, shoda EAN + index + objednávka, operace Hala 2) (data verze 27) |
+| 2.29.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – poddíly s jinou operací podle posledního záznamu (kromě „Odesláno na WPA“), orientační řádek sestavy, Skrýt v PDF (data verze 28) |
 
 Verze 2.1 přidala:
 
@@ -1362,7 +1394,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `27` (od 2.29):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `28` (od 2.29.1):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1630,7 +1662,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 70 testů: proti původní aplikaci + opravy + 2.1 až 2.29
+node tests/test_core.js                 # 72 testů: proti původní aplikaci + opravy + 2.1 až 2.29.1
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1671,8 +1703,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     poznámka, odebrání, přetažení myší (i nad TOP nejde), šipky, PDF s úpravami jen v odstínech
     šedé, monitor 1280 px bez přetečení; 2.29: výrobní plán (rychlé čtení i SheetJS), poddíly
     pod sestavou, poznámka a záznam u poddílu, odebrání, PDF s poddíly, plán v paměti u dalšího
-    seznamu; další seznam, přepnutí, smazání, historie, CSV, telefon,
-    tmavý režim;
+    seznamu; 2.29.1: poddíl s jinou operací přidaný záznamem, „Odesláno na WPA“ nepřidá,
+    orientační řádek sestavy (aplikace i PDF), Skrýt v PDF, tabulka na 1440 px bez posouvání;
+    další seznam, přepnutí, smazání, historie, CSV, telefon, tmavý režim;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;

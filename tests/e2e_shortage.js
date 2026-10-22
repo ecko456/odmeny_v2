@@ -267,7 +267,7 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   check(/Vloženo 2 položky ze schránky, z toho 1 TOP SHORTAGE/.test(pmsg) && !/bez odkazů/.test(pmsg), `vložení ze schránky: ${pmsg}`);
   const pl = await page.evaluate(() => S.shortage.lists[0]);
   check(pl.file === 'vloženo ze schránky' && pl.items.length === 2, `vložený seznam: ${pl.file} ${pl.items.length}`);
-  check(JSON.stringify((({ id, note, rec, subs, ...x }) => x)(pl.items[0])) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
+  check(JSON.stringify((({ id, note, rec, subs, cands, pdfHide, ...x }) => x)(pl.items[0])) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
     link: 'http://is.example/commission.production.detail/default/69001?activeBarcode=70001.980001.12345&componentProductionId=980001', code: '70001.980001.12345' }), `vložená položka: ${JSON.stringify(pl.items[0])}`);
   check(pl.items[1].qty === '1 500' && pl.items[1].op === 'Broušení' && !pl.items[1].top && pl.items[1].code === '70002.980002.12346', `sloučené buňky a mezery: ${JSON.stringify(pl.items[1])}`);
   check(await page.inputValue('#shPaste') === '', 'pole pro vložení zůstane prázdné');
@@ -400,15 +400,16 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
     const r1 = add(items[0].ean, '8594000009001', items[0].index, items[0].order, 'Broušení – hala 2');
     const r2 = add(items[0].ean, '8594000009001', items[0].index, items[0].order, 'Leštění - hala 2');
     const r3 = add(items[0].ean, '8594000009002', items[0].index, items[0].order, 'Frézování VF-11');
-    add(items[0].ean, '8594000009003', items[0].index, items[0].order, 'Montáž');
+    const r4 = add(items[0].ean, '8594000009003', items[0].index, items[0].order, 'Montáž');       // jiná operace: přidá ho poslední záznam
     const r5 = add(Number(items[3].ean), '8594000009004', items[3].index, items[3].order, 'Brush Hala 2');
     add(items[3].ean, '8594000009005', items[3].index, items[3].order, 'Label Hala 2');            // bez odkazu
-    add(items[5].ean, '8594000009006', items[5].index, items[5].order, 'Lakování');                 // jen jiná operace
+    const r7 = add(items[5].ean, '8594000009006', items[5].index, items[5].order, 'Lakování');      // jiná operace, záznam „Odesláno na WPA“
     add(items[2].ean, '8594000009007', 'X', items[2].order, 'Brush Hala 2');                        // jiný index
     const r9 = add('8591111111111', '8591111119999', 'B', 'OBJ-77', 'Odjehlení hala 2');           // pro odpolední seznam
     const ws = X.utils.aoa_to_sheet(aoa);
     const E = r => ws[X.utils.encode_cell({ r, c: 4 })];
     E(r1).l = { Target: links.a }; E(r2).l = { Target: links.a }; E(r5).l = { Target: links.b }; E(r9).l = { Target: links.c };
+    E(r4).l = { Target: links.m }; E(r7).l = { Target: links.w };
     E(r3).f = `HYPERLINK("${links.f}","8594000009002")`;
     ws[X.utils.encode_cell({ r: r5, c: 0 })] = { t: 'n', v: Number(items[3].ean) };
     const wb = X.utils.book_new();
@@ -416,13 +417,14 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
     X.utils.book_append_sheet(wb, ws, 'Poddíly');
     const bytes = new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' }));
     let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); }); return btoa(bin);
-  }, [[ITEMS[0], ITEMS[1], ITEMS[2], ITEMS[3], ITEMS[4], ITEMS[5]], { a: PL('70001.900001.10001'), b: PL('70004.900004.10004'), c: PL('1.2.4'), f: PL('70002.900002.10002') }]);
+  }, [[ITEMS[0], ITEMS[1], ITEMS[2], ITEMS[3], ITEMS[4], ITEMS[5]], { a: PL('70001.900001.10001'), b: PL('70004.900004.10004'), c: PL('1.2.4'), f: PL('70002.900002.10002'), m: PL('70003.900003.10003'), w: PL('70006.900006.10006') }]);
   const planFile = { name: 'vyrobni-plan.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(planB64, 'base64') };
   const parentOf = ean => page.evaluate(e => { const i = S.shortage.lists[0].items.find(x => x.ean === e); return i && { id: i.id, subs: i.subs.map(s => [s.ean, s.code, s.op, s.note, s.rec && s.rec.state]) }; }, ean);
   await page.setInputFiles('#shPlanFile', planFile);
   await page.waitForFunction(() => S.shortage.lists[0].plan && /Výrobní plán/.test(document.querySelector('#shMsg').textContent) && !/Čtu výrobní plán/.test(document.querySelector('#shMsg').textContent), null, { timeout: 30000 });
   const pmsg2 = (await page.textContent('#shMsg')).replace(/\s+/g, ' ');
-  check(/list Poddíly, 2[\s ]?010 řádků/.test(pmsg2) && /4 poddíly u 2 sestav/.test(pmsg2) && /1 poddíl nemá u EANu odkaz/.test(pmsg2) && /U 1 sestavy jsou v plánu poddíly jen s jinou operací/.test(pmsg2), `poddíly z plánu: ${pmsg2}`);
+  check(/list Poddíly, 2[\s ]?010 řádků/.test(pmsg2) && /4 poddíly u 2 sestav/.test(pmsg2) && /1 poddíl nemá u EANu odkaz/.test(pmsg2) && /2 poddíly s jinou operací čekají na poslední záznam/.test(pmsg2), `poddíly z plánu: ${pmsg2}`);
+  check(await page.evaluate(e => JSON.stringify(S.shortage.lists[0].items.find(x => x.ean === e).cands.map(c => [c.ean, c.code, c.op])), ITEMS[0].ean) === JSON.stringify([['8594000009003', '70003.900003.10003', 'Montáž']]), 'čekající poddíl s jinou operací (nezobrazuje se)');
   const p0 = await parentOf(ITEMS[0].ean), p3 = await parentOf(ITEMS[3].ean);
   check(JSON.stringify(p0.subs) === JSON.stringify([['8594000009001', '70001.900001.10001', 'Broušení – hala 2 · Leštění - hala 2', '', null], ['8594000009002', '70002.900002.10002', 'Frézování VF-11', '', null]]), `poddíly sestavy (vložený odkaz, víc operací, vzorec HYPERLINK): ${JSON.stringify(p0.subs)}`);
   check(JSON.stringify(p3.subs) === JSON.stringify([['8594000009004', '70004.900004.10004', 'Brush Hala 2', '', null], ['8594000009005', '', 'Label Hala 2', '', null]]), `poddíly TOP sestavy (EAN v plánu číslem, jeden bez odkazu): ${JSON.stringify(p3.subs)}`);
@@ -430,7 +432,12 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   const after0 = await page.evaluate(id => { const tr = document.querySelector(`#shView tr[data-shid="${id}"]`); return [tr.nextElementSibling.dataset.shparent, tr.nextElementSibling.nextElementSibling.dataset.shparent, tr.nextElementSibling.textContent.includes('PODDÍL')]; }, p0.id);
   check(after0[0] === p0.id && after0[1] === p0.id && after0[2], 'poddíly jsou v tabulce hned pod sestavou');
   check(await page.locator('#shView tr.sh-sub').count() === 4 && /Poddíly podle výrobního plánu vyrobni-plan\.xlsx/.test(await page.textContent('#shView .sh-planinfo')), 'čtyři řádky poddílů a údaj o plánu');
+  // sestava s poddíly je jen orientační: bez QR kódu a pole na poznámku
+  check(await page.evaluate(id => { const tr = document.querySelector(`#shView tr[data-shid="${id}"]`); return !tr.querySelector('[data-shnote]') && !tr.querySelector('.sh-code') && /sestava/.test(tr.textContent); }, p0.id), 'řádek sestavy bez QR kódu a poznámky');
   await saved(page);
+  // na monitoru 1440 px se tabulka vejde celá, tlačítka Skrýt v PDF a × jsou vidět bez posouvání
+  const fit = await page.evaluate(() => { const c = document.querySelector('#shView .table-card'); return [c.scrollWidth - c.clientWidth, [...c.querySelectorAll('thead th')].map(th => Math.round(th.getBoundingClientRect().width))]; });
+  check(fit[0] <= 1, `tabulka poddílů na 1440 px přetéká o ${fit[0]} px (${fit[1].join(', ')})`);
   await page.screenshot({ path: path.join(shots, '03c-poddily.png'), fullPage: true });
   // poznámka a poslední záznam u poddílu
   const subId = await page.evaluate(e => S.shortage.lists[0].items.find(x => x.ean === e).subs[0].id, ITEMS[0].ean);
@@ -438,23 +445,29 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   await page.press(`#shView [data-shnote="${subId}"]`, 'Enter');
   await page.waitForFunction(id => shEntry(S.shortage.lists[0], id).entry.note === 'Brusič ví', subId);
   await saved(page);
-  await paste('', '70001.900001.10001\t22.10.2026 12:30\t5\tBrus hotový\r\n');
+  // záznam u poddílu; poddíl s jinou operací přidá jeho záznam, „Odesláno na WPA“ ne
+  await paste('', '70001.900001.10001\t22.10.2026 12:30\t5\tBrus hotový\r\n70003.900003.10003\t22.10.2026 12:40\t2\tMontáž hotová\r\n70006.900006.10006\t22.10.2026 12:45\t1\tOdesláno na WPA\r\n');
   await page.waitForFunction(id => (shEntry(S.shortage.lists[0], id).entry.rec || {}).state === 'Brus hotový', subId);
-  check(/nový záznam u 1 položky/.test(await page.textContent('#shMsg')), `záznam u poddílu: ${await page.textContent('#shMsg')}`);
+  const rmsg3 = (await page.textContent('#shMsg')).replace(/\s+/g, ' ');
+  check(/nový záznam u 1 položky, podle záznamu přidán 1 poddíl s jinou operací/.test(rmsg3) && /1 poddíl má záznam „Odesláno na WPA“, nepřidal se/.test(rmsg3), `záznamy u poddílů: ${rmsg3}`);
+  const byRec = await page.evaluate(e => S.shortage.lists[0].items.find(x => x.ean === e).subs.filter(s => s.byRec).map(s => [s.ean, s.code, s.op, s.rec && s.rec.state, /^sp[a-z0-9]{5}$/.test(s.id)]), ITEMS[0].ean);
+  check(JSON.stringify(byRec) === JSON.stringify([['8594000009003', '70003.900003.10003', 'Montáž', 'Montáž hotová', true]]), `poddíl přidaný podle záznamu: ${JSON.stringify(byRec)}`);
+  check(!(await parentOf(ITEMS[5].ean)).subs.length, '„Odesláno na WPA“ poddíl nepřidá');
+  check(/podle záznamu/.test(await page.textContent('#shView tr.sh-sub:has-text("8594000009003")')), 'štítek „podle záznamu“');
   await saved(page);
   // stejný plán podruhé přes SheetJS (záloha pro xls a ods): stejné poddíly, poznámka i záznam zůstanou
   await page.evaluate(() => { window.SH_PLAN_SHEETJS = true; });
   await page.setInputFiles('#shPlanFile', planFile);
-  await page.waitForFunction(() => /4 poddíly u 2 sestav/.test(document.querySelector('#shMsg').textContent), null, { timeout: 30000 });
+  await page.waitForFunction(() => /5 poddílů u 2 sestav/.test(document.querySelector('#shMsg').textContent), null, { timeout: 30000 });
   await page.evaluate(() => { window.SH_PLAN_SHEETJS = false; });
   const p0b = await parentOf(ITEMS[0].ean);
-  check(JSON.stringify(p0b.subs) === JSON.stringify([['8594000009001', '70001.900001.10001', 'Broušení – hala 2 · Leštění - hala 2', 'Brusič ví', 'Brus hotový'], ['8594000009002', '70002.900002.10002', 'Frézování VF-11', '', null]]), `SheetJS dá stejné poddíly, poznámka a záznam zůstanou: ${JSON.stringify(p0b.subs)}`);
+  check(JSON.stringify(p0b.subs) === JSON.stringify([['8594000009001', '70001.900001.10001', 'Broušení – hala 2 · Leštění - hala 2', 'Brusič ví', 'Brus hotový'], ['8594000009002', '70002.900002.10002', 'Frézování VF-11', '', null], ['8594000009003', '70003.900003.10003', 'Montáž', '', 'Montáž hotová']]), `SheetJS dá stejné poddíly, poznámka, záznam i poddíl podle záznamu zůstanou: ${JSON.stringify(p0b.subs)}`);
   await saved(page);
   // sestava se přesune i s poddíly (šipka na úchytu)
   await page.focus(`#shView [data-shgrip="${p0.id}"]`);
   await page.keyboard.press('ArrowDown');
   await page.waitForFunction(id => { const tr = document.querySelector(`#shView tr[data-shid="${id}"]`); return tr && tr.previousElementSibling && !tr.previousElementSibling.dataset.shparent; }, p0.id).catch(() => {});
-  check(await page.evaluate(id => { const tr = document.querySelector(`#shView tr[data-shid="${id}"]`); return tr.nextElementSibling.dataset.shparent === id && tr.nextElementSibling.nextElementSibling.dataset.shparent === id; }, p0.id), 'poddíly zůstanou pod přesunutou sestavou');
+  check(await page.evaluate(id => { const tr = document.querySelector(`#shView tr[data-shid="${id}"]`); let n = tr.nextElementSibling, k = 0; while (n && n.dataset.shparent === id) { k += 1; n = n.nextElementSibling; } return k; }, p0.id) === 3, 'poddíly zůstanou pod přesunutou sestavou');
   await saved(page);
   // odebrání poddílu
   const sub2 = await page.evaluate(e => S.shortage.lists[0].items.find(x => x.ean === e).subs[1].id, ITEMS[3].ean);
@@ -467,12 +480,38 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   const info3 = pdfInfo(pdf3.path);
   if (info3) {
     const text3 = info3.map(p => p.text).join(' ').replace(/\s+/g, ' ');
-    ['PODDÍL', 'EAN 8594000009001', '70001.900001.10001', 'Broušení – hala 2 · Leštění - hala 2', 'Frézování VF-11', 'Brus hotový · 5 ks', 'Brusič ví', '3 poddíly', 'EAN 8594000009004'].forEach(t => check(text3.includes(t), `PDF s poddíly obsahuje „${t}“`));
-    check(!text3.includes('8594000009005'), 'odebraný poddíl v PDF není');
+    ['PODDÍL', 'EAN 8594000009001', '70001.900001.10001', 'Broušení – hala 2 · Leštění - hala 2', 'Frézování VF-11', 'Brus hotový · 5 ks', 'Brusič ví', '4 poddíly', 'EAN 8594000009004', 'EAN 8594000009003', 'Montáž hotová · 2 ks', 'sestava', 'Volat dodavatele'].forEach(t => check(text3.includes(t), `PDF s poddíly obsahuje „${t}“`));   // poznámka sestavy z dřívějška zůstane
+    check(!text3.includes('8594000009005') && !text3.includes('8594000009006'), 'odebraný poddíl ani „Odesláno na WPA“ v PDF nejsou');
+    check(!text3.includes(ITEMS[0].code) && !text3.includes(ITEMS[3].code), 'sestava s poddíly nemá v PDF QR kód (ani kód písmem)');
     check(text3.indexOf('EAN 8594000009001') > text3.indexOf(ITEMS[0].order) && text3.indexOf('EAN 8594000009001') < text3.indexOf(ITEMS[0].ean) + 400, 'poddíl je v PDF u své sestavy');
     spawnSync('python3', ['-c', `import pymupdf,sys
 d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+'/pdf-poddily-1.png')`, pdf3.path, shots]);
   }
+
+  // Skrýt v PDF (2.29.1): položka, poddíl a celá sestava s poddíly; v aplikaci zůstanou zašedlé
+  const idOf = e => page.evaluate(x => S.shortage.lists[0].items.find(i => i.ean === x).id, e);
+  const subOf = (e, se) => page.evaluate(([x, y]) => S.shortage.lists[0].items.find(i => i.ean === x).subs.find(s => s.ean === y).id, [e, se]);
+  await page.click(`#shView [data-shpdfhide="${await idOf(ITEMS[2].ean)}"]`);
+  await page.click(`#shView [data-shpdfhide="${await subOf(ITEMS[0].ean, '8594000009002')}"]`);
+  await page.click(`#shView [data-shpdfhide="${await idOf(ITEMS[3].ean)}"]`);
+  await page.waitForFunction(() => document.querySelectorAll('#shView tr.sh-pdfoff').length === 4);
+  check(/4 skryté v PDF/.test(await page.textContent('#shView .sh-card')), 'počet skrytých v PDF');
+  check(await page.evaluate(e => { const i = S.shortage.lists[0].items.find(x => x.ean === e); return i.pdfHide && !i.subs[0].pdfHide; }, ITEMS[3].ean), 'sestava skrytá, poddíly ne (skryje je sestava)');
+  await saved(page);
+  const pdf4 = await download(page, '[data-shpdf]', 'shortage-skryte.pdf');
+  const info4 = pdfInfo(pdf4.path);
+  if (info4) {
+    const text4 = info4.map(p => p.text).join(' ').replace(/\s+/g, ' ');
+    check(/22 položek · 2 poddíly · 3 TOP SHORTAGE/.test(text4), `hlavička PDF bez skrytých: ${text4.slice(0, 160)}`);
+    check(![ITEMS[2].ean, 'EAN 8594000009002', ITEMS[3].ean, 'EAN 8594000009004'].some(t => text4.includes(t)) && ['EAN 8594000009001', 'EAN 8594000009003', ITEMS[0].ean].every(t => text4.includes(t)), 'skryté položky a poddíly v PDF nejsou, ostatní ano');
+    // sestava je na stejné stránce jako její první poddíl (nezůstane sama dole na stránce)
+    const pg = t => info4.findIndex(p => p.text.replace(/\s+/g, ' ').includes(t));
+    check(pg(ITEMS[0].ean) >= 0 && pg(ITEMS[0].ean) === pg('EAN 8594000009001'), `sestava a první poddíl v PDF na stránkách ${pg(ITEMS[0].ean) + 1} a ${pg('EAN 8594000009001') + 1}`);
+  }
+  // zpátky do PDF
+  await page.click(`#shView [data-shpdfhide="${await idOf(ITEMS[3].ean)}"]`);
+  await page.waitForFunction(() => document.querySelectorAll('#shView tr.sh-pdfoff').length === 2);
+  await saved(page);
 
   // Další seznam (poddíly z plánu v paměti okna se doplní samy), přepnutí na starší a smazání.
   const small = await page.evaluate(async () => {
@@ -489,7 +528,7 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   check(await page.evaluate(() => JSON.stringify(S.shortage.lists[0].items[0].subs.map(s => [s.ean, s.code]))) === JSON.stringify([['8591111119999', '1.2.4']]), 'poddíl nového seznamu');
   check(await page.locator('#shView .sh-lists .chip').count() === 2 && await page.locator('#shView tbody tr[data-shid]').count() === 1, 'dva seznamy, ukázaný je nejnovější');
   await page.click('#shView .sh-lists .chip:nth-child(2)');
-  await page.waitForFunction(() => document.querySelectorAll('#shView tbody tr[data-shid]').length === 24 && document.querySelectorAll('#shView tbody tr.sh-sub').length === 3);
+  await page.waitForFunction(() => document.querySelectorAll('#shView tbody tr[data-shid]').length === 24 && document.querySelectorAll('#shView tbody tr.sh-sub').length === 4);
   check(true, 'přepnutí na starší seznam');
   await page.screenshot({ path: path.join(shots, '03-dva-seznamy.png'), fullPage: true });
   await saved(page);
@@ -504,8 +543,9 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
     && log.some(t => /^Shortage: ze seznamu .* odebrána položka 0012345678905 Ložisko 6204-2RS$/.test(t)) && log.some(t => /^Shortage: poznámka k položce 8594000000101 Hřídel předlohová \(seznam .*\): Volat dodavatele$/.test(t))
     // záznamy k témuž seznamu se v historii sloučí do posledního vložení (u 1 položky = poddílu)
     && log.some(t => /^Shortage: poslední záznamy u 1 položky seznamu /.test(t)) && log.some(t => /^Shortage: změněno pořadí položek v seznamu /.test(t))
-    && log.some(t => /^Shortage: poddíly z výrobního plánu vyrobni-plan\.xlsx u seznamu .*: 4 poddíly u 2 sestav$/.test(t)) && log.some(t => /^Shortage: poznámka k poddílu 8594000009001 u položky .*: Brusič ví$/.test(t))
-    && log.some(t => /^Shortage: odebrán poddíl 8594000009005 u položky /.test(t)), `historie změn: ${JSON.stringify(log)}`);
+    && log.some(t => /^Shortage: poddíly z výrobního plánu vyrobni-plan\.xlsx u seznamu .*: 5 poddílů u 2 sestav$/.test(t)) && log.some(t => /^Shortage: poznámka k poddílu 8594000009001 u položky .*: Brusič ví$/.test(t))
+    && log.some(t => /^Shortage: odebrán poddíl 8594000009005 u položky /.test(t)) && log.some(t => /^Shortage: podle posledního záznamu přidán poddíl 8594000009003 u položky /.test(t))
+    && log.some(t => /^Shortage: položka 8594000000303 .* skryta v PDF/.test(t)) && log.some(t => /^Shortage: poddíl 8594000009002 u položky .* skryt v PDF/.test(t)) && log.some(t => /^Shortage: položka 8594000000404 .* znovu v PDF/.test(t)), `historie změn: ${JSON.stringify(log)}`);
 
   // CSV nemá odkazy.
   await page.setInputFiles('#shFile', { name: 'seznam.csv', mimeType: 'text/csv', buffer: Buffer.from('EAN;Název\n123;Díl\n') });

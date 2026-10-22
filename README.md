@@ -62,6 +62,29 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.29.1
+
+- **Shortage: poddíly s jinou operací přidá poslední záznam.** Poddíl z výrobního plánu,
+  jehož operace není v seznamu (Broušení – hala 2 …), se zatím neukáže, ale seznam si ho
+  pamatuje. Jakmile se u něj objeví poslední záznam (Ctrl+V, A QR kód), přidá se pod svou
+  sestavu i se záznamem a štítkem „podle záznamu“.
+  - Výjimka: záznam se stavem obsahujícím **„Odesláno na WPA“** poddíl nepřidá.
+  - Pořadí: nejdřív výrobní plán, potom poslední záznamy. Čekající poddíly se uloží se
+    seznamem, takže záznam vložený později (i v jiném okně) je najde.
+  - Další nahrání plánu poddíl přidaný záznamem ponechá, dokud ho plán u sestavy obsahuje.
+- **Sestava s poddíly je jen orientační.** Řádek sestavy v aplikaci ukazuje objednávku, název,
+  EAN, index, množství, operaci a poslední záznam, místo QR kódu je „sestava“ a pole na
+  poznámku chybí. V PDF je
+  sestava nízký šedý řádek bez QR kódu, posledního záznamu a kolonek Stav k 10:00 a 13:00.
+  QR kód a kolonky mají poddíly pod ní. Dříve dopsaná poznámka sestavy zůstane vidět
+  (v aplikaci i v PDF). Sestava nezůstane sama dole na stránce, přejde
+  na další stránku s prvním poddílem.
+- **Skrýt v PDF.** Oko na konci řádku položku nebo poddíl vyřadí z PDF k tisku. V aplikaci
+  zůstane zašedlý, dalším klikem se vrátí. Skrytá sestava se nevytiskne ani s poddíly,
+  číslování v PDF jde bez mezer. Je to v historii změn.
+- Tabulka Shortage se i s tlačítky vejde na monitor 1440 px (dlouhé nadpisy sloupců se zalomí).
+- Verze dat 28: stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.29
 
 - **Shortage: poddíly z výrobního plánu.** Tlačítkem **Výrobní plán** nahraješ soubor

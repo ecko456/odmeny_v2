@@ -1927,6 +1927,8 @@ table.sv-dev-tab tr.dup:hover td { background: color-mix(in srgb, var(--crit) 14
 .sh-card .card-head { align-items: flex-start; }
 .sh-search input { width: 240px; max-width: 100%; }
 table.sh-tab td { vertical-align: top; }
+/* dlouhé nadpisy sloupců se zalomí, aby se tabulka i s tlačítky vešla na monitor 1440 px */
+table.sh-tab th { white-space: normal; vertical-align: bottom; }
 /* skryté popisky (.sr-only) v hlavičce jsou absolutní: bez toho by utekly z posuvné tabulky a stránka by přetekla */
 .sh-card .table-card { position: relative; }
 table.sh-tab .sh-ean { margin-top: 3px; font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
@@ -1948,7 +1950,7 @@ table.sh-tab td.sh-opc { min-width: 130px; }
 .tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; white-space: normal; overflow-wrap: anywhere; max-width: 100%; text-align: left; border-radius: 8px; }
 table.sh-tab td.sh-notec { min-width: 150px; }
 .sh-note { width: 100%; min-width: 130px; min-height: 34px; padding: 6px 9px; font-size: 13.5px; }
-table.sh-tab td.sh-actc, table.sh-tab th.sh-actc { width: 40px; text-align: right; }
+table.sh-tab td.sh-actc, table.sh-tab th.sh-actc { width: 76px; text-align: right; }
 .sh-hint { margin: -4px 0 10px; }
 /* poddíly z výrobního plánu (2.29) */
 .sh-planinfo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--ink-2); }
@@ -1958,6 +1960,11 @@ table.sh-tab tr.sh-sub.sh-top td { background: color-mix(in srgb, var(--crit-sof
 table.sh-tab tr.sh-sub td.sh-subord { color: var(--ink-3); font-weight: 500; }
 .sh-subarrow { display: inline-block; width: 10px; height: 9px; margin: 0 6px 2px 2px; border-left: 1.5px solid var(--ink-3); border-bottom: 1.5px solid var(--ink-3); vertical-align: middle; }
 .tag.sh-subtag { background: var(--surface-3); color: var(--ink); font-weight: 800; letter-spacing: .04em; }
+.tag.sh-rectag { background: var(--acc-soft); color: var(--acc); }
+/* skryté v PDF (2.29.1): v aplikaci zašedlé, tlačítko zůstává */
+table.sh-tab tr.sh-pdfoff td:not(.sh-actc):not(.sh-gripc) { opacity: .45; }
+table.sh-tab td.sh-actc { white-space: nowrap; }
+.sh-hidebtn.on { background: var(--warn-soft); color: var(--warn); }
 table.sh-tab td.sh-qty b { font-size: 15px; }
 table.sh-tab tr[hidden] { display: none; }
 table.sh-tab tr.sh-top td { background: color-mix(in srgb, var(--crit-soft) 70%, transparent); }
