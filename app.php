@@ -17,6 +17,9 @@ const ODM_PRIVATE_FILES = [
     'jspdf.js' => ['private/vendor/jspdf.umd.min.js', 'text/javascript; charset=utf-8'],
     'pdf-regular.ttf' => ['private/vendor/plex-sans-regular.ttf', 'font/ttf'],
     'pdf-semibold.ttf' => ['private/vendor/plex-sans-semibold.ttf', 'font/ttf'],
+    // IBM Plex Mono (OFL) pro čísla v reportu kapacit a zaškolení (2.31), jako ve vzoru.
+    'pdf-mono.ttf' => ['private/vendor/plex-mono-medium.ttf', 'font/ttf'],
+    'pdf-mono-semibold.ttf' => ['private/vendor/plex-mono-semibold.ttf', 'font/ttf'],
     // Čtení čárových a QR kódů z kamery (kartička zaměstnance v Sankcích), ZXing 0.23.0, Apache-2.0.
     'zxing.js' => ['private/vendor/zxing.min.js', 'text/javascript; charset=utf-8'],
 ];

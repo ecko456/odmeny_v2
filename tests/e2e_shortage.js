@@ -267,7 +267,7 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   check(/Vloženo 2 položky ze schránky, z toho 1 TOP SHORTAGE/.test(pmsg) && !/bez odkazů/.test(pmsg), `vložení ze schránky: ${pmsg}`);
   const pl = await page.evaluate(() => S.shortage.lists[0]);
   check(pl.file === 'vloženo ze schránky' && pl.items.length === 2, `vložený seznam: ${pl.file} ${pl.items.length}`);
-  check(JSON.stringify((({ id, note, rec, subs, cands, pdfHide, ...x }) => x)(pl.items[0])) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
+  check(JSON.stringify((({ id, note, rec, subs, cands, pdfHide, full, ...x }) => x)(pl.items[0])) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
     link: 'http://is.example/commission.production.detail/default/69001?activeBarcode=70001.980001.12345&componentProductionId=980001', code: '70001.980001.12345' }), `vložená položka: ${JSON.stringify(pl.items[0])}`);
   check(pl.items[1].qty === '1 500' && pl.items[1].op === 'Broušení' && !pl.items[1].top && pl.items[1].code === '70002.980002.12346', `sloučené buňky a mezery: ${JSON.stringify(pl.items[1])}`);
   check(await page.inputValue('#shPaste') === '', 'pole pro vložení zůstane prázdné');
@@ -513,6 +513,63 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   await page.waitForFunction(() => document.querySelectorAll('#shView tr.sh-pdfoff').length === 2);
   await saved(page);
 
+  // Ruční TOP SHORTAGE (2.31): položka jde na konec TOP, zrušená na začátek ostatních.
+  const order = () => page.evaluate(() => S.shortage.lists[0].items.map(i => i.ean));
+  await page.click(`#shView [data-shtop="${await idOf(ITEMS[5].ean)}"]`);
+  await page.waitForFunction(e => S.shortage.lists[0].items.find(i => i.ean === e).top, ITEMS[5].ean);
+  let ord = await order();
+  check(ord.indexOf(ITEMS[5].ean) === 4 && ord.slice(0, 4).join() === [ITEMS[3], ITEMS[10], ITEMS[17], ITEMS[20]].map(x => x.ean).join(), `ručně TOP na konci TOP: ${ord.slice(0, 6)}`);
+  check(/TOP SHORTAGE/.test(await page.textContent(`#shView tr[data-shid="${await idOf(ITEMS[5].ean)}"]`)) && await page.getAttribute(`#shView [data-shtop="${await idOf(ITEMS[5].ean)}"]`, 'aria-pressed') === 'true', 'štítek a stisknuté tlačítko TOP');
+  await page.click(`#shView [data-shtop="${await idOf(ITEMS[10].ean)}"]`);
+  await page.waitForFunction(e => !S.shortage.lists[0].items.find(i => i.ean === e).top, ITEMS[10].ean);
+  ord = await order();
+  check(ord.indexOf(ITEMS[10].ean) === 4 && ord.slice(0, 4).join() === [ITEMS[3], ITEMS[17], ITEMS[20], ITEMS[5]].map(x => x.ean).join(), `zrušené TOP na začátku ostatních: ${ord.slice(0, 6)}`);
+  // Sestava „Zobrazit plně“ (2.31): QR kód a poznámka i u sestavy s poddíly, v PDF celý řádek.
+  const asmId = await idOf(ITEMS[0].ean);
+  check(!(await page.locator(`#shView tr[data-shid="${asmId}"] .sh-code`).count()) && /sestava/.test(await page.textContent(`#shView tr[data-shid="${asmId}"]`)), 'sestava je nejdřív orientační');
+  await page.click(`#shView [data-shfull="${asmId}"]`);
+  await page.waitForFunction(id => S.shortage.lists[0].items.find(i => i.id === id).full === true, asmId);
+  check(await page.locator(`#shView tr[data-shid="${asmId}"] .sh-code`).count() === 1 && await page.locator(`#shView tr[data-shid="${asmId}"] [data-shnote]`).count() === 1
+    && /Jen orientačně/.test(await page.textContent(`#shView [data-shfull="${asmId}"]`)), 'plně zobrazená sestava má QR kód a pole na poznámku');
+  await saved(page);
+  const pdf5 = await download(page, '[data-shpdf]', 'shortage-plne.pdf');
+  const info5 = pdfInfo(pdf5.path);
+  if (info5) {
+    const text5 = info5.map(p => p.text).join(' ').replace(/\s+/g, ' ');
+    check(text5.includes(ITEMS[0].code) && text5.includes('EAN 8594000009001'), 'PDF: plně zobrazená sestava s kódem pod QR a s poddíly');
+    check(text5.includes('4 TOP SHORTAGE') || /· 4 TOP SHORTAGE/.test(text5), `PDF: ruční TOP v počtu: ${text5.slice(0, 160)}`);
+  }
+  // Filtr podle probíhající operace (2.31): víc operací, sestava i kvůli poddílu, PDF jen vybrané.
+  const chips = await page.$$eval('#shView .sh-ops [data-shop]', b => b.map(x => [x.dataset.shop, x.textContent.replace(/\s+/g, ' ').trim()]));
+  check(chips[0][0] === '' && chips.some(c => c[0] === 'montaz' && /^Montáž \d+$/.test(c[1])) && chips.some(c => c[0] === '-' && /^bez operace/.test(c[1])), `čipy operací: ${JSON.stringify(chips)}`);
+  const visible = () => page.evaluate(() => ({ items: [...document.querySelectorAll('#shView tbody tr[data-shid]')].filter(r => !r.hidden).map(r => S.shortage.lists[0].items.find(i => i.id === r.dataset.shid).ean),
+    subs: [...document.querySelectorAll('#shView tbody tr.sh-sub')].filter(r => !r.hidden).map(r => r.dataset.shsub) }));
+  await page.click('#shView .sh-ops [data-shop="montaz"]');
+  await page.waitForSelector('#shView .sh-ops [data-shop="montaz"][aria-pressed="true"]');
+  let vis = await visible();
+  const montaz = [ITEMS[0], ITEMS[6], ITEMS[11], ITEMS[16], ITEMS[21]].map(x => x.ean).sort();
+  check(JSON.stringify([...vis.items].sort()) === JSON.stringify(montaz) && vis.subs.length === 1, `filtr Montáž: ${JSON.stringify(vis)}`);
+  check(await page.evaluate(() => document.querySelector('#shView table.sh-tab').classList.contains('sh-nodrag')), 'při filtru se nepřesouvá');
+  check(/PDF k tisku · vybrané operace/.test(await page.textContent('#shView [data-shpdf]')), 'tlačítko PDF říká, že tiskne vybrané operace');
+  await page.click('#shView .sh-ops [data-shop="elox"]');
+  await page.waitForSelector('#shView .sh-ops [data-shop="elox"][aria-pressed="true"]');
+  vis = await visible();
+  check(vis.items.includes(ITEMS[7].ean) && vis.items.includes(ITEMS[6].ean) && !vis.items.includes(ITEMS[5].ean), `filtr Montáž + Elox: ${vis.items.length}`);
+  const pdf6 = await download(page, '[data-shpdf]', 'shortage-operace.pdf');
+  const info6 = pdfInfo(pdf6.path);
+  if (info6) {
+    const text6 = info6.map(p => p.text).join(' ').replace(/\s+/g, ' ');
+    check(/Jen operace: (Montáž, Elox|Elox, Montáž)/.test(text6), `PDF: popis filtru: ${text6.slice(0, 220)}`);
+    check(text6.includes(ITEMS[6].ean) && text6.includes(ITEMS[7].ean) && text6.includes('EAN 8594000009003') && !text6.includes(ITEMS[5].ean) && !text6.includes('EAN 8594000009001') && !text6.includes(ITEMS[2].ean),
+      'PDF jen s vybranými operacemi (sestava kvůli poddílu, bez skrytých)');
+  }
+  await page.click('#shView .sh-ops [data-shop=""]');
+  await page.waitForSelector('#shView .sh-ops [data-shop=""][aria-pressed="true"]');
+  vis = await visible();
+  check(vis.items.length === 24 && !(await page.evaluate(() => document.querySelector('#shView table.sh-tab').classList.contains('sh-nodrag'))), 'Všechny operace: celý seznam a zase přesouvání');
+  await page.screenshot({ path: path.join(shots, '02b-top-plne-operace.png'), fullPage: false });
+  await saved(page);
+
   // Další seznam (poddíly z plánu v paměti okna se doplní samy), přepnutí na starší a smazání.
   const small = await page.evaluate(async () => {
     const X = await xlsx();
@@ -545,7 +602,9 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
     && log.some(t => /^Shortage: poslední záznamy u 1 položky seznamu /.test(t)) && log.some(t => /^Shortage: změněno pořadí položek v seznamu /.test(t))
     && log.some(t => /^Shortage: poddíly z výrobního plánu vyrobni-plan\.xlsx u seznamu .*: 5 poddílů u 2 sestav$/.test(t)) && log.some(t => /^Shortage: poznámka k poddílu 8594000009001 u položky .*: Brusič ví$/.test(t))
     && log.some(t => /^Shortage: odebrán poddíl 8594000009005 u položky /.test(t)) && log.some(t => /^Shortage: podle posledního záznamu přidán poddíl 8594000009003 u položky /.test(t))
-    && log.some(t => /^Shortage: položka 8594000000303 .* skryta v PDF/.test(t)) && log.some(t => /^Shortage: poddíl 8594000009002 u položky .* skryt v PDF/.test(t)) && log.some(t => /^Shortage: položka 8594000000404 .* znovu v PDF/.test(t)), `historie změn: ${JSON.stringify(log)}`);
+    && log.some(t => /^Shortage: položka 8594000000303 .* skryta v PDF/.test(t)) && log.some(t => /^Shortage: poddíl 8594000009002 u položky .* skryt v PDF/.test(t)) && log.some(t => /^Shortage: položka 8594000000404 .* znovu v PDF/.test(t))
+    && log.some(t => new RegExp(`^Shortage: položka ${ITEMS[5].ean} .* ručně označena jako TOP SHORTAGE`).test(t)) && log.some(t => new RegExp(`^Shortage: položka ${ITEMS[10].ean} .* už není TOP SHORTAGE`).test(t))
+    && log.some(t => new RegExp(`^Shortage: sestava ${ITEMS[0].ean} .* zobrazena plně`).test(t)), `historie změn: ${JSON.stringify(log)}`);
 
   // CSV nemá odkazy.
   await page.setInputFiles('#shFile', { name: 'seznam.csv', mimeType: 'text/csv', buffer: Buffer.from('EAN;Název\n123;Díl\n') });

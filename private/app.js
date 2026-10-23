@@ -20,8 +20,8 @@ const ui = {
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
-  sh: { open: null, q: '', plan: null },
-  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '' },
+  sh: { open: null, q: '', plan: null, ops: [] },
+  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -5388,14 +5388,22 @@ function bindTop5Events() {
    TOP 5: PDF pro auditora (týdenní report, souhrn, jeden případ)
    Vzniká v prohlížeči z dešifrovaných dat, server obsah nevidí.
    ========================================================================== */
-async function newPdf(orientation = 'portrait') {
+async function newPdf(orientation = 'portrait', opts = {}) {
   if (!window.jspdf) await OdmLock.loadScript(`app.php?f=jspdf.js&v=${document.body.dataset.privateVersion || '1'}`);
-  const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
+  const [regular, semibold, mono, monoBold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf'),
+    ...(opts.mono ? [pdfAsset('pdf-mono.ttf'), pdfAsset('pdf-mono-semibold.ttf')] : [])]);
   const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation, compress: true });
   doc.addFileToVFS('Plex-Regular.ttf', regular);
   doc.addFont('Plex-Regular.ttf', 'Plex', 'normal');
   doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
   doc.addFont('Plex-SemiBold.ttf', 'Plex', 'bold');
+  // Plex Mono jen pro PDF, která ho kreslí (report kapacit a zaškolení podle vzoru), ostatní zůstanou menší
+  if (opts.mono) {
+    doc.addFileToVFS('PlexMono-Medium.ttf', mono);
+    doc.addFont('PlexMono-Medium.ttf', 'PlexMono', 'normal');
+    doc.addFileToVFS('PlexMono-SemiBold.ttf', monoBold);
+    doc.addFont('PlexMono-SemiBold.ttf', 'PlexMono', 'bold');
+  }
   return doc;
 }
 
@@ -5984,10 +5992,10 @@ function drawEffSummary(doc, single, short = false) {
 }
 
 /* ---------- export ---------- */
-async function withPdf(button, fn, orientation = 'portrait') {
+async function withPdf(button, fn, orientation = 'portrait', opts = {}) {
   if (button) button.disabled = true;
   try {
-    const doc = await newPdf(orientation);
+    const doc = await newPdf(orientation, opts);
     return await fn(doc);
   } catch (error) {
     toast(`PDF se nepovedlo: ${error.message}`, true);
@@ -8579,7 +8587,7 @@ function renderShortage() {
     const rec = recHtml(i);
     const self = [i.order, i.name, i.ean, i.index, i.op, i.code, i.note, i.rec ? i.rec.state : '', i.top ? 'top shortage' : ''].join(' ');
     // poddíly z výrobního plánu pod sestavou (2.29): při hledání se ukážou se sestavou
-    const subs = (i.subs || []).map((x, k) => `<tr class="sh-sub${i.top ? ' sh-top' : ''}${x.pdfHide || i.pdfHide ? ' sh-pdfoff' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shrow="${esc([self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : ''].join(' ').toLowerCase())}">
+    const subs = (i.subs || []).map((x, k) => `<tr class="sh-sub${i.top ? ' sh-top' : ''}${x.pdfHide || i.pdfHide ? ' sh-pdfoff' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shop="${esc(shOpKey(x.op))}" data-shrow="${esc([self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : ''].join(' ').toLowerCase())}">
       <td class="sh-gripc"></td>
       <td class="num muted" data-label="#">${j + 1}.${k + 1}</td>
       <td class="sh-ord sh-subord" data-label="Číslo objednávky"><span class="sh-subarrow" aria-hidden="true"></span>${esc(i.order || '—')}</td>
@@ -8590,8 +8598,12 @@ function renderShortage() {
       <td data-label="QR kód">${x.code ? `<span class="tag ok sh-code">${esc(x.code)}</span>` : '<span class="tag warn">bez kódu</span>'}</td>
       <td class="sh-notec" data-label="Poznámka"><input type="text" class="sh-note" data-shnote="${esc(x.id)}" value="${esc(x.note || '')}" maxlength="300" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k poddílu ${esc(x.ean || x.code)}"></td>
       <td class="sh-actc">${shHideBtn(x)}<button class="icon-btn small" type="button" data-shdelsub="${esc(x.id)}" title="Odebrat poddíl" aria-label="Odebrat poddíl ${esc(x.ean || x.code)}">${I.x}</button></td></tr>`).join('');
-    // sestava s poddíly je jen orientační: bez QR kódu a pole na poznámku (2.29.1)
-    return `<tr class="${i.top ? 'sh-top' : ''}${subs ? ' sh-hassub' : ''}${i.pdfHide ? ' sh-pdfoff' : ''}" data-shid="${esc(i.id)}" data-shrow="${esc([self, ...(i.subs || []).flatMap(x => [x.ean, x.code])].join(' ').toLowerCase())}">
+    // sestava s poddíly je jen orientační: bez QR kódu a pole na poznámku (2.29.1), dokud ji uživatel nezobrazí plně (2.31)
+    const asm = !!subs && !i.full;
+    const fullBtn = subs ? `<button class="btn sec small sh-fullbtn${i.full ? ' on' : ''}" type="button" data-shfull="${esc(i.id)}" aria-pressed="${!!i.full}" title="${i.full ? 'Sestava se ukazuje i tiskne celá (QR kód, poslední záznam, kolonky). Klikni a bude zase jen orientační.' : 'Ukázat a tisknout sestavu celou: QR kód, poslední záznam, kolonky na psaní a poznámku'}">${i.full ? 'Jen orientačně' : 'Zobrazit plně'}</button>` : '';
+    const qr = i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>';
+    const topBtn = `<button class="btn sec small sh-topbtn${i.top ? ' on' : ''}" type="button" data-shtop="${esc(i.id)}" aria-pressed="${!!i.top}" title="${i.top ? 'Zrušit TOP SHORTAGE' : 'Označit jako TOP SHORTAGE (bude nahoře)'}" aria-label="${i.top ? 'Zrušit TOP SHORTAGE u' : 'Označit jako TOP SHORTAGE'} ${esc(i.ean || i.name)}">TOP</button>`;
+    return `<tr class="${i.top ? 'sh-top' : ''}${subs ? ' sh-hassub' : ''}${i.full ? ' sh-full' : ''}${i.pdfHide ? ' sh-pdfoff' : ''}" data-shid="${esc(i.id)}" data-shop="${esc(shOpKey(i.op))}" data-shsubops="${esc((i.subs || []).map(x => shOpKey(x.op)).join('|'))}" data-shrow="${esc([self, ...(i.subs || []).flatMap(x => [x.ean, x.code])].join(' ').toLowerCase())}">
       <td class="sh-gripc"><button type="button" class="sh-grip" data-shgrip="${esc(i.id)}" title="Přesunout: přetáhni myší, nebo šipkami nahoru a dolů" aria-label="Přesunout položku ${esc(i.ean || i.name)}">${SH_GRIP}</button></td>
       <td class="num muted" data-label="#">${j + 1}</td>
       <td class="sh-ord" data-label="Číslo objednávky">${esc(i.order || '—')}</td>
@@ -8599,10 +8611,17 @@ function renderShortage() {
       <td data-label="Index">${esc(i.index || '—')}</td>
       <td class="num sh-qty" data-label="Urgentní množství"><b>${esc(i.qty || '—')}</b></td>
       <td class="sh-opc" data-label="Operace · poslední záznam">${esc(i.op || '—')}${rec}</td>
-      <td data-label="QR kód">${subs ? '<span class="small muted">sestava</span>' : i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>'}</td>
-      <td class="sh-notec" data-label="Poznámka">${subs ? (i.note ? `<span class="small">${esc(i.note)}</span>` : '') : `<input type="text" class="sh-note" data-shnote="${esc(i.id)}" value="${esc(i.note || '')}" maxlength="300" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k položce ${esc(i.ean || i.name)}">`}</td>
-      <td class="sh-actc">${shHideBtn(i)}<button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${I.x}</button></td></tr>${subs}`;
+      <td data-label="QR kód">${asm ? '<span class="small muted">sestava</span>' : qr}${fullBtn ? `<div class="sh-fullc">${fullBtn}</div>` : ''}</td>
+      <td class="sh-notec" data-label="Poznámka">${asm ? (i.note ? `<span class="small">${esc(i.note)}</span>` : '') : `<input type="text" class="sh-note" data-shnote="${esc(i.id)}" value="${esc(i.note || '')}" maxlength="300" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k položce ${esc(i.ean || i.name)}">`}</td>
+      <td class="sh-actc">${topBtn}${shHideBtn(i)}<button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${I.x}</button></td></tr>${subs}`;
   }).join('');
+  // filtr podle probíhající operace (2.31): víc operací najednou, platí i pro PDF
+  const ops = shOpList(l);
+  const sel = shOpSel(l);
+  const opChips = ops.length > 1 ? `<div class="sh-ops"><span class="small muted">Probíhající operace</span><div class="chips" role="group" aria-label="Filtr podle probíhající operace">
+        <button type="button" class="chip${sel ? '' : ' on'}" data-shop="" aria-pressed="${!sel}">Všechny</button>
+        ${ops.map(o => `<button type="button" class="chip${sel && sel.has(o.key) ? ' on' : ''}" data-shop="${esc(o.key)}" aria-pressed="${!!(sel && sel.has(o.key))}">${esc(o.label)} <span class="sh-opn">${o.n}</span></button>`).join('')}</div>
+      ${sel ? `<p class="tiny muted">Ukázané jsou položky a poddíly s vybranou operací (sestava i kvůli poddílu). PDF k tisku vytiskne jen je.</p>` : ''}</div>` : '';
   const pl = ui.sh.plan;
   const planInfo = l.plan ? `Poddíly podle výrobního plánu ${esc(l.plan.file)} (${esc(shWhenText(l.plan.at))}): ${subsN} ${shSubsN(subsN)}.` : 'Poddíly sestav doplníš tlačítkem Výrobní plán nahoře.';
   const planUse = pl && (!l.plan || l.plan.at !== pl.at) ? ` <button class="btn sec small" type="button" data-shplanuse>Najít poddíly v plánu ${esc(pl.file)}</button>` : '';
@@ -8612,10 +8631,11 @@ function renderShortage() {
       <div class="card-head"><div><h2>Seznam z ${esc(shWhen(l))}</h2>
         <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}${hidN ? ` · <b>${hidN} skryt${hidN === 1 ? 'á' : hidN <= 4 ? 'é' : 'ých'} v PDF</b>` : ''}</p></div>
         <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat objednávku, díl, EAN, operaci" autocomplete="off"></label>
-          <button class="btn small" type="button" data-shpdf="${esc(l.id)}"${n ? '' : ' disabled'}>PDF k tisku</button>
+          <button class="btn small" type="button" data-shpdf="${esc(l.id)}"${n ? '' : ' disabled'}>${sel ? 'PDF k tisku · vybrané operace' : 'PDF k tisku'}</button>
           <button class="icon-btn" type="button" data-shdel="${esc(l.id)}" title="Smazat seznam" aria-label="Smazat seznam z ${esc(shWhen(l))}">${I.x}</button></div></div>
-      <p class="tiny muted sh-hint">Pořadí změníš přetažením řádku myší (na telefonu za úchyt vlevo), poddíly jdou se sestavou. TOP SHORTAGE zůstávají nahoře. Poslední záznamy vlož přes Ctrl+V: A QR kód, B datum a čas, C počet ks, D stav. Oko na konci řádku položku skryje v PDF (sestavu i s poddíly).</p>
+      <p class="tiny muted sh-hint">Pořadí změníš přetažením řádku myší (na telefonu za úchyt vlevo), poddíly jdou se sestavou. TOP SHORTAGE zůstávají nahoře, tlačítko TOP na konci řádku položku označí nebo odznačí ručně. Poslední záznamy vlož přes Ctrl+V: A QR kód, B datum a čas, C počet ks, D stav. Oko na konci řádku položku skryje v PDF (sestavu i s poddíly). Sestavu s poddíly ukáže celou (QR kód, záznam, kolonky) tlačítko Zobrazit plně.</p>
       <p class="small sh-planinfo">${planInfo}${planUse}</p>
+      ${opChips}
       <div class="table-card flat"><table class="stack sh-tab"><thead><tr><th class="sh-gripc"><span class="sr-only">Přesunout</span></th><th>#</th><th>Číslo objednávky</th><th>Název dílu · EAN</th><th>Index</th><th class="num">Urgentní množství</th><th>Operace · poslední záznam</th><th>QR kód</th><th>Poznámka</th><th class="sh-actc"><span class="sr-only">Odebrat</span></th></tr></thead><tbody>${rows}</tbody></table></div>
       <p class="tiny muted sh-none"${n ? ' hidden' : ''}>${n ? 'Nic neodpovídá hledání.' : 'V seznamu nezbyla žádná položka.'}</p>
     </article>${older}`;
@@ -8629,23 +8649,37 @@ function shHideBtn(x) {
   return `<button class="icon-btn small sh-hidebtn${off ? ' on' : ''}" type="button" data-shpdfhide="${esc(x.id)}" aria-pressed="${off}" title="${off ? 'Skryto v PDF: klikni a znovu se vytiskne' : 'Skrýt v PDF'}" aria-label="${off ? 'Zobrazit v PDF' : 'Skrýt v PDF'} ${esc(x.ean || x.name || x.code || '')}">${off ? SH_EYE_OFF : SH_EYE}</button>`;
 }
 const SH_GRIP = '<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+/* Vybrané operace filtru, které v seznamu jsou (Set), jinak null = všechny. */
+function shOpSel(l) {
+  const keys = new Set(shOpList(l).map(o => o.key));
+  const sel = (ui.sh.ops || []).filter(k => keys.has(k));
+  return sel.length ? new Set(sel) : null;
+}
 function shFilter() {
   const q = (ui.sh.q || '').trim().toLowerCase();
+  const l = shList();
+  const ops = l ? shOpSel(l) : null;
   let shown = 0;
   const rows = $$('#shView [data-shrow]');
-  rows.forEach(tr => { const on = !q || tr.dataset.shrow.includes(q); tr.hidden = !on; if (on) shown += 1; });
+  rows.forEach(tr => {
+    let on = !q || tr.dataset.shrow.includes(q);
+    // poddíl jen se svou operací, sestava i kvůli poddílu (jako shOpPick v PDF)
+    if (on && ops) on = ops.has(tr.dataset.shop) || (!tr.dataset.shsub && (tr.dataset.shsubops || '').split('|').some(k => ops.has(k)));
+    tr.hidden = !on;
+    if (on) shown += 1;
+  });
   const none = $('#shView .sh-none');
   if (none && rows.length) none.hidden = shown > 0;
-  // při hledání se nepřesouvá (skryté řádky by pořadí zmátly)
+  // při hledání a filtru se nepřesouvá (skryté řádky by pořadí zmátly)
   const tab = $('#shView table.sh-tab');
-  if (tab) tab.classList.toggle('sh-nodrag', !!q);
+  if (tab) tab.classList.toggle('sh-nodrag', !!q || !!ops);
 }
 
 /* ---------- Přesouvání položek: myší kdekoli na řádku, dotykem za úchyt, šipkami na úchytu ---------- */
 let shDrag = null;
 function shDragDown(event) {
   const tr = event.target.closest('#shView tbody tr[data-shid]');
-  if (!tr || event.button !== 0 || (ui.sh.q || '').trim()) return;
+  if (!tr || event.button !== 0 || (ui.sh.q || '').trim() || (shList() && shOpSel(shList()))) return;
   const grip = event.target.closest('[data-shgrip]');
   if (!grip && (event.pointerType !== 'mouse' || event.target.closest('a, button, input, textarea, select, label'))) return;
   if (grip) event.preventDefault();
@@ -8742,6 +8776,37 @@ function bindShortage() {
       if (!res.kept) save();
       renderShortage();
       $('#shMsg').innerHTML = shPlanNote(res, ui.sh.plan, false);
+      return;
+    }
+    const topB = t.closest('[data-shtop]');
+    if (topB) {
+      const l = shList();
+      const it = l && l.items.find(i => i.id === topB.dataset.shtop);
+      if (!it || !shSetTop(l, it.id, !it.top)) return;
+      save(); renderShortage();
+      toast(it.top ? 'Položka je TOP SHORTAGE, v seznamu je nahoře.' : 'Položka už není TOP SHORTAGE.');
+      const b = $(`#shView [data-shtop="${CSS.escape(it.id)}"]`);
+      if (b) b.focus();
+      return;
+    }
+    const fullB = t.closest('[data-shfull]');
+    if (fullB) {
+      const l = shList();
+      const it = l && l.items.find(i => i.id === fullB.dataset.shfull);
+      if (!it) return;
+      it.full = !it.full;
+      save(); renderShortage();
+      toast(it.full ? 'Sestava se ukazuje i tiskne celá: QR kód, poslední záznam, kolonky na psaní a poznámka.' : 'Sestava je zase jen orientační řádek.');
+      return;
+    }
+    const opB = t.closest('[data-shop]');
+    if (opB && opB.closest('.sh-ops')) {
+      const k = opB.dataset.shop;
+      const l = shList();
+      const cur = new Set(l && shOpSel(l) ? [...shOpSel(l)] : []);
+      if (!k) cur.clear(); else if (cur.has(k)) cur.delete(k); else cur.add(k);
+      ui.sh.ops = [...cur];
+      renderShortage();
       return;
     }
     const hide = t.closest('[data-shpdfhide]');
@@ -8849,7 +8914,7 @@ function pdfQr(doc, text, x, y, size) {
 const SH_PDF_COLS = [['#', 7], ['QR kód', 21], ['Číslo objednávky', 30], ['Název dílu · EAN', 46], ['Index', 12], ['Urgentní množství', 18], ['Operace · poslední záznam', 38], ['Stav k 10:00', 24], ['Stav k 13:00', 24], ['Poznámky', 0]];
 /* Černobílý tisk (2.28): jen černá a odstíny šedé, linky tmavší, TOP SHORTAGE černý štítek a pruh. */
 const SH_MONO = { ink: [0, 0, 0], ink2: [45, 45, 45], ink3: [95, 95, 95], line: [150, 150, 150], line2: [95, 95, 95], head: [222, 222, 222], top: [236, 236, 236], asm: [246, 246, 246], write: [120, 120, 120] };
-function drawShortage(doc, l) {
+function drawShortage(doc, l, ops = null) {
   const k = pdfKit(doc);
   // i zápatí a výchozí barva písma pdfKit jen v odstínech šedé
   Object.assign(k.C, { ink: SH_MONO.ink, ink2: SH_MONO.ink2, ink3: SH_MONO.ink3, line: SH_MONO.line, line2: SH_MONO.line2 });
@@ -8860,7 +8925,7 @@ function drawShortage(doc, l) {
   widths.reduce((x, w, i) => { xs[i] = x; return x + w; }, k.M);
   const ROW = 20, QR = 14, HEAD = 9.5;
   // skryté v PDF (2.29.1): položka i s poddíly, nebo jen poddíl
-  const items = shPdfItems(l);
+  const items = shPdfItems(l, ops);
   const n = items.length, tops = items.filter(i => i.top).length, subsN = items.reduce((a, i) => a + i.subs.length, 0);
   const clip = (text, w, size, max, bold) => {
     const lines = k.split(text, w, size, bold);
@@ -8888,6 +8953,10 @@ function drawShortage(doc, l) {
   k.text(`Seznam z ${shWhen(l)} · ${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${tops ? ` · ${tops} TOP SHORTAGE` : ''}`, k.M + k.CW, k.y, 8.5, { color: C.ink2, align: 'right' });
   k.y += 5.5;
   k.text('Chybějící díly', k.M, k.y, 17, { bold: true, color: C.ink });
+  if (ops) {   // filtr operací (2.31): kterých operací se výtisk týká
+    const names = shOpList(l).filter(o => ops.has(o.key)).map(o => o.label).join(', ');
+    k.text(`Jen operace: ${names}`.slice(0, 150), k.M + 62, k.y + 2.6, 8.5, { bold: true, color: C.ink });
+  }
   k.text('Stav doplň k 10:00 a k 13:00. QR kód nese activeBarcode z odkazu u EANu.', k.M + k.CW, k.y + 2.6, 8.5, { color: C.ink2, align: 'right' });
   k.y += 9;
   doc.setDrawColor(...C.ink); doc.setLineWidth(0.7); doc.line(k.M, k.y, k.M + 28, k.y);
@@ -8900,7 +8969,7 @@ function drawShortage(doc, l) {
   // orientační řádek bez QR kódu, kolonek na psaní a poznámek (2.29.1)
   const lay = (it, parent) => {
     const src = parent || it;
-    const asm = !parent && (it.subs || []).length > 0;   // jen viditelné poddíly (shPdfItems)
+    const asm = !parent && (it.subs || []).length > 0 && !it.full;   // jen viditelné poddíly (shPdfItems); plně zobrazená sestava je celý řádek (2.31)
     if (asm) {
       const A = {
         asm, order: clip(it.order || '—', widths[2] - 3.6, 9, 2, true), name: clip(it.name || '—', widths[3] - 3.6, 8.8, 2),
@@ -8995,15 +9064,16 @@ function drawShortage(doc, l) {
   });
   k.footer(`${EXPORT_NAME} · Shortage · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`);
 }
-/** Položky do PDF bez skrytých; poddíly jen viditelné. */
-function shPdfItems(l) { return l.items.filter(i => !i.pdfHide).map(i => ({ ...i, subs: (i.subs || []).filter(x => !x.pdfHide) })); }
+/** Položky do PDF bez skrytých; poddíly jen viditelné; s filtrem jen vybrané operace (2.31). */
+function shPdfItems(l, ops = null) { return shOpPick(l.items.filter(i => !i.pdfHide).map(i => ({ ...i, subs: (i.subs || []).filter(x => !x.pdfHide) })), ops); }
 async function exportShortagePdf(id, button = null) {
   const l = shc().lists.find(x => x.id === id);
   if (!l || !l.items.length) return;
-  if (!shPdfItems(l).length) { toast('Všechny položky jsou skryté v PDF.', true); return; }
+  const ops = shOpSel(l);
+  if (!shPdfItems(l, ops).length) { toast(ops ? 'Vybrané operace nemají žádnou položku do PDF.' : 'Všechny položky jsou skryté v PDF.', true); return; }
   await withPdf(button, doc => {
     doc.setProperties({ title: `Shortage · chybějící díly ${shWhen(l)}`, subject: l.file || 'Shortage', creator: EXPORT_NAME });
-    drawShortage(doc, l);
+    drawShortage(doc, l, ops);
     const d = new Date(l.at);
     downloadFile(`shortage-${todayIso(l.at)}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.pdf`, doc.output('blob'), 'application/pdf');
   }, 'landscape');
@@ -9428,9 +9498,14 @@ function waLine({ title, sub, points, value, tone, tip, cap = null }) {
 }
 
 /* ==========================================================================
-   KAPACITY A ZAŠKOLENÍ (2.30): export od–do podle vzoru uživatele
+   KAPACITY A ZAŠKOLENÍ (2.30, vzhled 2.31): export od–do podle vzoru uživatele
    Dny s docházkou jsou vykázané (kdo přišel, kolik odpracoval), ostatní plánované (dnešní
-   zařazení a směny). Zkušení a v zácviku podle historie hodnocení, výpočet capTimeline v core.
+   zařazení a směny). Zaškolení a v zácviku podle historie hodnocení, výpočet capTimeline v core.
+   Stránky jsou jako ve vzoru „Report docházky“: měsíční souhrn zaškolenosti a výkonu, týdenní
+   souhrn s požadavkem a na konci vývoj zaškolení. Obsah stránky skládá ctrMonth / ctrWeek / ctrDev
+   jednou a kreslí ho pohled v aplikaci (ctrHtml) i PDF (pdfCtrPage). Grafy jsou společné značky
+   v souřadnicích vzoru (ctrSvg, pdfCtrChart). Rozměry v px vzoru (šířka 1280), PDF A4 na výšku
+   v měřítku 210/1280 mm. Barvy v modelu jsou klíče CTR, v HTML třídy c-<klíč>.
    ========================================================================== */
 const WA_CT_PRE = [['m', 'Tento měsíc'], ['b3', '3 měsíce zpět a 1 dopředu'], ['n2', 'Od dneška 2 měsíce']];
 function waMonthAdd(m, n) {
@@ -9448,394 +9523,743 @@ function waCtRange() {
   if (ui.wa.ctPre === 'n2') return { from: t, to: waLastDay(waMonthAdd(m0, 2)) };
   return { from: `${waMonthAdd(m0, -3)}-01`, to: waLastDay(waMonthAdd(m0, 1)) };
 }
-const ctP = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
-const ctShareR = r => (r.n ? r.ok / r.n : null);    // podíl zkušených ve stavu skupin
-const ctTrainR = r => (r.tr ? r.trS / r.tr : null);  // Ø zaškolení pracovníků v zácviku (100 % = zkušený)
-const ctN = (v, d = 1) => (v == null ? '—' : nf(v, d));
-function ctKindTag(kind) {
-  return kind === 'real' ? '<span class="tag ct-realtag">vykázáno</span>' : kind === 'plan' ? '<span class="tag ct-plantag">plán</span>' : '<span class="tag ct-mixtag">vykázáno + plán</span>';
+const CTR = { ink: '#1A2330', muted: '#4A5565', faint: '#6B7686', line: '#D5DBE3', grid: '#E6EAF0', axis: '#A9B3C0',
+  blue: '#1F4E8C', blueL: '#B9CBE6', amberF: '#F2C77E', amber: '#9A5B00', amberL: '#C07A10', green: '#1E6B3A', red: '#B42318', track: '#E6EDF7', white: '#FFFFFF' };
+/* rámečky v záhlaví: pozadí, okraj, popisek, hodnota */
+const CTR_BOX = { plain: ['#FFFFFF', '#D5DBE3', '#4A5565', '#1F4E8C'], blue: ['#F0F4FA', '#B9C9E2', '#1F4E8C', '#1F4E8C'],
+  ok: ['#EEF8F1', '#A8D5B5', '#1E6B3A', '#1E6B3A'], warn: ['#FFF4E0', '#E8C27A', '#9A5B00', '#9A5B00'], crit: ['#FDF0EE', '#EBB8B0', '#B42318', '#B42318'] };
+const CTR_STATE_C = { ok: 'green', warn: 'amber', crit: 'red' };
+const ctrPct = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
+const ctrSign = v => (v == null ? '—' : v > 0 ? `+${nf(v, 1)}` : v < 0 ? `−${nf(-v, 1)}` : '0');
+const ctrCap = t => (t ? t.charAt(0).toUpperCase() + t.slice(1) : '');
+const ctrMon = id => MONL[+id.slice(5, 7) - 1];
+const CTR_MON_DAT = ['lednu', 'únoru', 'březnu', 'dubnu', 'květnu', 'červnu', 'červenci', 'srpnu', 'září', 'říjnu', 'listopadu', 'prosinci'];
+const ctrMonDat = id => CTR_MON_DAT[+id.slice(5, 7) - 1];   // „proti září“, „proti červnu“
+function ctrMix(hex, f) {
+  const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16)).map(v => Math.round(v * f + 255 * (1 - f)));
+  return `#${c.map(v => v.toString(16).padStart(2, '0')).join('')}`.toUpperCase();
 }
-/* Skládané sloupce: zkušení dole, v zácviku nahoře (mezera 1,5 px), plán světlejší s čárkovaným
-   okrajem, požadavek čárkovaně, svislá čára odděluje vykázané od plánu.
-   points: {label, ok, tr, plan, ref, tip} */
-function ctBars({ title, sub, points }) {
-  const W = 640, H = 230, L = 34, R = 8, T = 24, B = 26, GAP = 1.5;
-  const max = Math.max(0, ...points.map(p => (p.ok || 0) + (p.tr || 0)), ...points.map(p => p.ref || 0));
-  const hasRef = points.some(p => p.ref);
-  const hasPlan = points.some(p => p.plan);
-  const leg = `<span class="wa-legend"><i class="sw ct-ok"></i>zkušení<i class="sw ct-tr"></i>v zácviku${hasPlan ? '<i class="sw ct-plansw"></i>plán' : ''}${hasRef ? '<i class="tk ct-reqsw"></i>požadavek' : ''}</span>`;
-  const cap = `<figcaption><b>${esc(title)}</b><span>${esc(sub)}</span>${leg}</figcaption>`;
-  if (!points.length || !max) return `<figure class="chart ct-chart">${cap}<div class="chart-empty">V tomto období nikdo ve skupinách.</div></figure>`;
-  const top = niceMax(max * 1.12);
-  const plotH = H - T - B;
-  const band = (W - L - R) / points.length;
-  const bw = Math.max(3, Math.min(38, band * 0.62));
-  const y = v => T + plotH - (Math.min(v, top) / top) * plotH;
-  const base = T + plotH;
-  const every = Math.ceil(points.length / 12);
-  const seg = (x, y0, y1, cls, round) => {
-    const h = y0 - y1;
-    if (h <= 0.2) return '';
-    const r = round ? Math.min(3, bw / 2, h) : 0;
-    const f = v => v.toFixed(1);
-    return `<path class="${cls}" d="M${f(x)} ${f(y0)}V${f(y1 + r)}${r ? `Q${f(x)} ${f(y1)} ${f(x + r)} ${f(y1)}H${f(x + bw - r)}Q${f(x + bw)} ${f(y1)} ${f(x + bw)} ${f(y1 + r)}` : `H${f(x + bw)}`}V${f(y0)}Z"/>`;
+function ctrRange(from, to) { return from.slice(0, 4) === to.slice(0, 4) ? `${dayText(from, false)} – ${dayText(to)}` : `${dayText(from)} – ${dayText(to)}`; }
+function ctrRep() { return (S.workAudit && S.workAudit.rep) || { place: '', firm: '' }; }
+function ctrTitle() { const p = ctrRep().place; return `Report docházky${p ? ` — ${p}` : ''}`; }
+function ctrSub(...parts) { return [EXPORT_NAME, ctrRep().firm, ...parts].filter(Boolean).join(' · '); }
+const ctrDay = d => `${DOW[d.day.dow]} ${d.day.d}.`;
+/* Dny do věty: souvislá řada „Po 12. – St 14.“, jinak výčet. */
+function ctrDayList(list, all) {
+  if (!list.length) return '';
+  const idx = list.map(d => all.indexOf(d));
+  const run = idx.every((v, i) => !i || v === idx[i - 1] + 1);
+  return run && list.length > 1 ? `${ctrDay(list[0])} – ${ctrDay(list[list.length - 1])}` : list.map(ctrDay).join(', ');
+}
+/* Osa y: pěkný krok (nejvýš čtyři dílky nad nulou) a nad nejvyšší hodnotou místo na popisek, jako vzor. */
+function ctrAxis(max) {
+  const v = Math.max(1, max) * 1.06;
+  const u = 10 ** Math.max(0, Math.floor(Math.log10(v)) - 1);
+  const D = Math.ceil(v / u) * u;
+  const pow = 10 ** Math.floor(Math.log10(D / 4));
+  const step = [1, 2, 5, 10].map(f => f * pow).find(st => D / st <= 4 + 1e-9);
+  const ticks = [];
+  for (let t = 0; t <= D + 1e-9; t += step) ticks.push(Math.round(t * 1e6) / 1e6);
+  return { D, ticks };
+}
+function ctrGrid(marks, ax, y, L, R, lx) {
+  marks.push({ t: 'line', x1: L, y1: y(0), x2: R, y2: y(0), c: CTR.axis });
+  ax.ticks.forEach(v => {
+    if (v) marks.push({ t: 'line', x1: L, y1: y(v), x2: R, y2: y(v), c: CTR.grid });
+    marks.push({ t: 'text', x: lx, y: y(v) + 4, s: 12, c: CTR.muted, a: 'end', v: nf(v, 1) });
+  });
+}
+
+/* ---------- grafy (značky v souřadnicích vzoru) ---------- */
+/* Lidé ve skupinách po měsících: 640 × 260, osa y = 220, zaškolení dole, v zácviku nahoře. */
+function ctrStackChart(r) {
+  const B = 220, T = 20, L = 40, R = 630;
+  const thisM = todayIso().slice(0, 7);
+  const ms = r.ids.map((id, i) => ({ id, m: r.months[i] }));
+  const ax = ctrAxis(Math.max(0, ...ms.map(o => (o.m ? o.m.roster.tot.n : 0))));
+  const y = v => B - (v / ax.D) * (B - T);
+  const band = (R - L) / ms.length;
+  const marks = [];
+  ctrGrid(marks, ax, y, L, R, L - 8);
+  const tips = [];
+  ms.forEach((o, i) => {
+    const cx = L + band * (i + 0.5);
+    const bw = Math.min(100, band * 0.56);
+    const cur = o.id === r.month;
+    const plan = o.id > thisM;
+    if (o.m && o.m.roster.tot.n) {
+      const t = o.m.roster.tot;
+      const yOk = y(t.ok);
+      const yTop = y(t.n);
+      if (t.tr) marks.push({ t: 'rect', x: cx - bw / 2, y: yTop, w: bw, h: yOk - yTop, c: plan ? ctrMix(CTR.amberF, 0.5) : CTR.amberF });
+      if (t.ok) marks.push({ t: 'rect', x: cx - bw / 2, y: yOk, w: bw, h: B - yOk, c: plan ? ctrMix(CTR.blue, 0.5) : CTR.blue });
+      marks.push({ t: 'text', x: cx, y: yTop - 8, s: 13, b: true, c: CTR.ink, a: 'middle', v: String(t.n) });
+      if (t.tr && yOk - yTop >= 18) marks.push({ t: 'text', x: cx, y: yOk - 6, s: 12, b: true, c: CTR.blue, a: 'middle', v: String(t.ok) });
+      const at = o.m.roster.past ? `stav k ${dayText(o.m.roster.iso)}` : `dnešní matice dovedností (${dayText(todayIso())})`;
+      tips.push({ t: 'hit', x: L + band * i, y: T, w: band, h: B - T, tip: `${ctrCap(monthLabel(o.id))}: ${t.n} ${lidiN(t.n)} ve skupinách, ${t.ok} zaškolených (${ctrPct(t.ok / t.n)}), ${t.tr} v zácviku · ${at}` });
+    }
+    marks.push({ t: 'text', x: cx, y: 242, s: 13, b: cur, c: cur ? CTR.ink : CTR.muted, a: 'middle', v: ctrCap(ctrMon(o.id)) + (plan ? ' · plán' : '') });
+  });
+  const lab = ms.map(o => (o.m ? `${ctrMon(o.id)} ${o.m.roster.tot.n} (${o.m.roster.tot.ok} zaškolených)` : '')).filter(Boolean).join(', ');
+  return { vb: [640, 260], marks: marks.concat(tips), aria: `Počet lidí po měsících: ${lab}` };
+}
+/* Výkon na odpracovanou hodinu (index): tři čáry po měsících, popisky u posledního bodu. */
+function ctrPerfChart(r) {
+  const B = 220, T = 20, L = 40, R = 630;
+  const SER = [['ok', CTR.blue, CTR.blue, 'zaškolení'], ['tr', CTR.amberL, CTR.amber, 'v zácviku'], ['all', CTR.ink, CTR.ink, 'celkem']];
+  const val = (m, k) => (m && m.perf && m.perf.idx ? m.perf.idx.tot[k] : null);
+  const vals = SER.map(([k]) => r.months.map(m => val(m, k)));
+  const all = vals.flat().filter(v => v != null);
+  const band = (R - L) / r.ids.length;
+  const cx = i => L + band * (i + 0.5);
+  const marks = [];
+  const xl = () => r.ids.forEach((id, i) => marks.push({ t: 'text', x: cx(i), y: 242, s: 13, b: id === r.month, c: id === r.month ? CTR.ink : CTR.muted, a: 'middle', v: ctrCap(ctrMon(id)) }));
+  if (!all.length) {
+    marks.push({ t: 'line', x1: L, y1: B, x2: R, y2: B, c: CTR.axis });
+    marks.push({ t: 'text', x: (L + R) / 2, y: 124, s: 13, c: CTR.faint, a: 'middle', v: 'Bez evidence práce za tyto měsíce, výkon se nepočítá.' });
+    xl();
+    return { vb: [640, 260], marks, aria: 'Výkon: bez evidence práce' };
+  }
+  let lo = Math.min(...all);
+  let hi = Math.max(...all);
+  const span = Math.max(hi - lo, 10);
+  const pow = 10 ** Math.floor(Math.log10(span / 4));
+  const step = [1, 2, 5, 10].map(f => f * pow).find(st => span / st <= 4 + 1e-9);
+  lo = Math.max(0, Math.floor((lo - step * 0.25) / step) * step);
+  hi = Math.ceil((hi + step * 0.25) / step) * step;
+  const y = v => B - ((v - lo) / (hi - lo)) * (B - T);
+  marks.push({ t: 'line', x1: L, y1: B, x2: R, y2: B, c: CTR.axis });
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    if (v > lo) marks.push({ t: 'line', x1: L, y1: y(v), x2: R, y2: y(v), c: CTR.grid });
+    marks.push({ t: 'text', x: L - 8, y: y(v) + 4, s: 12, c: CTR.muted, a: 'end', v: nf(v, 1) });
+  }
+  SER.forEach(([, c], si) => {
+    const pts = vals[si].map((v, i) => (v == null ? null : [cx(i), y(v)]));
+    let seg = [];
+    const flush = () => { if (seg.length > 1) marks.push({ t: 'poly', pts: seg, c, w: 3 }); seg = []; };
+    pts.forEach(p => { if (p) seg.push(p); else flush(); });
+    flush();
+  });
+  SER.forEach(([, c], si) => vals[si].forEach((v, i) => { if (v != null) marks.push({ t: 'dot', x: cx(i), y: y(v), r: 5, c }); }));
+  // popisky u posledního bodu řady, aspoň 15 px od sebe
+  const ends = SER.map(([, , tc], si) => {
+    let i = vals[si].length - 1;
+    while (i >= 0 && vals[si][i] == null) i -= 1;
+    return i < 0 ? null : { x: cx(i) + 16, y: y(vals[si][i]) + 4, v: nf(vals[si][i], 0), c: tc };
+  }).filter(Boolean).sort((a, b) => a.x - b.x || a.y - b.y);
+  for (let j = 1; j < ends.length; j += 1) if (ends[j].x === ends[j - 1].x && ends[j].y - ends[j - 1].y < 15) ends[j].y = ends[j - 1].y + 15;
+  ends.forEach(e => marks.push({ t: 'text', x: e.x, y: e.y, s: 13, b: true, c: e.c, v: e.v }));
+  xl();
+  r.ids.forEach((id, i) => {
+    const parts = SER.map(([, , , n], si) => `${n} ${vals[si][i] == null ? '—' : nf(vals[si][i], 0)}`);
+    marks.push({ t: 'hit', x: L + band * i, y: T, w: band, h: B - T, tip: `${ctrCap(monthLabel(id))}: ${parts.join(', ')} (index, ${r.baseMonth ? ctrMon(r.baseMonth) : ''} = 100)` });
+  });
+  return { vb: [640, 260], marks, aria: `Index výkonu: ${SER.map(([, , , n], si) => `${n} ${vals[si].map(v => (v == null ? '—' : nf(v, 0))).join(', ')}`).join('; ')}` };
+}
+/* Jednotlivé dny týdne proti požadavku: 1128 × 260, z toho zaškolení (tmavě) a v zaškolování. */
+function ctrDaysChart(r) {
+  const B = 220, T = 20, L = 44, R = 1120;
+  const days = r.days;
+  const hasReq = days.some(d => d.req);
+  const refs = days.map(d => (d.kind === 'off' ? null : hasReq ? d.req || null : d.plan || null));
+  const ax = ctrAxis(Math.max(0, ...days.map(d => d.on), ...refs.filter(Boolean)));
+  const y = v => B - (v / ax.D) * (B - T);
+  const band = (R - L) / days.length;
+  const marks = [];
+  ctrGrid(marks, ax, y, L, R, 36);
+  const top = [];
+  days.forEach((d, i) => {
+    const cx = L + band * (i + 0.5);
+    const bw = Math.min(120, band * 0.56);
+    const plan = d.kind === 'plan';
+    if (d.kind !== 'off' && d.on > 0) {
+      const yOk = y(d.ok);
+      const yTop = y(d.on);
+      if (d.tr) marks.push({ t: 'rect', x: cx - bw / 2, y: yTop, w: bw, h: yOk - yTop, c: plan ? ctrMix(CTR.blueL, 0.55) : CTR.blueL });
+      if (d.ok) marks.push({ t: 'rect', x: cx - bw / 2, y: yOk, w: bw, h: B - yOk, c: plan ? ctrMix(CTR.blue, 0.5) : CTR.blue });
+      top.push({ t: 'text', x: cx, y: yTop - 8, s: 13, b: true, c: CTR.ink, a: 'middle', v: nf(d.on, 1) });
+      if (B - yOk >= 32) top.push({ t: 'text', x: cx, y: yOk + 23.4, s: 13, b: true, c: CTR.white, a: 'middle', v: `${nf(d.ok, 1)} · ${ctrPct(d.ok / d.on)}` });
+    }
+    const tag = d.kind === 'off' ? (d.day.hol ? ' · svátek' : ' · volno') : plan ? ' · plán' : '';
+    top.push({ t: 'text', x: cx, y: 242, s: 13, c: CTR.muted, a: 'middle', v: ctrDay(d) + tag });
+    const ref = refs[i];
+    const refT = ref ? ` · ${hasReq ? 'požadavek' : 'plán skupin'} ${nf(ref, 1)} (${d.met ? 'splněn' : 'nesplněn'})` : '';
+    const tip = d.kind === 'off' ? `${DOW[d.day.dow]} ${dayText(d.iso)}: ${d.day.hol ? 'svátek' : 'volno'}`
+      : `${DOW[d.day.dow]} ${dayText(d.iso)} (${plan ? 'plán' : 'vykázáno'}): ${nf(d.on, 1)} na směně, z toho ${nf(d.ok, 1)} zaškolených (${ctrPct(d.on ? d.ok / d.on : null)}), ${nf(d.tr, 1)} v zaškolování${refT}`;
+    top.push({ t: 'hit', x: L + band * i, y: T, w: band, h: B - T, tip });
+  });
+  // požadavek čárkovaně: přes celý graf, když je každý den stejný (vzor), jinak po dnech
+  const vals = refs.filter(Boolean);
+  if (vals.length && vals.every(v => v === vals[0]) && days.every((d, i) => d.kind === 'off' || refs[i])) {
+    marks.push({ t: 'line', x1: L, y1: y(vals[0]), x2: R, y2: y(vals[0]), c: CTR.green, w: 2, dash: [6, 5] });
+  } else {
+    refs.forEach((v, i) => { if (v) marks.push({ t: 'line', x1: L + band * i + 10, y1: y(v), x2: L + band * (i + 1) - 10, y2: y(v), c: CTR.green, w: 2, dash: [6, 5] }); });
+  }
+  const lab = days.map(d => `${ctrDay(d)} ${d.kind === 'off' ? 'volno' : nf(d.on, 1)}`).join(', ');
+  return { vb: [1128, 260], marks: marks.concat(top), aria: `Lidé na směně po dnech: ${lab}; zaškolených ${ctrPct(r.tot.share)}` };
+}
+
+/* ---------- obsah stránek ---------- */
+/* Měsíční souhrn — zaškolenost a výkon (vybraný měsíc, v grafech i dva předchozí). */
+function ctrMonth(month) {
+  const r = capMonthReport(month);
+  if (!r) return null;
+  const today = todayIso();
+  const thisM = today.slice(0, 7);
+  const M = ctrCap(monthLabel(month));
+  const prevN = r.prev ? ctrMonDat(r.prev.id) : '';
+  const T = r.tot;
+  const P = r.prev ? r.prev.roster.tot : null;
+  const vs = (a, b) => (b == null ? '' : `${ctrSign(a - b)} proti ${prevN}`);
+  const pf = r.cur.perf;
+  const pIdx = pf && pf.idx ? pf.idx.tot.all : null;
+  const prevIdx = r.prev && r.prev.perf && r.prev.perf.idx ? r.prev.perf.idx.tot.all : null;
+  const ratio = pf && pf.tot.ok != null && pf.tot.tr ? pf.tot.ok / pf.tot.tr : null;
+  const base = r.baseMonth ? ctrMon(r.baseMonth) : '';
+  const snap = r.cur.roster.past ? 'stav matice dovedností k poslednímu pracovnímu dni měsíce' : `stav matice dovedností k ${dayText(today)}`;
+  const shares = [1, 0].map(i => (r.shares[i] == null ? '' : `${ctrMon(r.ids[i])} ${ctrPct(r.shares[i])}`)).filter(Boolean).join(' · ');
+  let banner = '';
+  if (r.plan && r.real) banner = `VYKÁZÁNO A PLÁN · docházka je nahraná do ${dayText(r.lastReal)}, od ${dayText(r.firstPlan)} jsou pracovní dny plánované podle dnešního zařazení a směn; výkon jen z nahraných dnů`;
+  else if (r.plan && month > thisM) banner = `PLÁN · ${ctrCap(ctrMon(month))} ještě ${month.slice(5) === '09' ? 'nezačalo' : 'nezačal'}; počty lidí jsou z dnešní matice dovedností, výkon se spočítá z docházky a evidence práce`;
+  else if (r.plan && month === thisM) banner = `PLÁN · docházka za ${ctrMon(month)} zatím není nahraná; počty lidí jsou z matice dovedností k ${dayText(today)}`;
+  else if (r.plan) banner = `BEZ DOCHÁZKY · docházka za ${ctrMon(month)} není nahraná; počty lidí jsou podle historie zařazení v matici dovedností`;
+  const tiles = [
+    { v: String(T.n), label: 'Lidí ve skupinách', sub: vs(T.n, P && P.n) },
+    { v: String(T.ok), c: 'blue', label: 'Zaškolení', sub: vs(T.ok, P && P.ok) },
+    { v: String(T.tr), c: 'amber', label: 'V zácviku', sub: vs(T.tr, P && P.tr) },
+    { v: pIdx == null ? '—' : nf(pIdx, 0), label: 'Výkon na hodinu (index)',
+      sub: pIdx == null ? 'bez evidence práce za měsíc' : `${base} = 100${prevIdx != null ? ` · ${ctrSign(Math.round(pIdx) - Math.round(prevIdx))} b. proti ${prevN}` : ''}` },
+    { v: ratio == null ? '—' : `${nf(ratio, 1)}×`, label: 'Zaškolený proti zácviku', sub: 'výkon na odpracovanou hodinu' },
+  ];
+  const charts = [
+    { title: 'Lidé ve skupinách: zaškolení a v zácviku', legend: [['Zaškolení', 'blue', 'sq'], ['V zácviku', 'amberF', 'sq']], ...ctrStackChart(r) },
+    { title: `Výkon na odpracovanou hodinu (index, Ø ${base || ctrMon(r.ids[0])} = 100)`, legend: [['Zaškolení', 'blue', 'line'], ['V zácviku', 'amberL', 'line'], ['Celkem', 'ink', 'line']], ...ctrPerfChart(r) },
+  ];
+  const dash = v => (v == null ? { v: '—', c: 'faint' } : { v: nf(v, 0) });
+  const row = (name, q, sum) => ({ sum, cells: [{ v: name }, { v: String(q.n) }, { v: String(q.ok), c: 'blue', b: true }, { v: String(q.tr), c: 'amber' }, { v: ctrPct(q.share) },
+    { v: q.dOk == null ? '—' : ctrSign(q.dOk) }, dash(q.perf && q.perf.ok), dash(q.perf && q.perf.tr), { ...dash(q.perf && q.perf.all), b: true }] });
+  const rows = r.groups.map(q => row(q.g.name || '(bez názvu)', q, false));
+  const shown = new Set(r.groups.map(q => q.i));
+  const empty = r.x.groups.filter((g, i) => !shown.has(i)).map(g => g.name || '(bez názvu)');
+  if (empty.length) rows.push({ span: [empty.join(', '), 'zatím bez lidí v matici dovedností — doplnit'] });
+  if (r.noGroup) rows.push({ span: ['Bez skupiny', `${r.noGroup} ${lidiN(r.noGroup)} se směnou bez skupiny v matici dovedností — doplnit`] });
+  rows.push(row('CELKEM', T, true));
+  const cols = ['SKUPINA', 'LIDÍ', 'ZAŠKOLENÍ', 'V ZÁCVIKU', 'PODÍL ZAŠK.', `ZAŠK. PROTI ${(prevN || 'minulému').toUpperCase()}`, 'VÝKON ZAŠK.', 'VÝKON ZÁCVIK', 'VÝKON CELKEM'].map((h, i) => ({ h, a: i ? 'r' : 'l' }));
+  const est = r.x.est + r.x.noHist;
+  return {
+    kind: 'month', id: month, x: r.x,
+    head: { title: ctrTitle(), sub: ctrSub('měsíční souhrn zaškolenosti a výkonu'), h2: `Měsíční souhrn — ${M}`, range: `${ctrRange(r.from, r.to)} · ${snap}` },
+    kpis: [{ label: 'PODÍL ZAŠKOLENÝCH', value: ctrPct(T.share), sub: shares, tone: 'plain' }],
+    banner, tiles, charts,
+    table: { title: `Po skupinách — ${M}`, cols, rows },
+    notes: [
+      ['Zaškolený', ` — dovednosti skupiny v matici dovedností v průměru aspoň na úrovni ${r.thr} (${r.thr * 25} %), snímek k poslednímu pracovnímu dni měsíce; u minulých měsíců podle historie hodnocení${est ? ` (u ${est} ${lidiN(est)} bez starší historie nejbližší známé hodnocení)` : ''}. V zácviku = zařazen ve skupině, pod úrovní ${r.thr}.`],
+      ['Výkon', ` — vykázané normohodiny ÷ odpracované hodiny (docházka + evidence práce), jen lidé ve skupinách. Index: průměr celé ${EXPORT_NAME} za ${r.baseMonth ? monthLabel(r.baseMonth) : 'první měsíc s výkonem'} = 100. Kusy ani normy na osobu se nezobrazují.`],
+      ['Výkon zaškolených / v zácviku', ` — stejný výpočet, lidé rozdělení podle stavu v matici k danému měsíci. Vygenerováno ${dayText(today)}.`],
+    ],
   };
-  let cut = -1;
-  points.forEach((p, i) => { if (!p.plan) cut = i; });
-  const labelAll = points.length <= 16;
-  const marks = points.map((p, i) => {
-    const x = L + i * band + (band - bw) / 2;
-    const ok = p.ok || 0;
-    const tr = p.tr || 0;
-    const tot = ok + tr;
-    const pl = p.plan ? ' plan' : '';
-    const yOk = y(ok);
-    const yTop = y(tot);
-    let m = seg(x, base, yOk, `ct-ok${pl}`, !tr);
-    if (tr) m += seg(x, ok ? yOk - GAP : base, yTop, `ct-tr${pl}`, true);
-    const ref = p.ref ? `<line class="ct-req" x1="${(L + i * band).toFixed(1)}" x2="${(L + (i + 1) * band).toFixed(1)}" y1="${y(p.ref).toFixed(1)}" y2="${y(p.ref).toFixed(1)}"/>` : '';
-    const lab = (points.length - 1 - i) % every === 0 ? `<text class="xl" x="${(L + i * band + band / 2).toFixed(1)}" y="${H - 8}">${esc(p.label)}</text>` : '';
-    const capT = (labelAll || i === points.length - 1 || i === cut) && tot > 0 ? `<text class="cap" x="${(x + bw / 2).toFixed(1)}" y="${(Math.min(yTop, p.ref ? y(p.ref) : Infinity) - 5).toFixed(1)}">${esc(nf(tot, tot % 1 ? 1 : 0))}</text>` : '';
-    const hit = `<rect class="hit" x="${(L + i * band).toFixed(1)}" y="${T}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" data-tip="${esc(p.tip)}"/>`;
-    return m + ref + lab + capT + hit;
-  }).join('');
-  const nx = (L + (cut + 1) * band).toFixed(1);
-  const now = cut >= 0 && cut < points.length - 1 ? `<line class="ct-now" x1="${nx}" x2="${nx}" y1="${T - 14}" y2="${base}"/><text class="ct-nowl" x="${(+nx + 4).toFixed(1)}" y="${T - 7}">plán →</text>` : '';
-  const grid = [0, top / 2, top].map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${L - 6}" y="${(y(v) + 3.5).toFixed(1)}">${esc(nf(v, 0))}</text>`).join('');
-  return `<figure class="chart ct-chart">${cap}<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${title}, ${sub}`)}">${grid}${now}${marks}</svg></figure>`;
 }
-/* Body grafů: stav skupin po měsících (3 a víc měsíců) nebo po týdnech; lidé na směně po dnech
-   (do 31 pracovních dní) nebo Ø po týdnech. */
-function ctPoints(x) {
-  const rosterTip = (label, r) => `${label}: ${r.tot.n} ${lidiN(r.tot.n)} ve skupinách, ${r.tot.ok} zkušených (${ctP(ctShareR(r.tot))}), ${r.tot.tr} v zácviku${r.tot.tr ? `, Ø zaškolení ${ctP(ctTrainR(r.tot))}` : ''} · stav k ${dayText(r.iso)}${r.past ? '' : ' (plán = dnešní zařazení)'}`;
-  const byMonth = x.months.length >= 3;
-  const roster = (byMonth ? x.months : x.weeks).map(m => ({
-    label: byMonth ? monthShort(m.id) : `T${weekById(m.id).w}`, ok: m.roster.tot.ok, tr: m.roster.tot.tr, plan: !m.roster.past,
-    tip: rosterTip(byMonth ? monthLabel(m.id) : weekLong(m.id), m.roster),
+/* Týdenní souhrn — jednotlivé dny proti požadavku, z toho zaškolení, a průměr po skupinách. */
+function ctrWeek(weekId) {
+  const r = capWeekReport(weekId);
+  if (!r) return null;
+  const w = r.week;
+  const t = r.tot;
+  const n = r.n;
+  const today = todayIso();
+  const hasReq = r.req != null;
+  const reqTxt = hasReq ? `denní požadavek (norma) ${r.reqSame ? nf(r.req, 0) : `Ø ${nf(r.req, 1)}`}` : 'norma = plán skupin';
+  const share = n ? t.met / n : null;
+  const work = r.days.filter(d => d.kind !== 'off');
+  const realD = work.filter(d => d.kind === 'real');
+  const planD = work.filter(d => d.kind === 'plan');
+  const pastPlan = planD.filter(d => d.iso < today);
+  let banner = '';
+  if (planD.length) {
+    banner = realD.length ? `VYKÁZÁNO A PLÁN · ${ctrDayList(realD, work)} vykázáno z docházky, ${ctrDayList(planD, work)} plánováno podle dnešního zařazení a směn (bez nemocných)`
+      : 'PLÁN · týden zatím nemá docházku; lidé na směně podle dnešního zařazení, směn a střídání, bez nemocných a vyřazených';
+    if (pastPlan.length) banner += ` · docházka chybí za ${ctrDayList(pastPlan, work)}`;
+  }
+  const below = work.filter(d => !d.met);
+  const tiles = [
+    { v: ctrPct(share), label: 'Plnění normy', sub: 'dní v normě / prac. dní' },
+    hasReq ? { v: r.reqSame ? nf(r.req, 0) : nf(r.req, 1), label: 'Denní požadavek', sub: r.reqSame ? 'norma na každý pracovní den' : 'Ø požadavek na pracovní den' }
+      : { v: nf(t.plan, 1), label: 'Denní plán', sub: 'Ø lidí podle plánu skupin' },
+    { v: `${t.met}/${n}`, label: 'Dní v normě', sub: hasReq ? 'celý požadavek splněn' : 'plán skupin splněn' },
+    { v: String(n - t.met), label: 'Dní pod normou', sub: below.length ? below.map(ctrDay).join(', ') : `${hasReq ? 'požadavek' : 'plán'} splněn každý den` },
+  ];
+  const reqs = [...new Set(r.days.filter(d => d.req).map(d => d.req))];
+  const reqLab = hasReq ? (reqs.length === 1 ? `Požadavek ${nf(reqs[0], 0)}` : 'Požadavek') : 'Plán skupin';
+  const charts = [{ title: `Jednotlivé dny vs. ${hasReq ? 'požadavek' : 'plán'} — z toho zaškolení`, legendRight: true,
+    legend: [['Zaškolení', 'blue', 'sq'], ['V zaškolování', 'blueL', 'sq'], [reqLab, 'green', 'dash']], ...ctrDaysChart(r) }];
+  const rows = r.groups.map(q => ({
+    cells: [{ v: q.g.name || '(bez názvu)' }, { v: nf(q.plan, 1) }, { v: nf(q.on, 1) }, { v: `${q.met}/${q.n}` }, { v: CT_STATE_TEXT[q.state] || '', c: CTR_STATE_C[q.state], b: true, sans: true }],
+    sub: [{ v: 'zaškolení', c: 'blue', sm: true, ind: true }, { v: '' }, { v: `Ø ${nf(q.ok, 1)}`, c: 'blue', sm: true }, { v: '' }, { bar: q.share, v: ctrPct(q.share) }],
   }));
-  const byDay = x.days.length <= 31;
-  const reqTxt = (req, met) => (req ? ` · požadavek ${nf(req, 0)}${met == null ? '' : met ? ' (splněno)' : ' (nesplněno)'}` : '');
-  const shift = byDay
-    ? x.days.map(d => ({ label: `${d.day.d}. ${d.day.m}.`, ok: d.tot.onOk, tr: d.tot.onTr, plan: d.kind !== 'real', ref: d.req,
-      tip: `${DOW[d.day.dow]} ${dayText(d.iso)} (${CT_KIND[d.kind]}): ${d.tot.on} na směně, ${d.tot.onOk} zkušených, ${d.tot.onTr} v zácviku${reqTxt(d.req, d.met)}` }))
-    : x.weeks.map(w => ({ label: `T${weekById(w.id).w}`, ok: w.tot.onOk / w.n, tr: w.tot.onTr / w.n, plan: w.kind === 'plan', ref: w.reqAvg,
-      tip: `${weekLong(w.id)} (${CT_KIND[w.kind]}): Ø ${nf(w.tot.on / w.n, 1)} na směně, z toho ${nf(w.tot.onOk / w.n, 1)} zkušených${w.req ? ` · v normě ${w.met} z ${w.req} dní` : ''}` }));
-  return { roster, byMonth, shift, byDay };
+  rows.push({ sum: true, cells: [{ v: 'CELKEM' }, { v: nf(t.plan, 1) }, { v: nf(t.on, 1) }, { v: `${t.met}/${n}` }, { bar: t.share, v: `${ctrPct(t.share)} · Ø ${nf(t.ok, 0)} zaškolených` }] });
+  return {
+    kind: 'week', id: weekId, x: r.x,
+    head: { title: ctrTitle(), sub: ctrSub(reqTxt, 'víkendy mimo'), h2: `Týdenní souhrn — Týden ${w.w}`, range: ctrRange(w.from, w.to) },
+    kpis: [
+      { label: 'NORMA SPLNĚNA', value: ctrPct(share), sub: n ? `${t.met} z ${n} ${n === 1 ? 'pracovního dne' : 'pracovních dní'}` : 'bez pracovních dní', tone: t.state || 'plain' },
+      { label: 'ZAŠKOLENÍ NA SMĚNĚ', value: ctrPct(t.share), sub: `Ø ${nf(t.ok, 0)} z ${nf(t.on, 0)} lidí`, tone: 'blue' },
+    ],
+    banner, tiles, charts,
+    table: { title: 'Průměr po skupinách', fixed: true, cols: [{ h: 'SKUPINA', a: 'l', w: 224 }, { h: 'Ø PLÁN', a: 'r', w: 134 }, { h: 'Ø DODÁNO', a: 'r', w: 144 }, { h: 'DNÍ V NORMĚ', a: 'r', w: 154 }, { h: 'STAV / ZAŠKOLENÍ', a: 'l' }], rows },
+    notes: [
+      ['Zaškolení', ` — podíl lidí přítomných na směně, kteří mají v matici dovednosti skupiny v průměru aspoň na úrovni ${r.thr}. Ø = průměr pracovních dní v týdnu. Plán = lidé ve skupině, kteří měli přijít (bez dovolené a nemoci)${planD.length ? ', plánované dny podle dnešního zařazení' : ''}.`],
+      ['', `Vygenerováno ${dayText(today)} · zelená = v normě / splněný plán · oranžová = mírně pod (aspoň 80 % dní) · červená = pod plánem.`],
+    ],
+  };
 }
-function monthShort(id) { return `${['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'][+id.slice(5, 7) - 1]} ${id.slice(2, 4)}`; }
-function waCtHtml() {
-  const r = waCtRange();
-  const x = capTimeline(r.from, r.to);
-  const bar = `<div class="t5-weekbar wa-hist-bar">
-      <div class="chips" role="group" aria-label="Období">${WA_CT_PRE.map(([k, l]) => `<button type="button" class="chip${k === ui.wa.ctPre ? ' on' : ''}" data-wactpre="${k}" aria-pressed="${k === ui.wa.ctPre}">${l}</button>`).join('')}</div>
-      ${waDatesHtml('waCt', r)}
-      <span class="spacer"></span>
-      <button class="btn sec" type="button" data-wactxlsx${x && x.days.length ? '' : ' disabled'}>Excel</button>
-      <button class="btn" type="button" data-wactpdf${x && x.days.length ? '' : ' disabled'}>PDF</button>
-    </div>`;
-  if (!x || !x.groups.length) return `${bar}<div class="card">${emptyState('Matice dovedností nemá skupiny', 'Kapacity a zaškolení se počítají ze skupin Matice dovedností, z docházky a z historie hodnocení. Založ skupiny v části Skupiny a pravidla.')}</div>`;
-  if (!x.days.length) return `${bar}<div class="card">${emptyState('V období nejsou pracovní dny', 'Zvol delší období.')}</div>`;
+/* Vývoj zaškolení za celé období od–do: komu se změnilo hodnocení dovedností. V PDF lidé jen s ID. */
+function ctrDev(from, to) {
+  const x = capTimeline(from, to);
+  if (!x) return null;
+  const today = todayIso();
   const s = x.start.tot;
   const e = x.end.tot;
-  const sign = v => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '±0');
-  const reqTone = !x.total.req ? '' : x.total.met / x.total.req >= 0.9 ? 'good' : x.total.met / x.total.req < 0.6 ? 'crit' : 'warn';
-  const pf = x.perf && x.perf.tot.ok != null && x.perf.tot.tr ? x.perf.tot.ok / x.perf.tot.tr : null;
-  const tiles = `<div class="stats wa-stats">${[
-    statTile('Podíl zkušených', ctP(ctShareR(e)), `na začátku ${ctP(ctShareR(s))} · stav k ${esc(dayText(x.end.iso))}`),
-    statTile('Lidé ve skupinách', String(e.n), `${sign(e.n - s.n)} proti ${esc(dayText(x.start.iso))}`),
-    statTile('Zkušení pracovníci', String(e.ok), `${sign(e.ok - s.ok)} proti začátku · ${x.newOk} ${x.newOk === 1 ? 'nově zkušený' : 'nově zkušených'}`, 'good'),
-    statTile('Pracovníci v zácviku', String(e.tr), e.tr ? `Ø zaškolení ${ctP(ctTrainR(e))}` : 'nikdo v zácviku', 'tab'),
-    x.total.req ? statTile('Požadavek', `${x.total.met}<em>z ${x.total.req} dní</em>`, `Ø na směně ${ctN(x.total.tot.on / x.total.n)} z požadavku ${ctN(x.total.reqAvg, 0)}`, reqTone) : '',
-    pf != null ? statTile('Zkušený proti zácviku', `${nf(pf, 1)}×`, 'výkon na odpracovanou hodinu') : '',
-  ].join('')}</div>`;
-  const kinds = `<p class="small ct-kinds">${x.real.n ? `<b>Vykázáno</b> ${x.real.n} ${pracDnyN(x.real.n)} z docházky${x.lastReal ? ` (do ${esc(dayText(x.lastReal))})` : ''}` : 'Žádný den s docházkou'} · ${x.plan.n ? `<b>plánováno</b> ${x.plan.n} ${pracDnyN(x.plan.n)}${x.firstPlan ? ` (od ${esc(dayText(x.firstPlan))})` : ''} podle dnešního zařazení a směn` : 'bez plánovaných dnů'}. Zkušený pracovník = dovednosti skupiny aspoň úroveň ${x.thr}, ve vykázaných dnech podle hodnocení platného v ten den.</p>`;
-  const notes = [
+  const pct = v => (v.pct == null ? '—' : `${nf(v.pct, 0)} %`);
+  const rows = x.dev.map(d => ({
+    cells: [{ v: `${d.last} ${d.first}`.trim() + (d.wid ? ` · ID ${d.wid}` : ''), pdf: d.wid ? `ID ${d.wid}` : 'bez ID' },
+      { v: d.end.pos ? d.end.pos.name : d.start.pos ? d.start.pos.name : '' }, { v: pct(d.start) }, { v: pct(d.end), b: true },
+      { v: d.gain == null ? '—' : `${ctrSign(Math.round(d.gain))} b.` },
+      { v: d.end.pos ? (d.end.ok ? 'zaškolený' : 'v zácviku') : 'bez skupiny', c: d.end.pos ? (d.end.ok ? 'blue' : 'amber') : 'faint', b: true },
+      { v: d.became ? dayText(todayIso(d.became)) : '' },
+      { v: d.steps.map(st => `${dayText(todayIso(st.at), false)} ${st.pct == null ? '' : `${nf(st.pct, 0)} %`}`.trim()).join(' → ') }],
+    wid: d.e || d, gi: x.groups.indexOf(d.end.pos),
+  }));
+  if (!rows.length) rows.push({ span: ['', 'V tomto období se nikomu hodnocení dovedností nezměnilo.'] });
+  const cols = [{ h: 'KDO', a: 'l' }, { h: 'SKUPINA', a: 'l', sans: true }, { h: 'NA ZAČÁTKU', a: 'r' }, { h: 'NA KONCI', a: 'r' }, { h: 'ZMĚNA', a: 'r' },
+    { h: 'STAV', a: 'l', sans: true }, { h: 'ZAŠKOLENÝ OD', a: 'r' }, { h: 'ZMĚNY HODNOCENÍ', a: 'l', sans: true, wrap: true }];
+  return {
+    kind: 'dev', id: `${x.from}:${x.to}`, x,
+    head: { title: ctrTitle(), sub: ctrSub('vývoj zaškolení'), h2: `Vývoj zaškolení — ${ctrRange(x.from, x.to)}`,
+      range: `komu se v období změnilo hodnocení dovedností · stav na začátku k ${dayText(x.start.iso)}, na konci k ${dayText(x.end.iso < today ? x.end.iso : today)}` },
+    kpis: [{ label: 'PODÍL ZAŠKOLENÝCH', value: ctrPct(e.n ? e.ok / e.n : null), sub: `na začátku ${ctrPct(s.n ? s.ok / s.n : null)}`, tone: 'plain' }],
+    banner: '',
+    tiles: [
+      { v: String(e.n), label: 'Lidí ve skupinách', sub: `${ctrSign(e.n - s.n)} proti začátku` },
+      { v: String(e.ok), c: 'blue', label: 'Zaškolení', sub: `${ctrSign(e.ok - s.ok)} proti začátku` },
+      { v: String(e.tr), c: 'amber', label: 'V zácviku', sub: `${ctrSign(e.tr - s.tr)} proti začátku` },
+      { v: String(x.newOk), c: 'blue', label: 'Nově zaškolení', sub: `z ${x.dev.length} ${lidiN(x.dev.length)} se změnou hodnocení` },
+    ],
+    charts: [],
+    table: { title: 'Změny hodnocení po lidech', cols, rows },
+    notes: [
+      ['Zaškolený', ` — dovednosti skupiny v matici v průměru aspoň na úrovni ${x.thr} (${x.thr * 25} %). Na začátku a na konci podle historie hodnocení (zápis při každé změně), budoucnost podle dnešního hodnocení.`],
+      ['Změny hodnocení', ` — procento dovedností skupiny po každé změně v období. V PDF jsou lidé jen s ID z evidence práce. Vygenerováno ${dayText(today)}.`],
+    ],
+  };
+}
+/* Upozornění k výpočtu (jen v aplikaci, nad stránkou). */
+function ctrWarnings(x) {
+  if (!x) return [];
+  return [
     x.pastPlan.length ? `Docházka chybí pro ${x.pastPlan.length} ${pracDnyN(x.pastPlan.length)} v minulosti (${x.pastPlan.slice(0, 3).map(iso => dayText(iso, false)).join(', ')}${x.pastPlan.length > 3 ? ' …' : ''}), počítají se jako plán.` : '',
     ...x.missing.map(m => `V docházce za ${monthLabel(m.month)} chybí ${m.keys.length} ${lidiN(m.keys.length)} ze skupin (jiné jméno, nebo tehdy nepracovali): ${m.keys.slice(0, 4).map(k => { const p = S.employees[k]; return p ? `${p.last} ${p.first}`.trim() : k; }).join(', ')}${m.keys.length > 4 ? ' …' : ''}.`),
     x.noGroup ? `${x.noGroup} ${lidiN(x.noGroup)} se směnou ${x.noGroup === 1 ? 'nemá' : 'nemají'} skupinu v Matici dovedností, do kapacit se nepočítají.` : '',
     x.est || x.noHist ? `Historie hodnocení: u ${x.est} ${lidiN(x.est)} odhad podle nejbližšího zápisu, u ${x.noHist} bez zápisu dnešní hodnocení (zápisy přibývají při každé změně hodnocení).` : '',
-    x.cut ? `Období je zkrácené na ${CT_MAX_DAYS} dní.` : '',
-  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('');
-  const pts = ctPoints(x);
-  const charts = `<div class="wa-charts ct-charts">
-      ${ctBars({ title: 'Lidé ve skupinách', sub: `stav ${pts.byMonth ? 'na konci měsíce' : 'na konci týdne'} · zkušení a v zácviku`, points: pts.roster })}
-      ${ctBars({ title: 'Na směně', sub: pts.byDay ? 'po pracovních dnech' : 'Ø na pracovní den po týdnech', points: pts.shift })}
-      <div class="chart-tip" id="waTipCt" hidden></div>
-    </div>`;
-  // po skupinách
-  const perf = !!x.perf;
-  const gRows = x.groups.map((g, i) => ({ g, i, e: x.end.groups[i], s: x.start.groups[i], R: x.real.groups[i], P: x.plan.groups[i], pf: perf ? x.perf.idx.groups[i] : null }))
-    .filter(r => r.e.n || r.s.n || r.R.planN || r.P.planN);
-  const tot = { g: null, e: x.end.tot, s: x.start.tot, R: x.real.tot, P: x.plan.tot, pf: perf ? x.perf.idx.tot : null };
-  const gLine = (r, sum) => `<tr${sum ? ' class="ct-sum"' : ''}>
-      <td class="name" data-label="Skupina"><b>${esc(r.g ? r.g.name || '(bez názvu)' : 'Celkem')}</b>${r.g && deptOf(r.g) !== r.g.name ? `<span class="muted small"> · ${esc(deptOf(r.g))}</span>` : ''}</td>
-      <td class="r num" data-label="Lidí">${r.e.n}</td>
-      <td class="r num ct-okc" data-label="Zkušení">${r.e.ok}</td>
-      <td class="r num ct-trc" data-label="V zácviku">${r.e.tr}</td>
-      <td class="r num" data-label="Podíl zkušených">${ctP(ctShareR(r.e))}</td>
-      <td class="r num" data-label="Zkušení proti začátku">${sign(r.e.ok - r.s.ok)}</td>
-      <td class="r num" data-label="Ø zaškolení">${r.e.tr ? ctP(ctTrainR(r.e)) : '—'}</td>
-      <td class="r num" data-label="Ø na směně (vykázáno)">${x.real.n ? ctN(r.R.on / x.real.n) : '—'}</td>
-      <td class="r num" data-label="Ø na směně (plán)">${x.plan.n ? ctN(r.P.on / x.plan.n) : '—'}</td>
-      <td class="r num" data-label="Plnění hodin">${ctP(ctFill(r.R))}</td>
-      ${perf ? `<td class="r num" data-label="Výkon zkušení">${ctN(r.pf.ok, 0)}</td><td class="r num" data-label="Výkon v zácviku">${ctN(r.pf.tr, 0)}</td><td class="r num" data-label="Výkon celkem"><b>${ctN(r.pf.all, 0)}</b></td>` : ''}</tr>`;
-  const groups = `<div class="card ct-card"><div class="card-head"><div><h3>Po skupinách</h3><p class="small muted">Lidé ve skupinách k ${esc(dayText(x.end.iso))}, změna proti ${esc(dayText(x.start.iso))}. Ø na směně za pracovní den, plnění hodin jen za vykázané dny${perf ? `; výkon = normohodiny ÷ odpracované hodiny, index ${esc(monthLabel(x.months.find(m => m.perf).id))} = 100` : ''}.</p></div></div>
-    <div class="table-card flat"><table class="stack ct-tab"><thead><tr><th>Skupina</th><th class="r">Lidí</th><th class="r">Zkušení</th><th class="r">V zácviku</th><th class="r">Podíl zkušených</th><th class="r">Zkušení proti začátku</th><th class="r">Ø zaškolení</th><th class="r">Ø na směně vykázáno</th><th class="r">Ø na směně plán</th><th class="r">Plnění hodin</th>${perf ? '<th class="r">Výkon zkušení</th><th class="r">Výkon v zácviku</th><th class="r">Výkon celkem</th>' : ''}</tr></thead>
-    <tbody>${gRows.map(rw => gLine(rw, false)).join('')}${gLine(tot, true)}</tbody></table></div></div>`;
-  // po týdnech
-  const weeks = `<div class="card ct-card"><div class="card-head"><div><h3>Po týdnech</h3><p class="small muted">Ø na pracovní den; vykázané dny podle docházky, ostatní podle plánu.</p></div></div>
-    <div class="table-card flat"><table class="stack ct-tab"><thead><tr><th>Týden</th><th>Stav</th><th class="r">Prac. dní</th><th class="r">Ø na směně</th><th class="r">Ø zkušení</th><th class="r">Ø v zácviku</th><th class="r">Podíl zkušených</th><th class="r">Ø zaškolení</th><th class="r">V normě</th><th class="r">Odpracováno / plán h</th><th class="r">Plnění hodin</th></tr></thead>
-    <tbody>${x.weeks.map(w => `<tr>
-      <td class="name" data-label="Týden"><b>${esc(weekName(w.id))}</b><span class="ct-wk">${esc(waShortRange({ id: w.id }, { want: true, from: w.from, to: w.to }))}</span></td>
-      <td data-label="Stav">${ctKindTag(w.kind)}</td>
-      <td class="r num" data-label="Pracovní dny">${w.n}</td>
-      <td class="r num" data-label="Ø na směně"><b>${ctN(w.tot.on / w.n)}</b></td>
-      <td class="r num ct-okc" data-label="Ø zkušení">${ctN(w.tot.onOk / w.n)}</td>
-      <td class="r num ct-trc" data-label="Ø v zácviku">${ctN(w.tot.onTr / w.n)}</td>
-      <td class="r num" data-label="Podíl zkušených">${ctP(ctShare(w.tot))}</td>
-      <td class="r num" data-label="Ø zaškolení">${w.tot.onTr ? ctP(w.tot.onTrS / w.tot.onTr) : '—'}</td>
-      <td class="r num" data-label="V normě">${w.req ? `${w.met}/${w.req}` : '—'}</td>
-      <td class="r num" data-label="Odpracováno / plán h">${w.real ? `${nf(w.tot.realH, 1)} / ${nf(w.tot.rPlanH, 1)}` : `— / ${nf(w.tot.planH, 1)}`}</td>
-      <td class="r num" data-label="Plnění hodin">${ctP(ctFill(w.tot))}</td></tr>`).join('')}</tbody></table></div></div>`;
-  // vývoj zaškolení
-  const st = v => (v.pos ? (v.ok ? '<span class="tag ok">zkušený</span>' : '<span class="tag ct-trtag">v zácviku</span>') : '<span class="tag">bez skupiny</span>');
-  const pctT = v => (v.pct == null ? '—' : `${nf(v.pct, 0)} %`);
-  const dev = x.dev.length ? `<div class="table-card flat"><table class="stack ct-tab ct-dev"><thead><tr><th>Kdo</th><th>Skupina</th><th class="r">Na začátku</th><th class="r">Na konci</th><th class="r">Změna</th><th>Stav</th><th>Změny hodnocení</th></tr></thead>
-    <tbody>${x.dev.map(d => `<tr>
-      <td class="name" data-label="Kdo"><b>${esc(`${d.last} ${d.first}`.trim())}</b>${d.wid ? `<span class="muted small"> · ID ${esc(d.wid)}</span>` : ''}${d.note ? `<span class="muted small"> · ${esc(d.note)}</span>` : ''}</td>
-      <td data-label="Skupina">${esc(d.end.pos ? d.end.pos.name : d.start.pos ? d.start.pos.name : '')}${d.start.pos && d.end.pos && d.start.pos !== d.end.pos ? `<span class="muted small"> (dřív ${esc(d.start.pos.name)})</span>` : ''}</td>
-      <td class="r num" data-label="Na začátku">${pctT(d.start)}</td>
-      <td class="r num" data-label="Na konci"><b>${pctT(d.end)}</b></td>
-      <td class="r num" data-label="Změna">${d.gain == null ? '—' : `${d.gain > 0 ? '+' : d.gain < 0 ? '−' : '±'}${nf(Math.abs(d.gain), 0)} b.`}</td>
-      <td data-label="Stav">${st(d.end)}${d.became ? `<span class="small"> od ${esc(dayText(todayIso(d.became)))}</span>` : ''}${d.lost ? `<span class="small muted"> · zpět v zácviku ${esc(dayText(todayIso(d.lost), false))}</span>` : ''}</td>
-      <td class="small" data-label="Změny hodnocení">${d.steps.map(s => `${esc(dayText(todayIso(s.at), false))} ${s.pct == null ? '' : `${nf(s.pct, 0)} %`}`).join(' → ')}</td></tr>`).join('')}</tbody></table></div>`
-    : `<p class="small muted">V tomto období se nikomu hodnocení dovedností nezměnilo.</p>`;
-  const devCard = `<div class="card ct-card"><div class="card-head"><div><h3>Vývoj zaškolení</h3><p class="small muted">Lidé, kterým se v období změnilo hodnocení dovedností (procento skupiny), od ${esc(dayText(x.start.iso))} do ${esc(dayText(x.to < x.today ? x.to : x.today))}. ${x.newOk} ${x.newOk === 1 ? 'se stal zkušeným pracovníkem' : 'se stali zkušenými pracovníky'}.</p></div></div>${dev}</div>`;
-  return `${bar}${kinds}${notes ? `<div class="ct-notes">${notes}</div>` : ''}${tiles}${charts}${groups}${weeks}${devCard}`;
+  ].filter(Boolean);
 }
-/* ---------- PDF kapacit a zaškolení (2.30, A4 na šířku podle vzoru uživatele) ----------
-   Souhrn s dlaždicemi a dvěma grafy, po skupinách, po týdnech, vývoj zaškolení (lidé jen s ID
-   z evidence práce jako v PDF matice) a vysvětlivky. Barvy jako v aplikaci: zkušení --ch-acc,
-   v zácviku --ch-tab; plán světlejší s čárkovaným okrajem. */
-const CT_PDF = { ok: [0, 136, 118], tr: [176, 111, 18] };
-function ctMix(c, f) { return c.map(v => Math.round(v * f + 255 * (1 - f))); }
+
+/* ---------- pohled v aplikaci: stejný papír jako PDF ---------- */
+function ctrSvg(ch) {
+  const f = v => String(Math.round(v * 10) / 10);
+  const body = ch.marks.map(m => {
+    if (m.t === 'line') return `<line x1="${f(m.x1)}" y1="${f(m.y1)}" x2="${f(m.x2)}" y2="${f(m.y2)}" stroke="${m.c}" stroke-width="${m.w || 1}"${m.dash ? ` stroke-dasharray="${m.dash.join(' ')}"` : ''}/>`;
+    if (m.t === 'rect') return `<rect x="${f(m.x)}" y="${f(m.y)}" width="${f(m.w)}" height="${f(m.h)}" fill="${m.c}"/>`;
+    if (m.t === 'text') return `<text x="${f(m.x)}" y="${f(m.y)}" font-size="${m.s}"${m.b ? ' font-weight="600"' : ''} fill="${m.c}"${m.a ? ` text-anchor="${m.a}"` : ''}>${esc(m.v)}</text>`;
+    if (m.t === 'poly') return `<polyline points="${m.pts.map(p => `${f(p[0])},${f(p[1])}`).join(' ')}" fill="none" stroke="${m.c}" stroke-width="${m.w}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (m.t === 'dot') return `<circle cx="${f(m.x)}" cy="${f(m.y)}" r="${m.r}" fill="${m.c}"/>`;
+    if (m.t === 'hit') return `<rect class="ctr-hit" x="${f(m.x)}" y="${f(m.y)}" width="${f(m.w)}" height="${f(m.h)}" tabindex="0" aria-label="${esc(m.tip)}" data-tip="${esc(m.tip)}"/>`;
+    return '';
+  }).join('');
+  return `<svg viewBox="0 0 ${ch.vb[0]} ${ch.vb[1]}" role="img" aria-label="${esc(ch.aria)}">${body}</svg>`;
+}
+function ctrTableHtml(tb) {
+  const n = tb.cols.length;
+  const cls = (c, col, i) => [i === 0 || col.a === 'l' ? 'l' : 'r', col.sans || c.sans ? 'sans' : '', c.b ? 'b' : '', c.c ? `c-${c.c}` : '', c.sm ? 'sm' : '', c.ind ? 'ind' : '', col.wrap ? 'wrap' : ''].filter(Boolean).join(' ');
+  const td = (c, i) => {
+    const col = tb.cols[i];
+    if (c.bar !== undefined) return `<td class="l bar"><div class="ctr-bar"><div class="ctr-track"><i data-w="${Math.round(Math.min(1, Math.max(0, c.bar || 0)) * 1000) / 10}"></i></div><span>${esc(c.v)}</span></div></td>`;
+    return `<td class="${cls(c, col, i)}">${esc(c.v)}</td>`;
+  };
+  const body = tb.rows.map(row => {
+    if (row.span) return `<tr class="e"><td class="l">${esc(row.span[0])}</td><td class="l wrap" colspan="${n - 1}">${esc(row.span[1])}</td></tr>`;
+    const main = `<tr${row.sum ? ' class="sum"' : row.sub ? ' class="m"' : ''}>${row.cells.map(td).join('')}</tr>`;
+    return row.sub ? `${main}<tr class="s">${row.sub.map(td).join('')}</tr>` : main;
+  }).join('');
+  return `<div class="ctr-sec"><div class="ctr-h3">${esc(tb.title)}</div><div class="ctr-scroll"><table class="ctr-tab${tb.fixed ? ' fixed' : ''}"><thead><tr>${tb.cols.map((c, i) => `<th class="${i === 0 || c.a === 'l' ? 'l' : 'r'}">${esc(c.h)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div></div>`;
+}
+function ctrHtml(pg) {
+  const kpis = pg.kpis.map(k => `<div class="ctr-kpi ${k.tone || 'plain'}"><b>${esc(k.label)}</b><span class="v">${esc(k.value)}</span><span class="s">${esc(k.sub)}</span></div>`).join('');
+  const head = `<div class="ctr-head"><div class="ctr-titles"><div class="ctr-t1">${esc(pg.head.title)}</div><div class="ctr-sub">${esc(pg.head.sub)}</div><div class="ctr-h2">${esc(pg.head.h2)}</div><div class="ctr-sub">${esc(pg.head.range)}</div></div><div class="ctr-kpis">${kpis}</div></div>`;
+  const tiles = `<div class="ctr-tiles n${pg.tiles.length}">${pg.tiles.map(t => `<div class="ctr-tile"><span class="v${t.c ? ` c-${t.c}` : ''}">${esc(t.v)}</span><b>${esc(t.label)}</b><span class="s">${esc(t.sub)}</span></div>`).join('')}</div>`;
+  const legend = l => `<div class="ctr-legend">${l.map(([t, c, k]) => `<span><i class="${k} k-${c}"></i>${esc(t)}</span>`).join('')}</div>`;
+  const charts = pg.charts.length ? `<div class="ctr-charts n${pg.charts.length}">${pg.charts.map(c => `<div class="ctr-card"><div class="ctr-cardhead${c.legendRight ? ' row' : ''}"><div class="ctr-h3">${esc(c.title)}</div>${legend(c.legend)}</div><div class="ctr-chart${c.vb[0] > 800 ? ' wide' : ''}">${ctrSvg(c)}<div class="chart-tip" hidden></div></div></div>`).join('')}</div>` : '';
+  const notes = `<div class="ctr-notes n${pg.notes.length}">${pg.notes.map(([b, t]) => `<div>${b ? `<b>${esc(b)}</b>` : ''}${esc(t)}</div>`).join('')}</div>`;
+  return `<div class="ctr-paper ctr-${pg.kind}" data-ctrpage="${esc(pg.kind)}">${head}${pg.banner ? `<div class="ctr-banner">${esc(pg.banner)}</div>` : ''}${tiles}${charts}${pg.table ? ctrTableHtml(pg.table) : ''}${notes}</div>`;
+}
+function waCtHtml() {
+  const r = waCtRange();
+  const has = S.positions.some(isGroup);
+  const pages = has ? capReportPages(r.from, r.to) : [];
+  const ok = has && pages.length;
+  const bar = `<div class="t5-weekbar wa-hist-bar">
+      <div class="chips" role="group" aria-label="Období">${WA_CT_PRE.map(([k, l]) => `<button type="button" class="chip${k === ui.wa.ctPre ? ' on' : ''}" data-wactpre="${k}" aria-pressed="${k === ui.wa.ctPre}">${l}</button>`).join('')}</div>
+      ${waDatesHtml('waCt', r)}
+      <span class="spacer"></span>
+      <button class="btn sec" type="button" data-wactxlsx${ok ? '' : ' disabled'}>Excel</button>
+      <button class="btn" type="button" data-wactpdf${ok ? '' : ' disabled'}>PDF</button>
+    </div>`;
+  if (!has) return `${bar}<div class="card">${emptyState('Matice dovedností nemá skupiny', 'Kapacity a zaškolení se počítají ze skupin Matice dovedností, z docházky a z historie hodnocení. Založ skupiny v části Skupiny a pravidla.')}</div>`;
+  if (!pages.length) return `${bar}<div class="card">${emptyState('V období nejsou pracovní dny', 'Zvol delší období.')}</div>`;
+  const rep = ctrRep();
+  const form = `<div class="ctr-rep">
+      <label class="field"><span>Název v nadpisu</span><input id="waRepPlace" maxlength="60" value="${esc(rep.place)}" placeholder="Report docházky — …" autocomplete="off"></label>
+      <label class="field"><span>Firma</span><input id="waRepFirm" maxlength="80" value="${esc(rep.firm)}" autocomplete="off"></label>
+      <p class="small muted">Záhlaví stránek jako ve vzoru: „Report docházky — název“, pod ním ${esc(EXPORT_NAME)} · firma. PDF obsahuje za každý měsíc období měsíční souhrn a týdenní souhrny jeho týdnů, na konci vývoj zaškolení.</p>
+    </div>`;
+  const keys = [...pages.map(p => `${p.kind}:${p.id}`), 'dev'];
+  let cur = ui.wa.ctPage;
+  if (!keys.includes(cur)) {
+    const m = `month:${todayIso().slice(0, 7)}`;
+    cur = keys.includes(m) ? m : keys[0];
+  }
+  ui.wa.ctShown = cur;
+  const chip = (k, label, title, extra = '') => `<button type="button" class="chip${extra}${k === cur ? ' on' : ''}" data-wactpage="${esc(k)}" aria-pressed="${k === cur}"${title ? ` title="${esc(title)}"` : ''}>${esc(label)}</button>`;
+  const nav = `<div class="chips ctr-nav" role="group" aria-label="Stránky reportu">${pages.map(p => (p.kind === 'month' ? chip(`month:${p.id}`, ctrCap(monthLabel(p.id)), 'Měsíční souhrn', ' ctr-mchip') : chip(`week:${p.id}`, `T${weekById(p.id).w}`, `Týdenní souhrn · ${weekLong(p.id)}`))).join('')}${chip('dev', 'Vývoj zaškolení', 'Vývoj zaškolení za celé období', ' ctr-mchip')}</div>`;
+  return `${bar}${form}${nav}<div id="ctrPage">${waCtPageHtml(r, cur)}</div>`;
+}
+/* Vybraná stránka reportu s upozorněními (po změně záhlaví se překreslí jen ona). */
+function waCtPageHtml(r, cur) {
+  const [kind, id] = cur.split(':');
+  const pg = kind === 'month' ? ctrMonth(id) : kind === 'week' ? ctrWeek(id) : ctrDev(r.from, r.to);
+  const warn = pg ? ctrWarnings(pg.x).map(t => `<div class="note w">${esc(t)}</div>`).join('') : '';
+  return `${warn ? `<div class="ct-notes">${warn}</div>` : ''}${pg ? ctrHtml(pg) : `<div class="card">${emptyState('Stránku nejde spočítat', 'Zvol jiné období.')}</div>`}`;
+}
+
+/* ---------- PDF: stejné stránky v měřítku vzoru (A4 na výšku, 1280 px = 210 mm) ---------- */
+function ctrPdf(doc) {
+  const s = 210 / 1280;            // mm na px vzoru
+  const PT = (s * 72) / 25.4;      // pt na px (velikost písma)
+  const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const col = c => (c && c[0] === '#' ? c : CTR[c] || CTR.ink);
+  const font = (px, o) => { doc.setFont(o.mono ? 'PlexMono' : 'Plex', o.b ? 'bold' : 'normal'); doc.setFontSize(px * PT); };
+  const width = (t, px, o = {}) => { const str = String(t); font(px, o); return doc.getTextWidth(str) / s + (o.ls ? o.ls * px * Math.max(0, str.length - 1) : 0); };
+  const text = (t, x, y, px, o = {}) => {
+    const str = String(t);
+    if (!str) return;
+    const w = o.a === 'end' || o.a === 'middle' ? width(str, px, o) : 0;
+    font(px, o);
+    doc.setTextColor(...rgb(col(o.c)));
+    const xx = o.a === 'end' ? x - w : o.a === 'middle' ? x - w / 2 : x;
+    if (o.ls) doc.text(str, xx * s, y * s, { charSpace: o.ls * px * s });
+    else doc.text(str, xx * s, y * s);
+  };
+  const box = (x, y, w, h, o) => {
+    if (o.fill) doc.setFillColor(...rgb(col(o.fill)));
+    if (o.stroke) { doc.setDrawColor(...rgb(col(o.stroke))); doc.setLineWidth((o.lw || 1) * s); }
+    const st = o.fill && o.stroke ? 'FD' : o.fill ? 'F' : 'S';
+    if (o.r) doc.roundedRect(x * s, y * s, w * s, h * s, o.r * s, o.r * s, st);
+    else doc.rect(x * s, y * s, w * s, h * s, st);
+  };
+  const line = (x1, y1, x2, y2, c, lw = 1, dash = null) => {
+    doc.setDrawColor(...rgb(col(c)));
+    doc.setLineWidth(lw * s);
+    if (dash) doc.setLineDashPattern(dash.map(v => v * s), 0);
+    doc.line(x1 * s, y1 * s, x2 * s, y2 * s);
+    if (dash) doc.setLineDashPattern([], 0);
+  };
+  const poly = (pts, c, lw) => {
+    doc.setDrawColor(...rgb(col(c)));
+    doc.setLineWidth(lw * s);
+    doc.setLineJoin('round');
+    doc.setLineCap('round');
+    doc.lines(pts.slice(1).map((p, i) => [(p[0] - pts[i][0]) * s, (p[1] - pts[i][1]) * s]), pts[0][0] * s, pts[0][1] * s, [1, 1], 'S', false);
+    doc.setLineCap('butt');
+    doc.setLineJoin('miter');
+  };
+  const dot = (x, y, r, c) => { doc.setFillColor(...rgb(col(c))); doc.circle(x * s, y * s, r * s, 'F'); };
+  /* zalomení textu s tučným začátkem: runs [[text, tučně]] → řádky [[kus, tučně, x]] */
+  const rich = (runs, px, maxW, o = {}) => {
+    const lines = [[]];
+    let lx = 0;
+    runs.forEach(([t, b]) => String(t).split(/(\s+)/).forEach(wd => {
+      if (!wd) return;
+      const cur = lines[lines.length - 1];
+      if (/^\s+$/.test(wd)) { if (cur.length) { lx += width(' ', px, { ...o, b }); } return; }
+      const ww = width(wd, px, { ...o, b });
+      if (lx + ww > maxW && cur.length) { lines.push([]); lx = 0; }
+      lines[lines.length - 1].push([wd, b, lx]);
+      lx += ww;
+    }));
+    return lines;
+  };
+  const split = (t, px, maxW, o = {}) => (String(t) ? rich([[t, !!o.b]], px, maxW, o).map(l => l.map(p => p[0]).join(' ')) : ['']);
+  const PH = 297 / s;
+  return { doc, s, PH, width, text, box, line, poly, dot, rich, split };
+}
+function pdfCtrChart(P, ch, x0, y0, w) {
+  const k = w / ch.vb[0];
+  const X = v => x0 + v * k;
+  const Y = v => y0 + v * k;
+  ch.marks.forEach(m => {
+    if (m.t === 'line') P.line(X(m.x1), Y(m.y1), X(m.x2), Y(m.y2), m.c, (m.w || 1) * k, m.dash ? m.dash.map(d => d * k) : null);
+    else if (m.t === 'rect') P.box(X(m.x), Y(m.y), m.w * k, m.h * k, { fill: m.c });
+    else if (m.t === 'text') P.text(m.v, X(m.x), Y(m.y), m.s * k, { b: m.b, c: m.c, a: m.a });
+    else if (m.t === 'poly') P.poly(m.pts.map(([a, b]) => [X(a), Y(b)]), m.c, m.w * k);
+    else if (m.t === 'dot') P.dot(X(m.x), Y(m.y), m.r * k, m.c);
+  });
+  return ch.vb[1] * k;
+}
+/* Jedna stránka reportu (případně s pokračováním tabulky na další stránce). */
+function pdfCtrPage(P, pg, first) {
+  const { doc } = P;
+  const X = 56;
+  const CW = 1168;
+  const TOP = 48;
+  const BOT = P.PH - 44;
+  const gap = pg.kind === 'week' ? 26 : 28;
+  const A = 1.025;   // účaří od horního okraje řádku (Plex: výška řádku 1,3 em)
+  if (!first) doc.addPage('a4', 'portrait');
+  let y = TOP;
+  const newPage = () => { doc.addPage('a4', 'portrait'); y = TOP; };
+  // záhlaví: nadpisy vlevo, rámečky vpravo
+  const big = pg.kind === 'month' ? 44 : 40;
+  const minW = pg.kind === 'month' ? 220 : 180;
+  const kp = pg.kpis.map(k => ({ ...k, w: Math.max(minW, P.width(k.label, 12, { b: true, ls: 0.08 }), P.width(k.value, big, { mono: true, b: true }), P.width(k.sub, 13)) + 42 }));
+  const kw = kp.reduce((a, k) => a + k.w, 0) + Math.max(0, kp.length - 1) * 14;
+  const LW = CW - kw - (kp.length ? 24 : 0);
+  let ly = y;
+  const put = (t, px, o, after) => { P.split(t, px, LW, o).forEach(ln => { P.text(ln, X, ly + A * px, px, o); ly += 1.3 * px; }); ly += after; };
+  put(pg.head.title, 30, { b: true }, 6);
+  put(pg.head.sub, 14, { c: 'muted' }, 6 + 14);
+  put(pg.head.h2, 22, { b: true }, 6);
+  put(pg.head.range, 14, { c: 'muted' }, 0);
+  const kh = 2 + 32 + 15.6 + 4 + 1.3 * big + 4 + 16.9;
+  let kx = X + CW;
+  [...kp].reverse().forEach(k => {
+    kx -= k.w;
+    const [bg, bd, lc, vc] = CTR_BOX[k.tone] || CTR_BOX.plain;
+    P.box(kx + 0.5, y + 0.5, k.w - 1, kh - 1, { fill: bg, stroke: bd, r: 10 });
+    const rx = kx + k.w - 21;
+    let ty = y + 17;
+    P.text(k.label, rx - 0.08 * 12, ty + A * 12, 12, { b: true, ls: 0.08, c: lc, a: 'end' });
+    ty += 15.6 + 4;
+    P.text(k.value, rx, ty + A * big, big, { mono: true, b: true, c: vc, a: 'end' });
+    ty += 1.3 * big + 4;
+    P.text(k.sub, rx, ty + A * 13, 13, { c: 'muted', a: 'end' });
+    kx -= 14;
+  });
+  y = Math.max(ly, kp.length ? y + kh : y) + gap;
+  // pruh s upozorněním
+  if (pg.banner) {
+    const ls = P.split(pg.banner, 13, CW - 34);
+    const h = 22 + ls.length * 16.9;
+    P.box(X + 0.5, y + 0.5, CW - 1, h - 1, { fill: '#FFF4E0', stroke: '#E8C27A', r: 8 });
+    ls.forEach((ln, i) => P.text(ln, X + 17, y + 11 + i * 16.9 + A * 13, 13, { c: '#6B4A12' }));
+    y += h + gap;
+  }
+  // dlaždice
+  const nT = pg.tiles.length;
+  const tw = (CW - (nT - 1) * 16) / nT;
+  const vpx = pg.kind === 'week' ? 30 : 32;
+  const labs = pg.tiles.map(t => P.split(t.label, 13, tw - 38, { b: true }));
+  const subs = pg.tiles.map(t => (t.sub ? P.split(t.sub, 12, tw - 38) : []));
+  const th = Math.max(...pg.tiles.map((t, i) => 34 + 1.3 * vpx + 6 + labs[i].length * 16.9 + 6 + Math.max(1, subs[i].length) * 15.6));
+  pg.tiles.forEach((t, i) => {
+    const tx = X + i * (tw + 16);
+    P.box(tx + 0.5, y + 0.5, tw - 1, th - 1, { stroke: CTR.line, r: 10 });
+    let ty = y + 17;
+    P.text(t.v, tx + 19, ty + A * vpx, vpx, { mono: true, b: true, c: t.c || 'ink' });
+    ty += 1.3 * vpx + 6;
+    labs[i].forEach(ln => { P.text(ln, tx + 19, ty + A * 13, 13, { b: true }); ty += 16.9; });
+    ty += 6;
+    subs[i].forEach(ln => { P.text(ln, tx + 19, ty + A * 12, 12, { c: 'muted' }); ty += 15.6; });
+  });
+  y += th + gap;
+  // grafy v rámečcích
+  if (pg.charts.length) {
+    const nC = pg.charts.length;
+    const cw = (CW - (nC - 1) * 24) / nC;
+    const inner = cw - 42;
+    const right = pg.charts.some(c => c.legendRight);
+    const hh = Math.max(...pg.charts.map(c => (c.vb[1] * inner) / c.vb[0]));
+    const ch = 2 + 40 + 20.8 + 10 + (right ? 0 : 15.6 + 10) + hh;
+    if (y + ch > BOT) newPage();
+    pg.charts.forEach((c, i) => {
+      const cx = X + i * (cw + 24);
+      P.box(cx + 0.5, y + 0.5, cw - 1, ch - 1, { stroke: CTR.line, r: 10 });
+      let ty = y + 21;
+      P.text(c.title, cx + 21, ty + A * 16, 16, { b: true });
+      const items = c.legend.map(([t, cc, k]) => ({ t, cc, k, sw: k === 'sq' ? 12 : 16, tw: P.width(t, 12) }));
+      const total = items.reduce((a, it) => a + it.sw + 6 + it.tw, 0) + (items.length - 1) * 18;
+      let lx = right ? cx + cw - 21 - total : cx + 21;
+      const mid = right ? ty + 10.4 : ty + 20.8 + 10 + 7.8;
+      items.forEach(it => {
+        if (it.k === 'sq') P.box(lx, mid - 6, 12, 12, { fill: it.cc, r: 2 });
+        else if (it.k === 'line') P.box(lx, mid - 1.5, 16, 3, { fill: it.cc });
+        else P.line(lx, mid, lx + 16, mid, it.cc, 2, [3, 2]);
+        P.text(it.t, lx + it.sw + 6, mid + 4.2, 12, { c: 'muted' });
+        lx += it.sw + 6 + it.tw + 18;
+      });
+      ty += 20.8 + 10 + (right ? 0 : 15.6 + 10);
+      pdfCtrChart(P, c, cx + 21, ty, inner);
+    });
+    y += ch + gap;
+  }
+  // tabulka (hlavička se na další stránce opakuje)
+  if (pg.table) {
+    const tb = pg.table;
+    const nc = tb.cols.length;
+    const fontOf = (c, colD, i, kind) => ({ mono: !(i === 0 || colD.sans || c.sans), b: !!(c.b || kind === 'sum' || (i === 0 && kind !== 'sub')) });
+    const txt = c => String(c.pdf != null ? c.pdf : c.v);
+    const pxOf = c => (c.sm ? 13 : 14);
+    const allCells = i => tb.rows.flatMap(row => (row.span ? [] : [[row.cells[i], row.sum ? 'sum' : 'main'], ...(row.sub ? [[row.sub[i], 'sub']] : [])]));
+    let ws;
+    if (tb.fixed) {
+      const fixed = tb.cols.reduce((a, c) => a + (c.w || 0), 0);
+      const free = tb.cols.filter(c => !c.w).length;
+      ws = tb.cols.map(c => c.w || (CW - fixed) / free);
+    } else {
+      const want = tb.cols.map((colD, i) => Math.max(P.width(colD.h, 12, { b: true, ls: 0.04 }),
+        ...allCells(i).map(([c, kind]) => (c ? P.width(txt(c), pxOf(c), fontOf(c, colD, i, kind)) + (c.ind ? 16 : 0) : 0))) + 24);
+      const sum = want.reduce((a, b) => a + b, 0);
+      if (sum <= CW) ws = want.map(v => v + ((CW - sum) * v) / sum);
+      else {
+        ws = want.slice();
+        const k = Math.max(0, tb.cols.findIndex(c => c.wrap));
+        ws[k] = Math.max(110, ws[k] - (sum - CW));
+        const rest = ws.reduce((a, b) => a + b, 0);
+        if (rest > CW) ws = ws.map(v => (v * CW) / rest);
+      }
+    }
+    const xs = ws.map((_, i) => X + ws.slice(0, i).reduce((a, b) => a + b, 0));
+    const headLines = tb.cols.map((colD, i) => P.split(colD.h, 12, ws[i] - 24, { b: true }));
+    const headH = 20 + Math.max(...headLines.map(l => l.length)) * 15.6 + 2;
+    const drawHead = () => {
+      tb.cols.forEach((colD, i) => headLines[i].forEach((ln, j) => {
+        const right = !(i === 0 || colD.a === 'l');
+        P.text(ln, right ? xs[i] + ws[i] - 12 - 0.04 * 12 : xs[i] + 12, y + 10 + j * 15.6 + A * 12, 12, { b: true, ls: 0.04, c: 'muted', a: right ? 'end' : undefined });
+      }));
+      P.line(X, y + headH - 1, X + CW, y + headH - 1, CTR.ink, 2);
+      y += headH;
+    };
+    // řádek: [buňky, druh] → výška a kreslení
+    const layout = (cells, kind) => {
+      const padT = kind === 'sum' ? 12 : kind === 'sub' ? 2 : 10;
+      const padB = kind === 'sum' ? 12 : kind === 'main2' ? 2 : 10;
+      const parts = cells.map((c, i) => {
+        const colD = tb.cols[i];
+        if (!c) return { h: 0 };
+        if (c.bar !== undefined) {
+          const avail = ws[i] - 24 - 332;
+          const lines = P.split(txt(c), 14, Math.max(60, avail), { mono: true, b: true });
+          return { bar: c, lines, h: Math.max(10, lines.length * 18.2) };
+        }
+        const px = pxOf(c);
+        const f = fontOf(c, colD, i, kind === 'main2' ? 'main' : kind);
+        const lines = P.split(txt(c), px, ws[i] - 24 - (c.ind ? 16 : 0), f);
+        return { c, px, f, lines, h: lines.length * px * 1.3 };
+      });
+      const h = padT + Math.max(18.2, ...parts.map(p => p.h)) + padB + (kind === 'sum' ? 2 : kind === 'main2' ? 0 : 1);
+      return { parts, h, padT, kind };
+    };
+    const drawRow = L => {
+      const top = y + (L.kind === 'sum' ? 2 : 0);
+      if (L.kind === 'sum') P.line(X, y + 1, X + CW, y + 1, CTR.ink, 2);
+      const ch = Math.max(18.2, ...L.parts.map(p => p.h));
+      L.parts.forEach((p, i) => {
+        const colD = tb.cols[i];
+        if (p.bar) {
+          const bx = xs[i] + 12;
+          const by = top + L.padT + (ch - 10) / 2;
+          const fw = 320 * Math.min(1, Math.max(0, p.bar.bar || 0));
+          P.box(bx, by, 320, 10, { fill: CTR.track, r: 5 });
+          if (fw > 0.5) {
+            if (fw >= 315) P.box(bx, by, fw, 10, { fill: CTR.blue, r: 5 });
+            else { P.box(bx, by, Math.max(fw, 5), 10, { fill: CTR.blue, r: Math.min(5, fw / 2) }); if (fw > 10) P.box(bx + fw - 5, by, 5, 10, { fill: CTR.blue }); }
+          }
+          const ly0 = top + L.padT + (ch - p.lines.length * 18.2) / 2;
+          p.lines.forEach((ln, j) => P.text(ln, bx + 332, ly0 + j * 18.2 + A * 14, 14, { mono: true, b: true, c: 'blue' }));
+          return;
+        }
+        if (!p.c) return;
+        const right = !(i === 0 || colD.a === 'l');
+        const c = p.c;
+        const ty = top + L.padT + (ch - p.h) / 2;   // buňky na výšku na střed jako v tabulce HTML
+        p.lines.forEach((ln, j) => P.text(ln, right ? xs[i] + ws[i] - 12 : xs[i] + 12 + (c.ind ? 16 : 0), ty + j * p.px * 1.3 + A * p.px, p.px, { ...p.f, c: c.c || 'ink', a: right ? 'end' : undefined }));
+      });
+      if (L.kind !== 'sum' && L.kind !== 'main2') P.line(X, y + L.h - 0.5, X + CW, y + L.h - 0.5, CTR.grid, 1);
+      y += L.h;
+    };
+    const groups = tb.rows.map(row => {
+      if (row.span) {
+        const a = P.split(row.span[0], 14, ws[0] - 24, { b: true });
+        const restW = ws.slice(1).reduce((s2, v) => s2 + v, 0);
+        const b = P.split(row.span[1], 14, restW - 24);
+        return [{ span: true, a, b, h: 20 + Math.max(a.length, b.length) * 18.2 + 1 }];
+      }
+      if (row.sub) return [layout(row.cells, 'main2'), layout(row.sub, 'sub')];
+      return [layout(row.cells, row.sum ? 'sum' : 'main')];
+    });
+    const firstH = groups.length ? groups[0].reduce((a, L) => a + L.h, 0) : 0;
+    if (y + 32.8 + headH + firstH * Math.min(2, groups.length) > BOT) newPage();
+    P.text(tb.title, X, y + A * 16, 16, { b: true });
+    y += 20.8 + 12;
+    drawHead();
+    groups.forEach(G => {
+      const gh = G.reduce((a, L) => a + L.h, 0);
+      if (y + gh > BOT) {
+        newPage();
+        P.text(`${tb.title} — pokračování`, X, y + A * 16, 16, { b: true });
+        y += 20.8 + 12;
+        drawHead();
+      }
+      G.forEach(L => {
+        if (L.span) {
+          L.a.forEach((ln, j) => P.text(ln, X + 12, y + 10 + j * 18.2 + A * 14, 14, { b: true, c: 'faint' }));
+          L.b.forEach((ln, j) => P.text(ln, xs[1] + 12, y + 10 + j * 18.2 + A * 14, 14, { c: 'faint' }));
+          P.line(X, y + L.h - 0.5, X + CW, y + L.h - 0.5, CTR.grid, 1);
+          y += L.h;
+        } else drawRow(L);
+      });
+    });
+    y += gap;
+  }
+  // vysvětlivky ve sloupcích
+  const nN = pg.notes.length;
+  const nw = (CW - (nN - 1) * 20) / nN;
+  const parts = pg.notes.map(([b, t]) => P.rich(b ? [[b, true], [t, false]] : [[t, false]], 12, nw));
+  const nh = 17 + Math.max(...parts.map(p => p.length)) * 18;
+  if (y + nh > BOT) newPage();
+  P.line(X, y + 0.5, X + CW, y + 0.5, CTR.line, 1);
+  parts.forEach((lines, i) => lines.forEach((ln, j) => ln.forEach(([wd, b, px]) => P.text(wd, X + i * (nw + 20) + px, y + 17 + j * 18 + 1.125 * 12, 12, { b, c: b ? 'ink' : 'muted' }))));
+  y += nh;
+}
 async function exportCtPdf(button) {
   const r = waCtRange();
-  const x = capTimeline(r.from, r.to);
-  if (!x || !x.days.length) { toast('V období nejsou pracovní dny.', true); return; }
+  const pages = S.positions.some(isGroup) ? capReportPages(r.from, r.to) : [];
+  if (!pages.length) { toast('V období nejsou pracovní dny.', true); return; }
   await withPdf(button, doc => {
-    doc.setProperties({ title: `Kapacity a zaškolení · ${dayText(x.from)} – ${dayText(x.to)}`, creator: EXPORT_NAME });
-    drawCapTimeline(doc, x);
-    downloadFile(`kapacity-zaskoleni-${x.from}-${x.to}.pdf`, doc.output('blob'), 'application/pdf');
-  }, 'landscape');
-}
-/* Skládané sloupce do PDF (zkušení dole, v zácviku nahoře), požadavek čárkovaně. */
-function pdfCtBars(k, x0, y0, w, h, { title, sub, points }) {
-  const C = k.C;
-  const doc = k.doc;
-  k.text(title, x0, y0, 9.2, { bold: true });
-  k.text(sub, x0, y0 + 4.6, 6.8, { color: C.ink2 });
-  // legenda vpravo nahoře
-  let lx = x0 + w;
-  const legend = [['požadavek', 'req'], ['plán', 'plan'], ['v zácviku', CT_PDF.tr], ['zkušení', CT_PDF.ok]]
-    .filter(([, c]) => (c === 'req' ? points.some(p => p.ref) : c === 'plan' ? points.some(p => p.plan) : true));
-  legend.forEach(([t, c]) => {
-    const tw = k.width(t, 6.4);
-    lx -= tw;
-    k.text(t, lx, y0 + 0.6, 6.4, { color: C.ink2 });
-    lx -= 4.2;
-    if (c === 'req') { doc.setDrawColor(...C.ink); doc.setLineWidth(0.4); doc.setLineDashPattern([1, 0.8], 0); doc.line(lx, y0 + 1.9, lx + 3.2, y0 + 1.9); doc.setLineDashPattern([], 0); }
-    else if (c === 'plan') { k.box(ctMix(C.ink3, 0.25), lx, y0 + 0.5, 3, 3, 0.5); doc.setDrawColor(...C.ink3); doc.setLineWidth(0.2); doc.setLineDashPattern([0.6, 0.5], 0); doc.rect(lx, y0 + 0.5, 3, 3, 'S'); doc.setLineDashPattern([], 0); }
-    else k.box(c, lx, y0 + 0.5, 3, 3, 0.5);
-    lx -= 3;
-  });
-  const L = 9;
-  const top0 = y0 + 14;
-  const base = y0 + h - 5;
-  const max = Math.max(0, ...points.map(p => (p.ok || 0) + (p.tr || 0)), ...points.map(p => p.ref || 0));
-  if (!points.length || !max) { k.text('nikdo ve skupinách', x0 + w / 2, (top0 + base) / 2, 7, { align: 'center', color: C.ink3 }); return; }
-  const top = niceMax(max * 1.12);
-  const yy = v => base - (Math.min(v, top) / top) * (base - top0);
-  [0, top / 2, top].forEach(v => {
-    k.hline(yy(v), C.line, 0.15, x0 + L, x0 + w);
-    k.text(nf(v, 0), x0 + L - 1.4, yy(v) - 1.1, 5.8, { align: 'right', color: C.ink3 });
-  });
-  const n = points.length;
-  const band = (w - L) / n;
-  const bw = Math.min(14, band * 0.64);
-  const cx = i => x0 + L + band * i + band / 2;
-  const every = Math.ceil(n / 12);
-  let cut = -1;
-  points.forEach((p, i) => { if (!p.plan) cut = i; });
-  const seg = (i, v0, v1, color, plan) => {
-    const a = yy(v1);
-    const hh = yy(v0) - a;
-    if (hh <= 0.05) return;
-    k.box(plan ? ctMix(color, 0.3) : color, cx(i) - bw / 2, a, bw, hh);
-    if (plan) { doc.setDrawColor(...color); doc.setLineWidth(0.2); doc.setLineDashPattern([0.7, 0.5], 0); doc.rect(cx(i) - bw / 2, a, bw, hh, 'S'); doc.setLineDashPattern([], 0); }
-  };
-  points.forEach((p, i) => {
-    const ok = p.ok || 0;
-    const tr = p.tr || 0;
-    seg(i, 0, ok, CT_PDF.ok, p.plan);
-    if (tr) seg(i, ok, ok + tr, CT_PDF.tr, p.plan);
-    if (p.ref) { doc.setDrawColor(...C.ink); doc.setLineWidth(0.35); doc.setLineDashPattern([1.2, 0.9], 0); doc.line(cx(i) - band / 2, yy(p.ref), cx(i) + band / 2, yy(p.ref)); doc.setLineDashPattern([], 0); }
-    const tot = ok + tr;
-    if (tot > 0 && (n <= 16 || i === n - 1 || i === cut)) k.text(nf(tot, tot % 1 ? 1 : 0), cx(i), Math.min(yy(tot), p.ref ? yy(p.ref) : Infinity) - 3.6, 6.4, { bold: true, align: 'center' });
-    if ((n - 1 - i) % every === 0) k.text(p.label, cx(i), base + 1.3, 5.8, { align: 'center', color: C.ink3 });
-  });
-  if (cut >= 0 && cut < n - 1) {
-    const xx = x0 + L + band * (cut + 1);
-    doc.setDrawColor(...C.ink3); doc.setLineWidth(0.2); doc.setLineDashPattern([0.6, 0.8], 0); doc.line(xx, top0 - 3, xx, base); doc.setLineDashPattern([], 0);
-    k.text('plán →', xx + 1.2, top0 - 4.4, 6, { color: C.ink3 });
-  }
-}
-/* Tabulka do PDF: hlavička velkými písmeny s tmavou čarou (jako vzor), řádky s jemnou čarou,
-   poslední řádek (sum) s tmavou čarou nad ním. cols: [šířka, nadpis, 'r'|'l']. Hlavička se opakuje. */
-function pdfCtTable(k, cols, rows, { sum = null, size = 7.4, bar = null } = {}) {
-  const C = k.C;
-  const head = () => {
-    const lines = cols.map(c => k.split(c[1].toUpperCase(), c[0] - 2.4, 6, true));
-    const hh = Math.max(...lines.map(l => l.length)) * k.LH(6, 1.2) + 3;
-    let x = k.M;
-    cols.forEach((c, i) => {
-      lines[i].forEach((ln, j) => k.text(ln, c[2] === 'r' ? x + c[0] - 1.2 : x + 1.2, k.y + 1 + j * k.LH(6, 1.2), 6, { bold: true, color: C.ink2, align: c[2] === 'r' ? 'right' : 'left', space: 0.15 }));
-      x += c[0];
+    doc.setProperties({ title: `Report docházky · ${ctrRange(r.from, r.to)}`, creator: EXPORT_NAME });
+    const P = ctrPdf(doc);
+    const list = pages.map(p => (p.kind === 'month' ? ctrMonth(p.id) : ctrWeek(p.id)));
+    list.push(ctrDev(r.from, r.to));
+    list.filter(Boolean).forEach((pg, i) => {
+      if (pg.kind === 'dev' && pg.table) pg.table.rows.sort((a, b) => (a.gi - b.gi) || (a.wid && b.wid ? widCmp(a.wid, b.wid) : 0));
+      pdfCtrPage(P, pg, i === 0);
     });
-    k.y += hh;
-    k.hline(k.y, C.ink, 0.5);
-    k.y += 0.6;
-  };
-  const line = (r, strong) => {
-    const cells = r.map((v, i) => k.split(v == null ? '' : String(v), cols[i][0] - 2.4, size, strong || i === 0));
-    const hh = Math.max(...cells.map(l => l.length)) * k.LH(size, 1.22) + 2.8;
-    k.need(hh + 1);   // nová stránka dostane hlavičku přes k.onPage
-    if (strong) k.hline(k.y, C.ink, 0.45);
-    let x = k.M;
-    cols.forEach((c, i) => {
-      if (bar && i === bar.col && r._share != null) {
-        const bw = c[0] - 16;
-        k.box(C.soft3, x + 1.2, k.y + hh / 2 - 0.8, bw, 1.6, 0.8);
-        k.box(CT_PDF.ok, x + 1.2, k.y + hh / 2 - 0.8, Math.max(0.6, bw * Math.min(1, r._share)), 1.6, 0.8);
-        k.text(cells[i][0], x + c[0] - 1.2, k.y + 1.6, size, { bold: true, align: 'right' });
-      } else cells[i].forEach((ln, j) => k.text(ln, c[2] === 'r' ? x + c[0] - 1.2 : x + 1.2, k.y + 1.6 + j * k.LH(size, 1.22), size, { bold: strong || i === 0, color: r._muted && i ? C.ink3 : C.ink, align: c[2] === 'r' ? 'right' : 'left' }));
-      x += c[0];
-    });
-    k.y += hh;
-    if (!strong) k.hline(k.y, C.line, 0.2);
-  };
-  k.need(22);
-  const keepOn = k.onPage;
-  head();
-  k.onPage = () => { if (keepOn) keepOn(); head(); };
-  rows.forEach(r => line(r, false));
-  if (sum) line(sum, true);
-  k.onPage = keepOn;
-  k.y += 5;
-}
-function drawCapTimeline(doc, x) {
-  const k = pdfKit(doc);
-  const C = k.C;
-  const sign = v => (v > 0 ? `+${v}` : v < 0 ? `−${-v}` : '±0');
-  const pct = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
-  const s = x.start.tot;
-  const e = x.end.tot;
-  k.header({ eyebrow: `${EXPORT_NAME} · KAPACITY A ZAŠKOLENÍ`, right: `Stav k ${dayText(todayIso())}`, title: 'Kapacity a zaškolení',
-    sub: `${dayText(x.from)} – ${dayText(x.to)}`,
-    meta: `${x.real.n ? `Vykázáno ${x.real.n} ${pracDnyN(x.real.n)} z docházky${x.lastReal ? ` (do ${dayText(x.lastReal)})` : ''}` : 'Bez dnů s docházkou'}, ${x.plan.n ? `plánováno ${x.plan.n} ${pracDnyN(x.plan.n)} podle dnešního zařazení a směn` : 'bez plánovaných dnů'}. Zkušený pracovník = dovednosti skupiny aspoň úroveň ${x.thr}; ve vykázaných dnech podle hodnocení platného v ten den.` });
-  const pf = x.perf && x.perf.tot.ok != null && x.perf.tot.tr ? x.perf.tot.ok / x.perf.tot.tr : null;
-  const tiles = [
-    ['Podíl zkušených', pct(ctShareR(e)), `na začátku ${pct(ctShareR(s))}`, 'acc'],
-    ['Lidé ve skupinách', String(e.n), `${sign(e.n - s.n)} proti ${dayText(x.start.iso)}`],
-    ['Zkušení pracovníci', String(e.ok), `${sign(e.ok - s.ok)} proti začátku · ${x.newOk} nově`],
-    ['Pracovníci v zácviku', String(e.tr), e.tr ? `Ø zaškolení ${pct(ctTrainR(e))}` : 'nikdo v zácviku'],
-  ];
-  if (x.total.req) tiles.push(['Požadavek splněn', `${x.total.met} z ${x.total.req} dní`, `Ø na směně ${nf(x.total.tot.on / x.total.n, 1)} z ${nf(x.total.reqAvg, 0)}`, x.total.met / x.total.req >= 0.9 ? 'good' : x.total.met / x.total.req < 0.6 ? 'crit' : '']);
-  if (pf != null) tiles.push(['Zkušený proti zácviku', `${nf(pf, 1)}×`, 'výkon za hodinu práce']);
-  k.tiles(tiles);
-  const pts = ctPoints(x);
-  const cw = (k.CW - 8) / 2;
-  const ch = 54;
-  k.need(ch + 6);
-  const cy = k.y;
-  [[k.M, 'Lidé ve skupinách', `stav ${pts.byMonth ? 'na konci měsíce' : 'na konci týdne'}`, pts.roster], [k.M + cw + 8, 'Na směně', pts.byDay ? 'po pracovních dnech' : 'Ø na pracovní den po týdnech', pts.shift]].forEach(([cx, title, sub, points]) => {
-    k.box(C.white, cx, cy, cw, ch, 2);
-    doc.setDrawColor(...C.line); doc.setLineWidth(0.25); doc.roundedRect(cx, cy, cw, ch, 2, 2, 'S');
-    pdfCtBars(k, cx + 4, cy + 4, cw - 8, ch - 7, { title, sub, points });
-  });
-  k.y = cy + ch + 6;
-  // po skupinách
-  const perf = !!x.perf;
-  const gCols = [[54, 'Skupina'], [13, 'Lidí', 'r'], [16, 'Zkušení', 'r'], [16, 'V zácviku', 'r'], [38, 'Podíl zkušených', 'r'], [20, 'Zkušení proti začátku', 'r'],
-    [18, 'Ø zaškolení', 'r'], [20, 'Ø na směně vykázáno', 'r'], [20, 'Ø na směně plán', 'r'], [16, 'Plnění hodin', 'r']];
-  if (perf) gCols.push([14, 'Výkon zkuš.', 'r'], [14, 'Výkon zácvik', 'r'], [14, 'Výkon celkem', 'r']);
-  const fit = k.CW / gCols.reduce((a, c) => a + c[0], 0);
-  gCols.forEach(c => { c[0] *= fit; });
-  const gRow = (g, i) => {
-    const en = i < 0 ? x.end.tot : x.end.groups[i];
-    const st = i < 0 ? x.start.tot : x.start.groups[i];
-    const R = i < 0 ? x.real.tot : x.real.groups[i];
-    const P = i < 0 ? x.plan.tot : x.plan.groups[i];
-    const ix = perf ? (i < 0 ? x.perf.idx.tot : x.perf.idx.groups[i]) : null;
-    const row = [g ? g.name || '(bez názvu)' : 'CELKEM', en.n, en.ok, en.tr, pct(ctShareR(en)), sign(en.ok - st.ok), en.tr ? pct(ctTrainR(en)) : '—',
-      x.real.n ? nf(R.on / x.real.n, 1) : '—', x.plan.n ? nf(P.on / x.plan.n, 1) : '—', pct(ctFill(R))];
-    if (perf) row.push(ix.ok == null ? '—' : nf(ix.ok, 0), ix.tr == null ? '—' : nf(ix.tr, 0), ix.all == null ? '—' : nf(ix.all, 0));
-    row._share = ctShareR(en);
-    return row;
-  };
-  const gRows = x.groups.map((g, i) => [g, i]).filter(([, i]) => x.end.groups[i].n || x.start.groups[i].n || x.real.groups[i].planN || x.plan.groups[i].planN).map(([g, i]) => gRow(g, i));
-  // nadpis a tabulka skupin pohromadě (vejde-li se na jednu stránku)
-  k.keep(() => { k.heading(`Po skupinách — stav k ${dayText(x.end.iso)}`, 11.5); pdfCtTable(k, gCols, gRows, { sum: gRow(null, -1), bar: { col: 4 } }); }, 60);
-  // po týdnech
-  k.need(40);
-  k.heading('Po týdnech', 11.5);
-  const wCols = [[40, 'Týden'], [24, 'Stav'], [12, 'Dní', 'r'], [18, 'Ø na směně', 'r'], [18, 'Ø zkušení', 'r'], [18, 'Ø v zácviku', 'r'], [34, 'Podíl zkušených', 'r'],
-    [18, 'Ø zaškolení', 'r'], [16, 'V normě', 'r'], [22, 'Odpracováno h', 'r'], [20, 'Plán h', 'r'], [16, 'Plnění', 'r']];
-  const wf = k.CW / wCols.reduce((a, c) => a + c[0], 0);
-  wCols.forEach(c => { c[0] *= wf; });
-  const wRows = x.weeks.map(w => {
-    const row = [`${weekName(w.id)} · ${waShortRange({ id: w.id }, { want: true, from: w.from, to: w.to })}`, CT_KIND[w.kind], w.n, nf(w.tot.on / w.n, 1), nf(w.tot.onOk / w.n, 1), nf(w.tot.onTr / w.n, 1),
-      pct(ctShare(w.tot)), w.tot.onTr ? pct(w.tot.onTrS / w.tot.onTr) : '—', w.req ? `${w.met}/${w.req}` : '—', w.real ? nf(w.tot.realH, 1) : '—', nf(w.tot.planH, 1), pct(ctFill(w.tot))];
-    row._share = ctShare(w.tot);
-    row._muted = w.kind === 'plan';
-    return row;
-  });
-  pdfCtTable(k, wCols, wRows, { bar: { col: 6 } });
-  // vývoj zaškolení: jen ID z evidence práce (jako PDF matice, 2.20)
-  k.need(50);   // nadpis nezůstane sám dole na stránce
-  k.keep(() => { k.heading('Vývoj zaškolení', 11.5); k.para(`Lidé, kterým se od ${dayText(x.start.iso)} do ${dayText(x.to < x.today ? x.to : x.today)} změnilo hodnocení dovedností (procento skupiny). ${x.newOk} ${x.newOk === 1 ? 'se stal zkušeným pracovníkem' : 'se stali zkušenými pracovníky'}. Lidé jen s ID z evidence práce.`, k.M, k.CW, 8, { color: C.ink2 }); k.y += 2; }, 40);
-  if (x.dev.length) {
-    const vCols = [[22, 'ID'], [40, 'Skupina'], [18, 'Na začátku', 'r'], [18, 'Na konci', 'r'], [16, 'Změna', 'r'], [24, 'Stav'], [24, 'Zkušený od'], [103, 'Změny hodnocení']];
-    const vf = k.CW / vCols.reduce((a, c) => a + c[0], 0);
-    vCols.forEach(c => { c[0] *= vf; });
-    const vp = v => (v.pct == null ? '—' : `${nf(v.pct, 0)} %`);
-    pdfCtTable(k, vCols, [...x.dev].sort((a, b) => widCmp(a.e || a, b.e || b)).sort((a, b) => (x.groups.indexOf(a.end.pos) - x.groups.indexOf(b.end.pos))).map(d => [
-      d.wid ? `ID ${d.wid}` : 'bez ID', d.end.pos ? d.end.pos.name : d.start.pos ? d.start.pos.name : '', vp(d.start), vp(d.end),
-      d.gain == null ? '—' : `${d.gain > 0 ? '+' : d.gain < 0 ? '−' : ''}${nf(Math.abs(d.gain), 0)} b.`, d.end.pos ? (d.end.ok ? 'zkušený' : 'v zácviku') : 'bez skupiny',
-      d.became ? dayText(todayIso(d.became)) : '', d.steps.map(st => `${dayText(todayIso(st.at), false)} ${st.pct == null ? '' : `${nf(st.pct, 0)} %`}`).join(' → ')]), { size: 7 });
-  } else { k.text('V tomto období se nikomu hodnocení dovedností nezměnilo.', k.M, k.y, 8, { color: C.ink3 }); k.y += 8; }
-  // vysvětlivky (tři sloupce jako ve vzoru)
-  const defs = [
-    ['Zkušený pracovník', ` — procento dovedností skupiny aspoň úroveň ${x.thr} (${x.thr * 25} %). Ve vykázaných dnech a ve stavech v minulosti podle hodnocení platného v ten den (historie hodnocení), v plánu dnešní. Ostatní ve skupině jsou pracovníci v zácviku; Ø zaškolení = jejich procento ÷ ${x.thr * 25} %.`],
-    ['Vykázáno a plán', ` — vykázáno = pracovní den s nahranou docházkou (na směně = hodiny bez kódu nepřítomnosti), plán = ostatní pracovní dny podle dnešního zařazení, směn a střídání skupin 1 a 2, bez nemocných, vyřazených a vedoucích. Víkendy a svátky se nepočítají. Požadavek z Auditu.`],
-    [x.perf ? 'Výkon' : 'Lidé na směně', x.perf ? ` — normohodiny z evidence práce ÷ odpracované hodiny z docházky, jen lidé ve skupinách. Index: celkem za ${monthLabel(x.months.find(m => m.perf).id)} = 100. Kusy ani normy jednotlivců se neukazují.` : ' — jen lidé ze skupin Matice dovedností; kdo není v žádné skupině, se nepočítá. Vygenerováno ' + dayText(todayIso()) + '.'],
-  ];
-  const dw = (k.CW - 12) / 3;
-  const parts = defs.map(([b, t]) => k.split(b + t, dw, 7.2));
-  const dh = Math.max(...parts.map(p => p.length)) * k.LH(7.2, 1.4) + 6;
-  k.need(dh);
-  k.hline(k.y, C.line, 0.25);
-  k.y += 3;
-  parts.forEach((p, i) => {
-    const x0 = k.M + i * (dw + 6);
-    p.forEach((ln, j) => {
-      const y = k.y + j * k.LH(7.2, 1.4);
-      if (j === 0) { const bw = k.width(defs[i][0], 7.2, true); k.text(defs[i][0], x0, y, 7.2, { bold: true }); k.text(ln.slice(defs[i][0].length), x0 + bw, y, 7.2, { color: C.ink2 }); }
-      else k.text(ln, x0, y, 7.2, { color: C.ink2 });
-    });
-  });
-  k.y += dh;
-  k.footer(`${EXPORT_NAME} · Kapacity a zaškolení · ${dayText(x.from)} – ${dayText(x.to)}`);
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i += 1) {
+      doc.setPage(i);
+      P.text(`${EXPORT_NAME} · Report docházky · ${ctrRange(r.from, r.to)}`, 56, P.PH - 22, 11, { c: 'faint' });
+      P.text(`Strana ${i} / ${n}`, 1224, P.PH - 22, 11, { c: 'faint', a: 'end' });
+    }
+    downloadFile(`kapacity-zaskoleni-${r.from}-${r.to}.pdf`, doc.output('blob'), 'application/pdf');
+  }, 'portrait', { mono: true });
 }
 async function exportCtXlsx() {
   const r = waCtRange();
@@ -10260,6 +10684,8 @@ function bindWorkAudit() {
     if (pdfBtn) { exportWaPdf(pdfBtn); return; }
     const ctPre = t.closest('[data-wactpre]');
     if (ctPre) { ui.wa.ctPre = ctPre.dataset.wactpre; renderWorkAudit(); return; }
+    const ctPage = t.closest('[data-wactpage]');
+    if (ctPage) { ui.wa.ctPage = ctPage.dataset.wactpage; renderWorkAudit(); return; }
     if (t.closest('[data-wactxlsx]')) { exportCtXlsx(); return; }
     const ctPdf = t.closest('[data-wactpdf]');
     if (ctPdf) { exportCtPdf(ctPdf); return; }
@@ -10302,6 +10728,16 @@ function bindWorkAudit() {
     if (t.id === 'waGroup') { ui.wa.group = t.value; renderWorkAudit(); return; }
     if (t.matches('[data-wadate]')) { waDatesMark(t); return; }
     if (t.id === 'waAllEdits') { ui.wa.allEdits = t.checked; renderWorkAudit(); return; }
+    if (t.id === 'waRepPlace' || t.id === 'waRepFirm') {
+      const rep = S.workAudit.rep || (S.workAudit.rep = { place: '', firm: '' });
+      const k = t.id === 'waRepPlace' ? 'place' : 'firm';
+      const v = String(t.value || '').replace(/\s+/g, ' ').trim().slice(0, k === 'place' ? 60 : 80);
+      if (rep[k] !== v) { rep[k] = v; save(); }
+      t.value = v;
+      const box = $('#ctrPage');   // jen stránka reportu, ať Tab do dalšího pole nezahodí fokus
+      if (box && ui.wa.ctShown) { box.innerHTML = waCtPageHtml(waCtRange(), ui.wa.ctShown); setWidths(box); } else renderWorkAudit();
+      return;
+    }
     if (t.id === 'waPlanWords') {
       const words = [...new Set(t.value.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean).map(w => w.slice(0, 12)))].slice(0, 12);
       S.workAudit.plan.tech.words = words;
@@ -10363,7 +10799,7 @@ function bindWorkAudit() {
   });
   // Tooltip grafů (myš i klávesnice), stejně jako v profilu.
   const showTip = hit => {
-    const wrap = hit.closest('.wa-charts');
+    const wrap = hit.closest('.wa-charts, .ctr-chart');
     const tip = wrap && $('.chart-tip', wrap);
     if (!tip || !wrap) return;
     hideTip();
@@ -10371,19 +10807,21 @@ function bindWorkAudit() {
     tip.hidden = false;
     const a = hit.getBoundingClientRect();
     const b = wrap.getBoundingClientRect();
-    tip.style.left = `${clamp(a.left - b.left + a.width / 2 - tip.offsetWidth / 2, 0, Math.max(0, b.width - tip.offsetWidth))}px`;
+    const sl = wrap.scrollLeft || 0;   // graf reportu na telefonu se posouvá do strany
+    tip.style.left = `${clamp(a.left - b.left + sl + a.width / 2 - tip.offsetWidth / 2, sl, sl + Math.max(0, b.width - tip.offsetWidth))}px`;
     tip.style.top = `${Math.max(0, a.top - b.top - tip.offsetHeight - 6)}px`;
-    $$('.chart .hit.on', wrap).forEach(x => x.classList.remove('on'));
+    $$('.chart .hit.on, .ctr-hit.on', wrap).forEach(x => x.classList.remove('on'));
     hit.classList.add('on');
   };
   const hideTip = () => {
-    $$('.wa-charts .chart-tip', view).forEach(x => { x.hidden = true; });
-    $$('.wa-charts .hit.on', view).forEach(x => x.classList.remove('on'));
+    $$('.wa-charts .chart-tip, .ctr-chart .chart-tip', view).forEach(x => { x.hidden = true; });
+    $$('.wa-charts .hit.on, .ctr-hit.on', view).forEach(x => x.classList.remove('on'));
   };
-  view.addEventListener('pointerover', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
-  view.addEventListener('pointerout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
-  view.addEventListener('focusin', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
-  view.addEventListener('focusout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
+  const HIT = '.chart .hit, .ctr-hit';
+  view.addEventListener('pointerover', event => { const hit = event.target.closest(HIT); if (hit) showTip(hit); });
+  view.addEventListener('pointerout', event => { if (event.target.closest(HIT)) hideTip(); });
+  view.addEventListener('focusin', event => { const hit = event.target.closest(HIT); if (hit) showTip(hit); });
+  view.addEventListener('focusout', event => { if (event.target.closest(HIT)) hideTip(); });
 }
 
 /* ==========================================================================

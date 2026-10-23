@@ -34,6 +34,41 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 23. 10. 2026 (verze 2.31):
+
+- Uživatel k Kapacitám 2.30: „udělej to co nejvíce identické tomu vzoru co jsem ti poslal“
+  (vzor: měsíční souhrn zaškolenosti a výkonu a týdenní souhrn s požadavkem, šířka 1280 px,
+  IBM Plex Sans a Plex Mono). Potom k Shortage: „přidej možnost nastavit manuálně jako top
+  shortage … sestav dej možnost ‚Zobrazit plně‘ aby bylo vidět QR … filtr na probíhající operace“.
+  - Core: `capMonthReport(month)` (3 měsíce do grafu, stav skupin k poslednímu pracovnímu dni,
+    `dOk` proti minulému měsíci, výkon s indexem první měsíc okna = 100), `capWeekReport(weekId)`
+    (5 slotů Po–Pá `{kind real|plan|off, on, ok, tr, plan, req, met}`; plán skupiny ve vykázaném
+    dni = `planN − excused`; den v normě = s požadavkem z Auditu `tot.on ≥ req`, bez něj
+    `on ≥ plán`; stav `ctState`: vše ok, ≥ 80 % warn, jinak crit), `capReportPages(from, to)`
+    (za měsícem jeho týdny podle čtvrtka). `S.workAudit.rep = {place, firm}` (záhlaví, historie
+    `warep`).
+  - UI (`app.js`, oddíl KAPACITY A ZAŠKOLENÍ): obsah stránky skládají `ctrMonth`, `ctrWeek`,
+    `ctrDev` (texty, dlaždice, rámečky `CTR_BOX`, tabulka s buňkami a barvami jako klíči `CTR`),
+    kreslí ho `ctrHtml` (papír `.ctr-paper`, CSS podle vzoru, bílý i v tmavém režimu) i
+    `pdfCtrPage` (A4 na výšku, souřadnice v px vzoru, 1280 px = 210 mm, `ctrPdf`: písmo v px →
+    pt, účaří = horní okraj řádku + 1,025 em, řádek 1,3 em; šířky sloupců jako auto-layout
+    prohlížeče, pokračování tabulky s hlavičkou). Grafy jsou značky (`ctrStackChart`,
+    `ctrPerfChart`, `ctrDaysChart`) → `ctrSvg` i `pdfCtrChart`, takže aplikace a PDF mají
+    stejný graf. Výběr stránky `ui.wa.ctPage` (`month:…`, `week:…`, `dev`), po změně záhlaví se
+    překreslí jen `#ctrPage` (Tab do dalšího pole nezahodí fokus). Na telefonu se graf v kartě
+    posouvá do strany (tooltip počítá `scrollLeft`).
+  - Plex Mono do PDF: `private/vendor/plex-mono-medium.ttf` a `-semibold.ttf` (OFL, podmnožina
+    Latin a Latin Extended z balíčku `@ibm/plex-mono` převedená fontTools z WOFF),
+    `app.php?f=pdf-mono.ttf` / `pdf-mono-semibold.ttf`, `newPdf(orientation, {mono: true})`.
+  - Shortage: `item.full` (sestava zobrazená plně: v aplikaci QR a poznámka, v PDF celý řádek),
+    ruční TOP `shSetTop(list, id, on)` (na konec TOP / začátek ostatních), filtr operací
+    `shOpKey` (`shOpNorm` nebo „-“), `shOpList`, `shOpPick` (poddíl jen se svou operací, sestava
+    i kvůli poddílu), `ui.sh.ops`, `shOpSel`, PDF podle filtru (`shPdfItems(l, ops)`, v záhlaví
+    „Jen operace: …“). Historie `sht:` a `shf:`; přesun kvůli TOP se jako změna pořadí nepíše.
+  - Testy: core 2.31 (souhrny, záhlaví, Shortage, norma bez požadavku), `e2e_kapacity.js`
+    přepsaný na stránky reportu, `e2e_shortage.js` s ručním TOP, plnou sestavou a filtrem.
+  - Verze dat 29, `ODM_VERSION` 2.31.
+
 Stav k 22. 10. 2026 (verze 2.30):
 
 - Uživatel (s přílohou: návrh „Report docházky – měsíční zaškolenost a výkon“ a týdenní souhrn KW42):
@@ -59,7 +94,8 @@ Stav k 22. 10. 2026 (verze 2.30):
     `steps`), `perf` (normohodiny `rec.norm` ÷ hodiny z docházky bez kódu, index první měsíc =
     100), `missing` (lidé ze skupin bez řádku v docházce), `pastPlan`, `noGroup`, `newOk`.
     `capTimelineSheets(x)`: Souhrn, Po dnech, Po týdnech, Po měsících, Vývoj zaškolení.
-  - UI: záložka Auditu `kapacity` (`WA_TABS`, běží i bez dat Auditu), `waCtRange` (`ui.wa.ctPre`
+  - UI (ve 2.31 grafy, tabulky a PDF nahrazené stránkami podle vzoru, viz výše; zůstalo
+    `waCtRange` a Excel): záložka Auditu `kapacity` (`WA_TABS`, běží i bez dat Auditu), `waCtRange` (`ui.wa.ctPre`
     m | b3 | n2 | custom, `ctFrom`/`ctTo`, data `waCt`), `waCtHtml`, `ctBars` (skládané sloupce,
     plán `.plan` světlejší s čárkovaným okrajem, `ct-req` požadavek, `ct-now` předěl), `ctPoints`
     (měsíce od 3, jinak týdny; dny do 31, jinak Ø po týdnech), `exportCtXlsx`, `exportCtPdf`,
@@ -1023,7 +1059,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -1033,7 +1069,7 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 - `lists[≤ 30]`, nejnovější první: `{id 'sh…', at, by, file, sheet, items[≤ 1000]}`; `sheet` je
   název listu jen u sešitu s více listy, vložený seznam má `file` „vloženo ze schránky“;
 - seznam má navíc `plan` (2.29): `{file, at, by}` posledního prohledaného výrobního plánu, nebo null;
-- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec, subs, cands, pdfHide}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1): texty tak, jak je ukazuje Excel
+- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec, subs, cands, pdfHide, full}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1, `full` od 2.31 = sestava zobrazená plně; `top` jde od 2.31 přepnout ručně `shSetTop`): texty tak, jak je ukazuje Excel
   (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
   `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
   jinak `""`, slouží jen ke klikání v aplikaci; `code` = activeBarcode z odkazu (`shCode`: text
@@ -1089,7 +1125,7 @@ Sestava s viditelnými poddíly je nízký šedý řádek (`asm`) bez QR, zázna
 Položky jdou přes `shPdfItems(l)` (bez skrytých, číslování bez mezer; všechno skryté → hláška).
 Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
 
-## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30)
+## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30, stránky podle vzoru 2.31)
 
 Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 
@@ -1327,7 +1363,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.28.1 | `9c921cc` | Shortage – celý poslední záznam v PDF (řádek podle obsahu), stav do 400 znaků (data verze 26) |
 | 2.29 | `16ffd5b` | Shortage – poddíly z výrobního plánu pod sestavou (2. list, shoda EAN + index + objednávka, operace Hala 2) (data verze 27) |
 | 2.29.1 | `e18144f` | Shortage – poddíly s jinou operací podle posledního záznamu (kromě „Odesláno na WPA“), orientační řádek sestavy, Skrýt v PDF (data verze 28) |
-| 2.30 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – Kapacity a zaškolení od–do (vykázáno z docházky, plán ze zařazení, zkušení podle historie hodnocení, vývoj zaškolení, výkon, PDF a Excel) (data verze 28) |
+| 2.30 | `3cd4eb0` | Audit – Kapacity a zaškolení od–do (vykázáno z docházky, plán ze zařazení, zkušení podle historie hodnocení, vývoj zaškolení, výkon, PDF a Excel) (data verze 28) |
+| 2.31 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Kapacity a zaškolení jako vzor (měsíční a týdenní souhrn, vývoj zaškolení, PDF na výšku s Plex Mono, záhlaví reportu); Shortage – ruční TOP, sestava Zobrazit plně, filtr probíhajících operací (data verze 29) |
 
 Verze 2.1 přidala:
 
@@ -1439,7 +1476,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `28` (od 2.29.1):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `29` (od 2.31):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1707,7 +1744,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 74 testů: proti původní aplikaci + opravy + 2.1 až 2.30
+node tests/test_core.js                 # 77 testů: proti původní aplikaci + opravy + 2.1 až 2.31
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1750,11 +1787,14 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     pod sestavou, poznámka a záznam u poddílu, odebrání, PDF s poddíly, plán v paměti u dalšího
     seznamu; 2.29.1: poddíl s jinou operací přidaný záznamem, „Odesláno na WPA“ nepřidá,
     orientační řádek sestavy (aplikace i PDF), Skrýt v PDF, tabulka na 1440 px bez posouvání;
-    další seznam, přepnutí, smazání, historie, CSV, telefon, tmavý režim;
-  - `e2e_kapacity.js`: Kapacity a zaškolení v Auditu (2.30): vymyšlených 36 lidí, docházka za 4 měsíce
-    do včerejška, historie hodnocení, nemoc, vyřazený, vedoucí, bez skupiny, evidence práce s normou;
-    vykázáno a plán, dlaždice, grafy a tooltip, tabulky, vlastní období a předvolby, PDF (text, jen ID,
-    bez příjmení), Excel (listy a součty proti výpočtu), telefon a tmavý režim;
+    2.31: ruční TOP (pořadí), sestava Zobrazit plně (QR i v PDF), filtr operací (řádky, PDF jen
+    vybrané operace); další seznam, přepnutí, smazání, historie, CSV, telefon, tmavý režim;
+  - `e2e_kapacity.js`: Kapacity a zaškolení v Auditu (2.30, stránky 2.31): vymyšlených 36 lidí ve
+    třech skupinách a prázdná skupina, docházka za 4 měsíce do včerejška, historie hodnocení, nemoc,
+    vyřazený, vedoucí, bez skupiny, evidence práce s normou za dva měsíce; měsíční souhrn (texty,
+    řádky a CELKEM proti výpočtu, grafy, tooltip, písma Plex), záhlaví reportu (uloží se, fokus),
+    týdenní souhrn (aktuální i celý minulý týden), vývoj zaškolení, PDF na výšku (text, Plex Mono,
+    A4, pořadí stránek, jen ID), Excel, budoucí období jako plán, telefon a tmavý režim (bílý papír);
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;

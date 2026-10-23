@@ -1602,6 +1602,85 @@ function capTimelineSheets(x){
     {name:sheetName("Vývoj zaškolení",used),rows:vRows,cols:[16,12,12,20,11,20,11,11,12,12,12,60,24]}];
 }
 
+/* ---------- měsíční a týdenní souhrn podle vzoru uživatele (2.31) ----------
+   Vzor: „Report docházky – měsíční zaškolenost a výkon“ a „Týdenní souhrn KW se zaškolením“.
+   Zaškolený = zkušený pracovník (procento skupiny aspoň úroveň z reportu kapacit); výpočet
+   capTimeline, tady jen výběr a souhrny pro jednu stránku. */
+function ctMonthAdd(m,n){let y=+m.slice(0,4),mm=+m.slice(5,7)+n;while(mm>12){mm-=12;y++;}while(mm<1){mm+=12;y--;}return y+"-"+String(mm).padStart(2,"0");}
+function ctLastDay(m){const y=+m.slice(0,4),mm=+m.slice(5,7);return m+"-"+String(new Date(Date.UTC(y,mm,0)).getUTCDate()).padStart(2,"0");}
+/* Stav skupiny v týdnu: všechny dny v normě = ok, aspoň 80 % = mírně pod, jinak pod plánem. */
+function ctState(met,n){return !n?"":met>=n?"ok":met/n>=0.8-1e-9?"warn":"crit";}
+const CT_STATE_TEXT={ok:"OK",warn:"MÍRNĚ POD",crit:"POD PLÁNEM"};
+/* Měsíční souhrn: vybraný měsíc a dva předchozí (graf), stav matice k poslednímu pracovnímu dni,
+   výkon s indexem první měsíc okna = 100. */
+function capMonthReport(month,opts){
+  if(!PERIOD_ID.test(String(month)))return null;
+  const ids=[ctMonthAdd(month,-2),ctMonthAdd(month,-1),month];
+  const x=capTimeline(ids[0]+"-01",ctLastDay(month),opts);
+  if(!x)return null;
+  const months=ids.map(id=>x.months.find(m=>m.id===id)||null);
+  const cur=months[2],prev=months[1];
+  if(!cur)return null;
+  const perf=m=>m&&m.perf?m.perf.idx:null;
+  const groups=x.groups.map((g,i)=>{const r=cur.roster.groups[i],p=prev?prev.roster.groups[i]:null,pi=perf(cur);
+    return {g,i,n:r.n,ok:r.ok,tr:r.tr,share:r.n?r.ok/r.n:null,dOk:p?r.ok-p.ok:null,perf:pi?pi.groups[i]:null};})
+    .filter(r=>r.n||(prev&&prev.roster.groups[r.i].n));
+  const T=cur.roster.tot,P=prev?prev.roster.tot:null;
+  return {month,ids,x,months,cur,prev,groups,
+    tot:{n:T.n,ok:T.ok,tr:T.tr,share:T.n?T.ok/T.n:null,dOk:P?T.ok-P.ok:null,perf:perf(cur)?perf(cur).tot:null},
+    shares:months.map(m=>m&&m.roster.tot.n?m.roster.tot.ok/m.roster.tot.n:null),
+    baseMonth:(x.months.find(m=>m.perf)||{}).id||"",
+    from:month+"-01",to:ctLastDay(month),snap:cur.roster.iso,real:cur.real,plan:cur.plan,
+    lastReal:cur.real?[...x.days].reverse().find(d=>d.month===month&&d.kind==="real").iso:"",
+    firstPlan:cur.plan?x.days.find(d=>d.month===month&&d.kind!=="real").iso:"",
+    noGroup:x.noGroup,thr:x.thr};
+}
+/* Týdenní souhrn: pracovní dny proti požadavku (z toho zaškolení) a průměr po skupinách.
+   Plán skupiny = kdo měl přijít: ve vykázaném dni lidé ve skupině s docházkou bez omluvené
+   nepřítomnosti (dovolená, nemoc …), v plánovaném dni dnešní zařazení; den v normě = dodáno ≥ plán. */
+function capWeekReport(weekId,opts){
+  const w=weekById(weekId);
+  if(!w)return null;
+  const x=capTimeline(w.from,w.to,opts);
+  if(!x)return null;
+  const n=x.days.length;
+  const plan2=(d,c)=>d.kind==="real"?c.planN-c.excused:c.planN;
+  const groups=x.groups.map((g,i)=>{
+    let plan=0,on=0,ok=0,met=0;
+    x.days.forEach(d=>{const c=d.cells[i],p=plan2(d,c);plan+=p;on+=c.on;ok+=c.onOk;if(c.on>=p-1e-9)met++;});
+    return {g,i,plan:n?plan/n:0,on:n?on/n:0,ok:n?ok/n:0,share:on?ok/on:null,met,n,state:ctState(met,n)};
+  }).filter(r=>r.plan>0||r.on>0);
+  let plan=0,on=0,ok=0;
+  x.days.forEach(d=>{d.cells.forEach(c=>{plan+=plan2(d,c);});on+=d.tot.on;ok+=d.tot.onOk;});
+  // den v normě: s požadavkem z Auditu na směně aspoň požadavek, bez něj aspoň plán skupin
+  const planOf=d=>d.cells.reduce((s,c)=>s+plan2(d,c),0),inNorm=d=>d.req?!!d.met:d.tot.on>=planOf(d)-1e-9;
+  const reqDays=x.days.filter(d=>d.req).length,met=x.days.filter(inNorm).length;
+  const reqs=[...new Set(x.days.filter(d=>d.req).map(d=>d.req))];
+  const days=Array.from({length:5},(_,i)=>{const iso=addDays(w.from,i),d=x.days.find(q=>q.iso===iso),[yy,mm,dd]=iso.split("-").map(Number),day=mkDay(yy,mm,dd);
+    return d?{iso,day,kind:d.kind,on:d.tot.on,ok:d.tot.onOk,tr:d.tot.onTr,plan:Math.round(planOf(d)*1e6)/1e6,req:d.req,met:inNorm(d)}:{iso,day,kind:"off",on:0,ok:0,tr:0,plan:0,req:null,met:null};});
+  return {week:w,id:weekId,x,days,groups,n,req:x.total.reqAvg,reqSame:reqs.length===1,reqDays,met,
+    tot:{plan:n?plan/n:0,on:n?on/n:0,ok:n?ok/n:0,share:on?ok/on:null,met,state:ctState(met,n)},
+    real:x.real.n,plan:x.plan.n,kind:x.total.kind,thr:x.thr,noGroup:x.noGroup};
+}
+/* Stránky PDF pro období od–do: za každý měsíc měsíční souhrn a za ním týdenní souhrny týdnů,
+   jejichž čtvrtek do měsíce patří (ISO týden). */
+function capReportPages(from,to){
+  const out=[];
+  if(!ISO_DAY.test(String(from))||!ISO_DAY.test(String(to)))return out;
+  if(from>to)[from,to]=[to,from];
+  const weeks=[];
+  for(let w=isoWeek(from).id,i=0;w&&i<160;w=shiftWeek(w,1),i++){const wk=weekById(w);if(wk.from>to)break;weeks.push(wk);}
+  const months=monthsBetween(from.slice(0,7),to.slice(0,7)).slice(0,36);
+  const used=new Set();
+  months.forEach(m=>{
+    out.push({kind:"month",id:m});
+    weeks.forEach(wk=>{const th=addDays(wk.from,3);if(th.slice(0,7)===m&&!used.has(wk.id)){used.add(wk.id);out.push({kind:"week",id:wk.id});}});
+  });
+  // týdny, jejichž čtvrtek je mimo měsíce období (začátek nebo konec období uprostřed týdne)
+  weeks.forEach(wk=>{if(!used.has(wk.id)){used.add(wk.id);const at=out.findIndex(p=>p.kind==="month"&&p.id>addDays(wk.from,3).slice(0,7));if(at<0)out.push({kind:"week",id:wk.id});else out.splice(at,0,{kind:"week",id:wk.id});}});
+  return out;
+}
+
 /* ---------- původní zařazení z verze 2.3 ----------
    Při převodu pozic na skupiny si každý člověk ponese snímek původní pozice, úrovně a zaučení.
    Ukazuje se v jeho detailu, dokud ho vedoucí nesmaže tlačítkem „Převedeno do nové verze“. */
@@ -2005,7 +2084,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=28;
+const DATA_VERSION=29;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -3895,7 +3974,7 @@ const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
 /* Požadavek lidí na pracovní den (2.18.1): pevně 100 lidí, null = podle plánu v souboru obsazenosti. */
 const WA_TARGET=100;
-function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan()};}
+function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""}};}
 /* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
    jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
 function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}
@@ -3949,6 +4028,8 @@ function cleanWorkAudit(o){
     from:WA_ISO.test(String(f.from||""))?f.from:"",to:WA_ISO.test(String(f.to||""))?f.to:"",days:Math.round(clamp(+f.days||0,0,100000)),rows:Math.round(clamp(+f.rows||0,0,10000000))}));
   const tg=cnt(o.target);out.target=tg&&tg>=1?tg:null;
   out.plan=cleanWaPlan(o.plan,gids);
+  /* záhlaví reportů (2.31): pracoviště a firma, jako „Report docházky — pracoviště“ ve vzoru */
+  const rp=obj(o.rep);out.rep={place:str(rp.place,60).replace(/\s+/g," ").trim(),firm:str(rp.firm,80).replace(/\s+/g," ").trim()};
   return out;
 }
 const WA_PLAN_FIELDS=["order","ean","ks","index","due","tech"];
@@ -4492,6 +4573,8 @@ function waChanges(A,B,add){
   });
   if(JSON.stringify(A.cols)!==JSON.stringify(B.cols))add("workaudit","Audit: změněny sloupce souborů",{m:"wacols"});
   if((A.target||null)!==(B.target||null))add("workaudit","",{m:"watarget",p:"Audit – požadavek lidí na pracovní den: ",v0:A.target?String(A.target):"podle plánu v souboru",v1:B.target?String(B.target):"podle plánu v souboru"});
+  const ra=A.rep||{},rb=B.rep||{};
+  if((ra.place||"")!==(rb.place||"")||(ra.firm||"")!==(rb.firm||""))add("workaudit","",{m:"warep",p:"Audit – záhlaví reportů: ",v0:[ra.place,ra.firm].filter(Boolean).join(" · ")||"bez názvu",v1:[rb.place,rb.firm].filter(Boolean).join(" · ")||"bez názvu"});
   const pa=A.plan||blankWaPlan(),pb=B.plan||blankWaPlan();
   const techText=p=>p.tech.words.join(", ")+(p.tech.mode==="contains"?" (kdekoli v textu)":"");
   if(techText(pa)!==techText(pb))add("workaudit","",{m:"waptech",p:"Audit – výrobní plán, technologie: ",v0:techText(pa)||"vše",v1:techText(pb)||"vše"});
@@ -5002,6 +5085,30 @@ function shMoveItem(list,id,to){
 }
 /** Položky TOP SHORTAGE první, jinak pořadí ze souboru. */
 function shTopFirst(items){return items.filter(i=>i.top).concat(items.filter(i=>!i.top));}
+/** Ruční TOP SHORTAGE (2.31): položka se přesune na konec TOP, po zrušení na začátek ostatních. */
+function shSetTop(list,id,on){
+  const it=list&&list.items.find(i=>i.id===id);
+  if(!it||it.top===!!on)return false;
+  it.top=!!on;
+  const order=shTopFirst(list.items);
+  list.items.splice(0,list.items.length,...order);
+  return true;
+}
+/* Filtr podle probíhající operace (2.31): klíč operace bez diakritiky a velikosti písmen,
+   položka bez operace má klíč „-“. */
+function shOpKey(op){return shOpNorm(op)||"-";}
+/** Operace v seznamu (položky i poddíly): [{key, label, n}], nejčastější první. */
+function shOpList(list){
+  const m=new Map();
+  const add=op=>{const k=shOpKey(op);const x=m.get(k);if(x)x.n++;else m.set(k,{key:k,label:k==="-"?"bez operace":String(op).trim(),n:1});};
+  ((list&&list.items)||[]).forEach(i=>{add(i.op);(i.subs||[]).forEach(x=>add(x.op));});
+  return [...m.values()].sort((a,b)=>b.n-a.n||(a.key==="-")-(b.key==="-")||a.label.localeCompare(b.label,"cs"));
+}
+/** Položky s vybranými operacemi: poddíly jen s vybranou operací, sestava i kvůli poddílu. keys = Set klíčů, prázdný = vše. */
+function shOpPick(items,keys){
+  if(!keys||!keys.size)return items;
+  return items.map(i=>{const subs=(i.subs||[]).filter(x=>keys.has(shOpKey(x.op)));return keys.has(shOpKey(i.op))||subs.length?{...i,subs}:null;}).filter(Boolean);
+}
 function cleanShortage(o){
   o=o&&typeof o==="object"?o:{};
   const line=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().slice(0,max);
@@ -5017,7 +5124,7 @@ function cleanShortage(o){
     // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec; ze 2.28 nemá subs
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,op:line(i.op,300),link:shLink(i.link),
-      code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,300),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,
+      code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,300),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,
       subs:(Array.isArray(i.subs)?i.subs:[]).filter(s=>s&&typeof s==="object").map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),
       cands:(Array.isArray(i.cands)?i.cands:[]).filter(c=>c&&typeof c==="object").map(cand).filter(c=>c.code).slice(0,SH_MAX_CANDS),_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
@@ -5189,13 +5296,18 @@ function shChanges(A,B,add){
       const p=os.get(id);
       if(p&&(p.s.note||"")!==(x.s.note||""))add("shortage",x.s.note?"Shortage: poznámka k poddílu "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+" (seznam "+shWhen(l)+"): "+x.s.note:"Shortage: smazána poznámka k poddílu "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+" (seznam "+shWhen(l)+")",{m:"shn:"+l.id+":"+id});
     });
+    // ruční TOP SHORTAGE a plné zobrazení sestavy (2.31)
+    l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.top!==!!i.top)add("shortage","Shortage: položka "+label(i)+(i.top?" ručně označena jako TOP SHORTAGE":" už není TOP SHORTAGE")+" (seznam "+shWhen(l)+")",{m:"sht:"+l.id+":"+i.id});});
+    l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.full!==!!i.full)add("shortage","Shortage: sestava "+label(i)+(i.full?" zobrazena plně (QR kód, záznam, kolonky)":" zase jen orientačně")+" (seznam "+shWhen(l)+")",{m:"shf:"+l.id+":"+i.id});});
     // skrytí v PDF (2.29.1)
     l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.pdfHide!==!!i.pdfHide)add("shortage","Shortage: položka "+label(i)+(i.pdfHide?" skryta v PDF":" znovu v PDF")+" (seznam "+shWhen(l)+")",{m:"shh:"+l.id+":"+i.id});});
     ns.forEach((x,id)=>{const p=os.get(id);if(p&&!!p.s.pdfHide!==!!x.s.pdfHide)add("shortage","Shortage: poddíl "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+(x.s.pdfHide?" skryt v PDF":" znovu v PDF")+" (seznam "+shWhen(l)+")",{m:"shh:"+l.id+":"+id});});
     const recN=l.items.filter(i=>oi.has(i.id)&&JSON.stringify(oi.get(i.id).rec||null)!==JSON.stringify(i.rec||null)).length
       +[...ns.entries()].filter(([id,x])=>os.has(id)&&JSON.stringify(os.get(id).s.rec||null)!==JSON.stringify(x.s.rec||null)).length;
     if(recN)add("shortage","Shortage: poslední záznamy u "+recN+" "+(recN===1?"položky":"položek")+" seznamu "+shWhen(l),{m:"shz:"+l.id});
-    if(ol.filter(id=>ni.has(id)).join()!==nl.filter(id=>oi.has(id)).join())add("shortage","Shortage: změněno pořadí položek v seznamu "+shWhen(l),{m:"sho:"+l.id});
+    // přesun kvůli změně TOP se jako změna pořadí nepočítá
+    const keep=id=>oi.has(id)&&ni.has(id)&&!!oi.get(id).top===!!ni.get(id).top;
+    if(ol.filter(keep).join()!==nl.filter(keep).join())add("shortage","Shortage: změněno pořadí položek v seznamu "+shWhen(l),{m:"sho:"+l.id});
   });
 }
 

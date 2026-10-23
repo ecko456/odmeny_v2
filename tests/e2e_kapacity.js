@@ -1,7 +1,8 @@
-// Prohlížečový průchod záložkou Kapacity a zaškolení v Auditu (verze 2.30): vymyšlení lidé ve třech
-// skupinách, docházka za poslední čtyři měsíce do včerejška, historie hodnocení (zaškolování), nemoc,
-// vyřazený, vedoucí a lidé bez skupiny, evidence práce s normou. Kontroluje vykázané a plánované dny,
-// dlaždice, grafy s tooltipem, tabulky, vlastní období, PDF (text, jen ID, žádná jména) a Excel
+// Prohlížečový průchod záložkou Kapacity a zaškolení v Auditu (verze 2.30, stránky podle vzoru 2.31):
+// vymyšlení lidé ve třech skupinách, docházka za poslední čtyři měsíce do včerejška, historie hodnocení
+// (zaškolování), nemoc, vyřazený, vedoucí a lidé bez skupiny, evidence práce s normou. Kontroluje
+// měsíční souhrn, týdenní souhrn a vývoj zaškolení (texty, tabulky proti výpočtu, grafy s tooltipem),
+// záhlaví reportu, vlastní období, PDF na výšku (text, jen ID, žádná jména, Plex Mono) a Excel
 // (listy a součty proti výpočtu), telefon a tmavý režim. Všechna data jsou vymyšlená.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -85,7 +86,8 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
     const sk = (id, names, opt = -1) => names.map((n, i) => ({ id: `${id}${i}`, name: n, desc: '', scale: null, ...(i === opt ? { opt: true } : {}) }));
     const grp = (id, name, dept, skills) => { const p = mkPos(id, name, []); p.dept = dept; p.skillset = skills; p.maxTab = 8; p.tiers = []; return p; };
     st.positions = [grp('g_brus', 'Brus', 'Brus', sk('kb', ['Rovinné broušení', 'Kulaté broušení', 'Měření'])),
-      grp('g_cnc', 'CNC', 'Obrobna', sk('kc', ['Seřízení', 'Programování'])), grp('g_pis', 'Písek', 'Tryskání', sk('kp', ['Tryskání', 'Balení'], 1))];
+      grp('g_cnc', 'CNC', 'Obrobna', sk('kc', ['Seřízení', 'Programování'])), grp('g_pis', 'Písek', 'Tryskání', sk('kp', ['Tryskání', 'Balení'], 1)),
+      grp('g_lep', 'Lepení', 'Lepení', sk('kl', ['Lepení']))];   // skupina zatím bez lidí
     const today = todayIso();
     const m0 = today.slice(0, 7);
     const mAdd = (m, n) => { let [y, mm] = m.split('-').map(Number); mm += n; while (mm < 1) { mm += 12; y -= 1; } while (mm > 12) { mm -= 12; y += 1; } return `${y}-${String(mm).padStart(2, '0')}`; };
@@ -141,20 +143,22 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
       });
       S.periods[m] = { id: m, y, m: mm, days, rows, codes: {}, file: `dochazka-${m}.xlsx`, at: Date.now(), headerRow: 1 };
     }
-    // evidence práce s normou za minulý měsíc: zkušení zhruba 1,1 h normy na hodinu, ostatní 0,7
+    // evidence práce s normou za dva minulé měsíce: zkušení zhruba 1,1 h normy na hodinu, ostatní 0,7 (o měsíc dřív o 5 % méně)
     const pm = mAdd(m0, -1);
-    const names = {};
-    Object.values(S.employees).forEach(e => {
-      const p = S.positions.find(x => x.id === e.positionId);
-      const row = S.periods[pm].rows[e.key];
-      if (!p || !row) return;
-      const hours = row.h.reduce((a, v, i) => a + (row.c[i] ? 0 : v), 0);
-      const norm = Math.round(hours * 60 * (skillPct(e, p) >= 75 ? 1.1 : 0.7));
-      const nm = `${e.first} ${e.last}`;
-      names[nm.toLowerCase()] = { name: nm, total: 10, count: 5, days: {}, spent: norm, norm, nspent: norm };
-      S.prodMap[nm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')] = e.key;   // spárování jména z evidence práce
+    [[mAdd(m0, -2), 0.95], [pm, 1]].forEach(([mm, f]) => {
+      const names = {};
+      Object.values(S.employees).forEach(e => {
+        const p = S.positions.find(x => x.id === e.positionId);
+        const row = S.periods[mm].rows[e.key];
+        if (!p || !row) return;
+        const hours = row.h.reduce((a, v, i) => a + (row.c[i] ? 0 : v), 0);
+        const norm = Math.round(hours * 60 * f * (skillPct(e, p) >= 75 ? 1.1 : 0.7));
+        const nm = `${e.first} ${e.last}`;
+        names[nm.toLowerCase()] = { name: nm, total: 10, count: 5, days: {}, spent: norm, norm, nspent: norm };
+        S.prodMap[nm.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')] = e.key;   // spárování jména z evidence práce
+      });
+      S.production[mm] = { id: mm, names, records: 100, total: 100, file: 'evidence.xlsx', at: Date.now(), time: true };
     });
-    S.production[pm] = { id: pm, names, records: 100, total: 100, file: 'evidence.xlsx', at: Date.now(), time: true };
     S = sanitizeState(S);
     save();
     renderAll();
@@ -162,46 +166,101 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   }, { LAST, FIRST });
   await saved(page);
 
-  // Záložka v Auditu (nepotřebuje obsazenost ani výkaz práce).
+  // Záložka v Auditu (nepotřebuje obsazenost ani výkaz práce): stránky reportu jako vzor (2.31).
   await page.click('#nav [data-view="audit"]');
   await page.click('#waTabs [data-watab="kapacity"]');
-  await page.waitForSelector('#waView .ct-charts');
+  await page.waitForSelector('#waView .ctr-paper');
   const x = await page.evaluate(() => { const r = waCtRange(); const t = capTimeline(r.from, r.to);
     return { r, real: t.real.n, plan: t.plan.n, lastReal: t.lastReal, firstPlan: t.firstPlan, start: t.start.tot, end: t.end.tot, dev: t.dev.length, newOk: t.newOk,
-      req: t.total.req, met: t.total.met, perf: !!t.perf, weeks: t.weeks.length, pastPlan: t.pastPlan.length, noGroup: t.noGroup }; });
+      req: t.total.req, met: t.total.met, perf: !!t.perf, weeks: t.weeks.length, pastPlan: t.pastPlan.length, noGroup: t.noGroup,
+      pages: capReportPages(r.from, r.to).map(p => `${p.kind}:${p.id}`), week: isoWeek(todayIso()).id }; });
   check(x.r.from === seed.from && x.real > 40 && x.plan > 15, `výchozí období a dny: ${JSON.stringify(x)}`);
   check(x.lastReal < seed.today && x.firstPlan >= seed.today && x.pastPlan === 0, `vykázáno do včerejška, plán od dneška: ${x.lastReal} / ${x.firstPlan}`);
   check(x.dev >= 10 && x.newOk >= 1 && x.end.ok > x.start.ok, `vývoj zaškolení: ${JSON.stringify([x.dev, x.newOk, x.start, x.end])}`);
   check(x.perf && x.noGroup === 2, `výkon z evidence práce a lidé bez skupiny: ${x.perf} ${x.noGroup}`);
-  const text = (await page.textContent('#waView')).replace(/\s+/g, ' ');
-  check(/Vykázáno \d+ pracovních dní z docházky/.test(text) && /plánováno \d+ pracovních dní/.test(text), 'popis vykázáno a plán');
-  check(/Podíl zkušených/.test(text) && /Pracovníci v zácviku/.test(text) && /Požadavek/.test(text) && /Zkušený proti zácviku/.test(text), 'dlaždice');
-  check(/2 lidé se směnou nemají skupinu/.test(text), 'upozornění na lidi bez skupiny');
-  check(await page.locator('#waView .ct-chart').count() === 2 && await page.locator('#waView .ct-chart path.ct-ok.plan').count() > 0 && await page.locator('#waView .ct-chart path.ct-ok:not(.plan)').count() > 0, 'grafy s vykázanými a plánovanými sloupci');
-  check(await page.locator('#waView .ct-chart .ct-now').count() >= 1 && await page.locator('#waView .ct-chart .ct-req').count() > 0, 'čára plánu a požadavek');
-  // tooltip
-  await page.hover('#waView .ct-chart:nth-of-type(2) .hit >> nth=0');
-  await page.waitForSelector('#waTipCt:not([hidden])');
-  check(/(Ø [\d,]+ na směně, z toho [\d,]+ zkušených|\d+ na směně, \d+ zkušených)/.test(await page.textContent('#waTipCt')), `tooltip: ${await page.textContent('#waTipCt')}`);
-  // tabulky
-  const gRows = await page.$eval('#waView .ct-card', card => [...card.querySelectorAll('tbody tr')].map(r => r.cells[0].textContent.trim()));
-  check(JSON.stringify(gRows.map(t => t.split(' ·')[0])) === JSON.stringify(['Brus', 'CNC', 'Písek', 'Celkem']), `skupiny: ${gRows}`);
-  const dev = await page.$$eval('#waView .ct-dev tbody tr', rows => rows.length);
-  check(dev === x.dev, `vývoj zaškolení v tabulce: ${dev}`);
-  check(/se stal[i]? zkušen/.test(text), 'souhrn nově zkušených');
+  check(x.pages.filter(p => p.startsWith('month:')).length === 5 && x.pages.filter(p => p.startsWith('week:')).length >= 17, `stránky: ${x.pages.join(' ')}`);
+  const navN = await page.locator('#waView .ctr-nav [data-wactpage]').count();
+  check(navN === x.pages.length + 1, `výběr stránek: ${navN} ≠ ${x.pages.length + 1}`);
+  // měsíční souhrn aktuálního měsíce (výchozí stránka)
+  const MON = await page.evaluate(() => { const m = monthLabel(todayIso().slice(0, 7)); return m.charAt(0).toUpperCase() + m.slice(1); });
+  check(await page.getAttribute('#waView .ctr-paper', 'data-ctrpage') === 'month', 'výchozí stránka je měsíční souhrn');
+  let text = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
+  ['Report docházky', `Měsíční souhrn — ${MON}`, 'HALA 2 · měsíční souhrn zaškolenosti a výkonu', 'PODÍL ZAŠKOLENÝCH', 'Lidí ve skupinách', 'Zaškolení', 'V zácviku',
+    'Výkon na hodinu (index)', 'Zaškolený proti zácviku', 'Lidé ve skupinách: zaškolení a v zácviku', 'Výkon na odpracovanou hodinu (index, Ø', `Po skupinách — ${MON}`,
+    'ZAŠK. PROTI', 'VÝKON CELKEM', 'zatím bez lidí v matici dovedností — doplnit', 'Bez skupiny', '2 lidé se směnou bez skupiny', 'CELKEM', 'Zaškolený —', 'Výkon —', 'Vygenerováno']
+    .forEach(t => check(text.includes(t), `měsíc: chybí „${t}“`));
+  check(/VYKÁZÁNO A PLÁN · docházka je nahraná do|PLÁN · docházka za/.test(text), 'měsíc: pruh vykázáno a plán');
+  const mRows = await page.$$eval('#waView .ctr-tab tbody tr', rows => rows.map(r => r.cells[0].textContent.trim()));
+  check(JSON.stringify(mRows) === JSON.stringify(['Brus', 'CNC', 'Písek', 'Lepení', 'Bez skupiny', 'CELKEM']), `měsíc: řádky ${mRows}`);
+  const mTot = await page.evaluate(() => { const r = capMonthReport(todayIso().slice(0, 7)); return [r.tot.n, r.tot.ok, r.tot.tr]; });
+  const sumRow = await page.$$eval('#waView .ctr-tab tr.sum td', tds => tds.slice(1, 4).map(td => +td.textContent.trim()));
+  check(JSON.stringify(sumRow) === JSON.stringify(mTot), `měsíc CELKEM ${sumRow} ≠ ${mTot}`);
+  check(await page.locator('#waView .ctr-chart svg').count() === 2 && await page.locator('#waView .ctr-chart polyline').count() >= 3, 'měsíc: dva grafy, tři čáry výkonu');
+  await page.hover('#waView .ctr-chart .ctr-hit >> nth=2');
+  await page.waitForSelector('#waView .ctr-chart .chart-tip:not([hidden])');
+  const tip = await page.textContent('#waView .ctr-chart .chart-tip:not([hidden])');
+  check(/\d+ (lidí|lidé) ve skupinách, \d+ zaškolených \(\d+ %\), \d+ v zácviku/.test(tip), `tooltip: ${tip}`);
+  check(await page.evaluate(() => getComputedStyle(document.querySelector('.ctr-paper')).fontFamily.includes('Plex')) &&
+    await page.evaluate(() => getComputedStyle(document.querySelector('.ctr-tile .v')).fontFamily.includes('Plex Mono')), 'písma Plex a Plex Mono');
   check(await overflow(page) <= 1, `monitor: přetečení ${await overflow(page)} px`);
-  await page.screenshot({ path: path.join(shots, '01-kapacity.png'), fullPage: true });
+  // záhlaví reportu (uloží se)
+  await page.fill('#waRepPlace', 'Provoz Sever');
+  await page.press('#waRepPlace', 'Tab');
+  await page.waitForFunction(() => S.workAudit.rep.place === 'Provoz Sever');
+  check(await page.evaluate(() => document.activeElement && document.activeElement.id) === 'waRepFirm', 'Tab po změně názvu skončí ve Firmě');
+  await page.fill('#waRepFirm', '  Ukázková   firma s.r.o. ');
+  await page.press('#waRepFirm', 'Enter');
+  await page.locator('#waRepFirm').blur();
+  await page.waitForFunction(() => S.workAudit.rep.firm === 'Ukázková firma s.r.o.');
+  await saved(page);
+  text = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
+  check(text.includes('Report docházky — Provoz Sever') && text.includes('HALA 2 · Ukázková firma s.r.o. · měsíční souhrn'), `záhlaví: ${text.slice(0, 160)}`);
+  await page.screenshot({ path: path.join(shots, '01-mesic.png'), fullPage: true });
+  // týdenní souhrn: aktuální týden (vykázáno a plán) a celý minulý týden (jen vykázáno)
+  await page.click(`#waView [data-wactpage="week:${x.week}"]`);
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
+  text = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
+  const W = x.week.slice(-2).replace(/^0/, '');
+  ['Report docházky — Provoz Sever', 'denní požadavek (norma) 22 · víkendy mimo', `Týdenní souhrn — Týden ${W}`, 'NORMA SPLNĚNA', 'ZAŠKOLENÍ NA SMĚNĚ', 'Plnění normy', 'Denní požadavek',
+    'Dní v normě', 'Dní pod normou', 'Jednotlivé dny vs. požadavek — z toho zaškolení', 'V zaškolování', 'Požadavek 22', 'Průměr po skupinách', 'Ø PLÁN', 'STAV / ZAŠKOLENÍ', 'zaškolení', 'zaškolených', 'CELKEM']
+    .forEach(t => check(text.includes(t), `týden: chybí „${t}“`));
+  check(/OK|MÍRNĚ POD|POD PLÁNEM/.test(text), 'týden: stav skupin');
+  check(await page.locator('#waView .ctr-chart .ctr-hit').count() === 5 && await page.locator('#waView .ctr-track i').count() === 4, 'týden: pět dní a pruhy zaškolení (3 skupiny + celkem)');
+  const wk = await page.evaluate(id => { const r = capWeekReport(id); return { kinds: r.days.map(d => d.kind), tot: r.tot, n: r.n }; }, x.week);
+  if (wk.kinds.includes('real') && wk.kinds.includes('plan')) check(text.includes('VYKÁZÁNO A PLÁN'), 'týden: pruh vykázáno a plán');
+  check(text.includes(`${wk.tot.met}/${wk.n}`), `týden: dní v normě ${wk.tot.met}/${wk.n}`);
+  await page.screenshot({ path: path.join(shots, '02-tyden.png'), fullPage: true });
+  const prevWeek = await page.evaluate(id => shiftWeek(id, -1), x.week);
+  await page.click(`#waView [data-wactpage="week:${prevWeek}"]`);
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
+  check(await page.locator('#waView .ctr-banner').count() === 0, 'minulý týden bez pruhu (celý vykázaný)');
+  check(await page.locator('#waView .ctr-chart svg text').filter({ hasText: /·\s\d+ %/ }).count() >= 1, 'popisek zaškolených ve sloupci');
+  // vývoj zaškolení
+  await page.click('#waView [data-wactpage="dev"]');
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="dev"]');
+  text = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
+  check(text.includes('Vývoj zaškolení —') && text.includes('Nově zaškolení') && text.includes('Změny hodnocení po lidech'), 'vývoj: nadpisy');
+  const devRows = await page.$$eval('#waView .ctr-tab tbody tr', rows => rows.length);
+  check(devRows === x.dev, `vývoj: řádků ${devRows} ≠ ${x.dev}`);
+  check(LAST.some(n => text.includes(n)) && /ID 10\d\d/.test(text), 'vývoj v aplikaci se jmény a ID');
+  await page.screenshot({ path: path.join(shots, '03-vyvoj.png'), fullPage: true });
 
-  // PDF: text, jen ID (bez jmen), tabulky a vysvětlivky.
+  // PDF: stránky podle vzoru (A4 na výšku), jen ID (bez jmen), písmo Plex Mono.
   const pdf = await download(page, '[data-wactpdf]', 'kapacity.pdf');
   check(pdf.head === '%PDF-' && /^kapacity-zaskoleni-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.pdf$/.test(pdf.name), `PDF ${pdf.name}`);
+  const raw = fs.readFileSync(pdf.path).toString('latin1');
+  check(/PlexMono/.test(raw) || /IBMPlexMono/.test(raw), 'PDF má písmo Plex Mono');
+  check(/\/MediaBox \[0 0 595\.2\d* 841\.8\d*\]/.test(raw), 'PDF A4 na výšku');
   const pages = pdfText(pdf.path);
   if (pages) {
     const t = pages.join(' ').replace(/\s+/g, ' ');
-    ['KAPACITY A ZAŠKOLENÍ', 'Kapacity a zaškolení', 'Podíl zkušených', 'Lidé ve skupinách', 'Na směně', 'PO SKUPINÁCH'.toLowerCase() ? 'Po skupinách' : '', 'Po týdnech', 'Vývoj zaškolení', 'ID 10', 'Zkušený pracovník', 'Výkon', 'plán →', 'CELKEM']
-      .filter(Boolean).forEach(s => check(t.includes(s), `PDF obsahuje „${s}“`));
+    ['Report docházky — Provoz Sever', 'HALA 2 · Ukázková firma s.r.o.', 'Měsíční souhrn —', 'PODÍL ZAŠKOLENÝCH', 'Lidí ve skupinách', 'Zaškolený proti zácviku', 'Po skupinách —',
+      'Týdenní souhrn — Týden', 'NORMA SPLNĚNA', 'ZAŠKOLENÍ NA SMĚNĚ', 'Průměr po skupinách', 'Vývoj zaškolení —', 'ID 10', 'CELKEM', 'Vygenerováno', 'Strana 1 /']
+      .forEach(s => check(t.includes(s), `PDF obsahuje „${s}“`));
     check(!LAST.some(n => t.includes(n)), 'PDF bez příjmení (jen ID)');
-    check(pages.length >= 2, `PDF má ${pages.length} stran`);
+    check(pages.length >= x.pages.length + 1, `PDF má ${pages.length} stran, stránek reportu ${x.pages.length + 1}`);
+    const firstMonth = pages.findIndex(p => /Měsíční souhrn —/.test(p));
+    check(firstMonth === 0 && /Týdenní souhrn/.test(pages[1]), 'PDF: měsíc a za ním jeho týdny');
   }
   pdfPng(pdf.path, path.join(shots, 'pdf'));
 
@@ -223,30 +282,35 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   check(JSON.stringify([book.lidi, book.ok, book.realH]) === JSON.stringify(book.exp), `Excel Souhrn ${[book.lidi, book.ok, book.realH]} ≠ ${book.exp}`);
   check(book.devRows === book.devExp, `Excel Vývoj zaškolení: ${book.devRows} ≠ ${book.devExp}`);
 
-  // Vlastní období: jen budoucnost = jen plán; jen minulost = jen vykázáno.
-  const fut = { from: await page.evaluate(() => addDays(todayIso(), 7)), to: await page.evaluate(() => addDays(todayIso(), 30)) };
+  // Vlastní období: jen budoucnost = jen plán.
+  const fut = { from: await page.evaluate(() => addDays(todayIso(), 40)), to: await page.evaluate(() => addDays(todayIso(), 70)) };
   await page.fill('#waCtFrom', fut.from);
   await page.fill('#waCtTo', fut.to);
   await page.click('[data-waapply="waCt"]');
-  await page.waitForSelector('#waView .ct-charts');
-  const ft = (await page.textContent('#waView')).replace(/\s+/g, ' ');
-  check(/Žádný den s docházkou/.test(ft) && /plánováno/.test(ft) && await page.locator('#waView .ct-chart path.ct-ok:not(.plan)').count() === 0, 'budoucí období jen jako plán');
+  await page.waitForSelector('#waView .ctr-paper');
   check(await page.evaluate(() => ui.wa.ctPre) === 'custom', 'vlastní období');
+  await page.click('#waView .ctr-nav [data-wactpage^="month:"] >> nth=0');
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="month"]');
+  const ft = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
+  check(/PLÁN · \S+ ještě nezačal/.test(ft) && /· plán/.test(ft), `budoucí měsíc jako plán: ${ft.slice(0, 400)}`);
   await page.click('[data-wactpre="m"]');
-  await page.waitForSelector('#waView .ct-charts');
+  await page.waitForSelector('#waView .ctr-paper');
   check(await page.evaluate(() => { const r = waCtRange(); return r.from.endsWith('-01') && r.from.slice(0, 7) === todayIso().slice(0, 7); }), 'předvolba Tento měsíc');
   await page.click('[data-wactpre="b3"]');
-  await page.waitForSelector('#waView .ct-charts');
+  await page.waitForSelector('#waView .ctr-paper');
+  await page.click(`#waView [data-wactpage="week:${x.week}"]`);
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
 
   // Telefon a tmavý režim.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(200);
   check(await overflow(page) <= 1, `telefon: přetečení ${await overflow(page)} px`);
-  await page.screenshot({ path: path.join(shots, '02-telefon.png'), fullPage: true });
+  await page.screenshot({ path: path.join(shots, '04-telefon.png'), fullPage: true });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.waitForTimeout(200);
-  await page.screenshot({ path: path.join(shots, '03-tmavy.png'), fullPage: false });
+  check(await page.evaluate(() => getComputedStyle(document.querySelector('.ctr-paper')).backgroundColor) === 'rgb(255, 255, 255)', 'tmavý režim: papír zůstává bílý jako PDF');
+  await page.screenshot({ path: path.join(shots, '05-tmavy.png'), fullPage: false });
 
   await browser.close();
   if (problems.length) { console.log(`PROBLÉMY (${problems.length}):\n- ${problems.join('\n- ')}`); process.exit(1); }

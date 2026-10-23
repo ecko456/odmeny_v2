@@ -81,7 +81,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "28", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "29", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -142,7 +142,7 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual((status, body[:8]), (200, b"\x89PNG\r\n\x1a\n"))
 
     def test_private_code_needs_session(self):
-        for name in ("app.html", "app.css", "core.js", "app.js", "xlsx.js", "jspdf.js", "pdf-regular.ttf", "pdf-semibold.ttf", "zxing.js"):
+        for name in ("app.html", "app.css", "core.js", "app.js", "xlsx.js", "jspdf.js", "pdf-regular.ttf", "pdf-semibold.ttf", "pdf-mono.ttf", "pdf-mono-semibold.ttf", "zxing.js"):
             status, _, body = self.client.request("GET", f"/app.php?f={name}")
             self.assertEqual(status, 401, name)
             self.assertEqual(body, b"")
@@ -150,7 +150,7 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual(status, 404)
         for path in ("/private/app.js", "/private/core.js", "/lib/odmeny.php", "/bin/setup-token.php", "/data/odmeny.sqlite3",
                      "/tests/test_odmeny.py", "/deploy/install.sh", "/dev-router.php", "/.gitignore", "/static/vendor/LICENSE-jsqr.txt",
-                     "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf", "/private/vendor/zxing.min.js", "/CLAUDE.md"):
+                     "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf", "/private/vendor/plex-mono-medium.ttf", "/private/vendor/zxing.min.js", "/CLAUDE.md"):
             status, _, _ = self.client.request("GET", path)
             self.assertEqual(status, 404, path)
         self.client.setup()
@@ -167,9 +167,10 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("javascript", headers["Content-Type"])
         self.assertIn(b"ZXing", body[:400])
-        status, headers, body = self.client.request("GET", "/app.php?f=pdf-regular.ttf")
-        self.assertEqual((status, headers["Content-Type"]), (200, "font/ttf"))
-        self.assertEqual(body[:4], b"\x00\x01\x00\x00", "TrueType písmo")
+        for font in ("pdf-regular.ttf", "pdf-mono.ttf", "pdf-mono-semibold.ttf"):   # Plex Mono pro report kapacit (2.31)
+            status, headers, body = self.client.request("GET", f"/app.php?f={font}")
+            self.assertEqual((status, headers["Content-Type"]), (200, "font/ttf"), font)
+            self.assertEqual(body[:4], b"\x00\x01\x00\x00", f"TrueType písmo {font}")
 
     def test_encrypted_files(self):
         # Fotky v Protokolech (2.16): šifrované v prohlížeči, server drží jen šifru, jen s relací.
@@ -380,6 +381,9 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.29 by zahodila čekající poddíly a poddíly přidané podle záznamu z verze 2.29.1.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "27"})
         self.assertEqual(status, 426)
+        # Stránka verze 2.30 by zahodila záhlaví reportů z verze 2.31.
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "28"})
+        self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
         # Čtení a přihlášení staré stránce nevadí, jen zápis.
@@ -392,7 +396,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.30")
+        self.assertEqual(result["version"], "2.31")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

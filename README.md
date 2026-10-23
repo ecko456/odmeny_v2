@@ -62,6 +62,41 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.31
+
+- **Audit: Kapacity a zaškolení podle vzoru.** Stránky reportu vypadají jako vzor „Report docházky“
+  (písma IBM Plex Sans a Plex Mono, barvy, rámečky, grafy, tabulky a vysvětlivky ve třech sloupcích).
+  PDF je na výšku (A4) a za období od–do obsahuje za každý měsíc **měsíční souhrn** a hned za ním
+  **týdenní souhrny** jeho týdnů (týden patří k měsíci, ve kterém má čtvrtek), na konci **vývoj
+  zaškolení**. V aplikaci se stránky přepínají čipy (měsíce, týdny T38 …, Vývoj zaškolení) a ukazují
+  stejný papír jako PDF.
+  - **Měsíční souhrn — zaškolenost a výkon:** podíl zaškolených (a dva předchozí měsíce), lidé ve
+    skupinách, zaškolení, v zácviku (změna proti minulému měsíci), výkon na hodinu (index, první
+    měsíc grafu = 100), zaškolený proti zácviku; graf lidí za tři měsíce a graf výkonu (zaškolení,
+    v zácviku, celkem); tabulka po skupinách (skupina bez lidí „zatím bez lidí v matici dovedností
+    — doplnit“, lidé se směnou bez skupiny zvlášť) a řádek CELKEM.
+  - **Týdenní souhrn — Týden N:** norma splněna (zelená / oranžová / červená), zaškolení na směně,
+    dlaždice, graf pěti pracovních dní proti požadavku (z toho zaškolení s popiskem „počet · %“)
+    a průměr po skupinách se stavem OK / MÍRNĚ POD / POD PLÁNEM a pruhem zaškolení. Den je v normě,
+    když je na směně aspoň požadavek z Auditu; bez požadavku, když přišli všichni, kdo měli
+    (dovolená a nemoc se z plánu odečtou). OK = všechny dny, mírně pod = aspoň 80 % dní.
+  - **Vykázáno a plán** jako ve 2.30: dny s docházkou jsou vykázané, ostatní plánované (dnešní
+    zařazení a směny); stránka s plánovanými dny má nahoře pruh, který to říká, plánované sloupce
+    jsou světlejší a v popisku mají „plán“.
+  - **Záhlaví reportu** se nastaví nad stránkami (Název v nadpisu, Firma): „Report docházky —
+    název“, pod ním HALA 2 · firma. Ukládá se do dat.
+  - Vývoj zaškolení je v PDF jen s ID z evidence práce, v aplikaci se jmény. Excel zůstává.
+- **Shortage: ruční TOP SHORTAGE.** Tlačítko **TOP** na konci řádku položku označí jako TOP
+  SHORTAGE (přesune se na konec TOP nahoře) nebo označení zruší. Zapíše se do historie změn.
+- **Shortage: sestavu jde zobrazit plně.** U sestavy s poddíly tlačítko **Zobrazit plně** ukáže
+  QR kód a pole na poznámku a v PDF se sestava vytiskne jako celý řádek (QR kód, poslední záznam,
+  kolonky na psaní), poddíly zůstanou pod ní. **Jen orientačně** ji vrátí.
+- **Shortage: filtr podle probíhající operace.** Nad tabulkou jsou čipy s operacemi seznamu
+  (s počtem). Vybrat jde víc operací najednou; ukážou se položky a poddíly s vybranou operací
+  (sestava i kvůli svému poddílu). **PDF k tisku** pak vytiskne jen je a v záhlaví napíše, kterých
+  operací se týká. Čip Všechny filtr zruší.
+- Verze dat 29: stará stránka nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.30
 
 - **Audit: Kapacity a zaškolení.** Nová záložka v Auditu s exportem od–do (PDF a Excel) podle
