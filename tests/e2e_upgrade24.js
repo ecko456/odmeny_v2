@@ -95,7 +95,7 @@ function compare(beforeJson, afterJson) {
   // 2.21 prázdný Servis (evidence zařízení a odeslání)
   if ('service' in b) same({ devices: [], shipments: [], templates: [], ...(a.service || {}) }, b.service, 'service');
   // 2.27 prázdný Shortage (seznamy chybějících dílů)
-  if ('shortage' in b) same({ lists: [], ...(a.shortage || {}) }, b.shortage, 'shortage');
+  if ('shortage' in b) same({ depts: [], lists: [], ...(a.shortage || {}) }, b.shortage, 'shortage');   // 2.32: prázdná oddělení
   // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu,
   // 2.16 prázdné Protokoly, 2.17 prázdný Audit
   if ('leadSkills' in b) same(a.leadSkills || [], b.leadSkills, 'leadSkills');

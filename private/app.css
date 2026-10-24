@@ -1950,7 +1950,7 @@ table.sh-tab td.sh-opc { min-width: 130px; }
 .tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; white-space: normal; overflow-wrap: anywhere; max-width: 100%; text-align: left; border-radius: 8px; }
 table.sh-tab td.sh-notec { min-width: 150px; }
 .sh-note { width: 100%; min-width: 130px; min-height: 34px; padding: 6px 9px; font-size: 13.5px; }
-table.sh-tab td.sh-actc, table.sh-tab th.sh-actc { width: 126px; text-align: right; }
+table.sh-tab td.sh-actc, table.sh-tab th.sh-actc { width: 96px; text-align: right; }
 .sh-hint { margin: -4px 0 10px; }
 /* poddíly z výrobního plánu (2.29) */
 .sh-planinfo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--ink-2); }
@@ -1980,6 +1980,39 @@ table.sh-tab tr[hidden] { display: none; }
 table.sh-tab tr.sh-top td { background: color-mix(in srgb, var(--crit-soft) 70%, transparent); }
 table.sh-tab tr.sh-top td:first-child { box-shadow: inset 3px 0 0 var(--crit); }
 table.sh-tab tr.sh-top td:nth-child(2) { color: var(--crit); font-weight: 700; }
+/* TOP 2 (2.32): hned po TOP SHORTAGE, oranžová */
+table.sh-tab tr.sh-top2 td { background: color-mix(in srgb, var(--warn-soft) 65%, transparent); }
+table.sh-tab tr.sh-top2 td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+table.sh-tab tr.sh-top2 td:nth-child(2) { color: var(--warn); font-weight: 700; }
+table.sh-tab tr.sh-sub.sh-top2 td { background: color-mix(in srgb, var(--warn-soft) 40%, var(--surface-2)); }
+.tag.sh-top2tag { background: var(--warn); color: var(--surface); font-weight: 800; letter-spacing: .03em; margin-right: 4px; }
+.sh-top2note { margin: 2px 0 1px; color: var(--warn); font-size: 12.5px; font-weight: 700; }
+.btn.sh-topbtn.sh-top2btn.on { background: var(--warn); border-color: var(--warn); color: var(--surface); }
+/* akce v řádku: TOP a TOP2 nahoře, oko a × pod nimi (2.32), ať se tabulka vejde na 1440 px */
+.sh-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px; max-width: 96px; margin-left: auto; }
+.sh-tiers { display: flex; gap: 4px; }
+.sh-acts .btn.small.sh-topbtn { margin-right: 0; padding: 3px 6px; }
+/* oddělení (2.32): nastavení, nadpisy bloků v tabulce, výběr v řádku */
+.sh-depts { margin-bottom: 16px; }
+.sh-depts > summary { cursor: pointer; list-style-position: inside; font-size: 15px; }
+.sh-depts > summary b { margin-right: 6px; }
+.sh-deptbody { display: grid; gap: 12px; margin-top: 12px; }
+.sh-deptlist { display: grid; gap: 8px; }
+.sh-deptrow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.sh-deptrow input { flex: 0 1 260px; min-width: 0; min-height: 36px; }
+.sh-deptnew input { flex-basis: 260px; }
+.sh-optab { display: grid; max-width: 760px; }
+.sh-ophead, .sh-oprow { display: grid; grid-template-columns: minmax(0, 1fr) 90px minmax(160px, 240px); align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.sh-ophead { color: var(--ink-3); font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+.sh-optab .num { text-align: right; font-family: var(--mono); }
+.sh-oprow select { min-height: 34px; width: 100%; }
+.sh-oprow.sh-oploose { box-shadow: inset 3px 0 0 var(--warn); }
+@media (max-width: 760px) { .sh-ophead { display: none; } .sh-oprow { grid-template-columns: minmax(0, 1fr) auto; } .sh-oprow select { grid-column: 1 / -1; } }
+table.sh-tab tr.sh-depthead td { padding: 10px 12px 8px; border-top: 2px solid var(--ink); background: var(--surface-3); font-size: 14.5px; }
+table.sh-tab tr.sh-depthead.sh-drop-before td { box-shadow: inset 0 3px 0 var(--acc); }
+.sh-deptpick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 6px; }
+.sh-deptpick select { min-height: 30px; max-width: 100%; padding: 2px 6px; font-size: 12.5px; }
+.tag.sh-manual { background: var(--acc-soft); color: var(--acc); }
 .tag.sh-toptag { background: var(--crit); color: var(--surface); font-weight: 800; letter-spacing: .03em; margin-right: 4px; }
 table.sh-tab td.sh-ord { white-space: nowrap; font-weight: 600; }
 .tag.sh-code { font-family: var(--mono); white-space: nowrap; }

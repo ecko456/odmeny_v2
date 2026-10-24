@@ -240,6 +240,12 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   check(/není žádný řádek s datem ve sloupci D/.test(await page.textContent('#dlgBody')), 'chybný soubor obsazenosti');
   await page.click('#dlgCancel');
 
+  // Import ve chvíli, kdy se ještě ukládá jiná změna (2.32): záznam importu se v historii nesmí ztratit.
+  // Uložení se zpomalí o 2,5 s, import se potvrdí během něj.
+  const slow = url => /api\.php\?action=data/.test(url.href);
+  await page.route(slow, async route => { if (route.request().method() === 'POST') await new Promise(r => setTimeout(r, 2500)); await route.continue(); });
+  await page.evaluate(() => { S.workAudit.notes['2026-10-03'] = 'zpomalené uložení'; save(); flushSave(); });
+  await page.waitForFunction(() => store.saving);
   // Nahrání obsazenosti: souhrn před uložením.
   await page.setInputFiles('#waAttFile', files.att);
   await page.waitForSelector('#dlg[open] .wa-prev');
@@ -250,6 +256,10 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.screenshot({ path: path.join(shots, '02-import-att.png') });
   await confirm(page);
   await page.waitForFunction(n => S.workAudit.files.length === n, 1);   // soubor se uloží až po zavření dialogu
+  await saved(page);
+  await page.unroute(slow);
+  check(await page.evaluate(() => S.log.some(x => /^Audit: nahrána obsazenost obsazenost-rijen\.xlsx/.test(x.text))), `import během ukládání v historii: ${await page.evaluate(() => JSON.stringify(S.log.slice(-3).map(x => x.text)))}`);
+  await page.evaluate(() => { delete S.workAudit.notes['2026-10-03']; save(); });
   await saved(page);
   let w = await wa(page);
   check(Object.keys(w.days).length === 21 && !w.days['2026-10-22'] && w.days['2026-10-10'], 'dny obsazenosti');
@@ -823,8 +833,11 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.click('#logBtn');
   await page.waitForSelector('#dlg[open] [data-lf="workaudit"]');
   await page.click('[data-lf="workaudit"]');
+  // historie ukazuje 80 nejnovějších; podle rychlosti běhu (slučování úprav) jich může být víc, starší se rozbalí
+  for (let i = 0; i < 20 && await page.locator('#logMore').count(); i += 1) await page.click('#logMore');
+  const logN = await page.evaluate(() => S.log.filter(x => x.kind === 'workaudit').length);
   const log = await page.textContent('#logList');
-  check(/Audit: nahrána obsazenost obsazenost-rijen\.xlsx/.test(log) && /Audit: nahrán výkaz práce/.test(log), 'importy v historii');
+  check(/Audit: nahrána obsazenost obsazenost-rijen\.xlsx/.test(log) && /Audit: nahrán výkaz práce/.test(log), `importy v historii (${logN} záznamů Auditu): ${log.replace(/\s+/g, ' ').slice(0, 600)}`);
   check(/Audit 1\. 10\. 2026 – Ranní, Brusiči: 7 → 8 \(Brigádník/.test(log), `úprava v historii: ${log.slice(0, 500)}`);
   check(/operace „Pískování - hala 2“, skupina: bez skupiny → Obsluha tryskací kabiny/.test(log), 'přiřazení skupiny v historii');
   check(!/operace „Údržba stroje“/.test(log) && !/Lepení a značení dílů, neproduktivní pozice/.test(log), 'změna a návrat zpět se v historii vyruší');

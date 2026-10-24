@@ -327,7 +327,8 @@ const stepId = (page, i) => page.evaluate(i => lbBook().steps[i].id, i);
   await page.waitForSelector('#view-domu.on');
   if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
   const tile = await page.textContent('#homeView .home-menu [data-go="protokoly"]');
-  check(/Protokoly/.test(tile) && /(dnes \d+ úkon|1 stroj)/.test(tile), `dlaždice Protokoly: ${tile}`);
+  // o víkendu a ve svátek dlaždice ukazuje nejbližší den plánu („v den plánu N úkonů“)
+  check(/Protokoly/.test(tile) && /((dnes|v den plánu) \d+ úkon|1 stroj)/.test(tile), `dlaždice Protokoly: ${tile}`);
   await page.click('#homeView .home-menu [data-go="protokoly"]');
   await page.waitForFunction(() => ui.view === 'protokoly');
   await page.waitForTimeout(200);

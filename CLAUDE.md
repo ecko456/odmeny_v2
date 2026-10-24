@@ -34,6 +34,42 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 24. 10. 2026 (verze 2.32):
+
+- Uživatel: „nastavit TOP2 … v řazení hned pod TOP SHORTAGE s poznámkou ‚Zpracovat hned po TOP
+  shortage‘ … třídění do oddělení, kde si vytvořím oddělení a přiřadím probíhající operace …
+  systém si bude pamatovat … v přehledu stále možnost ručního přesunutí i do jiného oddělení“.
+  - Core: `item.top2` (TOP vyhrává), `shRank` (TOP 0, TOP 2 1, ostatní 2), `shTopFirst` řadí
+    podle něj, `shSetTier(list, id, "top" | "top2" | "")` (`shSetTop` zůstal), `shMoveItem` jen
+    uvnitř skupiny. Import G: `/^top\s*-?\s*2\b/i` = TOP 2.
+  - Oddělení `S.shortage.depts[≤ 20] = {id 'sd…', name, ops[≤ 100]: {key (shOpKey), label}}`,
+    operace nejvýš v jednom oddělení (`shAssignOp`). `item.dept`: "" = podle operace, id =
+    ručně, „-“ = ručně nezařazená; smazané oddělení čištění vrátí na "". `shAutoDept` (operace,
+    jinak první poddíl), `shDeptOf`, `shSections` (bloky v pořadí oddělení, Nezařazeno na konci,
+    bez oddělení jeden blok), `shDrop(sh, list, id, dept, before)` (ruční přesun i pořadí,
+    zpátky do oddělení podle operace = ""), `shOpsAll` (operace všech seznamů a nastavení).
+    Historie `shdp:`/`shdx:` oddělení, `shdo:` operace, `shdi:` ruční přesun, `sht:` i TOP 2;
+    přesun kvůli TOP nebo oddělení se jako změna pořadí nepíše.
+  - **`shAddList` musí předat celé `S.shortage`** (`cleanShortage({ ...c, lists })`), jinak
+    nový seznam smaže oddělení. e2e to hlídá (oddělení přežijí další import).
+  - UI: panel `<details id="shDepts">` (mřížka `.sh-optab`, ne tabulka: `#shView tbody tr`
+    používá přetahování i testy), nadpisy bloků `tr.sh-depthead[data-shdepthead]` („-“ =
+    Nezařazeno), řádky `data-shdeptrow`, výběr `[data-shdept]`, tlačítko `[data-shtop2]`, filtr
+    `ui.sh.depts` (`shDeptSel`, `shDeptPick`, čipy `[data-shdf]`). Přetahování: cíl je položka
+    (před ni) nebo nadpis (konec oddělení nad ním), `shRowDept`, `shDrop`; šipky na úchytu
+    v rámci oddělení. Akce v řádku `.sh-acts` (TOP a TOP2 nad okem a ×), tabulka se vejde na
+    1440 px. PDF: bloky s nadpisem (drží se s prvním řádkem), TOP 2 štítek v rámečku, šedý pruh
+    a poznámka, filtr oddělení v záhlaví.
+  - Testy: core „Shortage (2.32)“, `e2e_shortage.js` (TOP 2, oddělení, výběr, přetažení na nadpis,
+    PDF s bloky a filtrem, historie).
+  - **Oprava `flushSave`:** `store.note` nastavená během běžícího uložení (další import) se po
+    jeho dokončení mazala, záznam importu v historii chyběl. Teď se maže jen poznámka, která se
+    právě uložila. Na plném běhu testů to jednou shodilo `e2e_audit` („importy v historii“);
+    test teď uložení zpomalí přes `page.route` (2,5 s) a import potvrdí během něj (bez opravy
+    selže vždy). Rozbalí i celou historii (tlačítko Zobrazit starší, 80 záznamů).
+  - `e2e_protokoly`: o víkendu dlaždice píše „v den plánu N úkonů“, test to bere.
+  - Verze dat 30, `ODM_VERSION` 2.32.
+
 Stav k 23. 10. 2026 (verze 2.31):
 
 - Uživatel k Kapacitám 2.30: „udělej to co nejvíce identické tomu vzoru co jsem ti poslal“
@@ -1059,7 +1095,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -1069,7 +1105,8 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 - `lists[≤ 30]`, nejnovější první: `{id 'sh…', at, by, file, sheet, items[≤ 1000]}`; `sheet` je
   název listu jen u sešitu s více listy, vložený seznam má `file` „vloženo ze schránky“;
 - seznam má navíc `plan` (2.29): `{file, at, by}` posledního prohledaného výrobního plánu, nebo null;
-- položka `{id, order, name, ean, index, qty, top, op, link, code, note, rec, subs, cands, pdfHide, full}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1, `full` od 2.31 = sestava zobrazená plně; `top` jde od 2.31 přepnout ručně `shSetTop`): texty tak, jak je ukazuje Excel
+- `S.shortage.depts` (2.32): oddělení s přiřazenými operacemi, viz „Kde jsme skončili“ 2.32;
+- položka `{id, order, name, ean, index, qty, top, top2, op, link, code, note, rec, subs, cands, pdfHide, full, dept}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1, `full` od 2.31 = sestava zobrazená plně; `top` jde od 2.31 přepnout ručně; `top2` a `dept` od 2.32, `shSetTier`): texty tak, jak je ukazuje Excel
   (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
   `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
   jinak `""`, slouží jen ke klikání v aplikaci; `code` = activeBarcode z odkazu (`shCode`: text
@@ -1364,7 +1401,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.29 | `16ffd5b` | Shortage – poddíly z výrobního plánu pod sestavou (2. list, shoda EAN + index + objednávka, operace Hala 2) (data verze 27) |
 | 2.29.1 | `e18144f` | Shortage – poddíly s jinou operací podle posledního záznamu (kromě „Odesláno na WPA“), orientační řádek sestavy, Skrýt v PDF (data verze 28) |
 | 2.30 | `3cd4eb0` | Audit – Kapacity a zaškolení od–do (vykázáno z docházky, plán ze zařazení, zkušení podle historie hodnocení, vývoj zaškolení, výkon, PDF a Excel) (data verze 28) |
-| 2.31 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Kapacity a zaškolení jako vzor (měsíční a týdenní souhrn, vývoj zaškolení, PDF na výšku s Plex Mono, záhlaví reportu); Shortage – ruční TOP, sestava Zobrazit plně, filtr probíhajících operací (data verze 29) |
+| 2.31 | `b40b6d3` | Kapacity a zaškolení jako vzor (měsíční a týdenní souhrn, vývoj zaškolení, PDF na výšku s Plex Mono, záhlaví reportu); Shortage – ruční TOP, sestava Zobrazit plně, filtr probíhajících operací (data verze 29) |
+| 2.32 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – TOP 2 hned pod TOP SHORTAGE, oddělení podle probíhajících operací (uložené nastavení, bloky, filtr, PDF), ruční přesun výběrem i přetažením (data verze 30) |
 
 Verze 2.1 přidala:
 
@@ -1476,7 +1514,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `29` (od 2.31):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `30` (od 2.32):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1744,7 +1782,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 77 testů: proti původní aplikaci + opravy + 2.1 až 2.31
+node tests/test_core.js                 # 78 testů: proti původní aplikaci + opravy + 2.1 až 2.32
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1788,7 +1826,9 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     seznamu; 2.29.1: poddíl s jinou operací přidaný záznamem, „Odesláno na WPA“ nepřidá,
     orientační řádek sestavy (aplikace i PDF), Skrýt v PDF, tabulka na 1440 px bez posouvání;
     2.31: ruční TOP (pořadí), sestava Zobrazit plně (QR i v PDF), filtr operací (řádky, PDF jen
-    vybrané operace); další seznam, přepnutí, smazání, historie, CSV, telefon, tmavý režim;
+    vybrané operace); 2.32: TOP 2 (pořadí, štítek, poznámka), oddělení (založení, přiřazení
+    operací, bloky, výběr v řádku, přetažení na nadpis, filtr, PDF s bloky); další seznam,
+    přepnutí, smazání, historie, CSV, telefon, tmavý režim;
   - `e2e_kapacity.js`: Kapacity a zaškolení v Auditu (2.30, stránky 2.31): vymyšlených 36 lidí ve
     třech skupinách a prázdná skupina, docházka za 4 měsíce do včerejška, historie hodnocení, nemoc,
     vyřazený, vedoucí, bez skupiny, evidence práce s normou za dva měsíce; měsíční souhrn (texty,

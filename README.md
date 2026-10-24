@@ -62,6 +62,30 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.32
+
+- **Shortage: TOP 2.** Tlačítko **TOP2** na konci řádku označí položku jako TOP 2: v seznamu je
+  hned pod TOP SHORTAGE (nad ostatními), má oranžový štítek a poznámku **„Zpracovat hned po TOP
+  shortage“**, v PDF štítek v rámečku, šedý pruh a tutéž poznámku. Ve sloupci G Excelu se pozná
+  i „TOP2“ / „TOP 2“. TOP a TOP 2 se vylučují (TOP2 z TOP udělá TOP 2 a naopak).
+- **Shortage: oddělení.** Nad seznamem je panel **Oddělení**: založíš oddělení (třeba Brus),
+  pojmenuješ ho a v tabulce probíhajících operací každé operaci vybereš oddělení. Nastavení se
+  uloží a platí pro všechny seznamy, i pro další nahrané, nemusíš ho nastavovat znovu.
+  - Seznam se seřadí do bloků po odděleních (v pořadí, jak jsou založená, na konci Nezařazeno);
+    v každém bloku TOP SHORTAGE, TOP 2 a ostatní. Sestava bez zařazené operace jde podle poddílu.
+  - **Ruční přesun:** výběrem pod operací v řádku (Podle operace / oddělení / Nezařazeno, štítek
+    „ručně“), nebo přetažením myší do jiného bloku (na nadpis bloku = na konec oddělení nad ním).
+    Šipky na úchytu posouvají v rámci oddělení.
+  - Filtr **Oddělení** (víc najednou) vedle filtru operací. PDF má bloky s nadpisy oddělení
+    a s filtrem vytiskne jen vybraná oddělení (v záhlaví „Oddělení: …“).
+  - Smazané oddělení: položky se zařadí podle operace jinam, nebo budou nezařazené.
+  - Do historie změn se zapíše založení, přejmenování a smazání oddělení, přiřazení operací,
+    TOP 2 i ruční přesuny.
+- **Oprava (celá aplikace):** záznam o importu (třeba „nahrána obsazenost …“) se mohl v historii
+  změn ztratit, když import přišel ve chvíli, kdy se ještě ukládala jiná změna. Teď počká na další
+  uložení. Oprava také nového seznamu v Shortage, který by jinak smazal nastavená oddělení.
+- Verze dat 30: stará stránka nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.31
 
 - **Audit: Kapacity a zaškolení podle vzoru.** Stránky reportu vypadají jako vzor „Report docházky“

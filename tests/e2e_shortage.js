@@ -267,7 +267,7 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   check(/Vloženo 2 položky ze schránky, z toho 1 TOP SHORTAGE/.test(pmsg) && !/bez odkazů/.test(pmsg), `vložení ze schránky: ${pmsg}`);
   const pl = await page.evaluate(() => S.shortage.lists[0]);
   check(pl.file === 'vloženo ze schránky' && pl.items.length === 2, `vložený seznam: ${pl.file} ${pl.items.length}`);
-  check(JSON.stringify((({ id, note, rec, subs, cands, pdfHide, full, ...x }) => x)(pl.items[0])) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
+  check(JSON.stringify((({ id, note, rec, subs, cands, pdfHide, full, top2, dept, ...x }) => x)(pl.items[0])) === JSON.stringify({ order: 'OBJ-2026-09001', name: 'Víko skříně velké', ean: '8591111111111', index: 'B', qty: '3', top: true, op: 'Lakování',
     link: 'http://is.example/commission.production.detail/default/69001?activeBarcode=70001.980001.12345&componentProductionId=980001', code: '70001.980001.12345' }), `vložená položka: ${JSON.stringify(pl.items[0])}`);
   check(pl.items[1].qty === '1 500' && pl.items[1].op === 'Broušení' && !pl.items[1].top && pl.items[1].code === '70002.980002.12346', `sloučené buňky a mezery: ${JSON.stringify(pl.items[1])}`);
   check(await page.inputValue('#shPaste') === '', 'pole pro vložení zůstane prázdné');
@@ -570,6 +570,98 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   await page.screenshot({ path: path.join(shots, '02b-top-plne-operace.png'), fullPage: false });
   await saved(page);
 
+  // TOP 2 (2.32): hned pod TOP SHORTAGE, štítek a poznámka „Zpracovat hned po TOP shortage“.
+  await page.click(`#shView [data-shtop2="${await idOf(ITEMS[6].ean)}"]`);
+  await page.waitForFunction(e => S.shortage.lists[0].items.find(i => i.ean === e).top2, ITEMS[6].ean);
+  await page.click(`#shView [data-shtop2="${await idOf(ITEMS[7].ean)}"]`);
+  await page.waitForFunction(e => S.shortage.lists[0].items.find(i => i.ean === e).top2, ITEMS[7].ean);
+  ord = await order();
+  check(ord.slice(4, 6).join() === [ITEMS[6], ITEMS[7]].map(x => x.ean).join() && ord.slice(0, 4).join() === [ITEMS[3], ITEMS[17], ITEMS[20], ITEMS[5]].map(x => x.ean).join(), `TOP 2 hned pod TOP: ${ord.slice(0, 7)}`);
+  const t2row = await page.textContent(`#shView tr[data-shid="${await idOf(ITEMS[6].ean)}"]`);
+  check(/TOP 2/.test(t2row) && /Zpracovat hned po TOP shortage/.test(t2row), 'štítek TOP 2 a poznámka');
+  await page.click(`#shView [data-shtop="${await idOf(ITEMS[7].ean)}"]`);   // z TOP 2 rovnou TOP
+  await page.waitForFunction(e => { const i = S.shortage.lists[0].items.find(x => x.ean === e); return i.top && !i.top2; }, ITEMS[7].ean);
+  ord = await order();
+  check(ord.indexOf(ITEMS[7].ean) === 4 && ord.indexOf(ITEMS[6].ean) === 5, `TOP 2 → TOP: ${ord.slice(0, 7)}`);
+  await page.click(`#shView [data-shtop="${await idOf(ITEMS[7].ean)}"]`);
+  await page.waitForFunction(e => !S.shortage.lists[0].items.find(x => x.ean === e).top, ITEMS[7].ean);
+  await saved(page);
+  // Oddělení (2.32): založit, přiřadit operace, uloží se a platí pro bloky v seznamu.
+  await page.click('#shDepts > summary');
+  for (const name of ['Brus', 'Montáž a elox']) {
+    await page.fill('#shDeptNew', name);
+    await page.click('#shView [data-shdeptadd]');
+    await page.waitForFunction(n => S.shortage.depts.some(d => d.name === n), name);
+  }
+  check(await page.evaluate(() => document.querySelector('#shDepts').open) && await page.evaluate(() => document.activeElement && document.activeElement.id) === 'shDeptNew', 'panel zůstane otevřený, fokus v poli pro další oddělení');
+  const deptId = n => page.evaluate(x => S.shortage.depts.find(d => d.name === x).id, n);
+  const brus = await deptId('Brus');
+  const mont = await deptId('Montáž a elox');
+  await page.selectOption('#shView [data-shopdept="brouseni"]', brus);
+  await page.waitForFunction(() => S.shortage.depts[0].ops.length === 1);
+  await page.selectOption('#shView [data-shopdept="montaz"]', mont);
+  await page.waitForFunction(() => S.shortage.depts[1].ops.length === 1);
+  await page.selectOption('#shView [data-shopdept="elox"]', mont);
+  await page.waitForFunction(() => S.shortage.depts[1].ops.length === 2);
+  await saved(page);
+  const heads = () => page.$$eval('#shView tr.sh-depthead', r => r.filter(x => !x.hidden).map(x => x.textContent.replace(/\s+/g, ' ').trim()));
+  const secs = await page.evaluate(() => shSections(S.shortage, S.shortage.lists[0].items).map(x => [x.name, x.items.map(i => i.ean)]));
+  check(JSON.stringify((await heads()).map(h => h.split(' ·')[0])) === JSON.stringify(['Brus', 'Montáž a elox', 'Nezařazeno']), `nadpisy bloků: ${await heads()}`);
+  const brusEans = ITEMS.filter((x, i) => i % 5 === 0).map(x => x.ean);
+  check(secs[0][1].length === brusEans.length && secs[0][1].every(e => brusEans.includes(e)) && secs[0][1].slice(0, 2).join() === [ITEMS[20], ITEMS[5]].map(x => x.ean).join(), `Brus podle operace, TOP první: ${JSON.stringify(secs[0])}`);
+  const domOrder = await page.$$eval('#shView tbody tr[data-shid]', r => r.map(x => x.dataset.shid));
+  check(JSON.stringify(domOrder) === JSON.stringify(await page.evaluate(() => shSections(S.shortage, S.shortage.lists[0].items).flatMap(x => x.items.map(i => i.id)))), 'tabulka po blocích oddělení');
+  // ruční přesun výběrem v řádku: CNC frézování (nezařazeno) do Brusu
+  const id8 = await idOf(ITEMS[8].ean);
+  await page.selectOption(`#shView [data-shdept="${id8}"]`, brus);
+  await page.waitForFunction(id => S.shortage.lists[0].items.find(i => i.id === id).dept !== '', id8);
+  check(await page.evaluate(([id, b]) => { const i = S.shortage.lists[0].items.find(x => x.id === id); return i.dept === b && shDeptOf(S.shortage, i) === b; }, [id8, brus])
+    && /ručně/.test(await page.textContent(`#shView tr[data-shid="${id8}"]`)), 'výběrem do Brusu, štítek „ručně“');
+  // ruční přesun přetažením: nezařazená položka (CNC frézování) na nadpis Nezařazeno = na konec bloku Montáž a elox nad ním
+  const id13 = await idOf(ITEMS[13].ean);
+  const headNz = page.locator('#shView tr.sh-depthead[data-shdepthead="-"]');
+  await headNz.evaluate(el => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 160));
+  await page.locator(`#shView tr[data-shid="${id13}"]`).scrollIntoViewIfNeeded();
+  const from = await page.locator(`#shView tr[data-shid="${id13}"] td.name`).boundingBox();
+  const hb = await headNz.boundingBox();
+  await page.mouse.move(from.x + 20, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(from.x + 20, from.y + from.height / 2 - 8, { steps: 2 });
+  await page.mouse.move(from.x + 20, hb.y + 3, { steps: 12 });
+  await page.waitForTimeout(80);
+  const markedHead = await page.evaluate(() => !!document.querySelector('#shView tr.sh-depthead.sh-drop-before'));
+  await page.mouse.up();
+  await page.waitForFunction(([id, m]) => shDeptOf(S.shortage, S.shortage.lists[0].items.find(i => i.id === id)) === m, [id13, mont], { timeout: 5000 }).catch(() => {});
+  const dragged = await page.evaluate(([id, m]) => { const x = shSections(S.shortage, S.shortage.lists[0].items).find(q => q.id === m).items.map(i => i.id); return [x.indexOf(id), x.length, S.shortage.lists[0].items.find(i => i.id === id).dept === m]; }, [id13, mont]);
+  check(markedHead && dragged[2] && dragged[0] === dragged[1] - 1, `přetažením na nadpis dalšího bloku = na konec oddělení nad ním: ${JSON.stringify([markedHead, ...dragged])}`);
+  await saved(page);
+  // filtr oddělení a PDF po blocích
+  const pdf7 = await download(page, '[data-shpdf]', 'shortage-oddeleni.pdf');
+  const info7 = pdfInfo(pdf7.path);
+  if (info7) {
+    const text7 = info7.map(p => p.text).join(' ').replace(/\s+/g, ' ');
+    check(/Brus · \d+ polož/.test(text7) && /Montáž a elox · \d+ polož/.test(text7) && /Nezařazeno · \d+ polož/.test(text7), `PDF: bloky oddělení s nadpisy: ${text7.slice(0, 600)}`);
+    check(text7.indexOf('Brus ·') < text7.indexOf('Montáž a elox ·') && text7.indexOf('Montáž a elox ·') < text7.indexOf('Nezařazeno ·'), 'PDF: oddělení v pořadí');
+    check(/TOP 2/.test(text7) && text7.includes('Zpracovat hned po TOP shortage') && / · 1 TOP 2/.test(text7), `PDF: TOP 2 se štítkem, poznámkou a v počtu: ${text7.slice(0, 200)}`);
+  }
+  await page.click(`#shView .sh-deptf [data-shdf="${brus}"]`);
+  await page.waitForSelector(`#shView .sh-deptf [data-shdf="${brus}"][aria-pressed="true"]`);
+  vis = await visible();
+  const brusNow = await page.evaluate(b => shSections(S.shortage, S.shortage.lists[0].items).find(x => x.id === b).items.map(i => i.ean), brus);
+  check(JSON.stringify([...vis.items].sort()) === JSON.stringify([...brusNow].sort()) && JSON.stringify((await heads()).map(h => h.split(' ·')[0])) === JSON.stringify(['Brus']), `filtr oddělení Brus: ${vis.items.length} z ${brusNow.length}`);
+  check(/PDF k tisku · vybraná oddělení/.test(await page.textContent('#shView [data-shpdf]')), 'tlačítko PDF: vybraná oddělení');
+  const pdf8 = await download(page, '[data-shpdf]', 'shortage-brus.pdf');
+  const info8 = pdfInfo(pdf8.path);
+  if (info8) {
+    const text8 = info8.map(p => p.text).join(' ').replace(/\s+/g, ' ');
+    check(text8.includes('Oddělení: Brus') && !text8.includes('Montáž a elox ·') && text8.includes(ITEMS[8].ean) && !text8.includes(ITEMS[6].ean), 'PDF jen oddělení Brus (i ručně přesunutá položka)');
+  }
+  await page.click('#shView .sh-deptf [data-shdf=""]');
+  await page.waitForSelector('#shView .sh-deptf [data-shdf=""][aria-pressed="true"]');
+  await page.screenshot({ path: path.join(shots, '02c-oddeleni.png'), fullPage: true });
+  // nastavení zůstane i po novém načtení stránky
+  check(await page.evaluate(() => JSON.stringify(S.shortage.depts.map(d => [d.name, d.ops.map(o => o.key)]))) === JSON.stringify([['Brus', ['brouseni']], ['Montáž a elox', ['montaz', 'elox']]]), 'oddělení a operace v datech');
+
   // Další seznam (poddíly z plánu v paměti okna se doplní samy), přepnutí na starší a smazání.
   const small = await page.evaluate(async () => {
     const X = await xlsx();
@@ -604,7 +696,10 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
     && log.some(t => /^Shortage: odebrán poddíl 8594000009005 u položky /.test(t)) && log.some(t => /^Shortage: podle posledního záznamu přidán poddíl 8594000009003 u položky /.test(t))
     && log.some(t => /^Shortage: položka 8594000000303 .* skryta v PDF/.test(t)) && log.some(t => /^Shortage: poddíl 8594000009002 u položky .* skryt v PDF/.test(t)) && log.some(t => /^Shortage: položka 8594000000404 .* znovu v PDF/.test(t))
     && log.some(t => new RegExp(`^Shortage: položka ${ITEMS[5].ean} .* ručně označena jako TOP SHORTAGE`).test(t)) && log.some(t => new RegExp(`^Shortage: položka ${ITEMS[10].ean} .* už není TOP SHORTAGE`).test(t))
-    && log.some(t => new RegExp(`^Shortage: sestava ${ITEMS[0].ean} .* zobrazena plně`).test(t)), `historie změn: ${JSON.stringify(log)}`);
+    && log.some(t => new RegExp(`^Shortage: sestava ${ITEMS[0].ean} .* zobrazena plně`).test(t))
+    && log.some(t => new RegExp(`^Shortage: položka ${ITEMS[6].ean} .* označena jako TOP 2 \\(zpracovat hned po TOP shortage\\)`).test(t))
+    && log.includes('Shortage: nové oddělení Brus') && log.includes('Shortage: operace Broušení patří do oddělení Brus') && log.includes('Shortage: operace Elox patří do oddělení Montáž a elox')
+    && log.some(t => new RegExp(`^Shortage: položka ${ITEMS[8].ean} .* ručně přesunuta: Brus`).test(t)) && log.some(t => new RegExp(`^Shortage: položka ${ITEMS[13].ean} .* ručně přesunuta: Montáž a elox`).test(t)), `historie změn: ${JSON.stringify(log)}`);
 
   // CSV nemá odkazy.
   await page.setInputFiles('#shFile', { name: 'seznam.csv', mimeType: 'text/csv', buffer: Buffer.from('EAN;Název\n123;Díl\n') });
