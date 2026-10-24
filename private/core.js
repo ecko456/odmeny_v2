@@ -479,8 +479,8 @@ function toMinutes(v,unit,frac){
   return frac?n*1440:unit==="h"?n*60:n;
 }
 /* Výchozí sloupce evidence práce (bez hlavičky): jméno C, datum D, kusy E. */
-const PROD_DEFAULT={header:-1,name:2,date:3,ks:4,spent:null,norm:null,unit:"min",normPer:"row",item:null,iname:null};
-const PROD_FIELDS=[["name","Zaměstnanec (jméno nebo ID)"],["date","Datum"],["ks","Kusy"],["spent","Strávený čas"],["norm","Norma (min)"],["item","EAN / položka"],["iname","Název položky"]];
+const PROD_DEFAULT={header:-1,name:2,date:3,ks:4,spent:null,norm:null,unit:"min",normPer:"row",item:null,iname:null,op:null};
+const PROD_FIELDS=[["name","Zaměstnanec (jméno nebo ID)"],["date","Datum"],["ks","Kusy"],["spent","Strávený čas"],["norm","Norma (min)"],["item","EAN / položka"],["iname","Název položky"],["op","Operace (pro Audit)"]];
 const PROD_WORDS={
   name:["jmeno","pracovnik","zamestnanec","operator","osoba","prijmeni","id zamestnance","id pracovnika","osobni cislo","cislo zamestnance","os. c","os.c","id"],
   date:["datum","den","date","dne"],
@@ -489,7 +489,9 @@ const PROD_WORDS={
   norm:["norma","normocas","normohod","norm"],
   /* položka pro Top 5 nejméně efektivních (verze 2.2) */
   item:["ean","polozka","cislo polozky","kod polozky","id polozky","cislo dilu","kod dilu","dil","cislo vyrobku","kod vyrobku","vyrobek","artikl","produkt"],
-  iname:["nazev polozky","nazev dilu","nazev vyrobku","nazev artiklu","popis polozky","popis dilu","nazev","popis"]
+  iname:["nazev polozky","nazev dilu","nazev vyrobku","nazev artiklu","popis polozky","popis dilu","nazev","popis"],
+  /* operace pro kusy v Auditu (verze 2.35): stejný soubor pak stačí nahrát jednou */
+  op:["operace","nazev operace","pracovni operace","cinnost","ukon"]
 };
 function colLetter(i){let s="";i++;while(i>0){const r=(i-1)%26;s=String.fromCharCode(65+r)+s;i=Math.floor((i-1)/26);}return s;}
 /* Najde řádek s hlavičkou a odhadne, co je ve kterém sloupci. */
@@ -514,15 +516,16 @@ function prodColumns(aoa){
     const used=new Set();
     /* datum dřív než čas, ať „Datum a čas“ nevezme strávený čas; položka až nakonec,
        ať nezmění odhad sloupců u souborů bez EAN */
-    ["name","date","norm","spent","ks","item","iname"].forEach(f=>{
+    ["name","date","norm","spent","ks","op","item","iname"].forEach(f=>{
       const words=PROD_WORDS[f];let hit=null;
       /* „ID zakázky“ nebo „Operace“ není zaměstnanec; „Název zakázky“ není název položky */
       const skip=c=>(f==="name"&&/zakaz|operac|stroj|vyrob|dilu|polozk/.test(norm(c.head)))
         ||((f==="item"||f==="iname")&&/zakaz|operac|zamest|pracovn|stroj|osob/.test(norm(c.head)))
-        ||(f==="item"&&/nazev|popis/.test(norm(c.head)));
+        ||(f==="item"&&/nazev|popis/.test(norm(c.head)))
+        ||(f==="op"&&/norm|cas|kus|pocet|mnozstvi|cislo|kod|\bid\b/.test(norm(c.head)));
       for(const w of words){hit=cols.find(c=>!used.has(c.i)&&c.head&&!skip(c)&&(norm(c.head)===w||norm(c.head).split(/[^a-z0-9]+/).includes(w)||(w.includes(" ")&&norm(c.head).includes(w))));if(hit)break;}
       if(!hit)for(const w of words.filter(x=>x.length>=4)){hit=cols.find(c=>!used.has(c.i)&&c.head&&!skip(c)&&norm(c.head).includes(w));if(hit)break;}
-      guess[f]=hit?hit.i:(f==="spent"||f==="norm"||f==="item"||f==="iname"?null:guess[f]);
+      guess[f]=hit?hit.i:(f==="spent"||f==="norm"||f==="item"||f==="iname"||f==="op"?null:guess[f]);
       if(hit)used.add(hit.i);
     });
   }
@@ -2093,7 +2096,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=31;
+const DATA_VERSION=32;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -2404,7 +2407,7 @@ function cleanProdCols(v){
   const col=(x,opt)=>{if((x==null||x==="")&&opt)return null;const n=Math.round(Number(x));return Number.isFinite(n)&&n>=0&&n<60?n:(opt?null:-1);};
   const out={header:Math.max(-1,Math.min(14,Math.round(Number(v.header))||0)),name:col(v.name),date:col(v.date),ks:col(v.ks,true),
     spent:col(v.spent,true),norm:col(v.norm,true),unit:v.unit==="h"?"h":"min",normPer:v.normPer==="piece"?"piece":"row",
-    item:col(v.item,true),iname:col(v.iname,true),
+    item:col(v.item,true),iname:col(v.iname,true),op:col(v.op,true),
     heads:(Array.isArray(v.heads)?v.heads:[]).slice(0,60).map(h=>String(h==null?"":h).slice(0,80))};
   if(!Number.isFinite(Number(v.header)))out.header=-1;
   return out.name<0||out.date<0?null:out;
@@ -4117,6 +4120,13 @@ function waParseWork(sheets,cols){
   }));
   const isos=Object.keys(byDay).sort();
   return {byDay,ops,rows,skipped,from:isos[0]||"",to:isos[isos.length-1]||""};
+}
+/* Kusy pro Audit z evidence práce ve Výrobě (2.35): stejné řádky, sloupce podle mapování Výroby
+   (datum, operace, kusy), počítá se jako import výkazu práce v Auditu. Bez operace nebo kusů null. */
+function waParseProd(aoa,map){
+  if(!map||map.op==null||map.ks==null||map.date==null||map.op<0||map.ks<0||map.date<0)return null;
+  const rows=(aoa||[]).slice(Math.max(0,(+map.header||0)+1));
+  return waParseWork([{aoa:rows}],{date:colLetter(map.date),op:colLetter(map.op),ks:colLetter(map.ks)});
 }
 function waGuessGroup(name,groups){
   const n=norm(name);

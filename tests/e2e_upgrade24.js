@@ -91,7 +91,14 @@ function compare(beforeJson, afterJson) {
     if (Array.isArray(c.cases)) c.cases = c.cases.map(x => { if (!('comments' in x)) return x; const y = { ...x }; same(y.comments, [], `komentáře ${y.no}`); delete y.comments; return y; });
     return c;
   };
-  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks', 'workAudit', 'service', 'shortage'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : b[k], k));
+  // 2.35 přidá k uloženým sloupcům evidence práce prázdný sloupec Operace (pro Audit)
+  const setOld = st => {
+    if (!st || !st.prodCols) return st;
+    const { op, ...cols } = st.prodCols;
+    same(op === undefined ? null : op, null, 'settings.prodCols.op');
+    return { ...st, prodCols: cols };
+  };
+  Object.keys({ ...a, ...b }).filter(k => !['positions', 'employees', 'issued', 'marks', 'capReport', 'v', 'leadSkills', 'normCutDone', 'logbooks', 'workAudit', 'service', 'shortage'].includes(k)).forEach(k => same(a[k], k === 'eff' ? effOld(b[k]) : k === 'settings' ? setOld(b[k]) : b[k], k));
   // 2.21 prázdný Servis (evidence zařízení a odeslání)
   if ('service' in b) same({ devices: [], shipments: [], templates: [], ...(a.service || {}) }, b.service, 'service');
   // 2.27 prázdný Shortage (seznamy chybějících dílů)

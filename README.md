@@ -62,6 +62,24 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.35
+
+- **Výkaz práce stačí nahrát jednou, pro Výrobu i Audit.** Je to tentýž export z IS (datum,
+  zaměstnanec nebo ID zaměstnance, operace, kusy, norma, čas). Funguje to oběma směry:
+  - **Ve Výrobě:** při výběru sloupců evidence práce přibylo pole **Operace** (pozná se samo
+    z hlavičky, třeba „Operace“). Když je vybrané, kusy podle operací a dnů se zapíšou i do
+    Auditu. Je to totéž, jako by se výkaz nahrál tam: dny ze souboru se nahradí, ruční úpravy
+    zůstanou a nové operace čekají na skupinu. Hláška ve Výrobě to napíše a tlačítkem „Otevřít
+    Audit“ se dostaneš rovnou k operacím bez skupiny.
+  - **V Auditu:** když výkaz práce sedí na sloupce uložené ve Výrobě (stejná hlavička), nabídne
+    se zaškrtnuté **Nahrát i do Výroby**. Evidence práce se pak doplní po lidech podle
+    zaměstnance nebo ID, s časem, normou a EAN podle nastavení Výroby. Kdo z ID nikomu nepatří,
+    čeká ve Výrobě na spárování jako dosud. Když soubor na sloupce Výroby nesedí, dialog napíše
+    proč a co udělat.
+  - V Nastavení Auditu u sloupců výkazu práce je vidět, jestli Výroba operaci bere.
+  - Do historie změn se zapíše obojí: kusy v Auditu i nahraná evidence práce.
+- Verze dat 32: stará stránka nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.34
 
 - **Shortage: PDF po odděleních.** Když máš založená oddělení, je vedle „PDF k tisku“ tlačítko

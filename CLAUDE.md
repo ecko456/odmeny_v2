@@ -34,6 +34,32 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 24. 10. 2026 (verze 2.35):
+
+- Uživatel: „v modulu Audit rozšířit import výkazu práce o sloupec ID zaměstnance, případně ať
+  to bere data z modulu Výroba, ať to nemusím nahrávat 2×“. Je to stejný export z IS, takže
+  jedno nahrání teď plní oba moduly, ať se nahraje kdekoli:
+  - **Výroba → Audit:** `S.settings.prodCols.op` (sloupec operace, `PROD_WORDS.op`, odhad po
+    ks a před item, `skip` pro „Číslo/Kód/Norma/Čas operace“). `waParseProd(aoa, map)` volá
+    `waParseWork` se sloupci z mapování Výroby (`colLetter`), takže kusy jsou přesně jako při
+    importu v Auditu (i řádek bez pracovníka, bez souhrnu „Celkem“). `prodToAudit` v
+    `doProdImport` → `waApplyWork`, hláška v `#prodMsg` a s novými operacemi `ui.wa` na
+    Nastavení s filtrem bez skupiny (`data-go="audit"`).
+  - **Audit → Výroba:** `waProdFrom(sheets, name)`: list, který sedí na uložené
+    `S.settings.prodCols` (`prodMapFits`), `buildProduction`. V dialogu `.wa-toprod`
+    s checkboxem `toProd` (zaškrtnutý), jinak `.wa-noprod` s vysvětlením. Po potvrzení se měsíce
+    přepíšou jako při importu ve Výrobě. Toast počítá nespárovaná jména v nahraných měsících
+    (`prodUnmatched` bere jen vybrané období).
+  - **Historie:** `store.note.keep` (nové): poznámka + spočítané změny (`describeChanges`), jinak
+    by poznámka Auditu přebila „Nahrána evidence práce …“. Bez `keep` beze změny.
+  - Nastavení Auditu: `waOneFileText()` pod sloupci výkazu práce.
+  - Testy: core „Výroba a Audit (2.35)“, nový `tests/e2e_vykaz.js` (odhad sloupců, kusy proti
+    výpočtu, Výroba po lidech, odškrtnutá volba, jiná hlavička, historie, telefon),
+    `e2e_upgrade24` počítá s `prodCols.op = null`.
+  - Verze dat 32, `ODM_VERSION` 2.35.
+  - **Se skutečným exportem z IS to nikdo nezkoušel.** Test běží na vymyšleném souboru se
+    sloupci jako v Auditu (A datum, H operace, J kusy) a s pracovníkem, normou a časem.
+
 Stav k 24. 10. 2026 (verze 2.34):
 
 - Uživatel: „v modulu Shortage generovat PDF s rozdělením oddělení na papír … každé oddělení
@@ -1447,7 +1473,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.31 | `b40b6d3` | Kapacity a zaškolení jako vzor (měsíční a týdenní souhrn, vývoj zaškolení, PDF na výšku s Plex Mono, záhlaví reportu); Shortage – ruční TOP, sestava Zobrazit plně, filtr probíhajících operací (data verze 29) |
 | 2.32 | `913c38d` | Shortage – TOP 2 hned pod TOP SHORTAGE, oddělení podle probíhajících operací (uložené nastavení, bloky, filtr, PDF), ruční přesun výběrem i přetažením (data verze 30) |
 | 2.33 | `5944f8d` | Audit – hranice zaškolení v % v Nastavení, platí pro celé Kapacity a zaškolení (aplikace, PDF, Excel), prázdné = podle Matice (data verze 31) |
-| 2.34 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – PDF po odděleních (každé oddělení od nového papíru, vlastní záhlaví, číslování položek i stran) (data verze 31) |
+| 2.34 | `bfc9e06` | Shortage – PDF po odděleních (každé oddělení od nového papíru, vlastní záhlaví, číslování položek i stran) (data verze 31) |
+| 2.35 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: výkaz práce jednou pro Výrobu i Audit (sloupec Operace ve Výrobě, Nahrát i do Výroby v Auditu) (data verze 32) |
 
 Verze 2.1 přidala:
 
@@ -1827,7 +1854,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 79 testů: proti původní aplikaci + opravy + 2.1 až 2.33
+node tests/test_core.js                 # 80 testů: proti původní aplikaci + opravy + 2.1 až 2.35
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1879,7 +1906,12 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     vyřazený, vedoucí, bez skupiny, evidence práce s normou za dva měsíce; měsíční souhrn (texty,
     řádky a CELKEM proti výpočtu, grafy, tooltip, písma Plex), záhlaví reportu (uloží se, fokus),
     týdenní souhrn (aktuální i celý minulý týden), vývoj zaškolení, PDF na výšku (text, Plex Mono,
-    A4, pořadí stránek, jen ID), Excel, budoucí období jako plán, telefon a tmavý režim (bílý papír);
+    A4, pořadí stránek, jen ID), Excel, budoucí období jako plán, hranice zaškolení (2.33), telefon
+    a tmavý režim (bílý papír);
+  - `e2e_vykaz.js` (2.35): jeden výkaz práce pro Výrobu i Audit: odhad sloupce Operace, kusy
+    v Auditu proti výpočtu v Node, evidence po lidech (ID 109 ke spárování), „Otevřít Audit“,
+    v Auditu Nahrát i do Výroby (zaškrtnuté, odškrtnuté), soubor s jinou hlavičkou, historie
+    změn, dialog na telefonu;
   - `e2e_protokoly.js`: Protokoly (2.16); testovací fotky kreslí v prohlížeči (canvas), text
     PDF čte přes pypdf (bez něj se kontrola textu přeskočí). Čistá instalace začíná ukázkovými
     daty a první uložení se do historie nezapisuje, proto test mezi kroky čeká na uložení;

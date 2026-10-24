@@ -1713,6 +1713,9 @@ tr.wa-offop td { color: var(--ink-3); }
 .wa-colgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); align-items: end; gap: 10px; }
 .wa-colgrid .field { margin: 0; }
 .wa-target { max-width: 220px; margin: 10px 0 0; }
+.wa-toprod { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+.wa-noprod { margin: 10px 0 0; }
+.wa-onefile { margin: 12px 0 0; }
 .wa-target input { font-family: var(--mono); }
 .btn.wa-danger { color: var(--crit); }
 table.wa-opset td:first-child { width: 72px; }
