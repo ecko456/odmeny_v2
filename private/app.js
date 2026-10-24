@@ -5523,14 +5523,16 @@ function pdfKit(doc) {
     });
     k.y += 22;
   };
-  k.footer = left => {
+  // per(i, pages) → { left, right }: vlastní text a číslování stran (Shortage po odděleních)
+  k.footer = (left, per = null) => {
     const pages = doc.getNumberOfPages();
     for (let i = 1; i <= pages; i += 1) {
       doc.setPage(i);
+      const f = per ? per(i, pages) : { left, right: `Strana ${i} / ${pages}` };
       doc.setDrawColor(...C.line); doc.setLineWidth(0.2); doc.line(k.M, k.H - 13.5, k.M + k.CW, k.H - 13.5);
       k.font(7.5, false, C.ink3);
-      doc.text(left, k.M, k.H - 11.5 + mm(7.5) * 0.92);
-      doc.text(`Strana ${i} / ${pages}`, k.M + k.CW, k.H - 11.5 + mm(7.5) * 0.92, { align: 'right' });
+      doc.text(f.left, k.M, k.H - 11.5 + mm(7.5) * 0.92);
+      doc.text(f.right, k.M + k.CW, k.H - 11.5 + mm(7.5) * 0.92, { align: 'right' });
     }
   };
   return k;
@@ -8667,6 +8669,7 @@ function renderShortage() {
         <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}${hidN ? ` · <b>${hidN} skryt${hidN === 1 ? 'á' : hidN <= 4 ? 'é' : 'ých'} v PDF</b>` : ''}</p></div>
         <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat objednávku, díl, EAN, operaci" autocomplete="off"></label>
           <button class="btn small" type="button" data-shpdf="${esc(l.id)}"${n ? '' : ' disabled'}>${dsel ? (sel ? 'PDF k tisku · vybraná oddělení a operace' : 'PDF k tisku · vybraná oddělení') : sel ? 'PDF k tisku · vybrané operace' : 'PDF k tisku'}</button>
+          ${depts.length ? `<button class="btn sec small" type="button" data-shpdfdept="${esc(l.id)}"${n ? '' : ' disabled'} title="Každé oddělení začne na novém papíře, s vlastním záhlavím a číslováním">PDF po odděleních${dsel ? ' · vybraná' : ''}</button>` : ''}
           <button class="icon-btn" type="button" data-shdel="${esc(l.id)}" title="Smazat seznam" aria-label="Smazat seznam z ${esc(shWhen(l))}">${I.x}</button></div></div>
       <p class="tiny muted sh-hint">Pořadí změníš přetažením řádku myší (na telefonu za úchyt vlevo), poddíly jdou se sestavou. TOP SHORTAGE zůstávají nahoře, pod nimi TOP 2 (zpracovat hned po TOP shortage); tlačítka TOP a TOP2 na konci řádku je označí nebo odznačí ručně. S oddělením jde řádek přetáhnout i do jiného oddělení. Poslední záznamy vlož přes Ctrl+V: A QR kód, B datum a čas, C počet ks, D stav. Oko na konci řádku položku skryje v PDF (sestavu i s poddíly). Sestavu s poddíly ukáže celou (QR kód, záznam, kolonky) tlačítko Zobrazit plně.</p>
       <p class="small sh-planinfo">${planInfo}${planUse}</p>
@@ -8847,6 +8850,8 @@ function bindShortage() {
     if (t.closest('[data-shimport]')) { $('#shFile').click(); return; }
     const pdf = t.closest('[data-shpdf]');
     if (pdf) { exportShortagePdf(pdf.dataset.shpdf, pdf); return; }
+    const pdfd = t.closest('[data-shpdfdept]');
+    if (pdfd) { exportShortagePdf(pdfd.dataset.shpdfdept, pdfd, true); return; }
     const open = t.closest('[data-shopen]');
     if (open) { ui.sh.open = open.dataset.shopen; ui.sh.q = ''; $('#shMsg').innerHTML = ''; renderShortage(); return; }
     if (t.closest('[data-shplanuse]')) {
@@ -9071,7 +9076,8 @@ function pdfQr(doc, text, x, y, size) {
 const SH_PDF_COLS = [['#', 7], ['QR kód', 21], ['Číslo objednávky', 30], ['Název dílu · EAN', 46], ['Index', 12], ['Urgentní množství', 18], ['Operace · poslední záznam', 38], ['Stav k 10:00', 24], ['Stav k 13:00', 24], ['Poznámky', 0]];
 /* Černobílý tisk (2.28): jen černá a odstíny šedé, linky tmavší, TOP SHORTAGE černý štítek a pruh. */
 const SH_MONO = { ink: [0, 0, 0], ink2: [45, 45, 45], ink3: [95, 95, 95], line: [150, 150, 150], line2: [95, 95, 95], head: [222, 222, 222], top: [236, 236, 236], asm: [246, 246, 246], write: [120, 120, 120] };
-function drawShortage(doc, l, ops = null, dsel = null) {
+/* split (2.34): každé oddělení na vlastním papíře – vlastní záhlaví, číslování položek i stran */
+function drawShortage(doc, l, ops = null, dsel = null, split = false) {
   const k = pdfKit(doc);
   // i zápatí a výchozí barva písma pdfKit jen v odstínech šedé
   Object.assign(k.C, { ink: SH_MONO.ink, ink2: SH_MONO.ink2, ink3: SH_MONO.ink3, line: SH_MONO.line, line2: SH_MONO.line2 });
@@ -9085,7 +9091,7 @@ function drawShortage(doc, l, ops = null, dsel = null) {
   const items = shDeptPick(shPdfItems(l, ops), dsel);
   const sh = shc();
   const secs = shSections(sh, items);
-  const n = items.length, tops = items.filter(i => i.top).length, top2s = items.filter(i => i.top2).length, subsN = items.reduce((a, i) => a + i.subs.length, 0);
+  const byDept = split && (sh.depts || []).length > 0;
   const clip = (text, w, size, max, bold) => {
     const lines = k.split(text, w, size, bold);
     if (lines.length <= max) return lines;
@@ -9107,23 +9113,41 @@ function drawShortage(doc, l, ops = null, dsel = null) {
     });
     k.y += HEAD;
   };
-  // kompaktní záhlaví, ať se na stránku vejde víc položek
-  k.text(`${EXPORT_NAME} · SHORTAGE`, k.M, k.y, 7.5, { bold: true, color: C.ink, space: 0.35 });
-  k.text(`Seznam z ${shWhen(l)} · ${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${tops ? ` · ${tops} TOP SHORTAGE` : ''}${top2s ? ` · ${top2s} TOP 2` : ''}`, k.M + k.CW, k.y, 8.5, { color: C.ink2, align: 'right' });
-  k.y += 5.5;
-  k.text('Chybějící díly', k.M, k.y, 17, { bold: true, color: C.ink });
-  if (ops || dsel) {   // filtr operací (2.31) a oddělení (2.32): čeho se výtisk týká
-    const parts = [];
-    if (dsel) parts.push(`Oddělení: ${shSections(sh, l.items).filter(x => dsel.has(x.id || '-')).map(x => x.name).join(', ')}`);
+  // kompaktní záhlaví, ať se na stránku vejde víc položek; sec = papír jednoho oddělení (2.34)
+  const HINT = 'Stav doplň k 10:00 a k 13:00. QR kód nese activeBarcode z odkazu u EANu.';
+  const title = sec => {
+    const its = sec ? sec.items : items;
+    const n = its.length, tops = its.filter(i => i.top).length, top2s = its.filter(i => i.top2).length, subsN = its.reduce((a, i) => a + i.subs.length, 0);
+    k.text(`${EXPORT_NAME} · SHORTAGE`, k.M, k.y, 7.5, { bold: true, color: C.ink, space: 0.35 });
+    k.text(`Seznam z ${shWhen(l)} · ${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${tops ? ` · ${tops} TOP SHORTAGE` : ''}${top2s ? ` · ${top2s} TOP 2` : ''}`, k.M + k.CW, k.y, 8.5, { color: C.ink2, align: 'right' });
+    k.y += 5.5;
+    const hintW = k.width(HINT, 8.5);
+    const big = clip(sec ? `Chybějící díly · ${sec.name}` : 'Chybějící díly', k.CW - hintW - 40, 17, 1, true)[0];
+    k.text(big, k.M, k.y, 17, { bold: true, color: C.ink });
+    const parts = [];   // filtr operací (2.31) a oddělení (2.32): čeho se výtisk týká
+    if (dsel && !sec) parts.push(`Oddělení: ${shSections(sh, l.items).filter(x => dsel.has(x.id || '-')).map(x => x.name).join(', ')}`);
     if (ops) parts.push(`Jen operace: ${shOpList(l).filter(o => ops.has(o.key)).map(o => o.label).join(', ')}`);
-    k.text(parts.join(' · ').slice(0, 150), k.M + 62, k.y + 2.6, 8.5, { bold: true, color: C.ink });
+    if (parts.length) {
+      const x = k.M + Math.max(62, k.width(big, 17, true) + 6);
+      k.text(clip(parts.join(' · '), k.M + k.CW - hintW - 6 - x, 8.5, 1, true)[0], x, k.y + 2.6, 8.5, { bold: true, color: C.ink });
+    }
+    k.text(HINT, k.M + k.CW, k.y + 2.6, 8.5, { color: C.ink2, align: 'right' });
+    k.y += 9;
+    doc.setDrawColor(...C.ink); doc.setLineWidth(0.7); doc.line(k.M, k.y, k.M + 28, k.y);
+    k.y += 4;
+  };
+  // další strana téhož oddělení: název oddělení nad záhlavím sloupců, ať se papíry nepletou
+  let cur = null;
+  const cont = () => {
+    k.text(`Chybějící díly · ${cur.name} · pokračování`, k.M, k.y, 8.5, { bold: true, color: C.ink });
+    k.y += 5;
+    head();
+  };
+  if (!byDept) {
+    title(null);
+    k.onPage = head;
+    head();
   }
-  k.text('Stav doplň k 10:00 a k 13:00. QR kód nese activeBarcode z odkazu u EANu.', k.M + k.CW, k.y + 2.6, 8.5, { color: C.ink2, align: 'right' });
-  k.y += 9;
-  doc.setDrawColor(...C.ink); doc.setLineWidth(0.7); doc.line(k.M, k.y, k.M + 28, k.y);
-  k.y += 4;
-  k.onPage = head;
-  head();
   // výška řádku podle obsahu (nejméně ROW): dlouhý poslední záznam, operace, název nebo poznámka se vypíšou celé
   const PAD = 1.8, recQty = r => (r.qty ? (/^[\d\s.,]+$/.test(r.qty) ? `${r.qty} ks` : r.qty) : '');
   // parent = sestava, když jde o poddíl z výrobního plánu (2.29); sestava s poddíly je jen
@@ -9227,10 +9251,19 @@ function drawShortage(doc, l, ops = null, dsel = null) {
     } else [H - 11, H - 4.5].forEach(h => k.hline(top + h, C.write, 0.25, xs[9] + 2.5, xs[9] + widths[9] - 2.5, [0.6, 0.9]));
     k.y += H;
   };
-  // bloky podle oddělení (2.32): nadpis s počtem, drží se s prvním řádkem
+  // bloky podle oddělení (2.32): nadpis s počtem, drží se s prvním řádkem;
+  // po odděleních (2.34) každé oddělení od nové strany a čísla od 1
   let j = 0;
-  secs.forEach(sec => {
-    if ((sh.depts || []).length) {
+  const starts = [];
+  secs.forEach((sec, si) => {
+    if (byDept) {
+      if (si) { k.onPage = null; doc.addPage(); k.y = k.M; }
+      cur = sec; j = 0;
+      starts.push(doc.getNumberOfPages());
+      title(sec);
+      k.onPage = cont;
+      head();
+    } else if ((sh.depts || []).length) {
       const first = sec.items[0];
       k.need(7.5 + lay(first, null).h + (first.subs.length ? lay(first.subs[0], first).h : 0));
       k.box(C.head, k.M, k.y, k.CW, 6.5, 0);
@@ -9244,11 +9277,19 @@ function drawShortage(doc, l, ops = null, dsel = null) {
       it.subs.forEach((x, i) => row(x, `${j}.${i + 1}`, it));
     });
   });
-  k.footer(`${EXPORT_NAME} · Shortage · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`);
+  const left = `${EXPORT_NAME} · Shortage · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`;
+  if (!byDept) { k.footer(left); return; }
+  // strany číslované po odděleních: „Brus · strana 1 / 2“
+  k.footer(left, (i, pages) => {
+    let s = 0;
+    while (s + 1 < starts.length && starts[s + 1] <= i) s += 1;
+    const end = s + 1 < starts.length ? starts[s + 1] - 1 : pages;
+    return { left: `${left} · ${secs[s].name}`, right: `${secs[s].name} · strana ${i - starts[s] + 1} / ${end - starts[s] + 1}` };
+  });
 }
 /** Položky do PDF bez skrytých; poddíly jen viditelné; s filtrem jen vybrané operace (2.31). */
 function shPdfItems(l, ops = null) { return shOpPick(l.items.filter(i => !i.pdfHide).map(i => ({ ...i, subs: (i.subs || []).filter(x => !x.pdfHide) })), ops); }
-async function exportShortagePdf(id, button = null) {
+async function exportShortagePdf(id, button = null, split = false) {
   const l = shc().lists.find(x => x.id === id);
   if (!l || !l.items.length) return;
   const ops = shOpSel(l);
@@ -9256,9 +9297,9 @@ async function exportShortagePdf(id, button = null) {
   if (!shDeptPick(shPdfItems(l, ops), dsel).length) { toast(ops || dsel ? 'Vybraný filtr nemá žádnou položku do PDF.' : 'Všechny položky jsou skryté v PDF.', true); return; }
   await withPdf(button, doc => {
     doc.setProperties({ title: `Shortage · chybějící díly ${shWhen(l)}`, subject: l.file || 'Shortage', creator: EXPORT_NAME });
-    drawShortage(doc, l, ops, dsel);
+    drawShortage(doc, l, ops, dsel, split);
     const d = new Date(l.at);
-    downloadFile(`shortage-${todayIso(l.at)}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}.pdf`, doc.output('blob'), 'application/pdf');
+    downloadFile(`shortage-${todayIso(l.at)}-${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${split ? '-po-oddelenich' : ''}.pdf`, doc.output('blob'), 'application/pdf');
   }, 'landscape');
 }
 

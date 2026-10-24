@@ -34,6 +34,25 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 24. 10. 2026 (verze 2.34):
+
+- Uživatel: „v modulu Shortage generovat PDF s rozdělením oddělení na papír … každé oddělení
+  zvlášť v tisku a neměl jsem třeba 2 oddělení na jednom papíře“.
+  - Tlačítko `[data-shpdfdept]` „PDF po odděleních“ (jen když `S.shortage.depts` není prázdné)
+    vedle `[data-shpdf]`; `exportShortagePdf(id, button, split)`, soubor `…-po-oddelenich.pdf`.
+    Žádné nové uložené nastavení, data beze změny (31).
+  - `drawShortage(doc, l, ops, dsel, split)`: záhlaví je funkce `title(sec)` (počty a nadpis
+    „Chybějící díly · oddělení“, bez řádku „Oddělení:“), každé oddělení od `doc.addPage()`
+    (`k.onPage = null` před přidáním, ať se nekreslí záhlaví sloupců navíc), čísla položek od 1,
+    další strany přes `cont` („… · pokračování“ + `head`). Nadpis i řádek filtru se oříznou
+    podle šířky (`clip`), dlouhý název oddělení (60 znaků) nepřeteče přes pokyn vpravo.
+  - `k.footer(left, per)`: volitelné `per(i, pages) → {left, right}`; Shortage po odděleních
+    čísluje strany za oddělení (`starts` = první strana každého oddělení).
+  - Testy: `e2e_shortage.js` (každá strana patří jednomu oddělení, oddělení za sebou, díly jen
+    na stranách svého oddělení, pokračování, číslování stran, filtr Brus, snímky stran
+    `pdf-po-oddelenich-N.png`), aktualizace 2.33 → 2.34 se stejnými daty (SAME_DATA).
+  - `ODM_VERSION` 2.34.
+
 Stav k 24. 10. 2026 (verze 2.33):
 
 - Uživatel: „V Audit bych potřeboval mít v nastavení možnost nastavit, do kolika % dovedností
@@ -1116,7 +1135,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -1181,7 +1200,9 @@ okraj 2 moduly), TOP řádek světle šedý s černým pruhem a štítkem, hlavi
 stránce (`k.onPage`), čárkované linky na psaní ve Stav k 10:00, Stav k 13:00 a Poznámkách.
 Sestava s viditelnými poddíly je nízký šedý řádek (`asm`) bez QR, záznamu a linek (2.29.1).
 Položky jdou přes `shPdfItems(l)` (bez skrytých, číslování bez mezer; všechno skryté → hláška).
-Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
+Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`). Po odděleních (2.34, `split`):
+každé oddělení od nové strany s vlastním záhlavím, čísly položek od 1 a stranami v zápatí
+za oddělení, soubor `…-po-oddelenich.pdf`.
 
 ## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30, stránky podle vzoru 2.31, hranice zaškolení 2.33)
 
@@ -1425,7 +1446,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.30 | `3cd4eb0` | Audit – Kapacity a zaškolení od–do (vykázáno z docházky, plán ze zařazení, zkušení podle historie hodnocení, vývoj zaškolení, výkon, PDF a Excel) (data verze 28) |
 | 2.31 | `b40b6d3` | Kapacity a zaškolení jako vzor (měsíční a týdenní souhrn, vývoj zaškolení, PDF na výšku s Plex Mono, záhlaví reportu); Shortage – ruční TOP, sestava Zobrazit plně, filtr probíhajících operací (data verze 29) |
 | 2.32 | `913c38d` | Shortage – TOP 2 hned pod TOP SHORTAGE, oddělení podle probíhajících operací (uložené nastavení, bloky, filtr, PDF), ruční přesun výběrem i přetažením (data verze 30) |
-| 2.33 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – hranice zaškolení v % v Nastavení, platí pro celé Kapacity a zaškolení (aplikace, PDF, Excel), prázdné = podle Matice (data verze 31) |
+| 2.33 | `5944f8d` | Audit – hranice zaškolení v % v Nastavení, platí pro celé Kapacity a zaškolení (aplikace, PDF, Excel), prázdné = podle Matice (data verze 31) |
+| 2.34 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – PDF po odděleních (každé oddělení od nového papíru, vlastní záhlaví, číslování položek i stran) (data verze 31) |
 
 Verze 2.1 přidala:
 

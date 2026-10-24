@@ -644,12 +644,43 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
     check(text7.indexOf('Brus ·') < text7.indexOf('Montáž a elox ·') && text7.indexOf('Montáž a elox ·') < text7.indexOf('Nezařazeno ·'), 'PDF: oddělení v pořadí');
     check(/TOP 2/.test(text7) && text7.includes('Zpracovat hned po TOP shortage') && / · 1 TOP 2/.test(text7), `PDF: TOP 2 se štítkem, poznámkou a v počtu: ${text7.slice(0, 200)}`);
   }
+  // PDF po odděleních (2.34): každé oddělení od nového papíru, vlastní záhlaví a číslování stran.
+  check(/^PDF po odděleních$/.test((await page.textContent('#shView [data-shpdfdept]')).trim()), 'tlačítko PDF po odděleních');
+  await page.locator('#shView .sh-card .card-head').screenshot({ path: path.join(shots, '02d-tlacitka-pdf.png') });
+  const pdf9 = await download(page, '[data-shpdfdept]', 'shortage-po-oddelenich.pdf');
+  check(/^shortage-\d{4}-\d{2}-\d{2}-\d{4}-po-oddelenich\.pdf$/.test(pdf9.name), `název PDF po odděleních: ${pdf9.name}`);
+  const info9 = pdfInfo(pdf9.path);
+  if (info9) {
+    const secs9 = await page.evaluate(() => shSections(S.shortage, shPdfItems(S.shortage.lists[0])).map(x => ({ name: x.name, eans: x.items.map(i => i.ean) })));
+    const owner = info9.map(p => secs9.filter(x => p.text.replace(/\s+/g, ' ').includes(`${x.name} · strana`)).map(x => x.name));
+    check(owner.every(o => o.length === 1), `každá strana patří jednomu oddělení: ${JSON.stringify(owner)}`);
+    const order = owner.map(o => o[0]).filter((x, i, a) => x !== a[i - 1]);
+    check(JSON.stringify(order) === JSON.stringify(secs9.map(x => x.name)), `oddělení za sebou, každé jednou: ${JSON.stringify(order)}`);
+    secs9.forEach(sec => {
+      const idx = owner.map((o, i) => (o[0] === sec.name ? i : -1)).filter(i => i >= 0);
+      const txt = idx.map(i => info9[i].text).join(' ').replace(/\s+/g, ' ');
+      const first = info9[idx[0]].text.replace(/\s+/g, ' ');
+      check(first.includes(`Chybějící díly · ${sec.name}`) && first.includes(`${sec.name} · strana 1 / ${idx.length}`) && new RegExp(`Seznam z .* · ${sec.eans.length} polož`).test(first), `${sec.name}: záhlaví první strany ${first.slice(0, 220)}`);
+      idx.slice(1).forEach((i, n) => check(info9[i].text.replace(/\s+/g, ' ').includes(`${sec.name} · pokračování`) && info9[i].text.replace(/\s+/g, ' ').includes(`${sec.name} · strana ${n + 2} / ${idx.length}`), `${sec.name}: další strana s pokračováním`));
+      check(sec.eans.every(e => txt.includes(e)), `${sec.name}: všechny díly na jeho stranách`);
+      check(secs9.filter(o => o !== sec).every(o => o.eans.every(e => !txt.includes(e))), `${sec.name}: žádný díl jiného oddělení`);
+    });
+    check(!info9.some(p => /Oddělení: /.test(p.text)), 'po odděleních bez řádku filtru oddělení');
+    check(info9.length >= secs9.length, `stran ${info9.length}, oddělení ${secs9.length}`);
+  }
+  spawnSync('python3', ['-c', `import pymupdf,sys
+d=pymupdf.open(sys.argv[1])
+for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.4,1.4)).save(sys.argv[2]+'-'+str(i+1)+'.png')`, pdf9.path, path.join(shots, 'pdf-po-oddelenich')]);
   await page.click(`#shView .sh-deptf [data-shdf="${brus}"]`);
   await page.waitForSelector(`#shView .sh-deptf [data-shdf="${brus}"][aria-pressed="true"]`);
   vis = await visible();
   const brusNow = await page.evaluate(b => shSections(S.shortage, S.shortage.lists[0].items).find(x => x.id === b).items.map(i => i.ean), brus);
   check(JSON.stringify([...vis.items].sort()) === JSON.stringify([...brusNow].sort()) && JSON.stringify((await heads()).map(h => h.split(' ·')[0])) === JSON.stringify(['Brus']), `filtr oddělení Brus: ${vis.items.length} z ${brusNow.length}`);
   check(/PDF k tisku · vybraná oddělení/.test(await page.textContent('#shView [data-shpdf]')), 'tlačítko PDF: vybraná oddělení');
+  check(/PDF po odděleních · vybraná/.test(await page.textContent('#shView [data-shpdfdept]')), 'tlačítko PDF po odděleních: vybraná');
+  const pdf10 = await download(page, '[data-shpdfdept]', 'shortage-po-oddelenich-brus.pdf');
+  const info10 = pdfInfo(pdf10.path);
+  if (info10) check(info10.every(p => /Brus · strana/.test(p.text.replace(/\s+/g, ' ')) && !/Montáž a elox · strana|Nezařazeno · strana/.test(p.text.replace(/\s+/g, ' '))), 'po odděleních s filtrem: jen Brus');
   const pdf8 = await download(page, '[data-shpdf]', 'shortage-brus.pdf');
   const info8 = pdfInfo(pdf8.path);
   if (info8) {

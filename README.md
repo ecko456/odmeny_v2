@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.34
+
+- **Shortage: PDF po odděleních.** Když máš založená oddělení, je vedle „PDF k tisku“ tlačítko
+  **PDF po odděleních**. Každé oddělení začne na novém papíře, takže na jednom listu nikdy nejsou
+  dvě oddělení a papíry jde rovnou rozdat.
+  - Každý papír má nahoře „Chybějící díly · název oddělení“ a počty jen za to oddělení
+    (položky, poddíly, TOP SHORTAGE, TOP 2). Položky se číslují od 1.
+  - Když se oddělení nevejde na jednu stranu, pokračuje na další s nadpisem „… · pokračování“.
+    V zápatí je „Brus · strana 1 / 2“, strany se počítají za každé oddělení zvlášť.
+  - Platí filtry: s vybranými odděleními vytiskne jen je (tlačítko „PDF po odděleních ·
+    vybraná“), s filtrem operací jen vybrané operace. Skryté v PDF se netisknou jako dosud.
+  - Původní „PDF k tisku“ zůstává beze změny (všechna oddělení za sebou).
+  - Tiskni jednostranně. Při oboustranném tisku by se nové oddělení mohlo dostat na zadní
+    stranu listu předchozího oddělení.
+- Data se nemění (verze dat 31).
+
 ## Co je nového ve verzi 2.33
 
 - **Audit: hranice zaškolení v %.** V Auditu → Nastavení je karta **Hranice zaškolení** s polem
