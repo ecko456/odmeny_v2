@@ -9936,7 +9936,7 @@ function ctrMonth(month) {
     banner, tiles, charts,
     table: { title: `Po skupinách — ${M}`, cols, rows },
     notes: [
-      ['Zaškolený', ` — dovednosti skupiny v matici dovedností v průměru aspoň na úrovni ${r.thr} (${r.thr * 25} %), snímek k poslednímu pracovnímu dni měsíce; u minulých měsíců podle historie hodnocení${est ? ` (u ${est} ${lidiN(est)} bez starší historie nejbližší známé hodnocení)` : ''}. V zácviku = zařazen ve skupině, pod úrovní ${r.thr}.`],
+      ['Zaškolený', ` — procento dovedností skupiny v matici dovedností aspoň ${r.okPct} % (${ctTrainSrc(r)}), snímek k poslednímu pracovnímu dni měsíce; u minulých měsíců podle historie hodnocení${est ? ` (u ${est} ${lidiN(est)} bez starší historie nejbližší známé hodnocení)` : ''}. V zácviku = zařazen ve skupině, pod ${r.okPct} %.`],
       ['Výkon', ` — vykázané normohodiny ÷ odpracované hodiny (docházka + evidence práce), jen lidé ve skupinách. Index: průměr celé ${EXPORT_NAME} za ${r.baseMonth ? monthLabel(r.baseMonth) : 'první měsíc s výkonem'} = 100. Kusy ani normy na osobu se nezobrazují.`],
       ['Výkon zaškolených / v zácviku', ` — stejný výpočet, lidé rozdělení podle stavu v matici k danému měsíci. Vygenerováno ${dayText(today)}.`],
     ],
@@ -9990,7 +9990,7 @@ function ctrWeek(weekId) {
     banner, tiles, charts,
     table: { title: 'Průměr po skupinách', fixed: true, cols: [{ h: 'SKUPINA', a: 'l', w: 224 }, { h: 'Ø PLÁN', a: 'r', w: 134 }, { h: 'Ø DODÁNO', a: 'r', w: 144 }, { h: 'DNÍ V NORMĚ', a: 'r', w: 154 }, { h: 'STAV / ZAŠKOLENÍ', a: 'l' }], rows },
     notes: [
-      ['Zaškolení', ` — podíl lidí přítomných na směně, kteří mají v matici dovednosti skupiny v průměru aspoň na úrovni ${r.thr}. Ø = průměr pracovních dní v týdnu. Plán = lidé ve skupině, kteří měli přijít (bez dovolené a nemoci)${planD.length ? ', plánované dny podle dnešního zařazení' : ''}.`],
+      ['Zaškolení', ` — podíl lidí přítomných na směně, kteří mají v matici aspoň ${r.okPct} % dovedností skupiny (${ctTrainSrc(r)}). Ø = průměr pracovních dní v týdnu. Plán = lidé ve skupině, kteří měli přijít (bez dovolené a nemoci)${planD.length ? ', plánované dny podle dnešního zařazení' : ''}.`],
       ['', `Vygenerováno ${dayText(today)} · zelená = v normě / splněný plán · oranžová = mírně pod (aspoň 80 % dní) · červená = pod plánem.`],
     ],
   };
@@ -10030,7 +10030,7 @@ function ctrDev(from, to) {
     charts: [],
     table: { title: 'Změny hodnocení po lidech', cols, rows },
     notes: [
-      ['Zaškolený', ` — dovednosti skupiny v matici v průměru aspoň na úrovni ${x.thr} (${x.thr * 25} %). Na začátku a na konci podle historie hodnocení (zápis při každé změně), budoucnost podle dnešního hodnocení.`],
+      ['Zaškolený', ` — procento dovedností skupiny v matici aspoň ${x.okPct} % (${ctTrainSrc(x)}). Na začátku a na konci podle historie hodnocení (zápis při každé změně), budoucnost podle dnešního hodnocení.`],
       ['Změny hodnocení', ` — procento dovedností skupiny po každé změně v období. V PDF jsou lidé jen s ID z evidence práce. Vygenerováno ${dayText(today)}.`],
     ],
   };
@@ -10103,6 +10103,7 @@ function waCtHtml() {
       <label class="field"><span>Název v nadpisu</span><input id="waRepPlace" maxlength="60" value="${esc(rep.place)}" placeholder="Report docházky — …" autocomplete="off"></label>
       <label class="field"><span>Firma</span><input id="waRepFirm" maxlength="80" value="${esc(rep.firm)}" autocomplete="off"></label>
       <p class="small muted">Záhlaví stránek jako ve vzoru: „Report docházky — název“, pod ním ${esc(EXPORT_NAME)} · firma. PDF obsahuje za každý měsíc období měsíční souhrn a týdenní souhrny jeho týdnů, na konci vývoj zaškolení.</p>
+      <p class="small muted ctr-train">${waTrainText()} <button class="link" type="button" data-watabgo="nastaveni" data-wafocus="waTrainPct">Změnit v Nastavení</button></p>
     </div>`;
   const keys = [...pages.map(p => `${p.kind}:${p.id}`), 'dev'];
   let cur = ui.wa.ctPage;
@@ -10525,8 +10526,14 @@ function waEditsHtml(r) {
 }
 
 /* ---------- nastavení ---------- */
+/* hranice zaškolení slovy (Nastavení a Kapacity) */
+function waTrainText() {
+  const tr = waTrain();
+  return `Zaškolený od ${tr.pct} % dovedností skupiny, pod ${tr.pct} % v zaškolení${tr.own ? ' (nastaveno v Auditu)' : ` (podle Matice dovedností, úroveň ${tr.thr})`}.`;
+}
 function waSettingsHtml() {
   const wa = S.workAudit;
+  const tr = waTrain();
   const tot = new Map();
   Object.values(wa.pcs).forEach(day => Object.entries(day).forEach(([id, n]) => tot.set(id, (tot.get(id) || 0) + n)));
   const gOpts = sel => `<option value="">— nepočítat —</option>${wa.groups.map(g => `<option value="${esc(g.id)}"${g.id === sel ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}`;
@@ -10566,8 +10573,11 @@ function waSettingsHtml() {
         <div class="chips">${[['all', `Vše (${wa.ops.length})`], ['nogroup', `Bez skupiny (${noGroup})`], ['on', `Počítají se (${wa.ops.length - noGroup})`]].map(([k, t]) => `<button type="button" class="chip${k === f ? ' on' : ''}" data-waopf="${k}" aria-pressed="${k === f}">${t}</button>`).join('')}</div></div>
         <div class="table-card flat"><table class="stack wa-opset"><thead><tr><th>Operace</th><th>Skupina</th><th class="r">Kusy celkem</th></tr></thead><tbody>${opRows || `<tr><td colspan="3"><p class="small muted">Nic neodpovídá.</p></td></tr>`}</tbody></table></div>`
         : '<p class="small">Operace se objeví po nahrání prvního výkazu práce.</p>'}</div>
-    <div class="card wa-target-card"><h3>Požadavek lidí na pracovní den</h3><p class="small muted">Pevný požadavek pro všechny pracovní dny, výchozí je ${WA_TARGET} lidí. Den má požadavek splněný, když je v práci aspoň tolik lidí; z toho se počítá obsazenost proti plánu a výpadky. Prázdné pole = požadavek podle souboru obsazenosti (mělo dorazit + požadavek), den po dni.</p>
+    <div class="grid-2 wa-target-grid"><div class="card wa-target-card"><h3>Požadavek lidí na pracovní den</h3><p class="small muted">Pevný požadavek pro všechny pracovní dny, výchozí je ${WA_TARGET} lidí. Den má požadavek splněný, když je v práci aspoň tolik lidí; z toho se počítá obsazenost proti plánu a výpadky. Prázdné pole = požadavek podle souboru obsazenosti (mělo dorazit + požadavek), den po dni.</p>
       <label class="field wa-target"><span>Pevný požadavek (lidí)</span><input id="waTarget" inputmode="numeric" maxlength="5" autocomplete="off" value="${wa.target == null ? '' : wa.target}" placeholder="podle souboru"></label></div>
+    <div class="card wa-target-card" id="waTrainCard"><h3>Hranice zaškolení</h3><p class="small muted">Platí pro celý Audit (Kapacity a zaškolení v aplikaci, PDF i Excelu). Pracovník, který má v Matici dovedností <b>pod</b> tímto procentem dovedností své skupiny, je <b>v zaškolení</b>; od hranice výš je zaškolený. Prázdné pole = podle Matice dovedností (úroveň ${tr.thr} = ${tr.thr * 25} %).</p>
+      <label class="field wa-target"><span>V zaškolení pod (%)</span><input id="waTrainPct" inputmode="numeric" maxlength="3" autocomplete="off" value="${wa.trainPct == null ? '' : wa.trainPct}" placeholder="${tr.thr * 25}"></label>
+      <p class="small">${waTrainText()}</p></div></div>
     <div class="grid-2">
       <div class="card"><h3>Sloupce souboru obsazenosti</h3><p class="small muted">Písmena sloupců jako v Excelu. Sloupce skupin jsou nahoře u skupin.</p><div class="wa-colgrid">${cols('att', Object.keys(WA_COLS.att))}</div></div>
       <div class="card"><h3>Sloupce výkazu práce</h3><p class="small muted">Datum, název operace a počet kusů.</p><div class="wa-colgrid">${cols('work', Object.keys(WA_COLS.work))}</div>
@@ -10828,7 +10838,13 @@ function bindWorkAudit() {
     const step = t.closest('[data-wastep]');
     if (step) { waStep(+step.dataset.wastep); return; }
     const go = t.closest('[data-watabgo]');
-    if (go) { ui.wa.tab = go.dataset.watabgo; renderWorkAudit(); window.scrollTo({ top: 0, behavior: 'instant' }); return; }
+    if (go) {
+      const focus = go.dataset.wafocus;
+      ui.wa.tab = go.dataset.watabgo; renderWorkAudit();
+      const f = focus && document.getElementById(focus);
+      if (f) { f.scrollIntoView({ block: 'center', behavior: 'instant' }); f.focus({ preventScroll: true }); } else window.scrollTo({ top: 0, behavior: 'instant' });
+      return;
+    }
     const wk = t.closest('[data-waweek]');
     if (wk) { Object.assign(ui.wa, { mode: 'week', week: wk.dataset.waweek, tab: 'dny' }); renderWorkAudit(); return; }
     const undo = t.closest('[data-waundo]');
@@ -10936,6 +10952,16 @@ function bindWorkAudit() {
       if (n == null || !(n > 0) || n > 10000) { toast('Kusy za směnu jsou kladné číslo (třeba 25).', true); renderWorkAudit(); return; }
       S.workAudit.plan.cap.perShift = Math.round(n * 10) / 10;
       save();
+      renderWorkAudit();
+      return;
+    }
+    if (t.id === 'waTrainPct') {
+      const v = t.value.trim().replace(/\s|%/g, '');
+      const n = v ? Number(v.replace(',', '.')) : null;
+      if (v && !(Number.isInteger(n) && n >= 1 && n <= 100)) { toast('Hranice zaškolení je celé procento (1 až 100), nebo nech pole prázdné.', true); renderWorkAudit(); return; }
+      S.workAudit.trainPct = n;
+      save();
+      toast(n ? `Hranice zaškolení: od ${n} % dovedností skupiny.` : 'Hranice zaškolení se bere z Matice dovedností.');
       renderWorkAudit();
       return;
     }

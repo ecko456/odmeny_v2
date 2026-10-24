@@ -34,6 +34,27 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 24. 10. 2026 (verze 2.33):
+
+- Uživatel: „V Audit bych potřeboval mít v nastavení možnost nastavit, do kolika % dovedností
+  u pracovníka se počítá, že je v zaškolení“ a „toto nastavení bude výchozí pro celý modul Audit“.
+  - `S.workAudit.trainPct`: celé procento 1–100, `null` = podle Matice (`S.capReport.thr` × 25).
+    Starší data dostanou `null`, takže se po aktualizaci nic nezmění. Historie `watrain`.
+  - `waTrain()` (core) vrací `{pct, own, thr}`. `capTimeline` z něj bere `lim` (zaškolený =
+    procento ≥ pct) i `prog` (Ø zaškolení = procento ÷ pct) a vrací `okPct`, `okOwn`; souhrny
+    `capMonthReport` a `capWeekReport` je předávají dál. Texty poznámek (`ctrMonth`, `ctrWeek`,
+    `ctrDev`, Excel `capTimelineSheets`) píšou procento a zdroj (`ctTrainSrc`).
+  - V Auditu se zaškolení počítá jen v Kapacitách a zaškolení. Matice, úvod (`staffDay`),
+    plán a skutečnost i report kapacit v Matici dál berou `thr` z Matice. Kusy na směnu ve
+    výrobním plánu s dovednostmi nesouvisí.
+  - UI: karta `#waTrainCard` v Nastavení Auditu vedle požadavku lidí (`.grid-2`), pole
+    `#waTrainPct` (prázdné, „50“ i „50 %“; mimo 1–100 hláška a nic se neuloží), věta
+    `waTrainText()` i v Kapacitách (`.ctr-train`) s odkazem `data-watabgo="nastaveni"`
+    `data-wafocus="waTrainPct"` (skok na pole).
+  - Testy: core „Audit (2.33)“, `e2e_kapacity.js` (Nastavení, neplatná hodnota, poznámky měsíce,
+    týdne a vývoje, PDF, Excel, návrat k Matici, telefon), aktualizace 2.32 → 2.33 v `up218.js`.
+  - Verze dat 31, `ODM_VERSION` 2.33.
+
 Stav k 24. 10. 2026 (verze 2.32):
 
 - Uživatel: „nastavit TOP2 … v řazení hned pod TOP SHORTAGE s poznámkou ‚Zpracovat hned po TOP
@@ -1162,7 +1183,7 @@ Sestava s viditelnými poddíly je nízký šedý řádek (`asm`) bez QR, zázna
 Položky jdou přes `shPdfItems(l)` (bez skrytých, číslování bez mezer; všechno skryté → hláška).
 Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`).
 
-## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30, stránky podle vzoru 2.31)
+## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30, stránky podle vzoru 2.31, hranice zaškolení 2.33)
 
 Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 
@@ -1226,6 +1247,7 @@ Tooltip hledá `.chart-tip` v nejbližším `.wa-charts` (přehled, bilance, pl�
 
 Kapacity a zaškolení (2.30, záložka `kapacity`): nepotřebuje data Auditu (bere jen `wa.target`
 a obsazenost jako požadavek a kontrolu), počítá `capTimeline` z Matice, Docházky a `e.hist`.
+Hranici zaškolení bere z `wa.trainPct` (2.33), bez ní z Matice (`waTrain`).
 Viz „Kde jsme skončili“ 2.30. Lidé na směně = jen lidé ze skupin Matice; skupiny Auditu
 (`wa.groups`) se s nimi nepárují.
 
@@ -1402,7 +1424,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.29.1 | `e18144f` | Shortage – poddíly s jinou operací podle posledního záznamu (kromě „Odesláno na WPA“), orientační řádek sestavy, Skrýt v PDF (data verze 28) |
 | 2.30 | `3cd4eb0` | Audit – Kapacity a zaškolení od–do (vykázáno z docházky, plán ze zařazení, zkušení podle historie hodnocení, vývoj zaškolení, výkon, PDF a Excel) (data verze 28) |
 | 2.31 | `b40b6d3` | Kapacity a zaškolení jako vzor (měsíční a týdenní souhrn, vývoj zaškolení, PDF na výšku s Plex Mono, záhlaví reportu); Shortage – ruční TOP, sestava Zobrazit plně, filtr probíhajících operací (data verze 29) |
-| 2.32 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – TOP 2 hned pod TOP SHORTAGE, oddělení podle probíhajících operací (uložené nastavení, bloky, filtr, PDF), ruční přesun výběrem i přetažením (data verze 30) |
+| 2.32 | `913c38d` | Shortage – TOP 2 hned pod TOP SHORTAGE, oddělení podle probíhajících operací (uložené nastavení, bloky, filtr, PDF), ruční přesun výběrem i přetažením (data verze 30) |
+| 2.33 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – hranice zaškolení v % v Nastavení, platí pro celé Kapacity a zaškolení (aplikace, PDF, Excel), prázdné = podle Matice (data verze 31) |
 
 Verze 2.1 přidala:
 
@@ -1782,7 +1805,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 78 testů: proti původní aplikaci + opravy + 2.1 až 2.32
+node tests/test_core.js                 # 79 testů: proti původní aplikaci + opravy + 2.1 až 2.33
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

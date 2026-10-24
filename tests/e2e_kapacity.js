@@ -3,7 +3,8 @@
 // (zaškolování), nemoc, vyřazený, vedoucí a lidé bez skupiny, evidence práce s normou. Kontroluje
 // měsíční souhrn, týdenní souhrn a vývoj zaškolení (texty, tabulky proti výpočtu, grafy s tooltipem),
 // záhlaví reportu, vlastní období, PDF na výšku (text, jen ID, žádná jména, Plex Mono) a Excel
-// (listy a součty proti výpočtu), telefon a tmavý režim. Všechna data jsou vymyšlená.
+// (listy a součty proti výpočtu), hranici zaškolení z Nastavení Auditu (2.33), telefon a tmavý režim.
+// Všechna data jsou vymyšlená.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
@@ -282,6 +283,68 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   check(JSON.stringify([book.lidi, book.ok, book.realH]) === JSON.stringify(book.exp), `Excel Souhrn ${[book.lidi, book.ok, book.realH]} ≠ ${book.exp}`);
   check(book.devRows === book.devExp, `Excel Vývoj zaškolení: ${book.devRows} ≠ ${book.devExp}`);
 
+  // Hranice zaškolení (2.33): vlastní procento v Nastavení Auditu platí pro celý report (aplikace, PDF, Excel).
+  const M0 = await page.evaluate(() => todayIso().slice(0, 7));
+  await page.click(`#waView .ctr-nav [data-wactpage="month:${M0}"]`);
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="month"]');
+  const before = await page.evaluate(m => { const r = capMonthReport(m); return { tr: waTrain(), ok: r.tot.ok, tr2: r.tot.tr }; }, M0);
+  check(before.tr.pct === before.tr.thr * 25 && !before.tr.own, `výchozí hranice podle Matice: ${JSON.stringify(before.tr)}`);
+  check((await page.textContent('#waView .ctr-train')).includes(`Zaškolený od ${before.tr.pct} % dovedností skupiny, pod ${before.tr.pct} % v zaškolení (podle Matice dovedností, úroveň ${before.tr.thr})`), 'Kapacity: hranice podle Matice');
+  await page.click('#waView .ctr-train [data-watabgo="nastaveni"]');
+  await page.waitForSelector('#waTrainPct');
+  check(await page.evaluate(() => ui.wa.tab === 'nastaveni' && document.activeElement && document.activeElement.id === 'waTrainPct'), 'odkaz Změnit v Nastavení skočí na pole hranice');
+  check(await page.getAttribute('#waTrainPct', 'placeholder') === String(before.tr.pct) && await page.inputValue('#waTrainPct') === '', 'prázdné pole s výchozí hodnotou z Matice');
+  await page.fill('#waTrainPct', '150');
+  await page.press('#waTrainPct', 'Tab');
+  await page.waitForFunction(() => /Hranice zaškolení je celé procento/.test(document.querySelector('#toast').textContent));
+  check(await page.evaluate(() => S.workAudit.trainPct === null) && await page.inputValue('#waTrainPct') === '', 'neplatná hranice se neuloží');
+  await page.fill('#waTrainPct', '50 %');
+  await page.press('#waTrainPct', 'Tab');
+  await page.waitForFunction(() => S.workAudit.trainPct === 50);
+  await saved(page);
+  check(/Hranice zaškolení: od 50 % dovedností skupiny\./.test(await page.textContent('#toast')), 'hláška po uložení hranice');
+  check((await page.textContent('#waTrainCard')).includes('Zaškolený od 50 % dovedností skupiny, pod 50 % v zaškolení (nastaveno v Auditu)'), 'Nastavení: hranice slovy');
+  await page.locator('#waTrainCard').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, '06-hranice-nastaveni.png'), fullPage: false });
+  await page.click('#waTabs [data-watab="kapacity"]');
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="month"]');
+  const after = await page.evaluate(m => { const r = capMonthReport(m); return { ok: r.tot.ok, tr: r.tot.tr, n: r.tot.n }; }, M0);
+  check(after.ok >= before.ok && after.ok + after.tr === before.ok + before.tr2 && after.ok > before.ok, `nižší hranice = víc zaškolených: ${JSON.stringify([before, after])}`);
+  text = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
+  check(text.includes('procento dovedností skupiny v matici dovedností aspoň 50 % (hranice zaškolení z nastavení Auditu)') && text.includes('V zácviku = zařazen ve skupině, pod 50 %'), `měsíc: poznámka s hranicí ${text.slice(-700)}`);
+  const sumRow2 = await page.$$eval('#waView .ctr-tab tr.sum td', tds => tds.slice(1, 4).map(td => +td.textContent.trim()));
+  check(JSON.stringify(sumRow2) === JSON.stringify([after.n, after.ok, after.tr]), `měsíc CELKEM s hranicí ${sumRow2}`);
+  await page.screenshot({ path: path.join(shots, '07-hranice-mesic.png'), fullPage: true });
+  await page.click(`#waView [data-wactpage="week:${x.week}"]`);
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
+  check((await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ').includes('aspoň 50 % dovedností skupiny (hranice zaškolení z nastavení Auditu)'), 'týden: poznámka s hranicí');
+  await page.click('#waView [data-wactpage="dev"]');
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="dev"]');
+  check((await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ').includes('aspoň 50 % (hranice zaškolení z nastavení Auditu)'), 'vývoj: poznámka s hranicí');
+  const pdf2 = await download(page, '[data-wactpdf]', 'kapacity-hranice.pdf');
+  const pages2 = pdfText(pdf2.path);
+  if (pages2) check(pages2.join(' ').replace(/\s+/g, ' ').includes('aspoň 50 %'), 'PDF: poznámky s hranicí 50 %');
+  const xl2 = await download(page, '[data-wactxlsx]', 'kapacity-hranice.xlsx');
+  const book2 = await page.evaluate(async b64 => {
+    const X = await xlsx();
+    const wb = X.read(Uint8Array.from(atob(b64), ch => ch.charCodeAt(0)), { type: 'array' });
+    const sum = X.utils.sheet_to_json(wb.Sheets['Souhrn'], { header: 1 });
+    const hdr = sum.findIndex(r => r[0] === 'Oddělení'), tot = sum.find(r => r[1] === 'Všechny skupiny');
+    const r = waCtRange(), t = capTimeline(r.from, r.to);
+    return { note: sum.slice(0, 4).map(r => r[0]).join(' '), ok: tot[sum[hdr].indexOf('Zkušení')], exp: t.end.tot.ok };
+  }, fs.readFileSync(xl2.path).toString('base64'));
+  check(book2.note.includes('aspoň 50 % (hranice zaškolení z nastavení Auditu') && book2.ok === book2.exp, `Excel s hranicí: ${JSON.stringify(book2)}`);
+  // prázdné pole = zpátky podle Matice
+  await page.click('#waTabs [data-watab="nastaveni"]');
+  await page.fill('#waTrainPct', '');
+  await page.press('#waTrainPct', 'Tab');
+  await page.waitForFunction(() => S.workAudit.trainPct === null);
+  await saved(page);
+  check((await page.textContent('#waTrainCard')).includes('(podle Matice dovedností, úroveň'), 'prázdná hranice = podle Matice');
+  await page.click('#waTabs [data-watab="kapacity"]');
+  await page.waitForSelector('#waView .ctr-paper');
+  check(await page.evaluate(m => capMonthReport(m).tot.ok, M0) === before.ok, 'po vrácení stejný počet zaškolených jako na začátku');
+
   // Vlastní období: jen budoucnost = jen plán.
   const fut = { from: await page.evaluate(() => addDays(todayIso(), 40)), to: await page.evaluate(() => addDays(todayIso(), 70)) };
   await page.fill('#waCtFrom', fut.from);
@@ -306,6 +369,13 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   await page.waitForTimeout(200);
   check(await overflow(page) <= 1, `telefon: přetečení ${await overflow(page)} px`);
   await page.screenshot({ path: path.join(shots, '04-telefon.png'), fullPage: true });
+  await page.click('#waTabs [data-watab="nastaveni"]');
+  await page.waitForSelector('#waTrainPct');
+  await page.locator('#waTrainCard').scrollIntoViewIfNeeded();
+  check(await overflow(page) <= 1 && await page.evaluate(() => document.querySelector('#waTrainCard').getBoundingClientRect().width) > 300, 'telefon: hranice zaškolení přes celou šířku');
+  await page.screenshot({ path: path.join(shots, '08-hranice-telefon.png'), fullPage: false });
+  await page.click('#waTabs [data-watab="kapacity"]');
+  await page.waitForSelector('#waView .ctr-paper');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.emulateMedia({ colorScheme: 'dark' });
   await page.waitForTimeout(200);

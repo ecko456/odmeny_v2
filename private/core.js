@@ -1339,6 +1339,13 @@ function ctPctAt(e,pos,ts){
   if(best)return {pct:best.pct,src:"hist"};
   return {pct:skillPct(e,pos),src:"now"};
 }
+/* Hranice zaškolení pro celý Audit (2.33): procento dovedností skupiny, od kterého je pracovník
+   zaškolený (pod ní v zácviku). Bez vlastní hodnoty v Nastavení Auditu platí úroveň
+   „Kdo se počítá jako zkušený pracovník“ z Matice × 25 %. */
+function waTrain(){
+  const thr=clamp(Math.round(+(S.capReport||blankCapReport()).thr||3),1,4),own=S.workAudit&&S.workAudit.trainPct||null;
+  return {pct:own||thr*25,own:!!own,thr};
+}
 function capTimeline(from,to,opts){
   opts=opts||{};
   if(!ISO_DAY.test(String(from))||!ISO_DAY.test(String(to)))return null;
@@ -1346,8 +1353,8 @@ function capTimeline(from,to,opts){
   let cut=false;
   if(daysBetween(from,to)>CT_MAX_DAYS){to=addDays(from,CT_MAX_DAYS);cut=true;}
   const now=opts.now||Date.now(),today=todayIso(now);
-  const rep=S.capReport||blankCapReport(),thr=clamp(Math.round(+rep.thr||3),1,4),lim=thr*25-1e-9;
-  const prog=v=>Math.min(1,(v||0)/(thr*25));
+  const rep=S.capReport||blankCapReport(),tr=waTrain(),thr=tr.thr,okPct=tr.pct,lim=okPct-1e-9;
+  const prog=v=>Math.min(1,(v||0)/okPct);
   const wa=S.workAudit||null,ex=excusedSet(),filled=attFilledDays();
   const groups=S.positions.filter(isGroup);
   const gIdx=new Map(groups.map((p,i)=>[p.id,i]));
@@ -1505,7 +1512,7 @@ function capTimeline(from,to,opts){
     const f=x=>({ok:idx(x.ok),tr:idx(x.tr),all:idx(x.all)});
     perf={groups:gs.map(ctPerfFin),tot:ctPerfFin(tot)};perf.idx={tot:f(perf.tot),groups:perf.groups.map(f)};
   }
-  return {from,to,cut,today,thr,groups,days:outDays,weeks:weeks.map(w=>{const l=byWeek.get(w);return {id:w,...sumDays(l),roster:rosterAt(l[l.length-1].iso)};}),months:monthList,
+  return {from,to,cut,today,thr,okPct,okOwn:tr.own,groups,days:outDays,weeks:weeks.map(w=>{const l=byWeek.get(w);return {id:w,...sumDays(l),roster:rosterAt(l[l.length-1].iso)};}),months:monthList,
     total:sumDays(outDays),real:sumDays(realDays),plan:sumDays(planDays),start,end,dev,perf,perfBase:baseV,
     lastReal:realDays.length?realDays[realDays.length-1].iso:"",firstPlan:planDays.length?planDays[0].iso:"",
     pastPlan:planDays.filter(d=>d.past).map(d=>d.iso),
@@ -1520,6 +1527,8 @@ function ctShare(c){return c.onOk+c.onTr>0?c.onOk/(c.onOk+c.onTr):null;}
 function ctFill(c){return c.rPlanH>0?c.realH/c.rPlanH:null;}
 const CT_KIND={real:"vykázáno",plan:"plánováno",mix:"vykázáno a plán"};
 
+/* odkud je hranice zaškolení (text do poznámek reportu) */
+function ctTrainSrc(x){return x.okOwn?"hranice zaškolení z nastavení Auditu":"úroveň "+x.thr+" z Matice dovedností";}
 /* Excel kapacit a zaškolení: Souhrn, Po dnech, Po týdnech, Po měsících, Vývoj zaškolení. */
 function capTimelineSheets(x){
   if(!x)return [];
@@ -1527,7 +1536,7 @@ function capTimelineSheets(x){
   const dl=iso=>{const [y,m,d]=iso.split("-").map(Number);return DOW[mkDay(y,m,d).dow]+" "+d+". "+m+". "+y;};
   const head=[["Kapacity a zaškolení – "+dayText(x.from)+" – "+dayText(x.to)],
     ["Vykázáno = pracovní dny s nahranou docházkou"+(x.lastReal?" (poslední "+dayText(x.lastReal)+")":"")+", plánováno = ostatní pracovní dny podle dnešního zařazení, směn a střídání skupin 1 a 2. Víkendy a svátky se nepočítají."],
-    ["Zkušený pracovník = procento skupiny aspoň úroveň "+x.thr+" (u vykázaných dnů a stavů v minulosti podle historie hodnocení k danému dni, u plánu dnešní hodnocení). Ostatní ve skupině jsou pracovníci v zácviku; Ø zaškolení = jejich procento ÷ cíl ("+x.thr*25+" %)."],
+    ["Zkušený pracovník = procento dovedností skupiny aspoň "+x.okPct+" % ("+ctTrainSrc(x)+"; u vykázaných dnů a stavů v minulosti podle historie hodnocení k danému dni, u plánu dnešní hodnocení). Ostatní ve skupině jsou pracovníci v zácviku; Ø zaškolení = jejich procento ÷ cíl ("+x.okPct+" %)."],
     ["Na směně = lidé ze skupin Matice dovedností v práci (vykázáno: hodiny bez kódu nepřítomnosti), nebo podle plánu (bez nemocných, vyřazených a vedoucích). Požadavek z Auditu; v normě = na směně aspoň požadavek."],
     ...(x.pastPlan.length?[["Docházka chybí pro "+x.pastPlan.length+" pracovních dní v minulosti (např. "+x.pastPlan.slice(0,3).map(iso=>dayText(iso)).join(", ")+"), počítají se jako plán."]]:[]),
     ...x.missing.map(m=>["V docházce za "+monthLabel(m.month)+" chybí "+m.keys.length+" lidí ze skupin (jiné jméno, nebo tehdy nepracovali), do vykázaných dnů se nepočítají."]),
@@ -1633,7 +1642,7 @@ function capMonthReport(month,opts){
     from:month+"-01",to:ctLastDay(month),snap:cur.roster.iso,real:cur.real,plan:cur.plan,
     lastReal:cur.real?[...x.days].reverse().find(d=>d.month===month&&d.kind==="real").iso:"",
     firstPlan:cur.plan?x.days.find(d=>d.month===month&&d.kind!=="real").iso:"",
-    noGroup:x.noGroup,thr:x.thr};
+    noGroup:x.noGroup,thr:x.thr,okPct:x.okPct,okOwn:x.okOwn};
 }
 /* Týdenní souhrn: pracovní dny proti požadavku (z toho zaškolení) a průměr po skupinách.
    Plán skupiny = kdo měl přijít: ve vykázaném dni lidé ve skupině s docházkou bez omluvené
@@ -1660,7 +1669,7 @@ function capWeekReport(weekId,opts){
     return d?{iso,day,kind:d.kind,on:d.tot.on,ok:d.tot.onOk,tr:d.tot.onTr,plan:Math.round(planOf(d)*1e6)/1e6,req:d.req,met:inNorm(d)}:{iso,day,kind:"off",on:0,ok:0,tr:0,plan:0,req:null,met:null};});
   return {week:w,id:weekId,x,days,groups,n,req:x.total.reqAvg,reqSame:reqs.length===1,reqDays,met,
     tot:{plan:n?plan/n:0,on:n?on/n:0,ok:n?ok/n:0,share:on?ok/on:null,met,state:ctState(met,n)},
-    real:x.real.n,plan:x.plan.n,kind:x.total.kind,thr:x.thr,noGroup:x.noGroup};
+    real:x.real.n,plan:x.plan.n,kind:x.total.kind,thr:x.thr,okPct:x.okPct,okOwn:x.okOwn,noGroup:x.noGroup};
 }
 /* Stránky PDF pro období od–do: za každý měsíc měsíční souhrn a za ním týdenní souhrny týdnů,
    jejichž čtvrtek do měsíce patří (ISO týden). */
@@ -2084,7 +2093,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=30;
+const DATA_VERSION=31;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -3974,7 +3983,7 @@ const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
 /* Požadavek lidí na pracovní den (2.18.1): pevně 100 lidí, null = podle plánu v souboru obsazenosti. */
 const WA_TARGET=100;
-function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""}};}
+function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null};}
 /* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
    jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
 function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}
@@ -4030,6 +4039,8 @@ function cleanWorkAudit(o){
   out.plan=cleanWaPlan(o.plan,gids);
   /* záhlaví reportů (2.31): pracoviště a firma, jako „Report docházky — pracoviště“ ve vzoru */
   const rp=obj(o.rep);out.rep={place:str(rp.place,60).replace(/\s+/g," ").trim(),firm:str(rp.firm,80).replace(/\s+/g," ").trim()};
+  /* hranice zaškolení (2.33): od kolika % dovedností skupiny je pracovník zaškolený; null = podle Matice */
+  const tp=cnt(o.trainPct);out.trainPct=tp!=null&&tp>=1&&tp<=100?Math.round(tp):null;
   return out;
 }
 const WA_PLAN_FIELDS=["order","ean","ks","index","due","tech"];
@@ -4573,6 +4584,7 @@ function waChanges(A,B,add){
   });
   if(JSON.stringify(A.cols)!==JSON.stringify(B.cols))add("workaudit","Audit: změněny sloupce souborů",{m:"wacols"});
   if((A.target||null)!==(B.target||null))add("workaudit","",{m:"watarget",p:"Audit – požadavek lidí na pracovní den: ",v0:A.target?String(A.target):"podle plánu v souboru",v1:B.target?String(B.target):"podle plánu v souboru"});
+  if((A.trainPct||null)!==(B.trainPct||null))add("workaudit","",{m:"watrain",p:"Audit – hranice zaškolení: ",v0:A.trainPct?"od "+A.trainPct+" %":"podle Matice dovedností",v1:B.trainPct?"od "+B.trainPct+" %":"podle Matice dovedností"});
   const ra=A.rep||{},rb=B.rep||{};
   if((ra.place||"")!==(rb.place||"")||(ra.firm||"")!==(rb.firm||""))add("workaudit","",{m:"warep",p:"Audit – záhlaví reportů: ",v0:[ra.place,ra.firm].filter(Boolean).join(" · ")||"bez názvu",v1:[rb.place,rb.firm].filter(Boolean).join(" · ")||"bez názvu"});
   const pa=A.plan||blankWaPlan(),pb=B.plan||blankWaPlan();

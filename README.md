@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.33
+
+- **Audit: hranice zaškolení v %.** V Auditu → Nastavení je karta **Hranice zaškolení** s polem
+  „V zaškolení pod (%)“. Pracovník, který má v Matici dovedností pod tímto procentem dovedností
+  své skupiny, je v zaškolení (v zácviku), od hranice výš je zaškolený. Třeba 60 = do 59 % v
+  zaškolení, od 60 % zaškolený.
+  - Hranice platí pro celý Audit: Kapacity a zaškolení v aplikaci (měsíční a týdenní souhrn,
+    vývoj zaškolení), PDF i Excel. Ø zaškolení lidí v zácviku se počítá proti ní.
+  - Prázdné pole = jako dosud podle Matice dovedností (volba „Kdo se počítá jako zkušený
+    pracovník“, třeba úroveň 3 = 75 %). Matici dovedností ani úvodní obrazovku hranice Auditu
+    nemění.
+  - V Kapacitách je nad stránkami reportu věta, jaká hranice platí, s odkazem „Změnit v
+    Nastavení“. Poznámky reportu (i v PDF a Excelu) píšou procento a odkud je.
+  - Změna se zapíše do historie změn.
+- Verze dat 31: stará stránka nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.32
 
 - **Shortage: TOP 2.** Tlačítko **TOP2** na konci řádku označí položku jako TOP 2: v seznamu je
