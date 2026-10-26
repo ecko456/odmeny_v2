@@ -20,7 +20,7 @@ const ui = {
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
-  sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false },
+  sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null },
   wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
@@ -8335,6 +8335,69 @@ function shAddList(r, src) {
     dropped ? `Drží se posledních ${SH_MAX_LISTS} seznamů, nejstarší se smazal.` : '',
   ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}${planRes ? shPlanNote(planRes, ui.sh.plan, true) : ''}`;
 }
+/** Nový seznam, nebo v režimu Doplnit chybějící (2.36) jen chybějící položky do vybraného seznamu. */
+function shTake(r, src) {
+  const l = ui.sh.merge && shc().lists.find(x => x.id === ui.sh.merge);
+  if (l) { shMergeInto(l, r, src); return; }
+  ui.sh.merge = null;
+  shAddList(r, src);
+}
+/** Doplnění chybějících (2.36): položky, které v seznamu nejsou, se přidají na konec své skupiny
+    (TOP, TOP 2, ostatní); položky, které v seznamu už jsou, zůstanou beze změny. Ručně odebrané
+    se vrátí jen na přání. Poddíly z výrobního plánu v paměti okna jen u doplněných. */
+async function shMergeInto(l, r, src) {
+  const msg = $('#shMsg');
+  const from = src.paste ? 'ze schránky' : `ze souboru <b>${esc(src.file)}</b>`;
+  const plan = shMergePlan(l, r.items, false);
+  const stop = html => { ui.sh.merge = null; renderShortage(); msg.innerHTML = html; };
+  if (!plan.add.length && !plan.gone.length) {
+    const h = plan.have;
+    stop(`<div class="note i">Nic nechybí: ${h === 1 ? `vložená položka ${from} už v seznamu z ${esc(shWhen(l))} je` : `${h <= 4 ? 'všechny' : 'všech'} ${h} ${shItemsN(h)} ${from} už v seznamu z ${esc(shWhen(l))} ${h <= 4 ? 'jsou' : 'je'}`}.</div>`);
+    return;
+  }
+  const tag = i => (i.top ? ' <span class="tag sh-toptag">TOP</span>' : i.top2 ? ' <span class="tag sh-top2tag">TOP 2</span>' : '');
+  const rows = plan.add.slice(0, 8).map(i => `<tr><td class="num">${esc(i.order || '—')}</td><td>${esc(i.name || '—')}${tag(i)}</td><td class="num">${esc(i.ean || '—')}</td><td class="r num">${esc(i.qty || '—')}</td></tr>`).join('');
+  const goneN = plan.gone.length;
+  const res = await dialog({
+    title: 'Doplnit chybějící', ok: plan.add.length ? `Doplnit ${plan.add.length}` : 'Doplnit', wide: true,
+    html: `<p>Do seznamu z <b>${esc(shWhen(l))}</b> ${from}: ${plan.add.length ? `<b>${plan.add.length} ${shPl(plan.add.length, 'položka chybí', 'položky chybí', 'položek chybí')}</b>` : `kromě ${goneN === 1 ? 'položky, kterou' : 'položek, které'} jsi ze seznamu odebral, nic nechybí`}${plan.have ? `, ${plan.have} ${shPl(plan.have, 'už v seznamu je', 'už v seznamu jsou', 'už v seznamu je')}` : ''}.</p>
+      <p class="small muted">Položky, které v seznamu už jsou, zůstanou, jak jsou: pořadí, množství, TOP, oddělení, poznámky i poslední záznamy. Doplněné půjdou na konec své skupiny (TOP SHORTAGE, TOP 2, ostatní).</p>
+      ${rows ? `<table class="wa-prev sh-mprev"><thead><tr><th>Objednávka</th><th>Název dílu</th><th>EAN</th><th class="r">Množství</th></tr></thead><tbody>${rows}</tbody></table>${plan.add.length > 8 ? `<p class="tiny muted">… a ${plan.add.length - 8} dalších</p>` : ''}` : ''}
+      ${goneN ? `<label class="check sh-mgone"><input type="checkbox" name="back"><span>Vrátit i ${goneN} ${shPl(goneN, 'položku', 'položky', 'položek')}, ${goneN === 1 ? 'kterou' : 'které'} jsi ze seznamu odebral (${esc(plan.gone.slice(0, 3).map(i => i.ean || i.name).join(', '))}${goneN > 3 ? ' …' : ''}).</span></label>` : ''}`,
+  });
+  if (res.value !== 'ok') return;
+  const back = !!(res.form && res.form.elements.namedItem('back') && res.form.elements.namedItem('back').checked);
+  const fin = back ? shMergePlan(l, r.items, true) : plan;
+  if (!fin.add.length) { stop(`<div class="note i">Nic se nedoplnilo: ${goneN} ${shPl(goneN, 'chybějící položku', 'chybějící položky', 'chybějících položek')} jsi ze seznamu dřív odebral.</div>`); return; }
+  let add = fin.add.map(i => ({ ...i }));
+  let planRes = null;
+  if (ui.sh.plan) { const tmp = { items: add }; planRes = shApplyPlan(tmp, ui.sh.plan); add = tmp.items; }
+  if (back) { const keys = new Set(fin.add.map(shItemKey)); l.gone = (l.gone || []).filter(k => !keys.has(k)); }
+  l.items = shTopFirst([...l.items, ...add]);
+  S.shortage = cleanShortage(S.shortage);   // id doplněných položek a poddílů
+  ui.sh.merge = null;
+  ui.sh.q = '';
+  save();
+  renderShortage();
+  const n = fin.add.length, skipped = back ? 0 : goneN;
+  const noLink = add.filter(i => !i.link).length, noCode = add.filter(i => i.link && !i.code).length;
+  msg.innerHTML = `<div class="note i">${src.paste ? 'Vloženo' : 'Nahráno'} ${from}: do seznamu z <b>${esc(shWhen(l))}</b> ${n === 1 ? 'doplněna' : n <= 4 ? 'doplněny' : 'doplněno'} <b>${n} ${shItemsN(n)}</b>${fin.have ? `, ${fin.have} ${shPl(fin.have, 'už v seznamu byla', 'už v seznamu byly', 'už v seznamu bylo')} (beze změny)` : ''}${skipped ? `, ${skipped} ${shPl(skipped, 'odebraná se nevrátila', 'odebrané se nevrátily', 'odebraných se nevrátilo')}` : ''}.</div>${[
+    src.plain && noLink ? 'Ve schránce byl jen text bez odkazů, doplněné položky proto nemají QR kód. Zkopíruj buňky přímo z Excelu (Ctrl+C), nebo nahraj soubor.' : '',
+    !src.plain && noLink ? `${noLink} ${shPl(noLink, 'doplněná položka nemá', 'doplněné položky nemají', 'doplněných položek nemá')} hypertextový odkaz, v PDF ${noLink === 1 ? 'bude' : 'budou'} bez QR kódu.` : '',
+    noCode ? `${noCode} ${shPl(noCode, 'doplněná položka má', 'doplněné položky mají', 'doplněných položek má')} odkaz bez activeBarcode, v PDF ${noCode === 1 ? 'bude' : 'budou'} bez QR kódu.` : '',
+  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}${planRes ? shPlanNote(planRes, ui.sh.plan, true) : ''}`;
+}
+/** Pruh nad polem pro vložení: do kterého seznamu se doplňuje (2.36). */
+function shMergeBar() {
+  const bar = $('#shMergeBar');
+  if (!bar) return;
+  const l = ui.sh.merge && shc().lists.find(x => x.id === ui.sh.merge);
+  if (!l) ui.sh.merge = null;
+  bar.hidden = !l;
+  $('#view-shortage .sh-paste').classList.toggle('merge', !!l);
+  bar.innerHTML = l ? `<div><b>Doplnit chybějící do seznamu z ${esc(shWhen(l))}</b> · vlož tabulku z Excelu (Ctrl+V) do pole níže, nebo ji nahraj tlačítkem Nahrát Excel. Přidají se jen položky, které v seznamu chybí; nový seznam nevznikne.</div>
+    <button class="btn ghost small" type="button" data-shmergeoff>Zrušit</button>` : '';
+}
 const SH_NONE = 'Čeká se číslo objednávky ve sloupci A, název dílu v B a EAN s odkazem v C (D index, E urgentní množství, G TOP, H probíhající operace).';
 
 async function shImportFile(file) {
@@ -8356,7 +8419,7 @@ async function shImportFile(file) {
       msg.innerHTML = `<div class="note w">V souboru <b>${esc(file.name)}</b> není žádná položka. ${esc(SH_NONE)}</div>`;
       return;
     }
-    shAddList(best.r, { file: file.name, sheet: wb.SheetNames.length > 1 ? best.name : '' });
+    shTake(best.r, { file: file.name, sheet: wb.SheetNames.length > 1 ? best.name : '' });
   } catch (error) {
     msg.innerHTML = `<div class="note w">Soubor se nepodařilo otevřít: ${esc(error.message)}</div>`;
   }
@@ -8400,7 +8463,7 @@ function shPaste(html, text) {
     msg.innerHTML = `<div class="note w">Ve schránce není tabulka se seznamem. Označ v Excelu řádky seznamu (klidně i s nadpisy), zkopíruj je (Ctrl+C) a vlož sem (Ctrl+V). ${esc(SH_NONE)}</div>`;
     return;
   }
-  shAddList(r, { file: 'vloženo ze schránky', paste: true, plain: clip.plain });
+  shTake(r, { file: 'vloženo ze schránky', paste: true, plain: clip.plain });
 }
 /** Poslední záznamy ze schránky k položkám otevřeného seznamu (podle QR kódu). */
 function shPasteRecs(rows) {
@@ -8589,6 +8652,7 @@ async function shPlanImport(file) {
 function renderShortage() {
   const box = $('#shView');
   if (!box || !S) return;
+  shMergeBar();
   const c = shc();
   const l = shList();
   if (!l) {
@@ -8688,6 +8752,7 @@ function renderShortage() {
       <div class="card-head"><div><h2>Seznam z ${esc(shWhen(l))}</h2>
         <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}${hidN ? ` · <b>${hidN} skryt${hidN === 1 ? 'á' : hidN <= 4 ? 'é' : 'ých'} v PDF</b>` : ''}</p></div>
         <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat objednávku, díl, EAN, operaci" autocomplete="off"></label>
+          <button class="btn sec small${ui.sh.merge === l.id ? ' on' : ''}" type="button" data-shmerge="${esc(l.id)}" aria-pressed="${ui.sh.merge === l.id}" title="Znovu vložit urgenty: do tohoto seznamu se přidají jen položky, které v něm chybí">Doplnit chybějící</button>
           <button class="btn small" type="button" data-shpdf="${esc(l.id)}"${n ? '' : ' disabled'}>${dsel ? (sel ? 'PDF k tisku · vybraná oddělení a operace' : 'PDF k tisku · vybraná oddělení') : sel ? 'PDF k tisku · vybrané operace' : 'PDF k tisku'}</button>
           ${depts.length ? `<button class="btn sec small" type="button" data-shpdfdept="${esc(l.id)}"${n ? '' : ' disabled'} title="Každé oddělení začne na novém papíře, s vlastním záhlavím a číslováním">PDF po odděleních${dsel ? ' · vybraná' : ''}</button>` : ''}
           <button class="icon-btn" type="button" data-shdel="${esc(l.id)}" title="Smazat seznam" aria-label="Smazat seznam z ${esc(shWhen(l))}">${I.x}</button></div></div>
@@ -8870,10 +8935,19 @@ function bindShortage() {
     if (t.closest('[data-shimport]')) { $('#shFile').click(); return; }
     const pdf = t.closest('[data-shpdf]');
     if (pdf) { exportShortagePdf(pdf.dataset.shpdf, pdf); return; }
+    const mg = t.closest('[data-shmerge]');
+    if (mg) {
+      ui.sh.merge = ui.sh.merge === mg.dataset.shmerge ? null : mg.dataset.shmerge;
+      $('#shMsg').innerHTML = '';
+      renderShortage();
+      if (ui.sh.merge) { $('#shMergeBar').scrollIntoView({ block: 'nearest' }); $('#shPaste').focus({ preventScroll: true }); }
+      return;
+    }
+    if (t.closest('[data-shmergeoff]')) { ui.sh.merge = null; renderShortage(); return; }
     const pdfd = t.closest('[data-shpdfdept]');
     if (pdfd) { exportShortagePdf(pdfd.dataset.shpdfdept, pdfd, true); return; }
     const open = t.closest('[data-shopen]');
-    if (open) { ui.sh.open = open.dataset.shopen; ui.sh.q = ''; $('#shMsg').innerHTML = ''; renderShortage(); return; }
+    if (open) { ui.sh.open = open.dataset.shopen; ui.sh.q = ''; ui.sh.merge = null; $('#shMsg').innerHTML = ''; renderShortage(); return; }
     if (t.closest('[data-shplanuse]')) {
       const l = shList();
       if (!l || !ui.sh.plan) return;
@@ -8988,6 +9062,7 @@ function bindShortage() {
       const it = l && l.items.find(i => i.id === delItem.dataset.shdelitem);
       if (!it || !(await confirmBox('Odebrat položku?', `${[it.ean, it.name].filter(Boolean).join(' · ') || 'Položka'} zmizí ze seznamu z ${shWhen(l)}. Už stažené PDF zůstane.`, 'Odebrat', true))) return;
       l.items = l.items.filter(i => i !== it);
+      l.gone = [...new Set([...(l.gone || []), shItemKey(it)])].slice(-SH_MAX_GONE);   // Doplnit chybějící ji nevrátí (2.36)
       save(); renderShortage();
       toast('Položka je odebraná.');
       return;

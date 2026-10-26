@@ -1921,6 +1921,14 @@ table.sv-dev-tab tr.dup:hover td { background: color-mix(in srgb, var(--crit) 14
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .sh-paste { display: flex; align-items: center; gap: 14px; margin: 0 0 14px; padding: 12px 14px; border: 1.5px dashed var(--line-2); border-radius: 16px; background: var(--surface); color: var(--ink-2); font-size: 14px; cursor: text; }
 .sh-paste:focus-within { border-color: var(--acc); background: var(--acc-soft); }
+/* Doplnit chybějící (2.36): pruh nad polem pro vložení a zvýrazněné pole */
+.sh-mergebar { display: flex; align-items: center; gap: 14px; margin: 0 0 8px; padding: 10px 14px; border-radius: 14px; background: var(--acc-soft); border: 1px solid var(--acc-line); color: var(--ink); font-size: 14px; }
+.sh-mergebar > div { flex: 1 1 auto; }
+.sh-mergebar[hidden] { display: none; }
+.sh-paste.merge { border-color: var(--acc); border-style: solid; }
+.btn.sec.on[data-shmerge] { background: var(--acc-soft); border-color: var(--acc); color: var(--acc-2); }
+.sh-mgone { margin: 12px 0 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
+@media (max-width: 640px) { .sh-mergebar { flex-direction: column; align-items: stretch; } }
 .sh-paste span { flex: 1 1 auto; }
 .sh-paste b { color: var(--ink); }
 .sh-paste textarea { flex: 0 0 240px; min-height: 40px; height: 40px; resize: none; overflow: hidden; }

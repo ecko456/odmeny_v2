@@ -4,7 +4,7 @@
 // řádky bez odkazu, s odkazem bez activeBarcode a s odkazem v jiné buňce, TOP SHORTAGE nahoře,
 // druhý list v sešitu, hledání, PDF na šířku (text, žádné odkazy, QR kódy s activeBarcode přečtené
 // zpátky z vykresleného PDF), vložení tabulky ze schránky (HTML jako z Excelu i jen text), další
-// seznam, přepnutí, smazání, historie změn, CSV, telefon a tmavý režim.
+// seznam, přepnutí, smazání, historie změn, CSV, telefon a tmavý režim; Doplnit chybějící (2.36).
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
@@ -761,6 +761,111 @@ for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.4,1.4)).save(sys.a
   await page.evaluate(() => { ui.sh.open = S.shortage.lists[0].id; renderShortage(); });
   await page.waitForTimeout(600);   // doběhne náběh karet po vykreslení
   await page.screenshot({ path: path.join(shots, '05-tmavy.png'), fullPage: true });
+  await page.emulateMedia({ colorScheme: 'light' });
+
+  // Doplnit chybějící (2.36): znovu vložené urgenty doplní jen položky, které v seznamu chybí;
+  // ruční odebrání si seznam pamatuje a odebraná se vrátí jen na přání.
+  const lid = await page.evaluate(() => S.shortage.lists[0].id);
+  const base = await page.evaluate(() => { const i = S.shortage.lists[0].items[0]; return { id: i.id, ean: i.ean, order: i.order, index: i.index, name: i.name, subs: i.subs.length, qty: i.qty }; });
+  const N = [
+    { order: 'OBJ-2026-09101', name: 'Pouzdro ložiska', ean: '8592222222011', index: 'A', qty: 4, top: true, link: 'http://is.example/commission.production.detail/default/69101?activeBarcode=71001.990001.10001&componentProductionId=990001' },
+    { order: 'OBJ-2026-09102', name: 'Distanční kroužek', ean: '8592222222028', index: 'B', qty: 9, link: 'http://is.example/commission.production.detail/default/69102?activeBarcode=71002.990002.10002&componentProductionId=990002' },
+    { order: 'OBJ-2026-09103', name: 'Víčko', ean: '8592222222035', index: 'C', qty: 2, link: '' },
+  ];
+  const mergeFile = async (rows, name) => {
+    const b64 = await page.evaluate(async rs => {
+      const X = await xlsx();
+      const ws = X.utils.aoa_to_sheet([['Číslo objednávky', 'Název dílu', 'EAN', 'Index', 'Urgentní množství', 'Sklad', 'TOP', 'Probíhající operace'], ...rs.map(r => [r.order, r.name, r.ean, r.index, r.qty, 'H2', r.top ? 'TOP' : '', 'Broušení'])]);
+      rs.forEach((r, i) => { if (r.link) ws[X.utils.encode_cell({ r: i + 1, c: 2 })].l = { Target: r.link }; });
+      const wb = X.utils.book_new(); X.utils.book_append_sheet(wb, ws, 'List1');
+      const bytes = new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' }));
+      let bin = ''; bytes.forEach(b => { bin += String.fromCharCode(b); }); return btoa(bin);
+    }, rows);
+    return { name, mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(b64, 'base64') };
+  };
+  const again = await mergeFile([{ ...base, qty: 99 }, ...N], 'urgenty-znovu.xlsx');
+  const items = () => page.evaluate(() => S.shortage.lists[0].items.map(i => [i.id, i.ean, !!i.top, i.qty]));
+  await page.click('#shView [data-shmerge]');
+  await page.waitForSelector('#shMergeBar:not([hidden])');
+  check(/Doplnit chybějící do seznamu z .* nový seznam nevznikne/.test((await page.textContent('#shMergeBar')).replace(/\s+/g, ' ')) && await page.getAttribute('#shView [data-shmerge]', 'aria-pressed') === 'true'
+    && await page.locator('#view-shortage .sh-paste.merge').count() === 1 && await page.evaluate(() => document.activeElement.id) === 'shPaste', 'režim doplnění: pruh, zvýrazněné pole a fokus');
+  await page.screenshot({ path: path.join(shots, '06-doplnit-rezim.png') });
+  await page.setInputFiles('#shFile', again);
+  await page.waitForSelector('#dlg[open] .sh-mprev');
+  const d1 = (await page.textContent('#dlgBody')).replace(/\s+/g, ' ');
+  check(/ze souboru urgenty-znovu\.xlsx: 3 položky chybí, 1 už v seznamu je\./.test(d1) && /Pouzdro ložiska TOP/.test(d1) && !/Vrátit i/.test(d1), `dialog doplnění: ${d1.slice(0, 300)}`);
+  check((await page.textContent('#dlgOk')).trim() === 'Doplnit 3', 'tlačítko Doplnit 3');
+  await page.screenshot({ path: path.join(shots, '07-doplnit-dialog.png') });
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => S.shortage.lists[0].items.length === 4);
+  await saved(page);
+  const after1 = await items();
+  check(JSON.stringify(after1.map(x => x[1])) === JSON.stringify([N[0].ean, base.ean, N[1].ean, N[2].ean]), `pořadí po doplnění (TOP nahoru, ostatní na konec): ${JSON.stringify(after1)}`);
+  check(after1[1][0] === base.id && after1[1][3] === base.qty && await page.evaluate(() => S.shortage.lists[0].items[1].subs.length) === base.subs, 'položka, která v seznamu byla, zůstala beze změny (množství, poddíly)');
+  check(await page.evaluate(() => S.shortage.lists.length) === 1 && await page.isHidden('#shMergeBar') && !(await page.evaluate(() => ui.sh.merge)), 'žádný nový seznam, režim doplnění skončil');
+  const m1 = (await page.textContent('#shMsg')).replace(/\s+/g, ' ');
+  check(/Nahráno ze souboru urgenty-znovu\.xlsx: do seznamu z .* doplněny 3 položky, 1 už v seznamu byla \(beze změny\)\./.test(m1) && /1 doplněná položka nemá hypertextový odkaz/.test(m1), `hláška doplnění: ${m1}`);
+  check(await page.evaluate(() => S.shortage.lists[0].items[0].code) === '71001.990001.10001', 'doplněná položka má QR kód z odkazu');
+  // odebraná položka se při dalším doplnění sama nevrátí
+  const idN1 = after1[2][0];
+  await page.click(`#shView [data-shdelitem="${idN1}"]`);
+  await confirm(page);
+  await page.waitForFunction(() => S.shortage.lists[0].items.length === 3);
+  await saved(page);
+  check(await page.evaluate(() => S.shortage.lists[0].gone.length) === 1, 'seznam si odebranou položku pamatuje');
+  await page.click('#shView [data-shmerge]');
+  await page.setInputFiles('#shFile', again);
+  await page.waitForSelector('#dlg[open] .sh-mgone');
+  const d2 = (await page.textContent('#dlgBody')).replace(/\s+/g, ' ');
+  check(/kromě položky, kterou jsi ze seznamu odebral, nic nechybí, 3 už v seznamu jsou\./.test(d2) && new RegExp(`Vrátit i 1 položku, kterou jsi ze seznamu odebral \\(${N[1].ean}\\)`).test(d2) && !(await page.isChecked('#dlg [name="back"]')), `dialog s odebranou: ${d2.slice(0, 300)}`);
+  await page.screenshot({ path: path.join(shots, '08-doplnit-odebrana.png') });
+  await confirm(page);
+  await page.waitForFunction(() => /Nic se nedoplnilo/.test(document.querySelector('#shMsg').textContent));
+  check(await page.evaluate(() => S.shortage.lists[0].items.length) === 3, 'bez zaškrtnutí se odebraná nevrátila');
+  await page.click('#shView [data-shmerge]');
+  await page.setInputFiles('#shFile', again);
+  await page.waitForSelector('#dlg[open] .sh-mgone');
+  await page.check('#dlg [name="back"]');
+  await confirm(page);
+  await page.waitForFunction(() => S.shortage.lists[0].items.length === 4);
+  await saved(page);
+  check(await page.evaluate(([e]) => S.shortage.lists[0].items[3].ean === e && !S.shortage.lists[0].gone.length, [N[1].ean]), 'na přání se odebraná vrátila a zmizela z odebraných');
+  // vložení ze schránky v režimu doplnění: nic nechybí, nový řádek se doplní
+  const row = x => `<tr><td>${x.order}</td><td>${x.name}</td><td>${x.link ? `<a href="${x.link.replace(/&/g, '&amp;')}">${x.ean}</a>` : x.ean}</td><td>${x.index}</td><td>${x.qty}</td><td></td><td>${x.top ? 'TOP' : ''}</td><td>Broušení</td></tr>`;
+  await page.click('#shView [data-shmerge]');
+  await page.click('#shPaste');
+  await paste(`<table>${[base, ...N].map(row).join('')}</table>`, 'x');
+  await page.waitForFunction(() => /Nic nechybí/.test(document.querySelector('#shMsg').textContent));
+  check(/Nic nechybí: všechny 4 položky ze schránky už v seznamu z .* jsou\./.test((await page.textContent('#shMsg')).replace(/\s+/g, ' ')) && await page.isHidden('#shMergeBar'), `nic nechybí: ${await page.textContent('#shMsg')}`);
+  const N4 = { order: 'OBJ-2026-09104', name: 'Podložka', ean: '8592222222042', index: 'D', qty: 12, link: 'http://is.example/commission.production.detail/default/69104?activeBarcode=71004.990004.10004&componentProductionId=990004' };
+  await page.click('#shView [data-shmerge]');
+  await page.click('#shPaste');
+  await paste(`<table>${[base, ...N, N4].map(row).join('')}</table>`, 'x');
+  await page.waitForSelector('#dlg[open] .sh-mprev');
+  check(/ze schránky: 1 položka chybí, 4 už v seznamu jsou\./.test((await page.textContent('#dlgBody')).replace(/\s+/g, ' ')), 'dialog po vložení ze schránky');
+  await confirm(page);
+  await page.waitForFunction(() => S.shortage.lists[0].items.length === 5);
+  await saved(page);
+  check(/Vloženo ze schránky: do seznamu z .* doplněna 1 položka, 4 už v seznamu byly \(beze změny\)\./.test((await page.textContent('#shMsg')).replace(/\s+/g, ' ')), `hláška po vložení: ${await page.textContent('#shMsg')}`);
+  // Zrušit: další vložení zase založí nový seznam
+  await page.click('#shView [data-shmerge]');
+  await page.click('#shMergeBar [data-shmergeoff]');
+  await page.waitForSelector('#shMergeBar[hidden]', { state: 'attached' });
+  await page.click('#shPaste');
+  await paste(`<table>${row(N4)}</table>`, 'x');
+  await page.waitForFunction(() => S.shortage.lists.length === 2);
+  check(await page.evaluate(id => S.shortage.lists[1].id === id && S.shortage.lists[1].items.length === 5, lid), 'po Zrušit vznikl nový seznam, doplněný zůstal');
+  await saved(page);
+  const log2 = await page.evaluate(() => S.log.filter(x => x.kind === 'shortage').map(x => x.text));
+  check(log2.some(t => /^Shortage: do seznamu .* doplněny 3 položky: 8592222222011 Pouzdro ložiska, 8592222222028 Distanční kroužek, 8592222222035 Víčko$/.test(t)) && log2.some(t => /^Shortage: do seznamu .* doplněna 1 položka: 8592222222042 Podložka$/.test(t)), `historie doplnění: ${log2.slice(0, 6).join(' | ')}`);
+  // telefon: pruh doplnění se vejde
+  await page.evaluate(id => { ui.sh.open = id; renderShortage(); }, lid);
+  await page.click('#shView [data-shmerge]');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(200);
+  check(await overflow(page) <= 1, `telefon s pruhem doplnění: přetečení ${await overflow(page)} px`);
+  await page.locator('#shMergeBar').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, '09-doplnit-telefon.png') });
 
   await browser.close();
   if (problems.length) { console.log(`PROBLÉMY (${problems.length}):\n- ${problems.join('\n- ')}`); process.exit(1); }

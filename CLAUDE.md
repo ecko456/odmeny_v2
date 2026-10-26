@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 26. 10. 2026 (verze 2.36):
+
+- Uživatel: „přidej do modulu Shortage možnost znovu vložit urgenty, a doplní se jen chybějící“.
+  - Core: `shItemKey(i)` = `shPlanKeyPart(ean)` (bez EANu `#` + `shOpNorm(name)`) | index |
+    objednávka. `shMergePlan(list, items, back)` → `{add, have, gone}`, stejná položka víckrát se
+    počítá po kusech. Seznam má `gone[]` (klíče ručně odebraných, `SH_MAX_GONE` 1000, bez
+    duplicit), plní ho odebrání ×. Historie `shChanges`: nové id položek v existujícím seznamu =
+    „do seznamu … doplněno N položek: …“, klíč `shm:<seznam>:<první id>` (každé doplnění zvlášť,
+    jinak by `appendLog` do 10 minut sloučil).
+  - UI: tlačítko `[data-shmerge]` na kartě seznamu přepíná `ui.sh.merge` (id seznamu), pruh
+    `#shMergeBar` (`shMergeBar()` z `renderShortage`, `.sh-paste.merge`), `[data-shmergeoff]`.
+    `shTake(r, src)` místo `shAddList` v importu souboru i vložení: v režimu `shMergeInto`
+    (dialog `.sh-mprev`, checkbox `back` `.sh-mgone`), jinak nový seznam. Doplněné položky:
+    `shApplyPlan` jen na ně (dočasný seznam), `shTopFirst`, `cleanShortage` dá id. Režim končí
+    po doplnění, po „nic nechybí“ i při přepnutí seznamu. Poslední záznamy (`shLooksLikeRecs`)
+    mají přednost i v režimu.
+  - Položky odebrané před 2.36 seznam nezná, při prvním doplnění se nabídnou jako chybějící.
+  - Testy: core „Shortage (2.36)“, `e2e_shortage.js` na konci (soubor, odebraná, vrátit na
+    přání, ze schránky, nic nechybí, Zrušit = nový seznam, historie, telefon), `up218` počítá
+    s `gone: []`.
+  - Verze dat 33, `ODM_VERSION` 2.36.
+
 Stav k 24. 10. 2026 (verze 2.35):
 
 - Uživatel: „v modulu Audit rozšířit import výkazu práce o sloupec ID zaměstnance, případně ať
@@ -1161,7 +1183,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34)
+## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -1474,7 +1496,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.32 | `913c38d` | Shortage – TOP 2 hned pod TOP SHORTAGE, oddělení podle probíhajících operací (uložené nastavení, bloky, filtr, PDF), ruční přesun výběrem i přetažením (data verze 30) |
 | 2.33 | `5944f8d` | Audit – hranice zaškolení v % v Nastavení, platí pro celé Kapacity a zaškolení (aplikace, PDF, Excel), prázdné = podle Matice (data verze 31) |
 | 2.34 | `bfc9e06` | Shortage – PDF po odděleních (každé oddělení od nového papíru, vlastní záhlaví, číslování položek i stran) (data verze 31) |
-| 2.35 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: výkaz práce jednou pro Výrobu i Audit (sloupec Operace ve Výrobě, Nahrát i do Výroby v Auditu) (data verze 32) |
+| 2.35 | `7f3c6c7` | výkaz práce jednou pro Výrobu i Audit (sloupec Operace ve Výrobě, Nahrát i do Výroby v Auditu) (data verze 32) |
+| 2.36 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – Doplnit chybějící (znovu vložené urgenty přidají jen chybějící položky, odebrané se nevrátí) (data verze 33) |
 
 Verze 2.1 přidala:
 
@@ -1854,7 +1877,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 80 testů: proti původní aplikaci + opravy + 2.1 až 2.35
+node tests/test_core.js                 # 81 testů: proti původní aplikaci + opravy + 2.1 až 2.36
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1900,7 +1923,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     2.31: ruční TOP (pořadí), sestava Zobrazit plně (QR i v PDF), filtr operací (řádky, PDF jen
     vybrané operace); 2.32: TOP 2 (pořadí, štítek, poznámka), oddělení (založení, přiřazení
     operací, bloky, výběr v řádku, přetažení na nadpis, filtr, PDF s bloky); další seznam,
-    přepnutí, smazání, historie, CSV, telefon, tmavý režim;
+    přepnutí, smazání, historie, CSV, telefon, tmavý režim; 2.36: Doplnit chybějící (soubor,
+    odebraná se nevrátí, na přání ano, ze schránky, nic nechybí, Zrušit, historie, telefon);
   - `e2e_kapacity.js`: Kapacity a zaškolení v Auditu (2.30, stránky 2.31): vymyšlených 36 lidí ve
     třech skupinách a prázdná skupina, docházka za 4 měsíce do včerejška, historie hodnocení, nemoc,
     vyřazený, vedoucí, bez skupiny, evidence práce s normou za dva měsíce; měsíční souhrn (texty,

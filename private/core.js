@@ -2096,7 +2096,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=32;
+const DATA_VERSION=33;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -4973,7 +4973,7 @@ function svChanges(A,B,add){
    (A QR kód, B datum a čas, C počet ks, D stav); položky jde odebrat a přesouvat.
    2.29: položka má poddíly (subs) z výrobního plánu, seznam údaj o plánu (plan).
    ========================================================================== */
-const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000,SH_MAX_SUBS=50,SH_MAX_CANDS=100,SH_MAX_DEPTS=20,SH_MAX_DEPT_OPS=100;
+const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000,SH_MAX_SUBS=50,SH_MAX_CANDS=100,SH_MAX_DEPTS=20,SH_MAX_DEPT_OPS=100,SH_MAX_GONE=1000;
 function blankShortage(){return {lists:[],depts:[]};}
 /** Cíl odkazu ze souboru xlsx: SheetJS 0.18.5 v něm nechá XML zápis (&amp; místo &, &#38; …). */
 function shUnxml(s){
@@ -5210,6 +5210,8 @@ function cleanShortage(o){
   const lists=(Array.isArray(o.lists)?o.lists:[]).filter(l=>l&&typeof l==="object"&&Array.isArray(l.items)).map(l=>({
     id:uniq(l.id,"sh"),at:num(l.at),by:line(l.by,60),file:line(l.file,160),sheet:line(l.sheet,80),
     plan:l.plan&&typeof l.plan==="object"?{file:line(l.plan.file,160),at:num(l.plan.at),by:line(l.plan.by,60)}:null,
+    // ručně odebrané položky (2.36): při doplnění chybějících se samy nevrátí
+    gone:[...new Set((Array.isArray(l.gone)?l.gone:[]).filter(k=>typeof k==="string"&&k).map(k=>k.slice(0,240)))].slice(-SH_MAX_GONE),
     // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec; ze 2.28 nemá subs
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,top2:i.top2===true&&i.top!==true,op:line(i.op,300),link:shLink(i.link),
@@ -5271,6 +5273,24 @@ function shBuild(rows){
   });
   const all=shTopFirst(items);
   return {items:all.slice(0,SH_MAX_ITEMS),more:Math.max(0,all.length-SH_MAX_ITEMS),header,top:items.filter(i=>i.top).length,top2:items.filter(i=>i.top2).length,warn};
+}
+/* Doplnění chybějících (2.36): položka se pozná podle EANu (bez něj podle názvu), indexu
+   a čísla objednávky, stejně jako sestava u poddílů z plánu. */
+function shItemKey(i){i=i||{};return (shPlanKeyPart(i.ean)||"#"+shOpNorm(i.name))+"|"+shPlanKeyPart(i.index)+"|"+shPlanKeyPart(i.order);}
+/** Co z nově vložených položek v seznamu chybí: add = k doplnění (v pořadí ze souboru),
+    have = kolik už v seznamu je, gone = ručně odebrané (vrátí se jen s back). Stejná položka
+    víckrát se počítá po kusech: dvakrát v souboru a jednou v seznamu = jedna chybí. */
+function shMergePlan(list,items,back){
+  const left=new Map();
+  ((list&&list.items)||[]).forEach(i=>{const k=shItemKey(i);left.set(k,(left.get(k)||0)+1);});
+  const gone=new Set((list&&list.gone)||[]),out={add:[],have:0,gone:[]};
+  (items||[]).forEach(i=>{
+    const k=shItemKey(i),n=left.get(k)||0;
+    if(n>0){left.set(k,n-1);out.have++;}
+    else if(gone.has(k)&&!back)out.gone.push(i);
+    else out.add.push(i);
+  });
+  return out;
 }
 /** Text ze schránky (buňky oddělené tabulátorem, řádky novým řádkem, Excel dává do uvozovek buňky s tabulátorem nebo zalomením). */
 function shTsv(text){
@@ -5391,6 +5411,9 @@ function shChanges(A,B,add){
     const subsOf=list=>new Map(list.items.flatMap(i=>(i.subs||[]).map(x=>[x.id,{s:x,i}])));
     const os=subsOf(o),ns=subsOf(l),planChanged=JSON.stringify(o.plan||null)!==JSON.stringify(l.plan||null);
     o.items.forEach(i=>{if(!ni.has(i.id))add("shortage","Shortage: ze seznamu "+shWhen(l)+" odebrána položka "+label(i),{m:"shr:"+l.id+":"+i.id});});
+    // doplnění chybějících (2.36)
+    const fresh=l.items.filter(i=>!oi.has(i.id));
+    if(fresh.length)add("shortage","Shortage: do seznamu "+shWhen(l)+" doplněn"+(fresh.length===1?"a ":fresh.length<=4?"y ":"o ")+fresh.length+" "+shItemsN(fresh.length)+": "+fresh.slice(0,5).map(label).join(", ")+(fresh.length>5?" …":""),{m:"shm:"+l.id+":"+fresh[0].id});   // každé doplnění zvlášť
     l.items.forEach(i=>{
       const p=oi.get(i.id);
       if(p&&(p.note||"")!==(i.note||""))add("shortage",i.note?"Shortage: poznámka k položce "+label(i)+" (seznam "+shWhen(l)+"): "+i.note:"Shortage: smazána poznámka k položce "+label(i)+" (seznam "+shWhen(l)+")",{m:"shn:"+l.id+":"+i.id});

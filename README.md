@@ -62,6 +62,26 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.36
+
+- **Shortage: Doplnit chybějící.** Na kartě seznamu je tlačítko **Doplnit chybějící**: urgenty
+  (celou tabulku z Excelu) vložíš znovu přes Ctrl+V nebo tlačítkem Nahrát Excel a do otevřeného
+  seznamu se přidají jen položky, které v něm chybí. Nový seznam nevznikne.
+  - Nad polem pro vložení je pruh „Doplnit chybějící do seznamu z …“ s tlačítkem Zrušit,
+    pole pro vložení je zvýrazněné.
+  - Než se něco přidá, dialog ukáže, kolik položek chybí (s náhledem) a kolik už v seznamu je.
+  - Položka se pozná podle EANu, indexu a čísla objednávky (bez EANu podle názvu dílu).
+    Když je v tabulce stejná položka víckrát, počítá se po kusech.
+  - Položky, které v seznamu už jsou, zůstanou, jak jsou: pořadí, množství, TOP, oddělení,
+    poznámky i poslední záznamy. Doplněné jdou na konec své skupiny (TOP SHORTAGE, TOP 2,
+    ostatní) a do oddělení podle operace. Poddíly z výrobního plánu nahraného v tomto okně se
+    hledají jen u doplněných.
+  - **Odebrané položky se nevrátí:** seznam si od této verze pamatuje položky, které jsi
+    tlačítkem × odebral. Když v tabulce znovu jsou, dialog nabídne „Vrátit i odebrané“
+    (nezaškrtnuté).
+  - Když nic nechybí, nic se nemění a hláška to napíše. Doplnění se zapíše do historie změn.
+- Verze dat 33: stará stránka nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.35
 
 - **Výkaz práce stačí nahrát jednou, pro Výrobu i Audit.** Je to tentýž export z IS (datum,
