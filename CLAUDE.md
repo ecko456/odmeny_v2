@@ -1599,7 +1599,7 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.36 | `5dc3da0` | Shortage – Doplnit chybějící (znovu vložené urgenty přidají jen chybějící položky, odebrané se nevrátí) (data verze 33) |
 | 2.37 | `f6dacfb` | Audit – docházka a výkony z jednoho souboru, Lidé v práci (den, měsíc, PDF, Excel), produktivita a koláč dílů v profilu; Kontroly podle dnešních příchodů (data verze 34) |
 | 2.38 | `59470af` | Plán kapacit – potřeba lidí celkem a po úrovních 2, 3, 4 u skupin, jak jsme na tom, doplnit, doškolit s kandidáty, PDF, Excel (data verze 35) |
-| 2.39 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Rychlá kontrola na telefonu – počet lidí, směna, oddělení, jen lidé v práci, seznam jmen, výměna, sdílení, uložení do dnešních kontrol a zápis (data verze 35) |
+| 2.39 | `6278dda` (větev `claude/elegant-clarke-vl5n7d`) | **aktuální**: Rychlá kontrola na telefonu – počet lidí, směna, oddělení, jen lidé v práci, seznam jmen, výměna, sdílení, uložení do dnešních kontrol a zápis (data verze 35) |
 
 Verze 2.1 přidala:
 
