@@ -2096,7 +2096,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=33;
+const DATA_VERSION=34;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -2718,6 +2718,8 @@ function describeChanges(a,b,meta){
   Object.keys(UPA).forEach(w=>{if(!UPB[w])add("audit","Kontroly "+weekName(w)+": plán smazán",{m:"audp:"+w});});
   const uka=(ua.settings||{}).pct,ukb=(ub.settings||{}).pct;
   if(uka!=null&&ukb!=null&&uka!==ukb)add("settings","",{m:"audset:pct",p:"Kontroly – podíl lidí z oddělení: ",v0:uka+" %",v1:ukb+" %"});
+  const uma=(ua.settings||{}).mode||"week",umb=(ub.settings||{}).mode||"week";
+  if(uma!==umb)add("settings","",{m:"audset:mode",p:"Kontroly – výběr lidí: ",v0:AUD_MODES[uma]||uma,v1:AUD_MODES[umb]||umb});
   lbChanges(a.logbooks||[],b.logbooks||[],add);
   waChanges(a.workAudit,b.workAudit,add);
   svChanges(a.service,b.service,add);
@@ -3563,9 +3565,12 @@ function cleanEff(input){
    čtyři týdny vystřídají všichni. U každého člověka se u každého bodu zapíše splněno nebo
    nesplněno; výsledek se ukáže v jeho kartě (Lidé, Profil). */
 const AUD_DEFAULTS={pct:25};
+/* Režim výběru (2.37): week = plán na týden dopředu, day = každý den jen z lidí, kteří podle
+   nahraných příchodů (Audit, docházka a výkony) ten den přišli. */
+const AUD_MODES={week:"Na týden dopředu",day:"Každý den podle příchodů"};
 const AUD_STATES={plan:"Naplánováno",done:"Provedeno",skip:"Neproběhlo"};
 function blankAudit(){return {tasks:{},plans:{},settings:{...AUD_DEFAULTS}};}
-function audSet(){return {...AUD_DEFAULTS,...((S&&S.audit&&S.audit.settings)||{})};}
+function audSet(){return {...AUD_DEFAULTS,mode:"week",...((S&&S.audit&&S.audit.settings)||{})};}
 /* Oddělení člověka podle jeho pozice; bez pozice do kontrol nepatří. */
 function empDept(e){const p=e&&e.positionId?posIn(S,e.positionId):null;return p?deptOf(p):"";}
 function audName(e){return e?(e.last+" "+e.first).trim():"";}
@@ -3669,8 +3674,9 @@ function substituteCheck(weekId,itemId,reason,meta,rnd){
   rnd=rnd||Math.random;
   const p=audPlan(weekId),it=audItem(weekId,itemId);
   if(!p||!it)return null;
-  const inPlan=new Set(p.items.map(i=>i.key)),last=audLast();
-  const cand=audPeople(it.dept).filter(e=>!inPlan.has(e.key)).map(e=>({e,r:rnd(),last:last[e.key]||""}))
+  const inPlan=new Set(p.items.map(i=>i.key)),last=audLast(),here=audPresent(it.day);
+  // s nahranými příchody na ten den jen z lidí, kteří přišli (2.37)
+  const cand=audPeople(it.dept).filter(e=>!inPlan.has(e.key)&&(!here||here.keys.has(e.key))).map(e=>({e,r:rnd(),last:last[e.key]||""}))
     .sort((a,b)=>(a.last<b.last?-1:a.last>b.last?1:a.r-b.r))[0];
   if(!cand)return null;
   if(it.state==="plan")skipCheck(weekId,itemId,reason||"náhradník",meta);
@@ -3696,6 +3702,50 @@ function removeFromPlan(weekId,itemId){
   const p=audPlan(weekId);
   if(!p)return;
   p.items=p.items.filter(i=>!(i.id===itemId&&i.state==="plan"));
+}
+/* Kdo je podle nahraných příchodů ten den v práci (2.37): klíče lidí z evidence (podle ID
+   zaměstnance) a ID, která v evidenci nejsou. Bez docházky na ten den null. */
+function audPresent(iso){
+  const day=S&&S.workAudit&&S.workAudit.dv&&S.workAudit.dv.pres[iso];
+  if(!day)return null;
+  const map=dvWidMap(),keys=new Set(),unknown=[];
+  Object.entries(day).forEach(([wid,v])=>{if(v[0]==null&&v[1]==null)return;const e=map.get(wid);if(e)keys.add(e.key);else unknown.push(wid);});
+  return {keys,unknown,n:keys.size+unknown.length};
+}
+/* Denní výběr podle příchodů (2.37): z každého oddělení se během týdne zkontroluje stejný
+   podíl lidí jako u týdenního plánu, jen se losuje den po dni z těch, kdo ten den přišli.
+   Na den připadne zbytek týdenního počtu rozdělený do zbývajících pracovních dní (nahoru).
+   Kdo je v týdnu už naplánovaný nebo zkontrolovaný, znovu se nelosuje. Opakované losování
+   téhož dne nahradí jen dosud nezapsané automatické kontroly toho dne. */
+function generateDayChecks(weekId,iso,meta,rnd){
+  rnd=rnd||Math.random;
+  const days=audDays(weekId);
+  if(!days.includes(iso))throw new Error(dayText(iso)+" není pracovní den týdne.");
+  const here=audPresent(iso);
+  if(!here)throw new Error("Na "+dayText(iso)+" nejsou nahrané příchody. Nahraj soubor s docházkou.");
+  const pct=audSet().pct;
+  let p=audPlan(weekId);
+  if(!p)p=S.audit.plans[weekId]={at:(meta&&meta.at)||Date.now(),by:String((meta&&meta.by)||"").slice(0,60),pct,days,items:[]};
+  p.items=p.items.filter(i=>!(i.day===iso&&i.state==="plan"&&!i.extra&&!i.sub));
+  const inPlan=new Set(p.items.filter(i=>i.state!=="skip"||i.day===iso).map(i=>i.key)),last=audLast();
+  const left=days.filter(d=>d>=iso).length,short=[];
+  let added=0;
+  audDepts().forEach(dept=>{
+    const people=audPeople(dept);
+    const used=p.items.filter(i=>i.dept===dept&&i.state!=="skip").length;
+    const need=Math.ceil(Math.max(0,audCount(people.length,pct)-used)/Math.max(1,left));
+    if(!need)return;
+    const pool=people.filter(e=>here.keys.has(e.key)&&!inPlan.has(e.key)).map(e=>({e,r:rnd(),last:last[e.key]||""}))
+      .sort((a,b)=>(a.last<b.last?-1:a.last>b.last?1:a.r-b.r)).slice(0,need);
+    if(pool.length<need)short.push({dept,need,got:pool.length});
+    pool.forEach(({e})=>{
+      p.items.push({id:uid("k"),key:e.key,name:audName(e),dept,day:iso,state:"plan",done:"",checker:"",results:[],note:"",reason:"",extra:false,at:0,by:""});
+      inPlan.add(e.key);added++;
+    });
+  });
+  p.items.sort((a,b)=>(a.day<b.day?-1:a.day>b.day?1:0)||norm(a.dept).localeCompare(norm(b.dept),"cs")||norm(a.name).localeCompare(norm(b.name),"cs"));
+  p.at=(meta&&meta.at)||Date.now();p.by=String((meta&&meta.by)||"").slice(0,60);p.pct=pct;
+  return {plan:p,added,present:here.n,unknown:here.unknown.length,short};
 }
 /* Výsledek jedné kontroly: počet bodů, splněných, nesplněné body. */
 function checkScore(it){
@@ -3792,7 +3842,7 @@ function cleanAudit(input){
     plans[w]={at:num(p.at,0,0,1e15),by:str(p.by,60),pct:Math.round(num(p.pct,AUD_DEFAULTS.pct,1,100)),
       days:arr(p.days).map(day).filter(Boolean).slice(0,7),items};
   });
-  return {tasks,plans,settings:{pct:Math.round(num(st.pct,AUD_DEFAULTS.pct,5,100))}};
+  return {tasks,plans,settings:{pct:Math.round(num(st.pct,AUD_DEFAULTS.pct,5,100)),...(st.mode==="day"?{mode:"day"}:{})}};
 }
 
 /* Oprava: CSV z Excelu bývá ve Windows-1250, z Google Tabulek a Macu v UTF-8.
@@ -3986,7 +4036,7 @@ const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
 /* Požadavek lidí na pracovní den (2.18.1): pevně 100 lidí, null = podle plánu v souboru obsazenosti. */
 const WA_TARGET=100;
-function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null};}
+function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null,dv:blankDv()};}
 /* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
    jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
 function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}
@@ -4044,6 +4094,8 @@ function cleanWorkAudit(o){
   const rp=obj(o.rep);out.rep={place:str(rp.place,60).replace(/\s+/g," ").trim(),firm:str(rp.firm,80).replace(/\s+/g," ").trim()};
   /* hranice zaškolení (2.33): od kolika % dovedností skupiny je pracovník zaškolený; null = podle Matice */
   const tp=cnt(o.trainPct);out.trainPct=tp!=null&&tp>=1&&tp<=100?Math.round(tp):null;
+  /* docházka a výkony z jednoho souboru (2.37) */
+  out.dv=cleanDv(o.dv);
   return out;
 }
 const WA_PLAN_FIELDS=["order","ean","ks","index","due","tech"];
@@ -4594,6 +4646,8 @@ function waChanges(A,B,add){
   });
   if(JSON.stringify(A.cols)!==JSON.stringify(B.cols))add("workaudit","Audit: změněny sloupce souborů",{m:"wacols"});
   if((A.target||null)!==(B.target||null))add("workaudit","",{m:"watarget",p:"Audit – požadavek lidí na pracovní den: ",v0:A.target?String(A.target):"podle plánu v souboru",v1:B.target?String(B.target):"podle plánu v souboru"});
+  const da=A.dv||blankDv(),db=B.dv||blankDv();
+  if(JSON.stringify(da.cols)!==JSON.stringify(db.cols)||da.unit!==db.unit)add("workaudit","Audit: změněny sloupce souboru docházky a výkonů",{m:"wadvcols"});
   if((A.trainPct||null)!==(B.trainPct||null))add("workaudit","",{m:"watrain",p:"Audit – hranice zaškolení: ",v0:A.trainPct?"od "+A.trainPct+" %":"podle Matice dovedností",v1:B.trainPct?"od "+B.trainPct+" %":"podle Matice dovedností"});
   const ra=A.rep||{},rb=B.rep||{};
   if((ra.place||"")!==(rb.place||"")||(ra.firm||"")!==(rb.firm||""))add("workaudit","",{m:"warep",p:"Audit – záhlaví reportů: ",v0:[ra.place,ra.firm].filter(Boolean).join(" · ")||"bez názvu",v1:[rb.place,rb.firm].filter(Boolean).join(" · ")||"bez názvu"});
@@ -4616,6 +4670,305 @@ function waChanges(A,B,add){
   new Set([...Object.keys(A.notes),...Object.keys(B.notes)]).forEach(iso=>{
     if((A.notes[iso]||"")!==(B.notes[iso]||""))add("workaudit","Audit "+dayText(iso)+": "+(B.notes[iso]?"poznámka ke dni „"+B.notes[iso].slice(0,80)+"“":"poznámka smazána"),{m:"wanote:"+iso});
   });
+}
+
+/* ==========================================================================
+   AUDIT: docházka a výkony z jednoho souboru (verze 2.37)
+   List „Docházka“: A ID zaměstnance, od B dvojice sloupců příchod / odchod pro každý den
+   (datum v hlavičce nad dvojicí). List „vykázaná práce“: A ID, D název dílu, E operace,
+   F množství v zakázce, G dokončené množství, J strávený čas; sloupec s datem, když je,
+   se najde sám. S.workAudit.dv = {cols, unit, pres, perf, files}:
+   pres{iso: {id: [příchod, odchod]}} v minutách od půlnoci (odchod menší = přes půlnoc),
+   perf{YYYY-MM: {id: {p: {díl: [dokončeno, zakázka, minuty, řádků]}, o: {operace: [dokončeno, minuty, řádků]}}}}.
+   Projekt = skupina Matice dovedností, kam člověk patří. Docházku pro odměny (S.periods) nemění.
+   ========================================================================== */
+const DV_COLS={att:{id:"A",first:"B"},work:{id:"A",part:"D",op:"E",order:"F",done:"G",time:"J",date:""}};
+const DV_COL_LABEL={id:"ID zaměstnance",first:"První den (příchod)",part:"Název dílu",op:"Operace",order:"Množství v zakázce",done:"Dokončené množství",time:"Strávený čas",date:"Datum (prázdné = najde se samo)"};
+const DV_MAX_DAYS=800,DV_MAX_MONTHS=36,DV_MAX_PEOPLE=800,DV_MAX_PARTS=300,DV_MAX_OPS=100;
+const DV_UNITS=["auto","min","h"];
+function blankDv(){return {cols:JSON.parse(JSON.stringify(DV_COLS)),unit:"auto",pres:{},perf:{},files:[]};}
+/** Datum bez času (hlavička docházky): číslo dne z Excelu, „1.10.2026“, „2026-10-01“. */
+function dvDate(v){
+  if(typeof v==="number"&&v%1)return null;
+  if(typeof v==="string"&&/\d:\d/.test(v))return null;
+  const d=cellToDateTime(v);
+  return d&&d.y>=2000&&d.y<=2100&&d.m>=1&&d.m<=12&&d.d>=1&&d.d<=31?d.y+"-"+String(d.m).padStart(2,"0")+"-"+String(d.d).padStart(2,"0"):null;
+}
+/** Datum řádku vykázané práce (i s časem). */
+function dvDateAny(v){const d=cellToDateTime(v);return d&&d.y>=2000&&d.y<=2100?d.y+"-"+String(d.m).padStart(2,"0")+"-"+String(d.d).padStart(2,"0"):null;}
+/** Čas dne → minuty od půlnoci: zlomek dne z Excelu, datum s časem, „6:30“, „06:30:00“,
+    „1.10.2026 6:30“; číslo 1–23 jako hodiny (6,5 = 6:30). Jinak null. */
+function dvClock(v){
+  if(v==null||v==="")return null;
+  if(typeof v==="number"){
+    if(!isFinite(v)||v<0)return null;
+    if(v<1)return Math.round(v*1440)%1440;
+    if(v<24)return Math.round(v*60);
+    if(v>=20000&&v<80000)return Math.round((v%1)*1440)%1440;
+    return null;
+  }
+  const m=String(v).match(/(\d{1,2}):(\d{2})(?::\d{2})?/);
+  if(!m)return null;
+  const h=+m[1],mi=+m[2];
+  return h<24&&mi<60?h*60+mi:null;
+}
+/** Délka pobytu v minutách (odchod dřív než příchod = přes půlnoc), bez odchodu null. */
+function dvStay(a,b){if(a==null||b==null)return null;let d=b-a;if(d<0)d+=1440;return d;}
+/** Strávený čas → minuty: „1:30“ vždy jako hodiny a minuty, číslo podle jednotky (frac = zlomek dne). */
+function dvDur(v,unit){
+  if(v==null||v==="")return null;
+  if(typeof v==="string"){const m=v.trim().match(/^(\d{1,4}):(\d{2})(?::(\d{2}))?$/);if(m)return +m[1]*60+ +m[2]+(m[3]?+m[3]/60:0);}
+  const n=toNum(v);
+  if(n==null||n<0)return null;
+  return unit==="frac"?n*1440:unit==="h"?n*60:n;
+}
+/** Listy souboru: Docházka podle názvu (jinak první), vykázaná práce podle názvu (jinak druhý). */
+function dvSheets(sheets){
+  const list=(sheets||[]).filter(s=>s&&Array.isArray(s.aoa));
+  const nm=s=>norm(String(s.name||"").split("›").pop());
+  const att=list.find(s=>/dochaz/.test(nm(s)))||list[0]||null;
+  const work=list.find(s=>s!==att&&/vykaz|prace|vykon/.test(nm(s)))||list.find(s=>s!==att)||null;
+  return {att,work};
+}
+function dvParse(sheets,dv,unit){
+  dv=dv||blankDv();
+  const {att,work}=dvSheets(sheets);
+  return {att:att?dvParseAtt(att,dv.cols.att):null,work:work?dvParseWork(work,dv.cols.work,unit||dv.unit):null};
+}
+function dvParseAtt(sheet,c){
+  const rows=sheet.aoa||[],idc=Math.max(0,waIndex(c.id)),first=Math.max(0,waIndex(c.first));
+  const name=String(sheet.name||"").split("›").pop().trim();
+  // hlavička: řádek s nejvíc daty (jen datum bez času) od prvního sloupce dne
+  let hr=-1,best=0;
+  for(let r=0;r<Math.min(rows.length,20);r++){
+    const row=rows[r]||[];let n=0;
+    for(let k=first;k<row.length;k++)if(dvDate(row[k]))n++;
+    if(n>best){best=n;hr=r;}
+  }
+  if(hr<0)return {ok:false,name,err:"V listu "+name+" není v hlavičce žádné datum (čeká se např. 1.10.2026 nad sloupci příchod a odchod)."};
+  const head=rows[hr]||[],pairs=[];
+  for(let k=first;k<head.length;){const iso=dvDate(head[k]);if(iso){pairs.push({iso,c:k});k+=2;}else k++;}
+  const pres={},people=new Set();let n=0,codes=0;
+  for(let r=hr+1;r<rows.length;r++){
+    const row=rows[r]||[],wid=widKey(row[idc]);
+    if(!wid||!/\d/.test(wid)||wid.length>30)continue;   // podnadpis Příchod / Odchod, souhrny, prázdné řádky
+    n++;
+    pairs.forEach(p=>{
+      const a=dvClock(row[p.c]),b=dvClock(row[p.c+1]);
+      if(a==null&&b==null){if(String(row[p.c]==null?"":row[p.c]).trim()||String(row[p.c+1]==null?"":row[p.c+1]).trim())codes++;return;}
+      (pres[p.iso]||(pres[p.iso]={}))[wid]=[a,b];
+      people.add(wid);
+    });
+  }
+  const dates=pairs.map(p=>p.iso).sort();
+  return {ok:!!n,name,err:n?"":"V listu "+name+" není žádný řádek s ID zaměstnance ve sloupci "+c.id+".",pres,dates,from:dates[0]||"",to:dates[dates.length-1]||"",
+    days:Object.keys(pres).length,people:people.size,rows:n,codes,header:hr};
+}
+function dvParseWork(sheet,c,unit){
+  const rows=sheet.aoa||[],ix=k=>waIndex(c[k]);
+  const name=String(sheet.name||"").split("›").pop().trim();
+  const I={id:Math.max(0,ix("id")),part:ix("part"),op:ix("op"),order:ix("order"),done:ix("done"),time:ix("time")};
+  const txt=v=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
+  const at=(r,i)=>i<0?null:r[i];
+  const isData=r=>{const w=widKey(r[I.id]);return !!w&&/\d/.test(w)&&w.length<=30&&(toNum(at(r,I.done))!=null||at(r,I.time)!=null&&at(r,I.time)!==""||txt(at(r,I.part))||txt(at(r,I.op)));};
+  const first=rows.findIndex(r=>r&&isData(r));
+  if(first<0)return {ok:false,name,err:"V listu "+name+" není žádný řádek s ID zaměstnance ve sloupci "+c.id+".",recs:[]};
+  const data=rows.slice(first).filter(r=>r&&isData(r));
+  const headOf=i=>{for(let r=first-1;r>=0;r--){const t=txt((rows[r]||[])[i]);if(t)return norm(t);}return "";};
+  // datum: zadaný sloupec, jinak sloupec mimo ostatní, kde je u většiny řádků datum
+  // (hlavička „Datum“ má přednost; čísla zakázek by jinak vypadala jako data z Excelu, proto
+  // u sloupce bez takové hlavičky jen buňky formátované jako datum a nejvýš 100 dní od sebe)
+  let di=c.date?waIndex(c.date):-1;
+  if(!c.date){
+    const used=new Set(Object.values(I)),sample=data.slice(0,300),width=Math.min(40,Math.max(0,...sample.map(r=>r.length)));
+    const need=Math.max(1,Math.ceil(sample.length*0.6)),span=l=>{const t=l.map(x=>Date.parse(x)).sort((a,b)=>a-b);return t.length?(t[t.length-1]-t[0])/864e5:0;};
+    let best=null;
+    for(let k=0;k<width;k++){
+      if(used.has(k))continue;
+      const named=/datum|date|\bden\b/.test(headOf(k)),fmt=!!(sheet.dateCols&&sheet.dateCols.has(k));
+      // číslo je datum jen pod hlavičkou Datum nebo v buňkách formátovaných jako datum (sheet.dateCols)
+      const l=sample.map(r=>typeof r[k]==="number"&&!named&&!fmt?null:dvDateAny(r[k])).filter(Boolean);
+      if(l.length<need)continue;
+      if(!named&&span(l)>100)continue;
+      const score=(named?1e6:0)+l.length;
+      if(!best||score>best.score)best={k,score};
+    }
+    di=best?best.k:-1;
+  }
+  // jednotka času: auto podle hodnot a hlavičky (zlomky dne = čas z Excelu, „min“, „hod“)
+  let u=unit==="min"||unit==="h"?unit:"";
+  const nums=data.map(r=>at(r,I.time)).filter(v=>typeof v==="number"&&v>0);
+  if(!u){
+    const h=headOf(I.time);
+    if(nums.length&&nums.every(v=>v<1))u="frac";
+    else if(/min/.test(h))u="min";
+    else if(/hod|\(h\)|\bh\b/.test(h))u="h";
+    else{const s=nums.slice().sort((a,b)=>a-b),med=s.length?s[Math.floor(s.length/2)]:0;u=s.length&&med<=16?"h":"min";}
+  }
+  const recs=[];let skipped=0;
+  data.forEach(r=>{
+    const part=txt(at(r,I.part)).slice(0,120),op=txt(at(r,I.op)).slice(0,120);
+    const f=toNum(at(r,I.order)),g=toNum(at(r,I.done)),t=dvDur(at(r,I.time),u);
+    if(!part&&!op&&!(g>0)&&!(t>0)){skipped++;return;}
+    recs.push({wid:widKey(r[I.id]),part:part||"(bez názvu dílu)",op,f:f>0?f:0,g:g>0?g:0,t:t>0?t:0,iso:di>=0?dvDateAny(r[di])||"":""});
+  });
+  const isos=recs.map(x=>x.iso).filter(Boolean).sort();
+  const sum=k=>recs.reduce((a,x)=>a+x[k],0);
+  return {ok:!!recs.length,name,err:recs.length?"":"V listu "+name+" nejsou žádné záznamy práce.",recs,rows:recs.length,skipped,unit:u,dateCol:di>=0?colLetter(di):"",
+    dated:isos.length>=Math.ceil(recs.length*0.6),from:isos[0]||"",to:isos[isos.length-1]||"",people:new Set(recs.map(x=>x.wid)).size,t:sum("t"),g:sum("g"),f:sum("f")};
+}
+/** Uloží docházku a výkony: dny ze souboru nahradí uložené dny (i den, kdy nikdo nepřišel),
+    výkony nahradí celé měsíce ze souboru (bez data řádku = měsíc konce docházky). S audit
+    a datem u řádků se kusy podle operací zapíšou i do Auditu jako výkaz práce. */
+function dvApply(wa,p,meta,opts){
+  opts=opts||{};meta=meta||{};
+  const dv=wa.dv||(wa.dv=blankDv()),a=p.att&&p.att.ok?p.att:null,w=p.work&&p.work.ok?p.work:null;
+  if(a)a.dates.forEach(iso=>{if(a.pres[iso])dv.pres[iso]=a.pres[iso];else delete dv.pres[iso];});
+  const months=[];let audit=null;
+  if(w){
+    const fallback=((a&&a.to)||w.to||todayIso(meta.at)).slice(0,7),by={};
+    const r2=v=>Math.round(v*100)/100;
+    w.recs.forEach(x=>{
+      const m=x.iso&&w.dated?x.iso.slice(0,7):fallback,pm=by[m]||(by[m]={}),q=pm[x.wid]||(pm[x.wid]={p:{},o:{}});
+      const pp=q.p[x.part]||(q.p[x.part]=[0,0,0,0]);pp[0]+=x.g;pp[1]+=x.f;pp[2]+=x.t;pp[3]++;
+      if(x.op){const oo=q.o[x.op]||(q.o[x.op]=[0,0,0]);oo[0]+=x.g;oo[1]+=x.t;oo[2]++;}
+    });
+    Object.values(by).forEach(pm=>Object.values(pm).forEach(q=>{Object.values(q.p).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));Object.values(q.o).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));}));
+    Object.keys(by).sort().forEach(m=>{dv.perf[m]=by[m];months.push(m);});
+    if(opts.audit&&w.dated){
+      const byDay={},ops={};let rows=0;
+      w.recs.forEach(x=>{if(!x.iso||!x.op)return;const d=byDay[x.iso]||(byDay[x.iso]={});d[x.op]=(d[x.op]||0)+x.g;ops[x.op]=(ops[x.op]||0)+x.g;rows++;});
+      const isos=Object.keys(byDay).sort();
+      if(isos.length)audit=waApplyWork(wa,{byDay,ops,rows,skipped:0,from:isos[0],to:isos[isos.length-1]},meta);
+    }
+  }
+  dv.files.push({name:String(meta.name||"").slice(0,160),at:meta.at||Date.now(),by:String(meta.by||"").slice(0,60),from:a?a.from:(w?w.from:""),to:a?a.to:(w?w.to:""),
+    people:a?a.people:0,days:a?a.days:0,rows:w?w.rows:0,months:months.slice(0,24)});
+  dv.files=dv.files.slice(-40);
+  return {days:a?a.dates.length:0,months,audit};
+}
+function cleanDv(o){
+  const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const str=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().slice(0,max);
+  const n2=v=>{const n=Number(v);return Number.isFinite(n)&&n>=0?Math.round(Math.min(n,1e9)*100)/100:0;};
+  const clock=v=>v==null||v===""?null:(Number.isInteger(+v)&&+v>=0&&+v<1440?+v:null);
+  const wid=k=>typeof k==="string"&&/^[a-z0-9._\/-]{1,30}$/.test(k);
+  o=obj(o);
+  const out=blankDv(),ca=obj(obj(o.cols).att),cw=obj(obj(o.cols).work);
+  Object.keys(DV_COLS.att).forEach(k=>{if(k in ca)out.cols.att[k]=waLetter(ca[k])||DV_COLS.att[k];});
+  Object.keys(DV_COLS.work).forEach(k=>{if(k in cw)out.cols.work[k]=k==="date"?waLetter(cw[k]):(waLetter(cw[k])||DV_COLS.work[k]);});
+  out.unit=DV_UNITS.includes(o.unit)?o.unit:"auto";
+  Object.keys(obj(o.pres)).filter(iso=>WA_ISO.test(iso)).sort().slice(-DV_MAX_DAYS).forEach(iso=>{
+    const day={};
+    Object.entries(obj(o.pres[iso])).slice(0,DV_MAX_PEOPLE).forEach(([k,v])=>{if(wid(k)&&Array.isArray(v)){const a=clock(v[0]),b=clock(v[1]);if(a!=null||b!=null)day[k]=[a,b];}});
+    if(Object.keys(day).length)out.pres[iso]=day;
+  });
+  Object.keys(obj(o.perf)).filter(m=>/^\d{4}-\d{2}$/.test(m)).sort().slice(-DV_MAX_MONTHS).forEach(m=>{
+    const pm={};
+    Object.entries(obj(o.perf[m])).slice(0,DV_MAX_PEOPLE).forEach(([k,q])=>{
+      if(!wid(k))return;
+      const p={},op={};
+      Object.entries(obj(obj(q).p)).slice(0,DV_MAX_PARTS).forEach(([nm,v])=>{const t=str(nm,120);if(t&&Array.isArray(v))p[t]=[n2(v[0]),n2(v[1]),n2(v[2]),Math.round(n2(v[3]))];});
+      Object.entries(obj(obj(q).o)).slice(0,DV_MAX_OPS).forEach(([nm,v])=>{const t=str(nm,120);if(t&&Array.isArray(v))op[t]=[n2(v[0]),n2(v[1]),Math.round(n2(v[2]))];});
+      if(Object.keys(p).length||Object.keys(op).length)pm[k]={p,o:op};
+    });
+    if(Object.keys(pm).length)out.perf[m]=pm;
+  });
+  out.files=(Array.isArray(o.files)?o.files:[]).filter(f=>f&&typeof f==="object").slice(-40).map(f=>({name:str(f.name,160),at:Number.isFinite(+f.at)?Math.round(+f.at):0,by:str(f.by,60),
+    from:WA_ISO.test(String(f.from||""))?f.from:"",to:WA_ISO.test(String(f.to||""))?f.to:"",people:Math.round(n2(f.people)),days:Math.round(n2(f.days)),rows:Math.round(n2(f.rows)),
+    months:(Array.isArray(f.months)?f.months:[]).filter(m=>/^\d{4}-\d{2}$/.test(String(m))).slice(0,24)}));
+  return out;
+}
+/** ID → člověk (jedna mapa na výpočet). */
+function dvWidMap(){const m=new Map();Object.values(S.employees||{}).forEach(e=>{const w=widKey(e.wid);if(w&&!m.has(w))m.set(w,e);});return m;}
+/** Projekt = skupina Matice, kam člověk ten den patřil (minulost podle historie zařazení). */
+function dvGroupOf(e,iso,today){
+  if(!e)return {id:"?",name:"Neznámé ID",dept:""};
+  if(isLead(e))return {id:"lead",name:"Vedoucí",dept:""};
+  const posId=iso<today?levelAt(e,ctDayEnd(iso)).pos:e.positionId;
+  const p=posId?S.positions.find(x=>x.id===posId&&isGroup(x)):null;
+  return p?{id:p.id,name:p.name,dept:p.dept||""}:{id:"-",name:"Bez skupiny",dept:""};
+}
+/** Pořadí projektů: skupiny jako v Matici, pak Vedoucí, Bez skupiny, Neznámé ID. */
+function dvGroupOrder(){const o=new Map(S.positions.filter(isGroup).map((p,i)=>[p.id,i]));return id=>o.has(id)?o.get(id):id==="lead"?1e6:id==="-"?1e6+1:1e6+2;}
+/** Obsazenost dne: kdo přišel, kdo je teď v práci (dnes: přišel a ještě neodešel), minuty
+    v práci; po projektech. */
+function dvDay(iso,opts){
+  opts=opts||{};
+  const dv=(S.workAudit&&S.workAudit.dv)||blankDv(),day=dv.pres[iso]||{},now=new Date(opts.now||Date.now());
+  const today=todayIso(opts.now),nowMin=now.getHours()*60+now.getMinutes(),map=dvWidMap();
+  const people=Object.entries(day).map(([wid,v])=>{
+    const e=map.get(wid)||null,a=v[0],b=v[1],min=dvStay(a,b);
+    const cur=iso===today&&a!=null&&a<=nowMin&&(b==null||b>nowMin||b<a);
+    return {wid,e,key:e?e.key:"",name:e?(e.last+" "+e.first).trim():"",in:a,out:b,min,now:cur,g:dvGroupOf(e,iso,today)};
+  });
+  const ord=dvGroupOrder(),gs=new Map();
+  people.forEach(x=>{const g=gs.get(x.g.id)||{...x.g,n:0,now:0,min:0,people:[]};g.n++;if(x.now)g.now++;g.min+=x.min||0;g.people.push(x);gs.set(x.g.id,g);});
+  const sortP=(a,b)=>(a.in==null?1e4:a.in)-(b.in==null?1e4:b.in)||norm(a.name||a.wid).localeCompare(norm(b.name||b.wid),"cs");
+  const groups=[...gs.values()].sort((a,b)=>ord(a.id)-ord(b.id));
+  groups.forEach(g=>g.people.sort(sortP));
+  return {iso,today:iso===today,n:people.length,now:people.filter(x=>x.now).length,min:people.reduce((s,x)=>s+(x.min||0),0),
+    open:people.filter(x=>x.min==null).length,groups,people,unknown:people.filter(x=>!x.e).map(x=>x.wid)};
+}
+/** Dny s docházkou (seřazené). */
+function dvDays(){return Object.keys(((S.workAudit&&S.workAudit.dv)||{}).pres||{}).sort();}
+/** Měsíc: obsazenost po dnech a projektech a výkony po lidech a projektech. */
+function dvMonth(month,opts){
+  opts=opts||{};
+  const dv=(S.workAudit&&S.workAudit.dv)||blankDv(),today=todayIso(opts.now),map=dvWidMap(),ord=dvGroupOrder();
+  const last=new Date(+month.slice(0,4),+month.slice(5,7),0).getDate();
+  const isos=Array.from({length:last},(_,i)=>month+"-"+String(i+1).padStart(2,"0"));
+  const gmeta=new Map(),days=[],people=new Map();
+  const pget=wid=>{let q=people.get(wid);if(!q){const e=map.get(wid)||null;q={wid,e,key:e?e.key:"",name:e?(e.last+" "+e.first).trim():"",days:0,min:0,t:0,g:0,f:0,parts:{},ops:{}};people.set(wid,q);}return q;};
+  isos.forEach(iso=>{
+    const day=dv.pres[iso];if(!day)return;
+    const by={};let n=0,min=0;
+    Object.entries(day).forEach(([wid,v])=>{
+      const e=map.get(wid)||null,g=dvGroupOf(e,iso,today),m=dvStay(v[0],v[1])||0;
+      gmeta.set(g.id,g);by[g.id]=(by[g.id]||0)+1;n++;min+=m;
+      const q=pget(wid);q.days++;q.min+=m;
+    });
+    const [y,mm,dd]=iso.split("-").map(Number);
+    days.push({iso,day:mkDay(y,mm,dd),n,min,by});
+  });
+  const pm=dv.perf[month]||{};
+  Object.entries(pm).forEach(([wid,x])=>{
+    const q=pget(wid);
+    Object.entries(x.p||{}).forEach(([nm,v])=>{q.g+=v[0];q.f+=v[1];q.t+=v[2];q.parts[nm]=v;});
+    Object.entries(x.o||{}).forEach(([nm,v])=>{q.ops[nm]=v;});
+  });
+  const endIso=isos[isos.length-1]<today?isos[isos.length-1]:today;
+  const list=[...people.values()].map(q=>{
+    q.gr=dvGroupOf(q.e,endIso,today);gmeta.set(q.gr.id,q.gr);
+    q.util=q.min>0&&q.t>0?q.t/q.min:null;q.perHour=q.t>0?q.g/(q.t/60):null;
+    const top=Object.entries(q.parts).sort((a,b)=>b[1][2]-a[1][2]||b[1][0]-a[1][0])[0];q.top=top?top[0]:"";
+    return q;
+  }).sort((a,b)=>ord(a.gr.id)-ord(b.gr.id)||norm(a.name||a.wid).localeCompare(norm(b.name||b.wid),"cs"));
+  const groups=[...gmeta.values()].sort((a,b)=>ord(a.id)-ord(b.id)).map(g=>{
+    const ps=list.filter(q=>q.gr.id===g.id),sum=k=>ps.reduce((s,q)=>s+q[k],0),t=sum("t"),min=sum("min");
+    return {...g,people:ps.length,min,t,g:sum("g"),util:min>0&&t>0?t/min:null,perHour:t>0?sum("g")/(t/60):null};
+  });
+  const sum=k=>list.reduce((s,q)=>s+q[k],0),T=sum("t"),M=sum("min");
+  return {month,days,groups,people:list,perf:!!Object.keys(pm).length,
+    tot:{days:days.length,min:M,t:T,g:sum("g"),f:sum("f"),util:M>0&&T>0?T/M:null,perHour:T>0?sum("g")/(T/60):null,avg:days.length?days.reduce((s,d)=>s+d.n,0)/days.length:null}};
+}
+/** Produktivita člověka za měsíce od–do: docházka (dny, minuty), vykázaný čas, kusy, díly a operace. */
+function dvPerson(key,from,to){
+  const e=S.employees[key],dv=(S.workAudit&&S.workAudit.dv)||blankDv(),w=e?widKey(e.wid):"";
+  if(!w)return {noId:true};
+  const parts={},ops={},months=[];let days=0,min=0;
+  Object.keys(dv.pres).filter(iso=>iso.slice(0,7)>=from&&iso.slice(0,7)<=to).forEach(iso=>{const v=dv.pres[iso][w];if(v){days++;min+=dvStay(v[0],v[1])||0;}});
+  Object.keys(dv.perf).filter(m=>m>=from&&m<=to).sort().forEach(m=>{
+    const x=dv.perf[m][w];if(!x)return;
+    let t=0,g=0;
+    Object.entries(x.p||{}).forEach(([nm,v])=>{const p=parts[nm]||(parts[nm]={name:nm,g:0,f:0,t:0,n:0});p.g+=v[0];p.f+=v[1];p.t+=v[2];p.n+=v[3];t+=v[2];g+=v[0];});
+    Object.entries(x.o||{}).forEach(([nm,v])=>{const o=ops[nm]||(ops[nm]={name:nm,g:0,t:0,n:0});o.g+=v[0];o.t+=v[1];o.n+=v[2];});
+    months.push({id:m,t,g});
+  });
+  const pl=Object.values(parts).sort((a,b)=>b.t-a.t||b.g-a.g),ol=Object.values(ops).sort((a,b)=>b.t-a.t||b.g-a.g);
+  const T=pl.reduce((s,p)=>s+p.t,0),G=pl.reduce((s,p)=>s+p.g,0),F=pl.reduce((s,p)=>s+p.f,0);
+  return {wid:w,days,min,t:T,g:G,f:F,util:min>0&&T>0?T/min:null,perHour:T>0?G/(T/60):null,parts:pl,ops:ol,months,
+    has:days>0||pl.length>0,any:Object.keys(dv.pres).length>0||Object.keys(dv.perf).length>0};
 }
 
 /* ==========================================================================

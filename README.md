@@ -62,6 +62,42 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.37
+
+- **Audit: docházka a výkony z jednoho souboru.** Tlačítko **Nahrát docházku a výkony** přečte
+  Excel se dvěma listy:
+  - první list **Docházka**: ve sloupci A ID zaměstnance, od sloupce B dvojice sloupců příchod
+    a odchod pro každý den (datum dne, např. 1. 10. 2026, je v hlavičce nad dvojicí). Kódy bez
+    času (D, N …) se přeskočí, odchod dřív než příchod je noční směna přes půlnoc;
+  - druhý list **vykázaná práce**: A ID zaměstnance, D název dílu, E operace, F množství
+    v zakázce, G dokončené množství, J strávený čas. Sloupec s datem, když v listu je, se najde
+    sám (čísla zakázek se za datum nepovažují). Jednotka času se pozná z hlavičky a hodnot,
+    jde ji vybrat ručně.
+  - Před uložením dialog ukáže souhrn obou listů, dny a měsíce, které se nahradí, a ID, která
+    nemá nikdo v Lidech. Výkony s datem jdou zapsat i jako kusy podle operací do Auditu.
+  - Písmena sloupců obou listů a jednotka času jsou v Nastavení Auditu. Docházka pro odměny se
+    nemění.
+- **Lidé v práci** (nová záložka Auditu):
+  - **den**, i dnešek: kolik lidí přišlo a kolik je v práci teď, hodiny, pruhy po projektech
+    (projekt = skupina v Matici dovedností) a seznam lidí po projektech s příchodem, odchodem
+    a hodinami. **Denní report do PDF**;
+  - **měsíc**: obsazenost po dnech a projektech, souhrn po projektech a produktivita lidí
+    (vykázaný čas, využití = vykázaný čas ÷ čas v práci, dokončené kusy, kusy za hodinu, hlavní
+    díl) s řazením. **Excel za měsíc** (obsazenost, lidé, docházka, díly).
+- **Profil zaměstnance: Produktivita z vykázané práce.** Dny a hodiny v práci, vykázaný čas,
+  využití, dokončené kusy a kusy za hodinu. **Koláč dílů** ukáže, na jakých dílech člověk
+  pracuje (podle vykázaného času, šest největších a Ostatní), s legendou a popiskem při najetí.
+  Pod ním operace.
+- **Kontroly podle dnešních příchodů.** V Nastavení kontrol jde přepnout výběr lidí na
+  **Každý den podle příchodů**. Kontroly si pak každý pracovní den vyžádají soubor s dnešními
+  příchody (stejný jako v Auditu, stačí list Docházka) a vylosují se jen z lidí, kteří přišli.
+  - Za týden se z oddělení zkontroluje stejný podíl lidí jako dřív (25 %); na den připadne
+    zbytek rozdělený do zbývajících pracovních dnů, kdo už v týdnu kontrolu má, znovu se nelosuje.
+  - Náhradník se vybírá jen z lidí v práci. U naplánovaného člověka, který podle příchodů
+    nepřišel, je štítek „podle příchodů nepřišel“ (i v plánu na týden dopředu).
+  - Odznak Kontrol připomene, že dnešní příchody chybí.
+- Verze dat 34: stará stránka nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.36
 
 - **Shortage: Doplnit chybějící.** Na kartě seznamu je tlačítko **Doplnit chybějící**: urgenty
@@ -1316,6 +1352,10 @@ v hlavičce každého skriptu:
   důvodem a ručně doplněné kusy, nastavení skupin a operací, vlastní období, zrušení úpravy,
   nové nahrání se zachováním úprav, osekaný Excel a PDF bez interních údajů, historie změn,
   telefon, tmavý režim);
+- `tests/e2e_dochazka.js`: novinky 2.37 (docházka a výkony z jednoho souboru vyrobeného
+  v prohlížeči z vymyšlených čísel, Kontroly podle dnešních příchodů, Lidé v práci po dnech
+  a měsících, PDF a Excel, koláč dílů v profilu, telefon, tmavý režim; hodiny stránky stojí na
+  30. 10. 2026);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -1331,7 +1371,16 @@ sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v23/deploy/i
 UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
-S `EXPECT_VERSION='2\.17'` jde stejný test pustit na aktualizaci 2.3 → 2.17 (data verze 5 → 15);
+Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
+upraví jen seznam toho, co nová verze přidá): 2.36 → 2.37:
+
+```bash
+rm -rf /tmp/v236 && mkdir /tmp/v236 && git archive 5dc3da0 | tar -x -C /tmp/v236
+sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v236/deploy/install.sh
+UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
+```
+
+S `EXPECT_VERSION='2\.17'` jde test `e2e_upgrade24.js` pustit na aktualizaci 2.3 → 2.17 (data verze 5 → 15);
 od 2.16 ověří i uložení a načtení šifrované fotky v aktualizované instalaci, od 2.17 prázdný
 Audit nad převzatými daty.
 Stejně `tests/e2e_upgrade23.js` pro 2.2 → 2.3 (výchozí verze `git archive 28d6bde`)

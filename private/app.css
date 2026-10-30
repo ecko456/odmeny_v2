@@ -2163,3 +2163,73 @@ table.ctr-tab { width: 100%; border-collapse: collapse; font-size: 14px; }
   .ctr-chart svg { min-width: 520px; }
   .ctr-chart.wide svg { min-width: 760px; }
 }
+
+/* ===== Audit: Lidé v práci, docházka a výkony z jednoho souboru (2.37) ===== */
+.dv-bar { flex-wrap: wrap; }
+.dv-bar select { max-width: 260px; }
+.dv-bars-wrap { position: relative; display: block; }
+.dv-bars.chart { display: grid; gap: 6px; margin: 4px 0 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; list-style: none; }
+.dv-bars li { display: grid; grid-template-columns: minmax(110px, 220px) 1fr auto; align-items: center; gap: 12px; padding: 5px 8px; border-radius: 10px; }
+.dv-bars li.on, .dv-bars li:focus-visible { background: var(--surface-2); box-shadow: none; }
+.dv-bars li:focus-visible { box-shadow: var(--focus); }
+.dv-bl { overflow: hidden; font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.dv-track { height: 12px; border-radius: 6px; background: var(--surface-3); overflow: hidden; }
+.dv-track i { display: block; width: 0; height: 100%; border-radius: 0 4px 4px 0; background: var(--ch-acc); }
+.dv-bars b { min-width: 34px; font-size: 15px; text-align: right; }
+.dv-bars b small { color: var(--ink-3); font-weight: 500; font-size: 12px; }
+.dv-spec .dv-bl { color: var(--ink-2); font-weight: 500; }
+.dv-spec .dv-track i { background: var(--ink-3); }
+.dv-sub { margin: 18px 0 10px; font-size: 17px; }
+.dv-sub small { font: 400 13px var(--body); }
+.dv-projs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.dv-projs .card { margin: 0; }
+.dv-proj-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.dv-proj-head h4 { font-size: 16px; }
+.dv-proj-head span { color: var(--ink-2); font-size: 13px; }
+.dv-ppl { width: 100%; }
+.dv-ppl td.name { white-space: normal; }
+.dv-ppl td, .dv-ppl th { padding-left: 8px; padding-right: 8px; }
+.dv-wid { display: block; margin-top: 1px; }
+.dv-occ { max-height: 560px; overflow: auto; }
+.dv-occ th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+tr.dv-click { cursor: pointer; }
+tr.dv-click:hover td { background: var(--surface-2); }
+.dv-files summary { cursor: pointer; }
+.dv-files .table-card { margin-top: 10px; }
+.dv-imp { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin: 10px 0; }
+.dv-imp > div { padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.dv-imp h4 { margin-bottom: 6px; font-size: 15px; }
+.dv-imp h4 small { font: 400 12px var(--body); }
+.dv-imp .field { margin-top: 10px; }
+.dv-imp .check { margin-top: 10px; }
+.dv-unit { max-width: 320px; margin: 10px 0; }
+/* koláč dílů v profilu */
+.pf-dv .dv-pstats { margin-bottom: 8px; }
+.dv-pie-wrap { position: relative; display: grid; grid-template-columns: minmax(180px, 240px) 1fr; gap: 22px; align-items: center; }
+.dv-pie-fig { width: 100%; max-width: 240px; }
+.dv-pie.chart { display: block; width: 100%; height: auto; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; }
+.chart.dv-pie .hit { stroke: var(--surface); stroke-width: 2px; stroke-linejoin: round; cursor: default; }
+.chart.dv-pie .hit.s1 { fill: var(--pie-1); } .chart.dv-pie .hit.s2 { fill: var(--pie-2); } .chart.dv-pie .hit.s3 { fill: var(--pie-3); }
+.chart.dv-pie .hit.s4 { fill: var(--pie-4); } .chart.dv-pie .hit.s5 { fill: var(--pie-5); } .chart.dv-pie .hit.s6 { fill: var(--pie-6); }
+.chart.dv-pie .hit.so { fill: var(--pie-o); }
+.chart.dv-pie .hit.on, .chart.dv-pie .hit:focus-visible { opacity: .78; }
+.dv-pie-v { fill: var(--ink); font: 700 17px var(--disp); text-anchor: middle; }
+.dv-pie-k { fill: var(--ink-3); font: 8.5px var(--body); text-anchor: middle; }
+.dv-legend { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.dv-legend th { padding: 4px 6px; color: var(--ink-3); font-size: 12px; font-weight: 500; text-align: left; border-bottom: 1px solid var(--line); }
+.dv-legend td { padding: 6px; border-bottom: 1px solid var(--line); }
+.dv-legend .r { text-align: right; }
+.dv-sw { display: inline-block; width: 11px; height: 11px; margin-right: 8px; border-radius: 3px; vertical-align: -1px; }
+.dv-sw.s1 { background: var(--pie-1); } .dv-sw.s2 { background: var(--pie-2); } .dv-sw.s3 { background: var(--pie-3); }
+.dv-sw.s4 { background: var(--pie-4); } .dv-sw.s5 { background: var(--pie-5); } .dv-sw.s6 { background: var(--pie-6); } .dv-sw.so { background: var(--pie-o); }
+/* Kontroly podle příchodů */
+.kt-pres { margin-bottom: 14px; }
+.kt-pres .btn { margin-left: 6px; }
+.kt-mode { display: grid; gap: 8px; margin: 12px 0 0; padding: 0; border: 0; }
+.kt-mode legend { margin-bottom: 6px; color: var(--ink-2); font-size: 13px; }
+@media (max-width: 640px) {
+  .dv-bars li { grid-template-columns: minmax(90px, 1fr) 1.2fr auto; gap: 8px; }
+  .dv-projs { grid-template-columns: 1fr; }
+  .dv-pie-wrap { grid-template-columns: 1fr; justify-items: center; }
+  .dv-legend { font-size: 13px; }
+}

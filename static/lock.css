@@ -50,6 +50,8 @@
   --ch-tab: #b06f12;
   --ch-acc: #008876;
   --ch-prod: #6a57a6;
+  /* Koláč dílů v profilu (2.37): kategorie v pevném pořadí, ověřeno validátorem palet. */
+  --pie-1: #2a78d6; --pie-2: #eb6834; --pie-3: #1baf7a; --pie-4: #eda100; --pie-5: #e87ba4; --pie-6: #008300; --pie-o: #a9aea9;
   --focus: 0 0 0 3px color-mix(in srgb, var(--acc) 28%, transparent);
   --shadow-1: 0 1px 2px rgba(24, 30, 27, .06);
   --shadow-2: 0 1px 2px rgba(24, 30, 27, .05), 0 12px 28px -18px rgba(24, 30, 27, .28);
@@ -95,6 +97,7 @@
     --ch-tab: #c38323;
     --ch-acc: #15a28b;
     --ch-prod: #907cd1;
+    --pie-1: #3987e5; --pie-2: #d95926; --pie-3: #199e70; --pie-4: #c98500; --pie-5: #d55181; --pie-6: #008300; --pie-o: #5d6863;
     --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
     --shadow-2: 0 1px 2px rgba(0, 0, 0, .35), 0 14px 30px -18px rgba(0, 0, 0, .8);
     --shadow-3: 0 28px 70px -24px rgba(0, 0, 0, .85);

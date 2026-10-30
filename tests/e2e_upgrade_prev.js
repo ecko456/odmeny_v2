@@ -1,0 +1,210 @@
+// Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
+// při každé další verzi stačí upravit ADDED a krok 5):
+//   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
+//      a historií, Kontroly s plánem, Audit s kusy a hranicí zaškolení) a uloží je;
+//   2. nechá otevřenou starou stránku a spustí instalaci nové verze (UPGRADE_CMD);
+//   3. stará stránka už nesmí nic uložit (426, výzva k obnovení);
+//   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
+//   5. v nové verzi nahraje soubor s docházkou a výkony (2.37) a přepne Kontroly na los podle
+//      příchodů; po novém přihlášení je vše uložené a původní data pořád stejná.
+// Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
+//   git archive 5dc3da0 | tar -x -C $S/v236 && sudo bash $S/v236/deploy/install.sh
+//   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
+const { chromium } = require(process.env.PW);
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const XLSX = require('../private/vendor/xlsx.full.min.js');
+const S = process.env.S;
+const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.36$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.37$');
+const shots = path.join(S, 'ushots-prev');
+const problems = [];
+const check = (ok, message) => { if (!ok) problems.push(message); };
+/* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
+const ADDED = { 'workAudit.dv': 'blankDv()' };
+
+async function watch(page, label, allow426 = false) {
+  page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
+  page.on('pageerror', err => problems.push(`${label} pageerror: ${err.message}`));
+  page.on('response', r => {
+    if (r.status() < 400) return;
+    if (r.status() === 403 && /action=unlock/.test(r.url())) return;
+    if (allow426 && r.status() === 426) return;
+    problems.push(`${label} HTTP ${r.status()} ${r.url()}`);
+  });
+}
+const saved = page => page.waitForFunction(() => !store.dirty && !store.saving && document.querySelector('#saveState').dataset.state === 'saved', null, { timeout: 15000 });
+async function login(page, key) {
+  await page.goto(BASE);
+  await page.waitForSelector('#manual');
+  await page.click('#manual');
+  await page.fill('[name="key"]', key);
+  await page.click('#keyForm button[type="submit"]');
+  await page.waitForSelector('#skip');
+  await page.click('#skip');
+  await page.waitForSelector('#view-prehled.on');
+  await page.waitForTimeout(500);
+}
+/* Sdílený stav s klíči v pevném pořadí; cesty z ADDED se vyjmou a vrátí zvlášť. */
+const STATE = added => `(() => {
+  const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v;
+  const st = JSON.parse(JSON.stringify(sharedState(S)));
+  delete st.v;
+  const out = {};
+  ${JSON.stringify(Object.keys(added))}.forEach(p => {
+    const keys = p.split('.'), last = keys.pop();
+    const box = keys.reduce((o, k) => (o ? o[k] : undefined), st);
+    if (box && last in box) { out[p] = canon(box[last]); delete box[last]; }
+  });
+  return JSON.stringify({ st: canon(st), added: out });
+})()`;
+
+/* Soubor docházky a výkonů pro krok 5: dva dny, tři lidé, výkony bez data. */
+function dvXlsx(file, wids) {
+  const ser = d => (Date.UTC(2026, 9, d) - Date.UTC(1899, 11, 30)) / 864e5;
+  const att = [['ID', ser(26), null, ser(27), null], [null, 'Příchod', 'Odchod', 'Příchod', 'Odchod'], ...wids.map((w, i) => [w, (360 + i * 5) / 1440, 870 / 1440, (360 + i * 5) / 1440, 860 / 1440])];
+  const work = [['ID', '', '', 'Díl', 'Operace', 'Zakázka ks', 'Hotovo ks', '', '', 'Čas (min)'], ...wids.flatMap((w, i) => [[w, '', '', 'Hřídel', 'Broušení', 50, 20 + i, '', '', 200], [w, '', '', 'Kryt', 'Broušení', 30, 10, '', '', 150]])];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(att), 'Docházka');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(work), 'vykázaná práce');
+  fs.writeFileSync(file, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+}
+
+(async () => {
+  fs.mkdirSync(shots, { recursive: true });
+  const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const old = await ctx.newPage();
+  await watch(old, 'stará', true);
+
+  // ---- 1. data v předchozí verzi ----
+  await old.goto(BASE);
+  await old.waitForSelector('#setupForm');
+  await old.fill('[name="token"]', fs.readFileSync(process.env.TOKEN_FILE || '/var/lib/odmeny_v2/setup-token.txt', 'utf8').trim());
+  await old.fill('[name="label"]', 'Vedoucí dílny');
+  await old.click('#setupForm button[type="submit"]');
+  await old.waitForSelector('.odm-card');
+  const key = (await old.textContent('.odm-card .card-key')).trim();
+  await old.check('#saved');
+  await old.click('#finish');
+  await old.waitForSelector('#skip');
+  await old.click('#skip');
+  await old.waitForSelector('#view-prehled.on');
+  const oldVer = await old.evaluate(() => ui.me.version);
+  check(PREV.test(oldVer), `výchozí verze není předchozí: ${oldVer}`);
+  const wids = await old.evaluate(() => {
+    const st = blank();
+    const grp = (id, name, dept, skills) => { const p = mkPos(id, name, []); p.dept = dept; p.skillset = skills.map((n, i) => ({ id: `${id}s${i}`, name: n, desc: '', scale: null })); p.maxTab = 8; p.tiers = []; return p; };
+    st.positions = [grp('g_brus', 'Brus', 'Brus', ['Rovinné broušení', 'Měření']), grp('g_cnc', 'CNC', 'Obrobna', ['Seřízení'])];
+    const people = [['Adámek', 'Aleš', 'g_brus', '101'], ['Bednář', 'Boris', 'g_brus', '102'], ['Fiala', 'Filip', 'g_cnc', '201'], ['Gregor', 'Gustav', 'g_cnc', '']];
+    people.forEach(([last, first, g, wid], i) => {
+      const k = `${last}|${first}`.toLowerCase();
+      st.employees[k] = { key: k, last, first, positionId: g, shift: 'R', note: i ? '' : 'Poznámka k člověku', wid, rate: { [`${g}s0`]: 1 + i % 4 },
+        hist: [{ at: Date.UTC(2026, 6, 1), pos: g, lvl: null, pct: 25 }] };
+    });
+    st.audit.tasks.Brus = [{ id: 't1', text: 'Kontrola prvního kusu' }];
+    st.audit.tasks.Obrobna = [{ id: 't1', text: 'Úklid pracoviště' }];
+    S = sanitizeState(st);
+    const meta = { at: Date.now(), by: 'Vedoucí dílny' };
+    generatePlan(shiftWeek(isoWeek(todayIso()).id, 1), meta);
+    waApplyWork(S.workAudit, { byDay: { '2026-10-20': { Broušení: 40, 'Frézování CNC': 12 }, '2026-10-21': { Broušení: 35 } }, ops: { Broušení: 75, 'Frézování CNC': 12 }, rows: 3, skipped: 0, from: '2026-10-20', to: '2026-10-21' }, { name: 'vykaz.xlsx', by: 'Vedoucí dílny', at: Date.now() });
+    S.workAudit.trainPct = 60;
+    S.workAudit.target = 9;
+    save();
+    renderAll();
+    return people.map(p => p[3]).filter(Boolean);
+  });
+  await saved(old);
+  await old.waitForTimeout(1200);
+  // stav, jak ho předchozí verze uložila a znovu načte
+  const ctx0 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const reread = await ctx0.newPage();
+  await watch(reread, 'předchozí znovu');
+  await login(reread, key);
+  const before = JSON.parse(await reread.evaluate(STATE(ADDED)));
+  const beforeRev = await reread.evaluate(() => store.rev);
+  const beforeLog = await reread.evaluate(() => S.log.length);
+  await ctx0.close();
+  check(Object.keys(before.added).length === 0, `předchozí verze už má nová data: ${Object.keys(before.added)}`);
+  check(Object.keys(before.st.audit.plans).length === 1 && Object.keys(before.st.workAudit.pcs).length === 2 && before.st.workAudit.trainPct === 60, 'předchozí verze neuložila plán kontrol nebo Audit');
+
+  // ---- 2. aktualizace, stará stránka zůstává otevřená ----
+  execSync(process.env.UPGRADE_CMD || 'sudo bash deploy/install.sh', { stdio: 'inherit' });
+
+  // ---- 3. stará stránka nesmí uložit ----
+  await old.evaluate(() => { S.workAudit.target = 11; save(); });
+  await old.waitForSelector('#dlg[open]', { timeout: 15000 });
+  const oldDialog = await old.textContent('#dlg');
+  check(/Aplikace byla aktualizována/.test(oldDialog), `stará stránka: ${oldDialog.slice(0, 120)}`);
+  await old.screenshot({ path: path.join(shots, '01-stara-po-aktualizaci.png') });
+
+  // ---- 4. nová verze: stejná data ----
+  const ctx2 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx2.newPage();
+  await watch(page, 'nová');
+  await login(page, key);
+  const newVer = await page.evaluate(() => ui.me.version);
+  check(NEXT.test(newVer), `po aktualizaci neběží nová verze: ${newVer}`);
+  const after = JSON.parse(await page.evaluate(STATE(ADDED)));
+  check(JSON.stringify(after.st) === JSON.stringify(before.st), 'data se po aktualizaci změnila');
+  if (JSON.stringify(after.st) !== JSON.stringify(before.st)) {
+    fs.writeFileSync(path.join(S, 'uprev-before.json'), JSON.stringify(before.st, null, 1));
+    fs.writeFileSync(path.join(S, 'uprev-after.json'), JSON.stringify(after.st, null, 1));
+  }
+  for (const [p, expr] of Object.entries(ADDED)) {
+    const want = await page.evaluate(`(() => { const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v; return JSON.stringify(canon(${expr})); })()`);
+    check(JSON.stringify(after.added[p]) === want, `${p}: ${JSON.stringify(after.added[p])} ≠ ${want}`);
+  }
+  check(await page.evaluate(() => store.rev) === beforeRev, 'stará stránka po aktualizaci něco uložila');
+  check(await page.evaluate(() => S.log.length) === beforeLog, 'historie změn se po aktualizaci liší');
+
+  // ---- 5. nové funkce nad převzatými daty a jejich uložení ----
+  await page.click('#nav [data-view="audit"]');
+  dvXlsx(path.join(S, 'uprev-dochazka.xlsx'), wids);
+  await page.setInputFiles('#waDvFile', path.join(S, 'uprev-dochazka.xlsx'));
+  await page.waitForSelector('#dlg[open] .dv-imp');
+  check(/Řádky nemají datum, výkony se uloží za říjen 2026\./.test(await page.textContent('#dlgBody')), 'výkony bez data za měsíc docházky');
+  await page.click('#dlgOk');
+  await page.waitForSelector('#waView .dv-people, #waView .dv-bars, #waView .empty');
+  await saved(page);
+  await page.click('#nav [data-view="kontroly"]');
+  await page.click('#ktSettings');
+  await page.waitForSelector('#dlg[open] .kt-mode');
+  await page.check('#dlg input[name="mode"][value="day"]');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => !document.querySelector('#dlg[open]') && S.audit.settings.mode === 'day');
+  await saved(page);
+  await page.screenshot({ path: path.join(shots, '02-nova-kontroly.png') });
+  const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const again = await ctx3.newPage();
+  await watch(again, 'nová znovu');
+  await login(again, key);
+  const final = JSON.parse(await again.evaluate(STATE({ ...ADDED, 'audit.settings': 1, 'workAudit.files': 1 })));
+  const dv = final.added['workAudit.dv'];
+  check(dv && Object.keys(dv.pres).join() === '2026-10-26,2026-10-27' && Object.keys(dv.perf['2026-10']).sort().join() === wids.slice().sort().join(), `docházka a výkony po novém přihlášení: ${JSON.stringify(dv).slice(0, 200)}`);
+  check(final.added['audit.settings'] && final.added['audit.settings'].mode === 'day', `režim Kontrol: ${JSON.stringify(final.added['audit.settings'])}`);
+  const keep = JSON.parse(JSON.stringify(before.st));
+  delete keep.audit.settings;
+  delete keep.workAudit.files;
+  // historie změn přibyla (nahrání, režim Kontrol); původní záznamy v ní musí zůstat
+  const logNow = new Set(final.st.log.map(x => JSON.stringify(x)));
+  check(keep.log.every(x => logNow.has(JSON.stringify(x))) && final.st.log.length > keep.log.length, 'historie změn: chybí původní záznamy, nebo nepřibyly nové');
+  delete keep.log;
+  delete final.st.log;
+  check(JSON.stringify(final.st) === JSON.stringify(keep), 'původní data se po použití nové verze změnila');
+  if (JSON.stringify(final.st) !== JSON.stringify(keep)) {
+    fs.writeFileSync(path.join(S, 'uprev-keep.json'), JSON.stringify(keep, null, 1));
+    fs.writeFileSync(path.join(S, 'uprev-final.json'), JSON.stringify(final.st, null, 1));
+  }
+  await again.click('#nav [data-view="audit"]');
+  await again.evaluate(() => { ui.wa.tab = 'lide'; ui.wa.dvMode = 'month'; ui.wa.dvMonth = '2026-10'; renderWorkAudit(); });
+  await again.waitForSelector('#waView .dv-people');
+  await again.screenshot({ path: path.join(shots, '03-nova-lide.png'), fullPage: true });
+  await ctx3.close();
+
+  await browser.close();
+  if (problems.length) { console.log(`PROBLÉMY (${problems.length}):\n${problems.join('\n')}`); process.exit(1); }
+  console.log(`aktualizace ${oldVer} → ${newVer} ok`);
+})().catch(error => { console.error(error); process.exit(1); });

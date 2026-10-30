@@ -34,6 +34,41 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 30. 10. 2026 (verze 2.37):
+
+- Uživatel: „Zakomponuj do auditu možnost importu docházky a výkonů z jednoho souboru. … první
+  list Docházka, ve sloupci A ID zaměstnance, sloupce B a C první datum (příchod, odchod) … denní
+  reporty obsazenosti, i pro aktuální den, kolik máme lidí v práci na jaké projekty … druhý list
+  vykázaná práce: A ID, D název dílu, E operace, F množství v zakázce, G dokončené množství,
+  J strávený čas … každý profil zaměstnance ať vidí produktivitu a název dílů jako koláč“.
+  Na dotaz: projekt = skupina v Matici; do modulu Docházka (odměny) se nic nezapisuje.
+  Doplnění: „aplikuj i do kontrol, ať si kontrola vyžádá soubor s dnešními příchody, aby systém
+  poznal, kdo je v práci, a na ty se náhodně vygenerovala kontrola“.
+  - Core (sekce „AUDIT: docházka a výkony z jednoho souboru“): `S.workAudit.dv` =
+    `{cols, unit, pres, perf, files}` (viz modul Audit níže). `dvParse` → `dvParseAtt`
+    (hlavička = řádek s nejvíc daty bez času, dvojice sloupců) a `dvParseWork` (datum: hlavička
+    Datum, jinak jen buňky formátované jako datum, `sheet.dateCols` z `readTable`/`sheetDateCols`
+    s `cellNF`; čísla zakázek 45100 vypadají jako data). `dvApply` nahradí dny docházky ze souboru
+    a celé měsíce výkonů, volitelně kusy do Auditu přes `waApplyWork`. Výpočty `dvDay`, `dvMonth`,
+    `dvPerson`, projekt `dvGroupOf` (minulost podle `levelAt`).
+  - Kontroly: `audSet().mode` `week` | `day` (ukládá se jen `day`, starší data beze změny),
+    `audPresent(iso)`, `generateDayChecks(week, iso)`, `substituteCheck` bere s příchody jen
+    lidi v práci.
+  - UI: záložka Auditu `lide` (`dvHtml`, `dvDayHtml`, `dvMonthHtml`), import `dvImport`
+    (`attOnly` v Kontrolách), `dvImportAudit`, `ktPresImport`, `ktDayChecks`, `ktPresHtml`,
+    `ktAway`; PDF `exportDvPdf`, Excel `exportDvXlsx`; profil `dvPersonCard` s koláčem
+    `dvPieHtml` (barvy `--pie-1..6`, `--pie-o` v `static/lock.css`, ověřené validátorem palet).
+  - Testy: core „Audit (2.37)“ a „Kontroly (2.37)“, nový `tests/e2e_dochazka.js` (hodiny stránky
+    na 30. 10. 2026 přes `clock.setFixedTime`) a nový **`tests/e2e_upgrade_prev.js`**: aktualizace
+    z předchozí verze na Apachi; při další verzi uprav `ADDED`, krok 5 a archiv v hlavičce.
+  - **Se skutečným souborem z docházkového systému to nikdo nezkoušel.** Nejisté: formát času
+    (zlomek dne, text „6:30“, datum s časem — vše se čte), jednotka stráveného času (auto podle
+    hlavičky a hodnot), kódy nepřítomnosti.
+  - Verze dat 34, `ODM_VERSION` 2.37.
+- Čeká: **2.38 Plánování kapacit** (uživatel: „plánovací modul kapacit, ať jde nastavit kolik
+  potřebujeme s jakými zkušenostmi na daných odděleních a jak jsme na tom a kolik potřebujeme
+  doškolit nebo doplnit zaměstnanců“).
+
 Stav k 26. 10. 2026 (verze 2.36):
 
 - Uživatel: „přidej do modulu Shortage možnost znovu vložit urgenty, a doplní se jen chybějící“.
@@ -1252,7 +1287,7 @@ Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`). Po odděleních (2.
 každé oddělení od nové strany s vlastním záhlavím, čísly položek od 1 a stranami v zápatí
 za oddělení, soubor `…-po-oddelenich.pdf`.
 
-## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30, stránky podle vzoru 2.31, hranice zaškolení 2.33)
+## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30, stránky podle vzoru 2.31, hranice zaškolení 2.33, docházka a výkony 2.37)
 
 Data `S.workAudit` (`blankWorkAudit`, čištění `cleanWorkAudit`):
 
@@ -1326,6 +1361,21 @@ a ve 0.19 `ws['!data']`). Soubory jdou do fronty (`waPlanQueueAdd`), zpracován�
 načte uložené díly, sloučí frontu, ukáže souhrn, uloží nové díly, stav přes `store.note`,
 a **staré díly smaže až po uložení stavu** (`waWaitSaved`). Chybějící díl (404, třeba po
 obnovení starší verze dat) se v souhrnu ohlásí a zpracování pokračuje bez něj.
+
+Docházka a výkony z jednoho souboru (2.37), `S.workAudit.dv`:
+
+- `cols{att{id, first}, work{id, part, op, order, done, time, date}}` (písmena, `date` prázdné =
+  najde se samo), `unit` `auto` | `min` | `h`;
+- `pres{iso: {id: [příchod, odchod]}}` v minutách od půlnoci, `null` = chybí; odchod menší než
+  příchod = přes půlnoc (`dvStay`). ID = `widKey` (malá písmena, bez úvodních nul), páruje se
+  s `e.wid` přes `dvWidMap`; neznámé ID zůstane a přiřadí se, až ho člověk dostane;
+- `perf{YYYY-MM: {id: {p{díl: [hotovo, zakázka, minuty, řádků]}, o{operace: [hotovo, minuty,
+  řádků]}}}}`: výkony po měsících (ne po dnech). Nové nahrání nahradí celý měsíc; řádky bez data
+  jdou do měsíce konce docházky;
+- `files[]` (posledních 40). Limity `DV_MAX_*`, čištění `cleanDv`, historie jen sloupce a jednotka
+  (`waChanges`, m `wadvcols`), nahrání píše `store.note` s `keep`.
+- Projekt = skupina Matice (`dvGroupOf`): dnes podle zařazení, minulé dny podle `levelAt`;
+  vedoucí, bez skupiny a neznámé ID jsou zvláštní „projekty“ na konci (`dvSpecial` v UI).
 
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 
@@ -1497,7 +1547,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.33 | `5944f8d` | Audit – hranice zaškolení v % v Nastavení, platí pro celé Kapacity a zaškolení (aplikace, PDF, Excel), prázdné = podle Matice (data verze 31) |
 | 2.34 | `bfc9e06` | Shortage – PDF po odděleních (každé oddělení od nového papíru, vlastní záhlaví, číslování položek i stran) (data verze 31) |
 | 2.35 | `7f3c6c7` | výkaz práce jednou pro Výrobu i Audit (sloupec Operace ve Výrobě, Nahrát i do Výroby v Auditu) (data verze 32) |
-| 2.36 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – Doplnit chybějící (znovu vložené urgenty přidají jen chybějící položky, odebrané se nevrátí) (data verze 33) |
+| 2.36 | `5dc3da0` | Shortage – Doplnit chybějící (znovu vložené urgenty přidají jen chybějící položky, odebrané se nevrátí) (data verze 33) |
+| 2.37 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – docházka a výkony z jednoho souboru, Lidé v práci (den, měsíc, PDF, Excel), produktivita a koláč dílů v profilu; Kontroly podle dnešních příchodů (data verze 34) |
 
 Verze 2.1 přidala:
 
@@ -1855,7 +1906,13 @@ Data `S.audit` (`blankAudit`, čištění `cleanAudit` v `core.js`):
 - `plans{YYYY-Www: {at, by, pct, days[], items[]}}`: plán týdne. Položka:
   `{id, key, name, dept, day, state plan|done|skip, done, checker, results[{t, text, ok, note}],
   note, reason, extra, sub, at, by}`. Výsledek drží text bodu z doby kontroly.
-- `settings{pct}` (výchozí 25).
+- `settings{pct, mode?}` (výchozí 25; `mode: "day"` = los podle příchodů, 2.37, `week` se neukládá).
+
+Podle příchodů (2.37): `generateDayChecks(týden, den)` vezme z každého oddělení
+ceil((týdenní počet − už naplánovaní a provedení v týdnu) ÷ zbývající pracovní dny) lidí jen
+z `audPresent(den)` (docházka v Auditu), kdo už v týdnu kontrolu má, se nelosuje; znovu
+vylosovat nahradí jen nezapsané automatické položky toho dne. V UI `ktPresImport` (jen list
+Docházka, `dvImport(file, {attOnly: true})`) po nahrání sám vylosuje, když dnešní los ještě není.
 
 Výpočty: `generatePlan` (z každého oddělení `audCount` = ceil(pct) lidí, přednost má nejdéle
 nekontrolovaný podle `audLast`, den podle `audPickDay`: nejméně lidí z oddělení, pak celkem,
@@ -1877,7 +1934,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 81 testů: proti původní aplikaci + opravy + 2.1 až 2.36
+node tests/test_core.js                 # 83 testů: proti původní aplikaci + opravy + 2.1 až 2.37
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1932,6 +1989,13 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     týdenní souhrn (aktuální i celý minulý týden), vývoj zaškolení, PDF na výšku (text, Plex Mono,
     A4, pořadí stránek, jen ID), Excel, budoucí období jako plán, hranice zaškolení (2.33), telefon
     a tmavý režim (bílý papír);
+  - `e2e_dochazka.js` (2.37): docházka a výkony z jednoho souboru (dva listy přes SheetJS, datum
+    s formátem, číslo zakázky bez něj), Kontroly podle příchodů (nastavení, odznak, nahrání,
+    los jen z lidí v práci, znovu, náhradník), Audit (dialog, Lidé v práci den a měsíc, popisek,
+    PDF, Excel), profil s koláčem (legenda proti výpočtu, popisek, tmavé barvy), bez ID,
+    nastavení sloupců, historie, telefon; hodiny stránky stojí na pátku 30. 10. 2026;
+  - `e2e_upgrade_prev.js`: aktualizace z předchozí verze na aktuální na Apachi (data
+    položku po položce, 426 staré stránky, nové funkce nad převzatými daty);
   - `e2e_vykaz.js` (2.35): jeden výkaz práce pro Výrobu i Audit: odhad sloupce Operace, kusy
     v Auditu proti výpočtu v Node, evidence po lidech (ID 109 ke spárování), „Otevřít Audit“,
     v Auditu Nahrát i do Výroby (zaškrtnuté, odškrtnuté), soubor s jinou hlavičkou, historie

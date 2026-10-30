@@ -21,7 +21,7 @@ const ui = {
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
   sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null },
-  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '' },
+  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '', dvMode: 'day', dvDay: '', dvMonth: '', dvSort: 'group' },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -2375,11 +2375,24 @@ async function readTable(file, pick) {
   const buffer = await file.arrayBuffer();
   if (lower.endsWith('.csv') || lower.endsWith('.txt')) return [{ aoa: parseCSV(decodeText(buffer)), name: file.name }];
   const X = await xlsx();
-  const workbook = X.read(new Uint8Array(buffer), { type: 'array' });
+  const workbook = X.read(new Uint8Array(buffer), { type: 'array', cellNF: true });
   return (pick ? pick(workbook.SheetNames) : workbook.SheetNames).map(sheet => ({
     aoa: X.utils.sheet_to_json(workbook.Sheets[sheet], { header: 1, raw: true, defval: null, blankrows: true }),
     name: file.name + (workbook.SheetNames.length > 1 ? ` › ${sheet}` : ''),
+    dateCols: sheetDateCols(X, workbook.Sheets[sheet]),
   }));
+}
+/* Sloupce s buňkami formátovanými jako datum (2.37): číslo zakázky 45100 vypadá v Excelu
+   stejně jako datum, rozliší je jen formát buňky. */
+function sheetDateCols(X, ws) {
+  const out = new Set();
+  if (!ws) return out;
+  Object.keys(ws).forEach(k => {
+    if (k[0] === '!') return;
+    const c = ws[k];
+    if (c && (c.t === 'd' || (c.t === 'n' && c.z && X.SSF.is_date(c.z)))) out.add(X.utils.decode_cell(k).c);
+  });
+  return out;
 }
 
 async function readFile(file) {
@@ -4312,6 +4325,7 @@ function renderProfile() {
         ${e.legacy ? `<p class="small muted mt-s">Původní zařazení z verze 2.3: ${esc(legacyText(e.legacy))}</p>` : ''}
       </div>
     </div>
+    ${dvPersonCard(e.key, from, to)}
     ${ktPersonCard(e.key, `${from}-01`, `${to}-31`)}
     <div class="card pf-log">
       <h3>Poslední změny u tohoto člověka</h3>
@@ -4393,9 +4407,10 @@ function bindExtraEvents() {
   });
   // Tooltip grafů: myš i klávesnice (Tab na sloupec).
   const showTip = hit => {
-    const tip = $('#pfTip');
-    const wrap = $('#pfCharts');
+    const wrap = hit.closest('.pf-charts, .dv-pie-wrap');
+    const tip = wrap && $('.chart-tip', wrap);
     if (!tip || !wrap) return;
+    hideTip();
     tip.textContent = hit.dataset.tip;
     tip.hidden = false;
     const a = hit.getBoundingClientRect();
@@ -4406,11 +4421,10 @@ function bindExtraEvents() {
     $$('.chart .hit.on', wrap).forEach(x => x.classList.remove('on'));
     hit.classList.add('on');
   };
-  const hideTip = () => {
-    const tip = $('#pfTip');
-    if (tip) tip.hidden = true;
-    $$('#pfCharts .hit.on').forEach(x => x.classList.remove('on'));
-  };
+  function hideTip() {
+    $$('.pf-charts .chart-tip, .dv-pie-wrap .chart-tip', view).forEach(x => { x.hidden = true; });
+    $$('.chart .hit.on', view).forEach(x => x.classList.remove('on'));
+  }
   view.addEventListener('pointerover', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
   view.addEventListener('pointerout', event => { if (event.target.closest('.chart .hit')) hideTip(); });
   view.addEventListener('focusin', event => { const hit = event.target.closest('.chart .hit'); if (hit) showTip(hit); });
@@ -6992,11 +7006,53 @@ function renderKtBadge() {
   const today = todayIso();
   const late = auditLate(today);
   const now = ((audPlan(isoWeek(today).id) || {}).items || []).filter(i => i.state === 'plan' && i.day === today).length;
-  const n = late + now;
+  const pres = ktWaitsPres() ? 1 : 0;
+  const n = late + now + pres;
   badge.hidden = !n;
   badge.textContent = String(n);
-  badge.title = [now ? `dnes ${now} ${kontrolN(now)}` : '', late ? `${late} nezapsaných po termínu` : ''].filter(Boolean).join(', ');
+  badge.title = [pres ? 'nahraj dnešní příchody' : '', now ? `dnes ${now} ${kontrolN(now)}` : '', late ? `${late} nezapsaných po termínu` : ''].filter(Boolean).join(', ');
   renderFabDot();
+}
+
+/* Režim podle příchodů (2.37): dnešní kontroly čekají na soubor s dnešními příchody. */
+function ktWaitsPres() {
+  const today = todayIso();
+  return audSet().mode === 'day' && audDays(isoWeek(today).id).includes(today) && !audPresent(today) && audDepts().length > 0;
+}
+const ktDayText = r => `Dnes v práci ${r.present} ${lidiN(r.present)}, ${r.added === 1 ? 'vylosována' : r.added >= 2 && r.added <= 4 ? 'vylosovány' : 'vylosováno'} ${r.added} ${kontrolN(r.added)}.${r.short.length ? ` Málo lidí v práci: ${r.short.map(x => `${x.dept} ${x.got} z ${x.need}`).join(', ')} (dorovná se v dalších dnech).` : ''}`;
+/* Vylosuje dnešní kontroly z lidí, kteří podle příchodů přišli; bez příchodů nabídne nahrání. */
+async function ktDayChecks() {
+  const today = todayIso();
+  const id = isoWeek(today).id;
+  if (!audDepts().length) { toast('Zatím nikdo nemá skupinu, není koho kontrolovat.', true); return; }
+  if (!audDays(id).includes(today)) { toast('Dnes není pracovní den.', true); return; }
+  if (!audPresent(today)) { $('#ktPresFile').click(); return; }
+  const old = ((audPlan(id) || {}).items || []).filter(i => i.day === today && i.state === 'plan' && !i.extra && !i.sub).length;
+  if (old && !(await confirmBox('Vylosovat znovu?', `Dnešní nezapsané kontroly (${old}) se nahradí novým losem z lidí, kteří jsou podle příchodů v práci. Zapsané kontroly zůstanou.`, 'Vylosovat'))) return;
+  let r;
+  try { r = generateDayChecks(id, today, ktMeta()); } catch (error) { toast(error.message, true); return; }
+  ui.kt.week = id;
+  save(); renderKontroly();
+  toast(ktDayText(r));
+}
+/* Soubor s příchody v Kontrolách: uloží jen docházku (stejná jako v Auditu) a v režimu podle
+   příchodů rovnou vylosuje dnešní kontroly, když ještě nejsou. */
+async function ktPresImport(file) {
+  const out = await dvImport(file, { attOnly: true });
+  if (!out) return;
+  const today = todayIso();
+  const id = isoWeek(today).id;
+  const here = audPresent(today);
+  let msg = here ? `Příchody nahrány, dnes v práci ${here.n} ${lidiN(here.n)}.` : `Příchody nahrány (${dayText(out.a.from)} – ${dayText(out.a.to)}), dnešní den ale v souboru není.`;
+  if (here && audSet().mode === 'day' && audDays(id).includes(today) && audDepts().length) {
+    const had = ((audPlan(id) || {}).items || []).some(i => i.day === today && !i.extra && !i.sub);
+    if (!had) {
+      try { msg = ktDayText(generateDayChecks(id, today, ktMeta())); save(); } catch (error) { msg += ` ${error.message}`; }
+    } else msg += ' Dnešní kontroly už jsou vylosované, nový los spustíš tlačítkem Vylosovat znovu.';
+  }
+  ui.kt.week = id;
+  renderKontroly();
+  toast(msg);
 }
 
 function renderKontroly() {
@@ -7032,7 +7088,7 @@ function ktCard(it, plan, today) {
   } else menu.push(`<button class="btn ghost small" type="button" data-ktundo="${esc(it.id)}">${it.state === 'done' ? 'Zrušit zápis' : 'Vrátit do plánu'}</button>`);
   return `<div class="kt-card${late ? ' late' : ''}${it.state === 'done' ? (sc.ok === sc.n ? ' ok' : ' bad') : ''}${it.state === 'skip' ? ' skip' : ''}" data-ktitem="${esc(it.id)}">
     <div class="kt-card-head"><button class="linkish kt-name" type="button" data-ktperson="${esc(it.key)}">${esc(it.name)}</button>${ktStateChip(it, today)}</div>
-    <p class="tiny muted">${esc(it.dept)}${it.extra ? ' · přidán ručně' : it.sub ? ' · náhradník' : ''}</p>
+    <p class="tiny muted">${esc(it.dept)}${it.extra ? ' · přidán ručně' : it.sub ? ' · náhradník' : ''}${ktAway(it) ? ' <span class="tag warn">podle příchodů nepřišel</span>' : ''}</p>
     ${it.state === 'done' ? `<p class="small">${esc(dayText(it.done))}${it.checker ? ` · ${esc(it.checker)}` : ''}</p>${sc.fail.length ? `<ul class="kt-fails">${sc.fail.map(r => `<li>${esc(r.text)}${r.note ? ` <span class="muted">– ${esc(r.note)}</span>` : ''}</li>`).join('')}</ul>` : ''}` : ''}
     ${it.state === 'skip' ? `<p class="small muted">${esc(it.reason || 'bez důvodu')}</p>` : ''}
     <div class="kt-card-actions">
@@ -7043,6 +7099,23 @@ function ktCard(it, plan, today) {
   </div>`;
 }
 
+/* Naplánovaný člověk, který podle nahraných příchodů ten den nepřišel (2.37). */
+function ktAway(it) {
+  if (it.state !== 'plan') return false;
+  const here = audPresent(it.day);
+  return !!here && !here.keys.has(it.key);
+}
+/* Pruh nad plánem v režimu podle příchodů: čeká se na soubor, nebo kolik lidí je v práci. */
+function ktPresHtml(id, plan) {
+  const today = todayIso();
+  if (id !== isoWeek(today).id || !audDays(id).includes(today)) return '';
+  const here = audPresent(today);
+  if (!here) return `<div class="note w kt-pres"><b>Dnešní kontroly čekají na příchody.</b> Nahraj soubor s docházkou, kde je už dnešní den (stačí příchody). Kontroly se vylosují jen z lidí, kteří dnes přišli. <button class="btn small" type="button" data-ktpres>Nahrát dnešní příchody</button></div>`;
+  const n = ((plan && plan.items) || []).filter(i => i.day === today && i.state !== 'skip').length;
+  return `<div class="note i kt-pres">Podle příchodů je dnes v práci <b>${here.n} ${lidiN(here.n)}</b>${here.unknown.length ? ` (${here.unknown.length} ID není v Lidech)` : ''}. Na dnešek ${n === 1 ? 'je' : n >= 2 && n <= 4 ? 'jsou' : 'je'} ${n} ${kontrolN(n)}.
+    <button class="btn sec small" type="button" data-ktday>Vylosovat znovu</button> <button class="btn ghost small" type="button" data-ktpres>Nahrát znovu</button></div>`;
+}
+
 function ktPlanHtml() {
   const id = ktWeekId();
   const cur = isoWeek(todayIso()).id;
@@ -7051,6 +7124,8 @@ function ktPlanHtml() {
   const weeks = [...new Set([...Object.keys(S.audit.plans), cur, shiftWeek(cur, 1), shiftWeek(cur, 2), id])].sort().reverse();
   const depts = audDepts();
   const pct = audSet().pct;
+  const byDay = audSet().mode === 'day';
+  const canToday = id === cur && audDays(id).includes(today);
   const missing = depts.filter(d => !audTasks(d).length);
   const bar = `<div class="t5-weekbar">
       <button class="icon-btn" type="button" data-ktwk="-1" aria-label="Předchozí týden">${I.back}</button>
@@ -7058,17 +7133,21 @@ function ktPlanHtml() {
       <button class="icon-btn t5-next" type="button" data-ktwk="1" aria-label="Další týden">${I.back}</button>
       <span class="spacer"></span>
       ${plan ? `<button class="btn sec" type="button" data-ktadd>Přidat člověka</button><button class="btn sec" type="button" data-ktpdf>Plán do PDF</button>` : ''}
-      <button class="btn${plan ? ' sec' : ''}" type="button" data-ktgen${id < cur ? ' disabled' : ''}>${plan ? 'Přegenerovat neprovedené' : 'Vygenerovat plán'}</button>
-    </div>`;
+      ${byDay ? `<button class="btn sec" type="button" data-ktpres>Nahrát příchody</button>${id === cur ? `<button class="btn" type="button" data-ktday${canToday ? '' : ' disabled'}>Vylosovat dnešní kontroly</button>` : ''}`
+        : `<button class="btn${plan ? ' sec' : ''}" type="button" data-ktgen${id < cur ? ' disabled' : ''}>${plan ? 'Přegenerovat neprovedené' : 'Vygenerovat plán'}</button>`}
+    </div>${byDay ? ktPresHtml(id, plan) : ''}`;
   const warn = missing.length ? `<div class="note w"><b>Bez nutných úkonů:</b> ${missing.map(esc).join(', ')}. U lidí z těchto oddělení kontrolu nepůjde zapsat. <button class="btn small" type="button" data-kttabgo="tasks">Doplnit nutné úkony</button></div>` : '';
   if (!plan) {
     const rows = depts.map(d => { const n = audPeople(d).length; return `<tr><td class="name" data-label="Oddělení"><b>${esc(d)}</b></td><td class="r num" data-label="Lidí">${n}</td><td class="r num" data-label="Vybere se">${audCount(n, pct)}</td><td class="r num" data-label="Nutné úkony">${audTasks(d).length || '<span class="warn-t">žádné</span>'}</td></tr>`; }).join('');
-    return `${bar}${warn}<div class="card">${emptyState(`Plán na ${esc(weekName(id))} zatím není`, `Z každého oddělení se vybere ${pct} % lidí (zaokrouhleno nahoru) a rozloží se do pracovních dnů ${esc(weekRange(weekById(id)))}. Přednost mají ti, kdo nejdéle nebyli kontrolovaní, takže se během ${Math.ceil(100 / pct)} týdnů vystřídají všichni.`)}
-      ${depts.length ? `<div class="table-card flat"><table class="stack"><thead><tr><th>Oddělení</th><th class="r">Lidí</th><th class="r">Vybere se</th><th class="r">Nutné úkony</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="small muted">Zatím nikdo nemá skupinu. Kontroluje se jen zaměstnanec se skupinou (oddělení je podle skupiny).</p>'}</div>`;
+    const intro = byDay
+      ? emptyState(`Kontroly na ${esc(weekName(id))} se losují každý den`, `Každý pracovní den se po nahrání příchodů vylosují kontroly jen z lidí, kteří přišli do práce. Za týden se z každého oddělení zkontroluje ${pct} % lidí (zaokrouhleno nahoru); na den připadne zbytek rozdělený do zbývajících pracovních dnů. Přednost mají ti, kdo nejdéle nebyli kontrolovaní.`)
+      : emptyState(`Plán na ${esc(weekName(id))} zatím není`, `Z každého oddělení se vybere ${pct} % lidí (zaokrouhleno nahoru) a rozloží se do pracovních dnů ${esc(weekRange(weekById(id)))}. Přednost mají ti, kdo nejdéle nebyli kontrolovaní, takže se během ${Math.ceil(100 / pct)} týdnů vystřídají všichni.`);
+    return `${bar}${warn}<div class="card">${intro}
+      ${depts.length ? `<div class="table-card flat"><table class="stack"><thead><tr><th>Oddělení</th><th class="r">Lidí</th><th class="r">${byDay ? 'Za týden' : 'Vybere se'}</th><th class="r">Nutné úkony</th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="small muted">Zatím nikdo nemá skupinu. Kontroluje se jen zaměstnanec se skupinou (oddělení je podle skupiny).</p>'}</div>`;
   }
   const sum = planSummary(id, today);
   const tiles = `<div class="stats">${[
-    statTile('Naplánováno', String(sum.planned), `${plan.pct} % z každého oddělení`),
+    statTile('Naplánováno', String(sum.planned), byDay ? `${plan.pct} % za týden, losuje se denně` : `${plan.pct} % z každého oddělení`),
     statTile('Provedeno', `${sum.done}<em>/ ${sum.planned}</em>`, sum.skip ? `${sum.skip} neproběhlo` : 'vše podle plánu', sum.done && sum.done === sum.planned ? 'good' : ''),
     statTile('Plnění bodů', ktPct(sum.pct), sum.points ? `${sum.ok} z ${sum.points} ${bodyN(sum.points)} · ${sum.clean} bez chyby` : 'zatím nic zapsáno', sum.pct != null && sum.pct < 100 ? 'crit' : sum.pct != null ? 'good' : ''),
     statTile('Nezapsáno po termínu', String(sum.late), sum.late ? 'doplň výsledek, nebo „neproběhlo“' : 'vše v termínu', sum.late ? 'crit' : ''),
@@ -7079,7 +7158,7 @@ function ktPlanHtml() {
       ${items.map(it => ktCard(it, plan, today)).join('') || '<p class="tiny muted kt-free">nikdo</p>'}</div>`;
   }).join('');
   return `${bar}${warn}${tiles}<div class="kt-days">${cols}</div>
-    <p class="hint">Plán vygenerovala kartička ${esc(plan.by || '—')} ${esc(tsText(plan.at))}. Přegenerování nahradí jen neprovedené kontroly; provedené a neproběhlé zůstanou. Když člověk chybí, zapiš „Neproběhlo“, nebo vyber náhradníka z téhož oddělení.</p>`;
+    <p class="hint">${byDay ? `Naposledy losoval(a) ${esc(plan.by || '—')} ${esc(tsText(plan.at))}. Kontroly se losují každý den jen z lidí, kteří podle nahraných příchodů přišli; kdo už v týdnu kontrolu má, znovu se nelosuje. Když člověk odejde dřív, zapiš „Neproběhlo“, nebo vyber náhradníka z lidí v práci.` : `Plán vygenerovala kartička ${esc(plan.by || '—')} ${esc(tsText(plan.at))}. Přegenerování nahradí jen neprovedené kontroly; provedené a neproběhlé zůstanou. Když člověk chybí, zapiš „Neproběhlo“, nebo vyber náhradníka z téhož oddělení.`}</p>`;
 }
 
 /* Formulář kontroly: u každého bodu splněno / nesplněno, poznámka, datum a kdo kontroloval. */
@@ -7259,12 +7338,15 @@ function bindKontrolyEvents() {
     renderKontroly();
   });
   $('#ktSettings').onclick = ktSettings;
+  $('#ktPresFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; ktPresImport(f); };
   const view = $('#ktView');
   view.addEventListener('click', async event => {
     const t = event.target;
     const wk = t.closest('[data-ktwk]');
     if (wk) { ui.kt.week = shiftWeek(ktWeekId(), +wk.dataset.ktwk); renderKontroly(); return; }
     if (t.closest('[data-ktgen]')) { ktGenerate(); return; }
+    if (t.closest('[data-ktpres]')) { $('#ktPresFile').click(); return; }
+    if (t.closest('[data-ktday]')) { ktDayChecks(); return; }
     if (t.closest('[data-ktadd]')) { ktAddPerson(); return; }
     if (t.closest('[data-ktpdf]')) { exportAuditPlanPdf(ktWeekId(), t.closest('[data-ktpdf]')); return; }
     if (t.closest('[data-ktpdfres]')) { exportAuditResultsPdf(t.closest('[data-ktpdfres]')); return; }
@@ -7369,11 +7451,14 @@ async function ktSettings() {
   const result = await dialog({
     title: 'Nastavení kontrol', ok: 'Uložit',
     html: `<label class="field"><span>Kolik lidí z každého oddělení týdně kontrolovat (%)</span><input type="number" name="pct" value="${st.pct}" min="5" max="100" step="1"></label>
-      <p class="tiny muted">Počet se zaokrouhlí nahoru, z každého oddělení aspoň jeden. Při 25 % se všichni vystřídají za 4 týdny. Změna platí pro nově generované plány.</p>`,
+      <p class="tiny muted">Počet se zaokrouhlí nahoru, z každého oddělení aspoň jeden. Při 25 % se všichni vystřídají za 4 týdny. Změna platí pro nově generované plány.</p>
+      <fieldset class="field kt-mode"><legend>Výběr lidí</legend>${Object.entries(AUD_MODES).map(([k, l]) => `<label class="check"><input type="radio" name="mode" value="${k}"${st.mode === k ? ' checked' : ''}><span><b>${esc(l)}</b><br><small class="muted">${k === 'day' ? 'Každý pracovní den si kontroly vyžádají soubor s dnešními příchody (stejný jako docházka v Auditu) a vylosují se jen z lidí, kteří přišli.' : 'Plán se vygeneruje na celý týden dopředu ze všech lidí oddělení.'}</small></span></label>`).join('')}</fieldset>`,
   });
   if (result.value !== 'ok') return;
   const n = Number(result.form.elements.namedItem('pct').value);
-  S.audit.settings = { pct: Number.isFinite(n) ? Math.round(clamp(n, 5, 100)) : st.pct };
+  const mode = (result.form.querySelector('input[name="mode"]:checked') || {}).value === 'day' ? 'day' : 'week';
+  S.audit.settings = { pct: Number.isFinite(n) ? Math.round(clamp(n, 5, 100)) : st.pct, ...(mode === 'day' ? { mode } : {}) };
+  if (mode !== st.mode) ui.kt.week = isoWeek(todayIso()).id;
   save(); renderKontroly(); toast('Nastavení kontrol uloženo.');
 }
 
@@ -9404,7 +9489,7 @@ async function exportShortagePdf(id, button = null, split = false) {
    záložky, nahrání obou souborů, úpravy hodnot s důvodem, nastavení skupin a operací,
    PDF a Excel pro auditora.
    ========================================================================== */
-const WA_TABS = [['prehled', 'Přehled'], ['kapacity', 'Kapacity a zaškolení'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
+const WA_TABS = [['prehled', 'Přehled'], ['lide', 'Lidé v práci'], ['kapacity', 'Kapacity a zaškolení'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
 const WA_MODES = [['month', 'Měsíc'], ['week', 'Týden'], ['custom', 'Vlastní']];
 const WA_HIST = [[13, '13 týdnů'], [26, '26 týdnů'], [52, '52 týdnů'], [0, 'Vše']];
 const waN = (v, d = 0) => (v == null ? '—' : nf(v, d));
@@ -9467,6 +9552,7 @@ function renderWorkAudit() {
   if (tab === 'nastaveni') { view.innerHTML = waSettingsHtml(); return; }
   if (tab === 'plan') { view.innerHTML = waPlanHtml(); setWidths(view); return; }
   if (tab === 'kapacity') { view.innerHTML = waCtHtml(); setWidths(view); return; }   // nepotřebuje data Auditu
+  if (tab === 'lide') { view.innerHTML = dvHtml(); setWidths(view); return; }   // docházka a výkony z jednoho souboru (2.37)
   if (!has) { view.innerHTML = waStartHtml(); return; }
   if (tab === 'prehled') { view.innerHTML = waHistHtml(); setWidths(view); return; }
   const r = waRange();
@@ -9494,7 +9580,8 @@ function waStartHtml() {
     <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">2</span><div><h3>Výkaz práce z IS</h3><p class="small muted">Každý řádek je záznam práce. Kusy se sečtou po dnech a operacích, nové operace se přiřadí skupině podle názvu (jde změnit).</p></div></div>
       ${waColsTable('work')}<button class="btn" type="button" data-wapick="work">Nahrát výkaz práce</button></div>
   </div>
-  <p class="hint">Písmena sloupců jsou podle zadání. Kdyby soubor vypadal jinak, změníš je v záložce <button class="link" type="button" data-watabgo="nastaveni">Nastavení</button>. Soubory se čtou jen v prohlížeči a ukládají zašifrovaně jako ostatní data.</p>`;
+  <p class="hint">Písmena sloupců jsou podle zadání. Kdyby soubor vypadal jinak, změníš je v záložce <button class="link" type="button" data-watabgo="nastaveni">Nastavení</button>. Soubory se čtou jen v prohlížeči a ukládají zašifrovaně jako ostatní data.</p>
+  <p class="hint">Docházku po lidech (příchody a odchody) a vykázanou práci z jednoho souboru nahraješ tlačítkem <b>Nahrát docházku a výkony</b>; výsledek je v záložce <button class="link" type="button" data-watabgo="lide">Lidé v práci</button>.</p>`;
 }
 
 /* ---------- výběr období ---------- */
@@ -10726,6 +10813,7 @@ function waSettingsHtml() {
         <p class="small wa-onefile">${waOneFileText()}</p>
         <button class="btn ghost small" type="button" data-wacolreset>Vrátit výchozí sloupce</button></div>
     </div>
+    ${dvSettingsHtml()}
     <div class="card"><h3>Nahrané soubory</h3>${files.length ? `<div class="table-card flat"><table class="stack wa-files"><thead><tr><th>Soubor</th><th>Obsah</th><th>Období</th><th class="r">Dní</th><th class="r">Řádků</th><th>Nahrál</th></tr></thead><tbody>${files.map(x => `<tr>
         <td class="wrap name" data-label="Soubor"><b>${esc(x.name || '—')}</b></td><td data-label="Obsah">${x.kind === 'work' ? 'výkaz práce' : 'obsazenost'}</td>
         <td data-label="Období" class="num">${x.from ? `${esc(dayText(x.from))} – ${esc(dayText(x.to))}` : '—'}</td><td class="r num" data-label="Dní">${x.days}</td><td class="r num" data-label="Řádků">${x.rows}</td>
@@ -10832,6 +10920,389 @@ async function waDayDialog(iso) {
   const note = form.elements.note.value.trim().slice(0, 600);
   if (note) wa.notes[iso] = note; else delete wa.notes[iso];
   if (list.length || note !== d.note) { save(); renderWorkAudit(); toast(list.length ? `Upraveno ${list.length} ${list.length === 1 ? 'hodnota' : list.length <= 4 ? 'hodnoty' : 'hodnot'}.` : 'Poznámka uložena.'); }
+}
+
+/* ==========================================================================
+   AUDIT: docházka a výkony z jednoho souboru (2.37)
+   Záložka Lidé v práci: obsazenost dne po projektech (skupinách Matice), měsíc po dnech
+   a produktivita lidí. Výpočty jsou v core.js (dvParse, dvApply, dvDay, dvMonth, dvPerson).
+   ========================================================================== */
+const DV_UNIT_TEXT = { min: 'minuty', h: 'hodiny', frac: 'čas z Excelu (h:mm)' };
+const DV_SORTS = [['group', 'Podle projektu'], ['util', 'Využití'], ['perHour', 'Ks za hodinu'], ['t', 'Vykázaný čas']];
+const DV_SET_COLS = [['att', 'id', 'Docházka: ID zaměstnance'], ['att', 'first', 'Docházka: první den (příchod)'], ['work', 'id', 'Práce: ID zaměstnance'],
+  ['work', 'part', 'Práce: název dílu'], ['work', 'op', 'Práce: operace'], ['work', 'order', 'Práce: množství v zakázce'], ['work', 'done', 'Práce: dokončené množství'],
+  ['work', 'time', 'Práce: strávený čas'], ['work', 'date', 'Práce: datum (prázdné = najde se samo)']];
+const dvClockText = m => (m == null ? '—' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
+const dvH = (min, d = 1) => `${nf((+min || 0) / 60, d)} h`;
+const dvPct = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
+const zaznamN = n => (n === 1 ? 'záznam' : n >= 2 && n <= 4 ? 'záznamy' : 'záznamů');
+function dvHas() { const dv = S.workAudit.dv; return !!(Object.keys(dv.pres).length || Object.keys(dv.perf).length); }
+function dvMonths() { const dv = S.workAudit.dv; return [...new Set([...Object.keys(dv.pres).map(i => i.slice(0, 7)), ...Object.keys(dv.perf)])].sort().reverse(); }
+/* Výchozí den: dnes, když je nahraný (nebo není nic), jinak poslední den s docházkou. */
+function dvPickDay() {
+  const days = dvDays();
+  const today = todayIso();
+  if (!WA_ISO.test(ui.wa.dvDay || '')) ui.wa.dvDay = days.includes(today) || !days.length ? today : days[days.length - 1];
+  return ui.wa.dvDay;
+}
+function dvPickMonth() {
+  const months = dvMonths();
+  if (!months.includes(ui.wa.dvMonth)) ui.wa.dvMonth = months.includes(todayIso().slice(0, 7)) ? todayIso().slice(0, 7) : months[0] || todayIso().slice(0, 7);
+  return ui.wa.dvMonth;
+}
+/* Speciální „projekty“ (vedoucí, bez skupiny, neznámé ID) jdou v pořadí na konec. */
+const dvSpecial = g => g.id === 'lead' || g.id === '-' || g.id === '?';
+
+function dvHtml() {
+  if (!dvHas()) return dvStartHtml();
+  const mode = ui.wa.dvMode === 'month' ? 'month' : 'day';
+  const chips = `<div class="chips" role="group" aria-label="Zobrazení">${[['day', 'Den'], ['month', 'Měsíc']].map(([k, t]) => `<button type="button" class="chip${k === mode ? ' on' : ''}" data-dvmode="${k}" aria-pressed="${k === mode}">${t}</button>`).join('')}</div>`;
+  return (mode === 'month' ? dvMonthHtml(chips) : dvDayHtml(chips)) + dvFilesHtml();
+}
+
+function dvStartHtml() {
+  const c = S.workAudit.dv.cols;
+  const li = (l, t) => `<tr><th scope="row">${esc(l)}</th><td>${esc(t)}</td></tr>`;
+  return `<div class="wa-start">
+    <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">1</span><div><h3>List „Docházka“</h3><p class="small muted">Jeden řádek = jeden zaměstnanec. Nad každou dvojicí sloupců je datum dne, pod ním příchod a odchod.</p></div></div>
+      <table class="wa-cols"><tbody>${li(c.att.id, 'ID zaměstnance')}${li(c.att.first, 'první den: příchod (např. 1. 10. 2026)')}${li(colLetter(waIndex(c.att.first) + 1), 'první den: odchod')}${li('…', 'další dny vždy o dva sloupce dál')}</tbody></table></div>
+    <div class="card wa-src"><div class="wa-src-head"><span class="wa-step">2</span><div><h3>List „vykázaná práce“</h3><p class="small muted">Každý řádek je záznam práce. Sloupec s datem, když v listu je, se najde sám.</p></div></div>
+      <table class="wa-cols"><tbody>${['id', 'part', 'op', 'order', 'done', 'time'].map(k => li(c.work[k], DV_COL_LABEL[k])).join('')}</tbody></table></div>
+  </div>
+  <div class="row gap"><button class="btn" type="button" data-dvpick>Nahrát docházku a výkony</button></div>
+  <p class="hint">Z docházky vznikne denní report obsazenosti, i pro dnešek: kolik lidí je v práci a na jakých projektech. Projekt je skupina v Matici dovedností, ID se páruje s ID zaměstnance v Lidech. Z vykázané práce je produktivita v profilu každého člověka (koláč dílů, využití času, kusy za hodinu). Docházka pro odměny se tím nemění. Písmena sloupců změníš v <button class="link" type="button" data-watabgo="nastaveni" data-wafocus="dvColsCard">Nastavení</button>.</p>`;
+}
+
+/* ---------- den: kdo je v práci a na jakém projektu ---------- */
+function dvDayHtml(chips) {
+  const iso = dvPickDay();
+  const today = todayIso();
+  const d = dvDay(iso);
+  const days = dvDays();
+  const list = [...new Set([...days, today, iso])].sort().reverse();
+  const prev = days.filter(x => x < iso).pop();
+  const next = days.find(x => x > iso);
+  const bar = `<div class="t5-weekbar dv-bar">${chips}
+    <button class="icon-btn" type="button" data-dvday="${prev || ''}" aria-label="Předchozí den s docházkou"${prev ? '' : ' disabled'}>${I.back}</button>
+    <select id="dvDaySel" aria-label="Den">${list.map(x => `<option value="${x}"${x === iso ? ' selected' : ''}>${esc(`${ktDay(x)} ${x.slice(0, 4)}${x === today ? ' · dnes' : ''}${days.includes(x) ? '' : ' · nenahráno'}`)}</option>`).join('')}</select>
+    <button class="icon-btn t5-next" type="button" data-dvday="${next || ''}" aria-label="Další den s docházkou"${next ? '' : ' disabled'}>${I.back}</button>
+    ${iso !== today ? `<button class="btn sec small" type="button" data-dvday="${today}">Dnes</button>` : ''}
+    <span class="spacer"></span>
+    ${d.n ? '<button class="btn sec" type="button" data-dvpdf>Denní report do PDF</button>' : ''}
+  </div>`;
+  if (!d.n) {
+    return `${bar}<div class="card">${emptyState(iso === today ? 'Dnešní příchody zatím nejsou nahrané' : `Na ${esc(dayText(iso))} není docházka`,
+      iso === today ? 'Nahraj soubor s docházkou, kde je už dnešní den (stačí příchody). Hned uvidíš, kolik lidí je v práci a na jakých projektech.' : 'V nahraných souborech tenhle den chybí, nebo ten den nikdo nepřišel.',
+      '<button class="btn" type="button" data-dvpick>Nahrát docházku a výkony</button>')}</div>`;
+  }
+  const isToday = iso === today;
+  const groups = d.groups.slice().sort((a, b) => dvSpecial(a) - dvSpecial(b) || b.n - a.n);
+  const max = Math.max(1, ...groups.map(g => g.n));
+  const projects = d.groups.filter(g => !dvSpecial(g)).length;
+  const tiles = `<div class="stats">${[
+    statTile('Přišlo do práce', String(d.n), `${ktDay(iso, true)} ${iso.slice(0, 4)}`),
+    ...(isToday ? [statTile('Teď v práci', String(d.now), 'přišli a ještě neodešli', 'good')] : []),
+    statTile('Hodiny v práci', dvH(d.min, 0), d.open ? `${d.open} ${isToday ? 'zatím bez odchodu' : 'bez odchodu (nepočítá se)'}` : 'všichni s odchodem'),
+    statTile('Projekty', String(projects), projects ? 'skupiny v Matici s lidmi v práci' : 'nikdo nemá skupinu'),
+    statTile('Neznámé ID', String(d.unknown.length), d.unknown.length ? 'ID není u nikoho v Lidech' : 'všichni spárovaní', d.unknown.length ? 'crit' : ''),
+  ].join('')}</div>`;
+  const bars = `<div class="card"><div class="card-head"><div><h3>Lidé v práci po projektech</h3><p class="small muted">Projekt je skupina v Matici dovedností${iso < today ? ', kam člověk ten den patřil' : ''}. ${isToday ? 'Číslo je počet lidí, kteří dnes přišli; v popisku je i kolik jich je v práci teď.' : 'Číslo je počet lidí, kteří ten den přišli.'}</p></div></div>
+    <div class="wa-charts dv-bars-wrap"><ul class="chart dv-bars">${groups.map(g => `<li class="hit${dvSpecial(g) ? ' dv-spec' : ''}" tabindex="0" data-tip="${esc(`${g.name}: ${g.n} ${lidiN(g.n)}${isToday ? `, teď v práci ${g.now}` : ''}, ${dvH(g.min)} v práci`)}">
+      <span class="dv-bl">${esc(g.name)}</span><span class="dv-track"><i data-w="${(g.n / max * 100).toFixed(1)}"></i></span><b class="num">${g.n}${isToday && g.now !== g.n ? `<small> · teď ${g.now}</small>` : ''}</b></li>`).join('')}</ul>
+      <div class="chart-tip" hidden></div></div></div>`;
+  const people = groups.map(g => `<div class="card dv-proj"><div class="dv-proj-head"><h4>${esc(g.name)}</h4><span class="num">${g.n} ${lidiN(g.n)}</span></div>
+    <div class="table-card flat"><table class="dv-ppl"><thead><tr><th>Zaměstnanec</th><th class="r">Příchod</th><th class="r">Odchod</th><th class="r">Hodiny</th></tr></thead><tbody>${g.people.map(x => `<tr>
+      <td class="name" data-label="Zaměstnanec">${x.e ? `<button class="linkish" type="button" data-dvperson="${esc(x.key)}">${esc(x.name)}</button>` : '<span class="crit">není v Lidech</span>'}<span class="dv-wid"><small class="muted num">ID ${esc(x.wid)}</small>${x.now ? ' <span class="tag good">v práci</span>' : ''}</span></td>
+      <td class="r num" data-label="Příchod">${dvClockText(x.in)}</td>
+      <td class="r num" data-label="Odchod">${x.out == null ? (isToday ? '<span class="muted">—</span>' : '<span class="tag wa-miss">chybí</span>') : dvClockText(x.out)}</td>
+      <td class="r num" data-label="Hodiny">${x.min == null ? '<span class="muted">—</span>' : dvH(x.min)}</td></tr>`).join('')}</tbody></table></div></div>`).join('');
+  return `${bar}${tiles}${bars}<h3 class="dv-sub">Kdo je kde</h3><div class="dv-projs">${people}</div>
+    ${d.unknown.length ? `<p class="hint">ID ${d.unknown.slice(0, 10).map(esc).join(', ')}${d.unknown.length > 10 ? '…' : ''} nemá nikdo v Lidech. Doplň ID zaměstnance v kartě člověka (Upravit zařazení) a docházka se mu přiřadí i zpětně.</p>` : ''}`;
+}
+
+/* ---------- měsíc: obsazenost po dnech a produktivita ---------- */
+function dvMonthHtml(chips) {
+  const month = dvPickMonth();
+  const m = dvMonth(month);
+  const months = dvMonths();
+  const bar = `<div class="t5-weekbar dv-bar">${chips}
+    <select id="dvMonthSel" aria-label="Měsíc">${(months.includes(month) ? months : [month, ...months]).map(x => `<option value="${x}"${x === month ? ' selected' : ''}>${esc(monthLabel(x))}</option>`).join('')}</select>
+    <span class="spacer"></span><button class="btn sec" type="button" data-dvxlsx>Excel za měsíc</button></div>`;
+  const t = m.tot;
+  const tiles = `<div class="stats">${[
+    statTile('Dny s docházkou', String(t.days), t.avg != null ? `Ø ${nf(t.avg, 1)} lidí na den` : 'bez docházky'),
+    statTile('Hodiny v práci', dvH(t.min, 0), 'z příchodů a odchodů'),
+    statTile('Vykázaný čas', dvH(t.t, 0), m.perf ? 'z vykázané práce' : 'výkony za měsíc nejsou nahrané'),
+    statTile('Využití', dvPct(t.util), 'vykázaný čas ÷ čas v práci', t.util != null && t.util < 0.7 ? 'crit' : t.util != null ? 'good' : ''),
+    statTile('Dokončeno', `${nf(t.g, 0)} ks`, t.perHour != null ? `${nf(t.perHour, 1)} ks za vykázanou hodinu` : '—'),
+  ].join('')}</div>`;
+  const cols = m.groups.filter(g => m.days.some(d => d.by[g.id]));
+  const dayRows = m.days.map(d => `<tr class="wa-row${d.day.work ? '' : ' wa-off'}" data-dvgo="${d.iso}" tabindex="0">
+    <td class="name nowrap" data-label="Den"><b class="num">${esc(ktDay(d.iso))}</b>${waDayTag(d.day)}</td>
+    ${cols.map(g => `<td class="r num" data-label="${esc(g.name)}">${d.by[g.id] || '<span class="muted">·</span>'}</td>`).join('')}
+    <td class="r num" data-label="Celkem"><b>${d.n}</b></td><td class="r num" data-label="Hodiny">${dvH(d.min, 0)}</td></tr>`).join('');
+  const occ = m.days.length ? `<div class="card"><div class="card-head"><div><h3>Obsazenost po dnech</h3><p class="small muted">Počet lidí, kteří přišli, po projektech. Klik na den ukáže, kdo byl kde.</p></div></div>
+    <div class="table-card flat dv-occ"><table class="stack"><thead><tr><th>Den</th>${cols.map(g => `<th class="r">${esc(g.name)}</th>`).join('')}<th class="r">Celkem</th><th class="r">Hodiny</th></tr></thead><tbody>${dayRows}</tbody></table></div></div>` : '';
+  const gRows = m.groups.filter(g => g.people).map(g => `<tr><td class="name" data-label="Projekt"><b>${esc(g.name)}</b></td><td class="r num" data-label="Lidí">${g.people}</td>
+    <td class="r num" data-label="V práci">${dvH(g.min, 0)}</td><td class="r num" data-label="Vykázáno">${dvH(g.t, 0)}</td><td class="r num" data-label="Využití">${dvPct(g.util)}</td>
+    <td class="r num" data-label="Dokončeno">${nf(g.g, 0)}</td><td class="r num" data-label="Ks/h">${g.perHour != null ? nf(g.perHour, 1) : '—'}</td></tr>`).join('');
+  const sort = DV_SORTS.some(s => s[0] === ui.wa.dvSort) ? ui.wa.dvSort : 'group';
+  const ppl = sort === 'group' ? m.people : m.people.slice().sort((a, b) => (b[sort] == null ? -1 : b[sort]) - (a[sort] == null ? -1 : a[sort]));
+  const pRows = ppl.map(q => `<tr${q.key ? ` data-dvperson="${esc(q.key)}" tabindex="0" class="dv-click"` : ''}>
+    <td class="name" data-label="Zaměstnanec">${q.e ? `<b>${esc(q.name)}</b>` : '<span class="crit">není v Lidech</span>'} <small class="muted num">ID ${esc(q.wid)}</small></td>
+    <td data-label="Projekt">${esc(q.gr.name)}</td><td class="r num" data-label="Dny">${q.days}</td><td class="r num" data-label="V práci">${dvH(q.min, 0)}</td>
+    <td class="r num" data-label="Vykázáno">${dvH(q.t)}</td><td class="r num" data-label="Využití">${dvPct(q.util)}</td><td class="r num" data-label="Dokončeno">${nf(q.g, 0)}</td>
+    <td class="r num" data-label="Ks/h">${q.perHour != null ? nf(q.perHour, 1) : '—'}</td><td class="wrap" data-label="Hlavní díl">${q.top ? esc(q.top) : '<span class="muted">—</span>'}</td></tr>`).join('');
+  return `${bar}${tiles}${occ}
+    ${gRows ? `<div class="card"><h3>Po projektech</h3><div class="table-card flat"><table class="stack"><thead><tr><th>Projekt</th><th class="r">Lidí</th><th class="r">V práci</th><th class="r">Vykázáno</th><th class="r">Využití</th><th class="r">Dokončeno ks</th><th class="r">Ks/h</th></tr></thead><tbody>${gRows}</tbody></table></div></div>` : ''}
+    <div class="card"><div class="card-head"><div><h3>Produktivita lidí</h3><p class="small muted">Využití = vykázaný čas ÷ čas v práci. Ks/h = dokončené množství za hodinu vykázaného času. Klik na člověka otevře profil s koláčem dílů.</p></div>
+      <div class="chips" role="group" aria-label="Řazení">${DV_SORTS.map(([k, l]) => `<button type="button" class="chip${k === sort ? ' on' : ''}" data-dvsort="${k}" aria-pressed="${k === sort}">${l}</button>`).join('')}</div></div>
+      ${pRows ? `<div class="table-card flat"><table class="stack dv-people"><thead><tr><th>Zaměstnanec</th><th>Projekt</th><th class="r">Dny</th><th class="r">V práci</th><th class="r">Vykázáno</th><th class="r">Využití</th><th class="r">Dokončeno ks</th><th class="r">Ks/h</th><th>Hlavní díl</th></tr></thead><tbody>${pRows}</tbody></table></div>` : '<p class="small muted">Za měsíc nic.</p>'}</div>`;
+}
+
+function dvFilesHtml() {
+  const files = S.workAudit.dv.files.slice(-8).reverse();
+  if (!files.length) return '';
+  return `<details class="card dv-files"><summary><b>Nahrané soubory docházky a výkonů</b> <span class="muted small">(${S.workAudit.dv.files.length})</span></summary>
+    <div class="table-card flat"><table class="stack"><thead><tr><th>Soubor</th><th>Docházka</th><th class="r">Lidí</th><th>Výkony</th><th>Nahrál</th></tr></thead><tbody>${files.map(f => `<tr>
+      <td class="wrap name" data-label="Soubor"><b>${esc(f.name || '—')}</b></td>
+      <td class="num" data-label="Docházka">${f.days ? `${esc(dayText(f.from))} – ${esc(dayText(f.to))}` : '—'}</td><td class="r num" data-label="Lidí">${f.people || '—'}</td>
+      <td data-label="Výkony">${f.rows ? `${f.rows} ${zaznamN(f.rows)} · ${esc(f.months.map(monthLabel).join(', '))}` : '—'}</td>
+      <td data-label="Nahrál">${esc(f.by || '—')}<small class="muted"> ${esc(tsText(f.at))}</small></td></tr>`).join('')}</tbody></table></div></details>`;
+}
+
+/* Karta nastavení: sloupce obou listů a jednotka času. */
+function dvSettingsHtml() {
+  const dv = S.workAudit.dv;
+  return `<div class="card" id="dvColsCard"><h3>Docházka a výkony z jednoho souboru</h3>
+    <p class="small muted">První list Docházka: ID zaměstnance a první den (příchod, vedle odchod; každý další den o dva sloupce dál, datum v hlavičce). Druhý list vykázaná práce. Písmena jako v Excelu.</p>
+    <div class="wa-colgrid">${DV_SET_COLS.map(([kind, key, label]) => `<label class="field wa-letter"><span>${esc(label)}</span><input value="${esc(dv.cols[kind][key])}" maxlength="3" data-dvcol="${kind}.${key}" placeholder="—" autocapitalize="characters"></label>`).join('')}</div>
+    <label class="field dv-unit"><span>Strávený čas je v</span><select id="dvUnit">${[['auto', 'najít podle hodnot a hlavičky'], ['min', 'minutách'], ['h', 'hodinách']].map(([k, l]) => `<option value="${k}"${dv.unit === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <button class="btn ghost small" type="button" data-dvcolreset>Vrátit výchozí sloupce</button></div>`;
+}
+
+/* ---------- nahrání souboru ---------- */
+/* Přečte soubor, ukáže souhrn obou listů a po potvrzení uloží. attOnly: jen docházka (Kontroly). */
+async function dvImport(file, opts = {}) {
+  if (!file) return null;
+  const wa = S.workAudit;
+  const dv = wa.dv;
+  let sheets;
+  try { sheets = await readTable(file); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return null; }
+  const p = dvParse(sheets, dv, dv.unit);
+  if (opts.attOnly) p.work = null;
+  const a = p.att && p.att.ok ? p.att : null;
+  let w = p.work && p.work.ok ? p.work : null;
+  const c = dv.cols;
+  if (!a && !w) {
+    const errs = [p.att && p.att.err, p.work && p.work.err].filter(Boolean);
+    const go = await dialog({ title: 'V souboru nejsou žádná data', ok: 'Nastavit sloupce', cancel: 'Zavřít',
+      html: `<p><b>${esc(file.name)}</b>: ${opts.attOnly ? 'nenašla se docházka' : 'nenašla se docházka ani vykázaná práce'}.</p>${errs.length ? `<ul class="wa-imp">${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
+        <p class="small muted">První list má být Docházka: ve sloupci ${esc(c.att.id)} ID zaměstnance, od sloupce ${esc(c.att.first)} příchod a odchod, nad nimi datum dne. Když má soubor sloupce jinde, nastav je v Nastavení Auditu.</p>` });
+    if (go.value === 'ok') { Object.assign(ui.wa, { tab: 'nastaveni' }); showView('audit'); renderWorkAudit(); $('#dvColsCard')?.scrollIntoView({ block: 'center' }); }
+    return null;
+  }
+  const map = dvWidMap();
+  const ids = new Set([...(a ? Object.values(a.pres).flatMap(d => Object.keys(d)) : []), ...(w ? w.recs.map(x => x.wid) : [])]);
+  const unknown = [...ids].filter(x => !map.has(x)).sort(widCmp);
+  const today = todayIso();
+  const repDays = a ? a.dates.filter(iso => dv.pres[iso]).length : 0;
+  const fallback = ((a && a.to) || (w && w.to) || today).slice(0, 7);
+  const wMonths = w ? [...new Set(w.recs.map(x => (x.iso && w.dated ? x.iso.slice(0, 7) : fallback)))].sort() : [];
+  const repMonths = wMonths.filter(m => dv.perf[m]);
+  const pcsDays = w && w.dated ? [...new Set(w.recs.filter(x => x.iso && x.op).map(x => x.iso))] : [];
+  const pcsOld = pcsDays.filter(iso => wa.pcs[iso]).length;
+  const attHtml = a ? `<p>${a.dates.length} ${denN(a.dates.length)} (${esc(dayText(a.from))} – ${esc(dayText(a.to))}), ${a.people} ${lidiN(a.people)} s příchodem nebo odchodem${a.dates.includes(today) ? `, <b>dnes ${Object.keys(a.pres[today] || {}).length}</b>` : ''}.</p>
+      <ul class="wa-imp">${repDays ? `<li><b>${repDays} ${repDays === 1 ? 'den už je nahraný' : repDays <= 4 ? 'dny už jsou nahrané' : 'dní už je nahraných'}</b>, nahradí se daty ze souboru.</li>` : ''}
+        ${a.codes ? `<li>${a.codes} ${a.codes === 1 ? 'buňka' : a.codes <= 4 ? 'buňky' : 'buněk'} bez času (kódy jako D, N) se přeskočí.</li>` : ''}</ul>`
+    : `<p class="small muted">${esc(p.att ? p.att.err : 'List s docházkou v souboru není.')}</p>`;
+  const workHtml = opts.attOnly ? '<p class="small muted">Výkony z listu vykázané práce se tady nenahrávají, nahraješ je v Auditu (Lidé v práci).</p>'
+    : w ? `<p>${w.rows} ${zaznamN(w.rows)}, ${w.people} ${lidiN(w.people)}: <b>${dvH(w.t)}</b> vykázaného času, ${nf(w.g, 0)} ks dokončeno z ${nf(w.f, 0)} v zakázkách.</p>
+      <ul class="wa-imp"><li>${w.dated ? `Datum ze sloupce ${esc(w.dateCol)} (${esc(dayText(w.from))} – ${esc(dayText(w.to))}).` : `Řádky nemají datum, výkony se uloží za ${esc(monthLabel(fallback))}.`}</li>
+        ${repMonths.length ? `<li><b>Výkony za ${esc(repMonths.map(monthLabel).join(', '))} už jsou nahrané</b>, nahradí se celým měsícem ze souboru.</li>` : ''}
+        ${w.skipped ? `<li>${w.skipped} ${radekN(w.skipped)} bez dílu, operace, kusů i času se přeskočí.</li>` : ''}</ul>
+      <label class="field"><span>Strávený čas (sloupec ${esc(c.work.time)}) je v</span><select name="unit">${[['auto', `najít sám (teď ${DV_UNIT_TEXT[w.unit]})`], ['min', 'minutách'], ['h', 'hodinách']].map(([k, l]) => `<option value="${k}"${dv.unit === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${pcsDays.length ? `<label class="check"><input type="checkbox" name="toAudit"${pcsOld ? '' : ' checked'}><span><b>Kusy podle operací zapsat i do Auditu</b> (${pcsDays.length} ${denN(pcsDays.length)}, dokončené množství ze sloupce ${esc(c.work.done)}).${pcsOld ? ` ${pcsOld} ${denN(pcsOld)} už ${pcsOld === 1 ? 'má' : 'mají'} kusy z výkazu práce, nahradily by se.` : ''}</span></label>` : ''}`
+      : `<p class="small muted">${esc(p.work ? p.work.err : 'Druhý list s vykázanou prací v souboru není, nahraje se jen docházka.')}</p>`;
+  const res = await dialog({
+    title: opts.attOnly ? 'Nahrát příchody' : 'Nahrát docházku a výkony', ok: 'Nahrát', wide: true,
+    html: `<p><b>${esc(file.name)}</b></p>
+      <div class="dv-imp"><div><h4>Docházka${a ? ` <small class="muted">list ${esc(a.name)}</small>` : ''}</h4>${attHtml}</div>
+        <div><h4>Vykázaná práce${w && !opts.attOnly ? ` <small class="muted">list ${esc(w.name)}</small>` : ''}</h4>${workHtml}</div></div>
+      ${unknown.length ? `<div class="note w"><b>${unknown.length} ID není u nikoho v Lidech:</b> ${unknown.slice(0, 12).map(esc).join(', ')}${unknown.length > 12 ? '…' : ''}. Uloží se a přiřadí, jakmile ID doplníš v kartě člověka.</div>` : ''}
+      <p class="tiny muted">Docházka pro odměny se nemění. Sloupce změníš v Nastavení Auditu.</p>`,
+  });
+  if (res.value !== 'ok') return null;
+  const f = res.form.elements;
+  const unit = f.namedItem('unit') ? f.namedItem('unit').value : dv.unit;
+  if (w && unit !== dv.unit) {
+    dv.unit = DV_UNITS.includes(unit) ? unit : 'auto';
+    const sheet = dvSheets(sheets).work;
+    const again = sheet ? dvParseWork(sheet, c.work, dv.unit) : null;
+    if (again && again.ok) { p.work = again; w = again; }
+  }
+  const toAudit = !!(f.namedItem('toAudit') && f.namedItem('toAudit').checked);
+  const meta = { name: file.name, by: ui.me.label || '', at: Date.now() };
+  const r = dvApply(wa, p, meta, { audit: toAudit });
+  const parts = [a ? `docházka ${dayText(a.from)} – ${dayText(a.to)} (${a.people} ${lidiN(a.people)})` : '', w ? `výkony za ${r.months.map(monthLabel).join(', ')}` : '', r.audit ? `kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : ''].filter(Boolean);
+  store.note = { kind: 'workaudit', text: `Audit: nahrán soubor ${file.name}: ${parts.join(', ')}`, keep: true };
+  save();
+  return { a, w, r, unknown };
+}
+/* Nahrání v Auditu: po uložení záložka Lidé v práci na dnešku (nebo posledním dni souboru). */
+async function dvImportAudit(file) {
+  const out = await dvImport(file);
+  if (!out) return;
+  const { a, w, r } = out;
+  const today = todayIso();
+  Object.assign(ui.wa, { tab: 'lide', dvMode: a ? 'day' : 'month', dvDay: a ? (a.dates.includes(today) ? today : a.to) : ui.wa.dvDay, dvMonth: r.months.length ? r.months[r.months.length - 1] : (a ? a.to.slice(0, 7) : ui.wa.dvMonth) });
+  if (r.audit && r.audit.added.length) Object.assign(ui.wa, { opFilter: 'nogroup', opQ: '' });
+  renderWorkAudit();
+  const ng = r.audit ? r.audit.added.length : 0;
+  toast(`Nahráno: ${a ? `docházka za ${r.days} ${denN(r.days)}` : 'bez docházky'}${w ? `, výkony za ${r.months.map(monthLabel).join(', ')}` : ''}${r.audit ? `, kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : ''}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu v Nastavení.` : ''}`);
+}
+
+/* ---------- denní report (PDF) a měsíc do Excelu ---------- */
+async function exportDvPdf(button) {
+  const iso = dvPickDay();
+  const d = dvDay(iso);
+  if (!d.n) { toast('Na tento den není docházka.', true); return; }
+  const isToday = iso === todayIso();
+  await withPdf(button, doc => {
+    doc.setProperties({ title: `Lidé v práci · ${dayText(iso)}`, creator: EXPORT_NAME });
+    const k = pdfKit(doc);
+    const C = k.C;
+    k.header({ eyebrow: `${EXPORT_NAME} · AUDIT · LIDÉ V PRÁCI`, right: `Stav k ${tsText(Date.now())}`, title: 'Obsazenost po projektech', sub: `${ktDay(iso, true)} ${iso.slice(0, 4)}`,
+      meta: 'Podle příchodů a odchodů ze souboru docházky. Projekt je skupina v Matici dovedností, kam člověk patří.' });
+    k.tiles([
+      ['Přišlo do práce', String(d.n), `${d.groups.filter(g => !dvSpecial(g)).length} projektů`],
+      ...(isToday ? [['Teď v práci', String(d.now), 'přišli a neodešli', 'good']] : []),
+      ['Hodiny v práci', dvH(d.min, 0), d.open ? `${d.open} bez odchodu` : 'všichni s odchodem'],
+      ['Neznámé ID', String(d.unknown.length), d.unknown.length ? 'ID není v evidenci' : 'všichni spárovaní', d.unknown.length ? 'crit' : ''],
+    ]);
+    const groups = d.groups.slice().sort((a, b) => dvSpecial(a) - dvSpecial(b) || b.n - a.n);
+    const max = Math.max(1, ...groups.map(g => g.n));
+    k.heading('Po projektech', 11);
+    const LW = 62, BW = k.CW - LW - 26;
+    groups.forEach(g => {
+      k.need(7);
+      k.text(k.split(g.name, LW - 3, 9)[0], k.M, k.y + 0.6, 9, { bold: !dvSpecial(g), color: dvSpecial(g) ? C.ink2 : C.ink });
+      k.box(C.soft3, k.M + LW, k.y + 1, BW, 3.6, 1.2);
+      k.box(dvSpecial(g) ? C.ink3 : C.acc, k.M + LW, k.y + 1, Math.max(1.2, BW * g.n / max), 3.6, 1.2);
+      k.text(`${g.n}${isToday && g.now !== g.n ? ` (teď ${g.now})` : ''}`, k.M + k.CW, k.y + 0.6, 9, { bold: true, align: 'right' });
+      k.y += 6.4;
+    });
+    k.y += 4;
+    const X = [k.M, k.M + k.CW - 58, k.M + k.CW - 38, k.M + k.CW - 18];
+    groups.forEach(g => {
+      k.keep(() => {
+        k.need(14);
+        k.text(`${g.name} · ${g.n} ${lidiN(g.n)}`, k.M, k.y, 10.5, { bold: true });
+        k.y += 5.6;
+        ['Zaměstnanec', 'Příchod', 'Odchod', 'Hodiny'].forEach((h, i) => k.text(h, i ? X[i] + 18 : X[0], k.y, 7.6, { color: C.ink3, align: i ? 'right' : 'left' }));
+        k.y += 4;
+        k.hline(k.y, C.line2, 0.3);
+        k.y += 1.4;
+        g.people.forEach(x => {
+          k.need(5.4);
+          k.text(k.split(`${x.e ? x.name : 'není v evidenci'} · ID ${x.wid}`, X[1] - k.M - 4, 8.6)[0], X[0], k.y, 8.6, { color: x.e ? C.ink : C.crit });
+          k.text(dvClockText(x.in), X[1] + 18, k.y, 8.6, { align: 'right' });
+          k.text(x.out == null ? '—' : dvClockText(x.out), X[2] + 18, k.y, 8.6, { align: 'right' });
+          k.text(x.min == null ? '—' : dvH(x.min), X[3] + 18, k.y, 8.6, { align: 'right' });
+          k.y += 4.6;
+          k.hline(k.y - 0.6, C.line, 0.15);
+        });
+        k.y += 4;
+      }, 30);
+    });
+    k.footer(`${EXPORT_NAME} · Lidé v práci · ${dayText(iso)}`);
+    downloadFile(`lide-v-praci-${iso}.pdf`, doc.output('blob'), 'application/pdf');
+  });
+}
+async function exportDvXlsx() {
+  const month = dvPickMonth();
+  const m = dvMonth(month);
+  const dv = S.workAudit.dv;
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    const cols = m.groups.filter(g => m.days.some(d => d.by[g.id]));
+    const r1 = (v, d = 1) => (v == null ? '' : Math.round(v * 10 ** d) / 10 ** d);
+    const map = dvWidMap();
+    const sheets = [
+      { name: 'Obsazenost', cols: [14, ...cols.map(() => 14), 10, 10], rows: [['Den', ...cols.map(g => g.name), 'Celkem', 'Hodiny'], ...m.days.map(d => [dayText(d.iso), ...cols.map(g => d.by[g.id] || 0), d.n, r1(d.min / 60)])] },
+      { name: 'Lidé', cols: [26, 10, 18, 6, 10, 10, 10, 12, 12, 8, 30], rows: [['Zaměstnanec', 'ID', 'Projekt', 'Dny', 'V práci (h)', 'Vykázáno (h)', 'Využití (%)', 'Dokončeno (ks)', 'V zakázkách (ks)', 'Ks/h', 'Hlavní díl'],
+        ...m.people.map(q => [q.name || 'není v evidenci', q.wid, q.gr.name, q.days, r1(q.min / 60), r1(q.t / 60), q.util == null ? '' : r1(q.util * 100, 0), r1(q.g, 2), r1(q.f, 2), r1(q.perHour, 2), q.top])] },
+      { name: 'Docházka', cols: [26, 10, 12, 9, 9, 9], rows: [['Zaměstnanec', 'ID', 'Den', 'Příchod', 'Odchod', 'Hodiny'],
+        ...Object.keys(dv.pres).filter(iso => iso.slice(0, 7) === month).sort().flatMap(iso => Object.entries(dv.pres[iso]).sort((a, b) => widCmp(a[0], b[0])).map(([wid, v]) => {
+          const e = map.get(wid);
+          const min = dvStay(v[0], v[1]);
+          return [e ? `${e.last} ${e.first}`.trim() : 'není v evidenci', wid, dayText(iso), v[0] == null ? '' : dvClockText(v[0]), v[1] == null ? '' : dvClockText(v[1]), min == null ? '' : r1(min / 60, 2)];
+        }))] },
+      { name: 'Díly', cols: [26, 10, 30, 12, 12, 12, 8], rows: [['Zaměstnanec', 'ID', 'Díl', 'Vykázáno (h)', 'Dokončeno (ks)', 'V zakázkách (ks)', 'Řádků'],
+        ...m.people.flatMap(q => Object.entries(q.parts).sort((a, b) => b[1][2] - a[1][2]).map(([nm, v]) => [q.name || 'není v evidenci', q.wid, nm, r1(v[2] / 60, 2), v[0], v[1], v[3]]))] },
+    ];
+    sheets.forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`lide-v-praci-${month}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
+/* ---------- profil: produktivita a koláč dílů ---------- */
+/* Koláč: nejvýš 6 dílů v barvách ověřených validátorem palet, zbytek šedě jako Ostatní.
+   Mezi výsečemi 2 px barvy plochy, u každé výseče popisek při najetí; legenda s čísly
+   (hodiny, kusy, podíl) slouží i jako tabulka. */
+function dvPieHtml(parts, total, byTime) {
+  const val = p => (byTime ? p.t : p.g);
+  const top = parts.slice(0, 6);
+  const rest = parts.slice(6);
+  const sl = top.map((p, i) => ({ name: p.name, v: val(p), t: p.t, g: p.g, f: p.f, cls: `s${i + 1}` }));
+  if (rest.length) sl.push({ name: `Ostatní díly (${rest.length})`, v: rest.reduce((s, p) => s + val(p), 0), t: rest.reduce((s, p) => s + p.t, 0), g: rest.reduce((s, p) => s + p.g, 0), f: rest.reduce((s, p) => s + p.f, 0), cls: 'so' });
+  const R = 56;
+  const r0 = 35;
+  const pt = (a, r) => `${(60 + r * Math.sin(a)).toFixed(2)} ${(60 - r * Math.cos(a)).toFixed(2)}`;
+  let a = 0;
+  const share = s => (total > 0 ? s.v / total : 0);
+  const tip = s => `${s.name}: ${dvH(s.t)}, ${nf(s.g, 0)} ks${s.f ? ` z ${nf(s.f, 0)}` : ''} (${nf(share(s) * 100, 0)} %)`;
+  const paths = sl.filter(s => s.v > 0).map(s => {
+    const f = share(s);
+    if (f >= 0.9999) return `<path class="hit ${s.cls}" tabindex="0" data-tip="${esc(tip(s))}" aria-label="${esc(tip(s))}" d="M 60 ${60 - R} A ${R} ${R} 0 1 1 59.99 ${60 - R} L 59.99 ${60 - r0} A ${r0} ${r0} 0 1 0 60 ${60 - r0} Z"/>`;
+    const b = a + f * Math.PI * 2;
+    const big = f > 0.5 ? 1 : 0;
+    const d = `M ${pt(a, R)} A ${R} ${R} 0 ${big} 1 ${pt(b, R)} L ${pt(b, r0)} A ${r0} ${r0} 0 ${big} 0 ${pt(a, r0)} Z`;
+    a = b;
+    return `<path class="hit ${s.cls}" tabindex="0" data-tip="${esc(tip(s))}" aria-label="${esc(tip(s))}" d="${d}"/>`;
+  }).join('');
+  const center = byTime ? [nf(total / 60, total >= 6000 ? 0 : 1), 'h vykázáno'] : [nf(total, 0), 'ks dokončeno'];
+  return `<div class="dv-pie-wrap"><div class="dv-pie-fig"><svg class="chart dv-pie" viewBox="0 0 120 120" role="group" aria-label="Podíl dílů ${byTime ? 'na vykázaném čase' : 'na dokončených kusech'}">${paths}
+      <text x="60" y="58" class="dv-pie-v">${esc(center[0])}</text><text x="60" y="71" class="dv-pie-k">${esc(center[1])}</text></svg></div>
+    <table class="dv-legend"><caption class="visually-hidden">Díly</caption><thead><tr><th>Díl</th><th class="r">Čas</th><th class="r">Ks</th><th class="r">Podíl</th></tr></thead><tbody>${sl.map(s => `<tr><td><i class="dv-sw ${s.cls}" aria-hidden="true"></i>${esc(s.name)}</td><td class="r num">${dvH(s.t)}</td><td class="r num">${nf(s.g, 0)}</td><td class="r num">${nf(share(s) * 100, 0)} %</td></tr>`).join('')}</tbody></table>
+    <div class="chart-tip" hidden></div></div>`;
+}
+function dvPersonCard(key, from, to) {
+  if (!dvHas()) return '';
+  const p = dvPerson(key, from, to);
+  const head = `<div class="card-head"><div><h3>Produktivita z vykázané práce</h3><p class="small muted">Z docházky a výkonů nahraných v Auditu${p.wid ? ` · ID ${esc(p.wid)}` : ''}. Využití = vykázaný čas ÷ čas v práci podle příchodů a odchodů.</p></div></div>`;
+  if (p.noId) return `<div class="card pf-dv">${head}<p class="small muted">Člověk nemá vyplněné ID zaměstnance, proto se k němu docházka a výkony nepřiřadí. Doplň ho v Upravit zařazení.</p></div>`;
+  if (!p.has) return `<div class="card pf-dv">${head}<p class="small muted">V tomto období bez docházky i vykázané práce.</p></div>`;
+  const byTime = p.t > 0;
+  const total = byTime ? p.t : p.g;
+  const tiles = `<div class="stats dv-pstats">${[
+    statTile('Dny v práci', String(p.days), p.days ? `Ø ${dvH(p.min / p.days)} denně` : 'bez docházky'),
+    statTile('Hodiny v práci', dvH(p.min, 0), 'z příchodů a odchodů'),
+    statTile('Vykázaný čas', dvH(p.t, 0), `${p.parts.length} ${p.parts.length === 1 ? 'díl' : p.parts.length <= 4 ? 'díly' : 'dílů'}, ${p.ops.length} ${operaceN(p.ops.length)}`),
+    statTile('Využití', dvPct(p.util), 'vykázaný čas ÷ čas v práci', p.util != null && p.util < 0.7 ? 'crit' : p.util != null ? 'good' : ''),
+    statTile('Dokončeno', `${nf(p.g, 0)} ks`, p.f ? `z ${nf(p.f, 0)} ks v zakázkách` : '—'),
+    statTile('Ks za hodinu', p.perHour != null ? nf(p.perHour, 1) : '—', 'za hodinu vykázaného času'),
+  ].join('')}</div>`;
+  const ops = p.ops.slice(0, 8);
+  return `<div class="card pf-dv">${head}${tiles}
+    ${p.parts.length && total > 0 ? `<h4 class="dv-sub">Na jakých dílech pracuje <small class="muted">podle ${byTime ? 'vykázaného času' : 'dokončených kusů'}</small></h4>${dvPieHtml(p.parts, total, byTime)}` : '<p class="small muted">V období bez vykázané práce.</p>'}
+    ${ops.length ? `<h4 class="dv-sub">Operace</h4><div class="table-card flat"><table class="stack"><thead><tr><th>Operace</th><th class="r">Čas</th><th class="r">Dokončeno ks</th><th class="r">Záznamů</th></tr></thead><tbody>${ops.map(o => `<tr><td class="wrap" data-label="Operace">${esc(o.name)}</td><td class="r num" data-label="Čas">${dvH(o.t)}</td><td class="r num" data-label="Dokončeno">${nf(o.g, 0)}</td><td class="r num" data-label="Záznamů">${o.n}</td></tr>`).join('')}</tbody></table></div>${p.ops.length > 8 ? `<p class="tiny muted">… a ${p.ops.length - 8} dalších</p>` : ''}` : ''}
+  </div>`;
 }
 
 /* ---------- nahrání souborů ---------- */
@@ -10990,6 +11461,8 @@ function bindWorkAudit() {
   });
   $('#waAtt').onclick = () => $('#waAttFile').click();
   $('#waWork').onclick = () => $('#waWorkFile').click();
+  $('#waDv').onclick = () => $('#waDvFile').click();
+  $('#waDvFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; dvImportAudit(f); };
   $('#waAttFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waImport('att', f); };
   $('#waWorkFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waImport('work', f); };
   $('#waPlanFile').onchange = event => { const f = [...event.target.files]; event.target.value = ''; waPlanQueueAdd(f); };
@@ -10999,6 +11472,22 @@ function bindWorkAudit() {
     const t = event.target;
     const pick = t.closest('[data-wapick]');
     if (pick) { $(pick.dataset.wapick === 'att' ? '#waAttFile' : '#waWorkFile').click(); return; }
+    // Lidé v práci (2.37)
+    if (t.closest('[data-dvpick]')) { $('#waDvFile').click(); return; }
+    const dvm = t.closest('[data-dvmode]');
+    if (dvm) { ui.wa.dvMode = dvm.dataset.dvmode; renderWorkAudit(); return; }
+    const dvd = t.closest('[data-dvday]');
+    if (dvd) { if (dvd.dataset.dvday) { ui.wa.dvDay = dvd.dataset.dvday; renderWorkAudit(); } return; }
+    const dvgo = t.closest('[data-dvgo]');
+    if (dvgo) { Object.assign(ui.wa, { dvMode: 'day', dvDay: dvgo.dataset.dvgo }); renderWorkAudit(); window.scrollTo({ top: 0, behavior: 'instant' }); return; }
+    const dvp = t.closest('[data-dvperson]');
+    if (dvp) { openProfile(dvp.dataset.dvperson); return; }
+    const dvs = t.closest('[data-dvsort]');
+    if (dvs) { ui.wa.dvSort = dvs.dataset.dvsort; renderWorkAudit(); return; }
+    const dvpdf = t.closest('[data-dvpdf]');
+    if (dvpdf) { exportDvPdf(dvpdf); return; }
+    if (t.closest('[data-dvxlsx]')) { exportDvXlsx(); return; }
+    if (t.closest('[data-dvcolreset]')) { S.workAudit.dv.cols = JSON.parse(JSON.stringify(DV_COLS)); save(); renderWorkAudit(); return; }
     const mode = t.closest('[data-wamode]');
     if (mode) { ui.wa.mode = mode.dataset.wamode; renderWorkAudit(); return; }
     const step = t.closest('[data-wastep]');
@@ -11081,7 +11570,7 @@ function bindWorkAudit() {
   });
   wv.addEventListener('keydown', event => {
     if (event.key === 'Enter' && event.target.matches('[data-wadate]')) { event.preventDefault(); waApplyDates(event.target.closest('[data-wadates]').dataset.wadates); return; }
-    if (event.key !== 'Enter' || !event.target.matches('tr[data-waday], tr[data-waweek], tr[data-wagrp]')) return;
+    if (event.key !== 'Enter' || !event.target.matches('tr[data-waday], tr[data-waweek], tr[data-wagrp], tr[data-dvgo], tr[data-dvperson]')) return;
     event.preventDefault();
     event.target.click();
   });
@@ -11149,6 +11638,19 @@ function bindWorkAudit() {
       if (!o) return;
       o.group = t.value;   // skupina = počítá se, „nepočítat“ = bez skupiny
       o.on = true;
+      save();
+      renderWorkAudit();
+      return;
+    }
+    if (t.id === 'dvDaySel') { ui.wa.dvDay = t.value; renderWorkAudit(); return; }
+    if (t.id === 'dvMonthSel') { ui.wa.dvMonth = t.value; renderWorkAudit(); return; }
+    if (t.id === 'dvUnit') { S.workAudit.dv.unit = DV_UNITS.includes(t.value) ? t.value : 'auto'; save(); renderWorkAudit(); return; }
+    if (t.dataset.dvcol) {
+      const [kind, key] = t.dataset.dvcol.split('.');
+      const v = waLetter(t.value);
+      if (t.value.trim() && !v) { toast('Sloupec je písmeno jako v Excelu (A až ZZZ).', true); renderWorkAudit(); return; }
+      if (!v && key !== 'date') { toast('Tenhle sloupec musí být vyplněný.', true); renderWorkAudit(); return; }
+      S.workAudit.dv.cols[kind][key] = v;
       save();
       renderWorkAudit();
       return;
