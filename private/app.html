@@ -19,6 +19,7 @@
       <button type="button" data-view="prehled"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/></svg><span>Přehled</span></button>
       <button type="button" data-view="lide"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.6"/><path d="M16.5 14.6c2.5.2 4.3 1.9 5 4.9"/></svg><span>Lidé</span><em class="nav-badge" id="navPeople" hidden></em></button>
       <button type="button" data-view="matice"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M3.5 9h17M9 3.5v17"/><circle cx="14.5" cy="14.5" r="2.5"/></svg><span>Matice dovedností</span></button>
+      <button type="button" data-view="plankap"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3"/><path d="M3.5 20v-1a5 5 0 0 1 5-5h1M15 20v-4M18.5 20v-7M22 20V10"/></svg><span>Plán kapacit</span></button>
       <button type="button" data-view="sankce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg><span>Sankce</span></button>
       <button type="button" data-view="kontroly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m8.5 11.5 2 2 4-4M8.5 17h7"/></svg><span>Kontroly</span><em class="nav-badge" id="navKt" hidden></em></button>
       <button type="button" data-view="protokoly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6M9 11h6M9 14.5h3"/></svg><span>Protokoly</span></button>
@@ -256,6 +257,22 @@
       </header>
       <div class="chips t5-tabs" id="t5Tabs"></div>
       <div id="t5View"></div>
+    </section>
+
+    <!-- ============ PLÁN KAPACIT (potřeba lidí a zkušeností, 2.38) ============ -->
+    <section class="view" id="view-plankap" aria-labelledby="cpTitle">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Potřeba lidí a zkušeností</p>
+          <h1 id="cpTitle">Plán kapacit</h1>
+          <p class="lede">U každé skupiny z Matice dovedností nastav, kolik lidí potřebuješ a kolik z nich aspoň na úrovni 2, 3 a 4. Plán ukáže, jak na tom jste podle hodnocení dovedností a docházky, koho doškolit a kolik lidí doplnit.</p>
+        </div>
+        <div class="page-actions noprint">
+          <button class="btn sec" type="button" id="cpXlsx">Excel</button>
+          <button class="btn sec" type="button" id="cpPdf">PDF</button>
+        </div>
+      </header>
+      <div id="cpView"></div>
     </section>
 
     <!-- ============ KONTROLY ============ -->

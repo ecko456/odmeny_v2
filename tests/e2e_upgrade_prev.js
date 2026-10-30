@@ -1,29 +1,28 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED a krok 5):
+// při každé další verzi stačí upravit ADDED, krok 5 a archiv; teď 2.37 → 2.38):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, Audit s kusy a hranicí zaškolení) a uloží je;
 //   2. nechá otevřenou starou stránku a spustí instalaci nové verze (UPGRADE_CMD);
 //   3. stará stránka už nesmí nic uložit (426, výzva k obnovení);
 //   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
-//   5. v nové verzi nahraje soubor s docházkou a výkony (2.37) a přepne Kontroly na los podle
-//      příchodů; po novém přihlášení je vše uložené a původní data pořád stejná.
+//   5. v nové verzi zadá potřebu do Plánu kapacit (2.38); po novém přihlášení je uložená
+//      a původní data jsou pořád stejná.
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive 5dc3da0 | tar -x -C $S/v236 && sudo bash $S/v236/deploy/install.sh
+//   git archive f6dacfb | tar -x -C $S/v237 && sudo bash $S/v237/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const XLSX = require('../private/vendor/xlsx.full.min.js');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.36$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.37$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.37$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.38$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
-const ADDED = { 'workAudit.dv': 'blankDv()' };
+const ADDED = { capPlan: 'blankCapPlan()' };
 
 async function watch(page, label, allow426 = false) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
@@ -61,17 +60,6 @@ const STATE = added => `(() => {
   return JSON.stringify({ st: canon(st), added: out });
 })()`;
 
-/* Soubor docházky a výkonů pro krok 5: dva dny, tři lidé, výkony bez data. */
-function dvXlsx(file, wids) {
-  const ser = d => (Date.UTC(2026, 9, d) - Date.UTC(1899, 11, 30)) / 864e5;
-  const att = [['ID', ser(26), null, ser(27), null], [null, 'Příchod', 'Odchod', 'Příchod', 'Odchod'], ...wids.map((w, i) => [w, (360 + i * 5) / 1440, 870 / 1440, (360 + i * 5) / 1440, 860 / 1440])];
-  const work = [['ID', '', '', 'Díl', 'Operace', 'Zakázka ks', 'Hotovo ks', '', '', 'Čas (min)'], ...wids.flatMap((w, i) => [[w, '', '', 'Hřídel', 'Broušení', 50, 20 + i, '', '', 200], [w, '', '', 'Kryt', 'Broušení', 30, 10, '', '', 150]])];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(att), 'Docházka');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(work), 'vykázaná práce');
-  fs.writeFileSync(file, XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
-}
-
 (async () => {
   fs.mkdirSync(shots, { recursive: true });
   const browser = await chromium.launch({ executablePath: process.env.CHROME || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
@@ -94,7 +82,7 @@ function dvXlsx(file, wids) {
   await old.waitForSelector('#view-prehled.on');
   const oldVer = await old.evaluate(() => ui.me.version);
   check(PREV.test(oldVer), `výchozí verze není předchozí: ${oldVer}`);
-  const wids = await old.evaluate(() => {
+  await old.evaluate(() => {
     const st = blank();
     const grp = (id, name, dept, skills) => { const p = mkPos(id, name, []); p.dept = dept; p.skillset = skills.map((n, i) => ({ id: `${id}s${i}`, name: n, desc: '', scale: null })); p.maxTab = 8; p.tiers = []; return p; };
     st.positions = [grp('g_brus', 'Brus', 'Brus', ['Rovinné broušení', 'Měření']), grp('g_cnc', 'CNC', 'Obrobna', ['Seřízení'])];
@@ -112,9 +100,10 @@ function dvXlsx(file, wids) {
     waApplyWork(S.workAudit, { byDay: { '2026-10-20': { Broušení: 40, 'Frézování CNC': 12 }, '2026-10-21': { Broušení: 35 } }, ops: { Broušení: 75, 'Frézování CNC': 12 }, rows: 3, skipped: 0, from: '2026-10-20', to: '2026-10-21' }, { name: 'vykaz.xlsx', by: 'Vedoucí dílny', at: Date.now() });
     S.workAudit.trainPct = 60;
     S.workAudit.target = 9;
+    // docházka a výkony (od 2.37), když je předchozí verze má
+    if (S.workAudit.dv) { S.workAudit.dv.pres['2026-10-26'] = { 101: [360, 870], 201: [365, null] }; S.workAudit.dv.perf['2026-10'] = { 101: { p: { Hřídel: [20, 50, 200, 2] }, o: { Broušení: [20, 200, 2] } } }; S.audit.settings.mode = 'day'; }
     save();
     renderAll();
-    return people.map(p => p[3]).filter(Boolean);
   });
   await saved(old);
   await old.waitForTimeout(1200);
@@ -161,36 +150,27 @@ function dvXlsx(file, wids) {
   check(await page.evaluate(() => S.log.length) === beforeLog, 'historie změn se po aktualizaci liší');
 
   // ---- 5. nové funkce nad převzatými daty a jejich uložení ----
-  await page.click('#nav [data-view="audit"]');
-  dvXlsx(path.join(S, 'uprev-dochazka.xlsx'), wids);
-  await page.setInputFiles('#waDvFile', path.join(S, 'uprev-dochazka.xlsx'));
-  await page.waitForSelector('#dlg[open] .dv-imp');
-  check(/Řádky nemají datum, výkony se uloží za říjen 2026\./.test(await page.textContent('#dlgBody')), 'výkony bez data za měsíc docházky');
-  await page.click('#dlgOk');
-  await page.waitForSelector('#waView .dv-people, #waView .dv-bars, #waView .empty');
+  await page.click('#nav [data-view="plankap"]');
+  await page.waitForSelector('#cpView .cp-table');
+  await page.fill('#cp-g_brus-n', '4');
+  await page.press('#cp-g_brus-n', 'Enter');
+  await page.fill('#cp-g_brus-l3', '2');
+  await page.press('#cp-g_brus-l3', 'Enter');
   await saved(page);
-  await page.click('#nav [data-view="kontroly"]');
-  await page.click('#ktSettings');
-  await page.waitForSelector('#dlg[open] .kt-mode');
-  await page.check('#dlg input[name="mode"][value="day"]');
-  await page.click('#dlgOk');
-  await page.waitForFunction(() => !document.querySelector('#dlg[open]') && S.audit.settings.mode === 'day');
-  await saved(page);
-  await page.screenshot({ path: path.join(shots, '02-nova-kontroly.png') });
+  const recs = (await page.textContent('#cpView .cp-recs')).replace(/\s+/g, ' ').trim();
+  check(/^Brus: doplnit 2 lidi; doškolit 2 lidi: na úroveň 3 /.test(recs), `doporučení nad převzatými daty: ${recs}`);
+  await page.screenshot({ path: path.join(shots, '02-nova-plan.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const again = await ctx3.newPage();
   await watch(again, 'nová znovu');
   await login(again, key);
-  const final = JSON.parse(await again.evaluate(STATE({ ...ADDED, 'audit.settings': 1, 'workAudit.files': 1 })));
-  const dv = final.added['workAudit.dv'];
-  check(dv && Object.keys(dv.pres).join() === '2026-10-26,2026-10-27' && Object.keys(dv.perf['2026-10']).sort().join() === wids.slice().sort().join(), `docházka a výkony po novém přihlášení: ${JSON.stringify(dv).slice(0, 200)}`);
-  check(final.added['audit.settings'] && final.added['audit.settings'].mode === 'day', `režim Kontrol: ${JSON.stringify(final.added['audit.settings'])}`);
+  const final = JSON.parse(await again.evaluate(STATE(ADDED)));
+  const cp = final.added.capPlan;
+  check(cp && JSON.stringify(cp.groups) === JSON.stringify({ g_brus: { l2: 2, l3: 2, l4: 0, n: 4 } }), `plán kapacit po novém přihlášení: ${JSON.stringify(cp)}`);
   const keep = JSON.parse(JSON.stringify(before.st));
-  delete keep.audit.settings;
-  delete keep.workAudit.files;
-  // historie změn přibyla (nahrání, režim Kontrol); původní záznamy v ní musí zůstat
+  // historie změn přibyla (plán kapacit); původní záznamy v ní musí zůstat
   const logNow = new Set(final.st.log.map(x => JSON.stringify(x)));
-  check(keep.log.every(x => logNow.has(JSON.stringify(x))) && final.st.log.length > keep.log.length, 'historie změn: chybí původní záznamy, nebo nepřibyly nové');
+  check(keep.log.every(x => logNow.has(JSON.stringify(x))) && final.st.log.some(x => /^Plán kapacit – Brus/.test(x.text)), 'historie změn: chybí původní záznamy, nebo záznam plánu');
   delete keep.log;
   delete final.st.log;
   check(JSON.stringify(final.st) === JSON.stringify(keep), 'původní data se po použití nové verze změnila');
@@ -198,10 +178,6 @@ function dvXlsx(file, wids) {
     fs.writeFileSync(path.join(S, 'uprev-keep.json'), JSON.stringify(keep, null, 1));
     fs.writeFileSync(path.join(S, 'uprev-final.json'), JSON.stringify(final.st, null, 1));
   }
-  await again.click('#nav [data-view="audit"]');
-  await again.evaluate(() => { ui.wa.tab = 'lide'; ui.wa.dvMode = 'month'; ui.wa.dvMonth = '2026-10'; renderWorkAudit(); });
-  await again.waitForSelector('#waView .dv-people');
-  await again.screenshot({ path: path.join(shots, '03-nova-lide.png'), fullPage: true });
   await ctx3.close();
 
   await browser.close();

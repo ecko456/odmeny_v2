@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.38
+
+- **Plán kapacit** (nová část v menu, hned pod Maticí dovedností). U každé skupiny z Matice
+  dovedností nastavíš, kolik lidí potřebuješ **celkem** a kolik z nich aspoň na **úrovni 2, 3
+  a 4** (úroveň = procento dovedností skupiny: 2 = aspoň 50 %, 3 = aspoň 75 %, 4 = 100 %).
+  - Vedle potřeby je, **jak na tom jste**: lidé ve skupině po úrovních (co chybí, je červeně),
+    nemocní a průměrný počet lidí v práci podle docházky z Auditu (2.37).
+  - **Doplnit**: kolik lidí chybí do potřeby (nábor). **Doškolit**: kolik lidí ze skupiny
+    zvednout na vyšší úroveň; navržení jsou ti, kdo mají k cíli nejblíž, jméno vede do profilu.
+    Když lidí pod úrovní není dost, plán řekne, kolik z nových musí mít úroveň hned.
+  - Skupiny po odděleních se součtem, stav skupiny (V pořádku, Doškolit, Doplnit lidi, Bez
+    plánu), souhrn nahoře, poznámka k plánu. Vyšší úroveň zvedne nižší (3+ ≤ 2+ ≤ celkem).
+  - **PDF** (na šířku, oddělení s plánem, doporučení se jmény, poznámka) a **Excel** (plán
+    a seznam lidí k doškolení s procentem a cílovou úrovní). Změny jsou v historii.
+- Verze dat 35: stará stránka nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.37
 
 - **Audit: docházka a výkony z jednoho souboru.** Tlačítko **Nahrát docházku a výkony** přečte
@@ -1356,6 +1372,9 @@ v hlavičce každého skriptu:
   v prohlížeči z vymyšlených čísel, Kontroly podle dnešních příchodů, Lidé v práci po dnech
   a měsících, PDF a Excel, koláč dílů v profilu, telefon, tmavý režim; hodiny stránky stojí na
   30. 10. 2026);
+- `tests/e2e_plankap.js`: novinka 2.38 (Plán kapacit: potřeba po úrovních, srovnání počtů,
+  máme, Ø v práci z docházky, doplnit, doškolit s kandidáty, poznámka, historie, PDF s textem
+  přes pypdf, Excel, tmavý režim, telefon);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -1372,11 +1391,11 @@ UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
 Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
-upraví jen seznam toho, co nová verze přidá): 2.36 → 2.37:
+upraví jen seznam toho, co nová verze přidá, a krok 5): 2.37 → 2.38:
 
 ```bash
-rm -rf /tmp/v236 && mkdir /tmp/v236 && git archive 5dc3da0 | tar -x -C /tmp/v236
-sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v236/deploy/install.sh
+rm -rf /tmp/v237 && mkdir /tmp/v237 && git archive f6dacfb | tar -x -C /tmp/v237
+sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v237/deploy/install.sh
 UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 ```
 

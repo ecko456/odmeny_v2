@@ -123,7 +123,7 @@ function save(){_prodIdx=null;_effCache=null;if(typeof onStateChange==="function
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),service:blankService(),shortage:blankShortage(),v:DATA_VERSION};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),service:blankService(),shortage:blankShortage(),capPlan:blankCapPlan(),v:DATA_VERSION};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -2096,7 +2096,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=34;
+const DATA_VERSION=35;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -2395,6 +2395,8 @@ function sanitizeState(input){
   out.service=cleanService(o.service);
   /* Shortage – chybějící díly z Excelu (2.27): starší data ho nemají, začíná prázdný */
   out.shortage=cleanShortage(o.shortage);
+  /* Plán kapacit (2.38): starší data ho nemají, začíná prázdný; jen existující skupiny */
+  out.capPlan=cleanCapPlan(o.capPlan,new Set(out.positions.filter(isGroup).map(x=>x.id)));
   // data před 2.18.1: požadavek lidí je pevných 100 (zadání), dřív se bral jen ze souboru
   if(!(+o.v>=17)&&out.workAudit.target==null)out.workAudit.target=WA_TARGET;
   out.v=DATA_VERSION;
@@ -2724,6 +2726,7 @@ function describeChanges(a,b,meta){
   waChanges(a.workAudit,b.workAudit,add);
   svChanges(a.service,b.service,add);
   shChanges(a.shortage,b.shortage,add);
+  cpChanges(a.capPlan,b.capPlan,add,b);
   return {entries,hist};
 }
 
@@ -4969,6 +4972,124 @@ function dvPerson(key,from,to){
   const T=pl.reduce((s,p)=>s+p.t,0),G=pl.reduce((s,p)=>s+p.g,0),F=pl.reduce((s,p)=>s+p.f,0);
   return {wid:w,days,min,t:T,g:G,f:F,util:min>0&&T>0?T/min:null,perHour:T>0?G/(T/60):null,parts:pl,ops:ol,months,
     has:days>0||pl.length>0,any:Object.keys(dv.pres).length>0||Object.keys(dv.perf).length>0};
+}
+
+/* ==========================================================================
+   PLÁN KAPACIT (verze 2.38)
+   Ke každé skupině Matice (projektu) se nastaví, kolik lidí je potřeba celkem a kolik z nich
+   aspoň na úrovni 2, 3 a 4. Úroveň člověka = procento dovedností skupiny: aspoň 50 % = úroveň 2,
+   75 % = 3, 100 % = 4 (stejně jako „zkušený pracovník“ v reportu kapacit). Počty „aspoň“ se
+   sčítají shora: kdo má úroveň 4, počítá se i do úrovně 3 a 2.
+   S.capPlan = {groups: {idSkupiny: {n, l2, l3, l4}}, note, by, at}. Plán ukáže, jak jsme na
+   tom (lidé ve skupině, nemocní, v práci podle docházky z Auditu), koho doškolit (kandidáti
+   s nejvyšším procentem pod hranicí) a kolik lidí doplnit náborem.
+   ========================================================================== */
+const CP_LEVELS=[2,3,4];
+const CP_MAX=500;
+function blankCapPlan(){return {groups:{},note:"",by:"",at:0};}
+function cleanCapPlan(o,posIds){
+  const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const int=v=>{const n=Math.round(Number(v));return Number.isFinite(n)?clamp(n,0,CP_MAX):0;};
+  o=obj(o);
+  const out=blankCapPlan();
+  Object.entries(obj(o.groups)).forEach(([id,g])=>{
+    if(!SAFE_ID.test(id)||(posIds&&!posIds.has(id)))return;
+    g=obj(g);
+    // počty „aspoň úroveň“ se shora nesmí zvětšovat: l4 ≤ l3 ≤ l2 ≤ n
+    const n=int(g.n),l2=Math.min(n,int(g.l2)),l3=Math.min(l2,int(g.l3)),l4=Math.min(l3,int(g.l4));
+    if(n||l2||l3||l4)out.groups[id]={n,l2,l3,l4};
+  });
+  out.note=String(o.note==null?"":o.note).slice(0,4000);
+  out.by=String(o.by==null?"":o.by).slice(0,60);
+  out.at=Number.isFinite(+o.at)?clamp(Math.round(+o.at),0,1e15):0;
+  return out;
+}
+/* Nastaví potřebu skupiny; počty „aspoň“ srovná tak, aby vyšší úroveň nepřesáhla nižší. */
+function setCapNeed(id,patch){
+  const cur={n:0,l2:0,l3:0,l4:0,...((S.capPlan.groups||{})[id]||{})};
+  Object.keys(patch).forEach(k=>{if(k in cur)cur[k]=clamp(Math.round(+patch[k]||0),0,CP_MAX);});
+  // změna vyšší úrovně zvedne nižší, změna nižší sníží vyšší
+  if("l4" in patch){cur.l3=Math.max(cur.l3,cur.l4);cur.l2=Math.max(cur.l2,cur.l3);cur.n=Math.max(cur.n,cur.l2);}
+  else if("l3" in patch){cur.l2=Math.max(cur.l2,cur.l3);cur.n=Math.max(cur.n,cur.l2);cur.l4=Math.min(cur.l4,cur.l3);}
+  else if("l2" in patch){cur.n=Math.max(cur.n,cur.l2);cur.l3=Math.min(cur.l3,cur.l2);cur.l4=Math.min(cur.l4,cur.l3);}
+  else if("n" in patch){cur.l2=Math.min(cur.l2,cur.n);cur.l3=Math.min(cur.l3,cur.l2);cur.l4=Math.min(cur.l4,cur.l3);}
+  if(cur.n||cur.l2||cur.l3||cur.l4)S.capPlan.groups[id]=cur;else delete S.capPlan.groups[id];
+  return cur;
+}
+/* Úroveň člověka ve skupině z procenta dovedností (0–4, dolů: 74 % je ještě úroveň 2). */
+const cpLevel=pct=>pct==null?0:Math.floor((pct+1e-9)/25);
+/* Průměrný počet lidí skupiny v práci za posledních N pracovních dní s docházkou (Audit 2.37). */
+function cpPresence(days,now){
+  const dv=S.workAudit&&S.workAudit.dv;
+  if(!dv)return null;
+  const today=todayIso(now),list=Object.keys(dv.pres).filter(iso=>iso<=today).sort().filter(iso=>{const [y,m,d]=iso.split("-").map(Number);return mkDay(y,m,d).work;}).slice(-(days||20));
+  if(!list.length)return null;
+  const map=dvWidMap(),by={};
+  list.forEach(iso=>Object.keys(dv.pres[iso]).forEach(wid=>{const g=dvGroupOf(map.get(wid)||null,iso,today);by[g.id]=(by[g.id]||0)+1;}));
+  Object.keys(by).forEach(k=>{by[k]=Math.round(by[k]/list.length*10)/10;});
+  return {days:list.length,from:list[0],to:list[list.length-1],by};
+}
+/* Jak jsme na tom ve skupině a co udělat: doplnit (nábor) a doškolit (kandidáti). */
+function capPlanGroup(p,pres){
+  const need={n:0,l2:0,l3:0,l4:0,...((S.capPlan&&S.capPlan.groups[p.id])||{})};
+  const members=Object.values(S.employees).filter(e=>e.positionId===p.id&&!e.excluded&&!isLead(e))
+    .map(e=>{const pct=groupSkills(p).length?skillPct(e,p):null;return {e,key:e.key,name:(e.last+" "+e.first).trim(),pct,lvl:cpLevel(pct),sick:!!e.sick};})
+    .sort((a,b)=>(b.pct||0)-(a.pct||0)||norm(a.name).localeCompare(norm(b.name),"cs"));
+  const H=members.length,have={n:H,l2:0,l3:0,l4:0};
+  CP_LEVELS.forEach(k=>{have["l"+k]=members.filter(m=>m.lvl>=k).length;});
+  const hire=Math.max(0,need.n-H);
+  const gap={},train={},hireLv={};
+  CP_LEVELS.forEach(k=>{
+    const key="l"+k;
+    gap[k]=Math.max(0,need[key]-have[key]);
+    // doškolit jde jen lidi skupiny pod úrovní; co zbyde, musí přijít náborem s tou úrovní
+    train[k]=Math.min(gap[k],H-have[key]);
+    hireLv[k]=gap[k]-train[k];
+  });
+  // kandidáti: z lidí pod úrovní ti s nejvyšším procentem (nejblíž k cíli), shora od úrovně 4;
+  // kdo se doškolí na 4 a teď je pod 3, pokryje i mezeru na 3 (a stejně na 2)
+  const cand=[],used=new Set();
+  [4,3,2].forEach(k=>{
+    const got=cand.filter(c=>c.lvl<k).length;
+    members.filter(m=>m.lvl<k&&!used.has(m.key)).slice(0,Math.max(0,train[k]-got))
+      .forEach(m=>{used.add(m.key);cand.push({...m,to:k,miss:Math.max(0,k*25-(m.pct||0))});});
+  });
+  const trainN=cand.length;
+  const set=!!(need.n||need.l2||need.l3||need.l4);
+  const state=!set?"none":hire>0?"hire":trainN>0?"train":"ok";
+  return {p,need,have,members,sick:members.filter(m=>m.sick).length,hire,hireLv,gap,train,trainN,cand:cand.sort((a,b)=>b.to-a.to||(b.pct||0)-(a.pct||0)),
+    extra:set?Math.max(0,H-need.n):0,state,set,pres:pres&&pres.by[p.id]!=null?pres.by[p.id]:pres?0:null};
+}
+/* Celý plán po odděleních (skupiny v pořadí Matice) a souhrn. */
+function capPlanAll(opts){
+  opts=opts||{};
+  const pres=cpPresence(opts.days||20,opts.now);
+  const groups=S.positions.filter(isGroup).map(p=>capPlanGroup(p,pres));
+  const depts=[];
+  groups.forEach(g=>{
+    const d=g.p.dept||"";
+    let x=depts.find(y=>y.dept===d);
+    if(!x){x={dept:d,groups:[]};depts.push(x);}
+    x.groups.push(g);
+  });
+  const sum=list=>{const t={need:{n:0,l2:0,l3:0,l4:0},have:{n:0,l2:0,l3:0,l4:0},hire:0,trainN:0,sick:0,pres:null};
+    list.forEach(g=>{["n","l2","l3","l4"].forEach(k=>{t.need[k]+=g.need[k];t.have[k]+=g.have[k];});t.hire+=g.hire;t.trainN+=g.trainN;t.sick+=g.sick;if(g.pres!=null)t.pres=Math.round(((t.pres||0)+g.pres)*10)/10;});
+    return t;};
+  depts.forEach(d=>{d.tot=sum(d.groups);});
+  const set=groups.filter(g=>g.set);
+  return {depts,groups,pres,tot:sum(set),setN:set.length,okN:set.filter(g=>g.state==="ok").length};
+}
+/* Historie plánu kapacit: potřeba skupiny „původně → teď“ (opakovaná úprava do 10 minut se
+   sloučí podle klíče cp:skupina) a poznámka. */
+function cpChanges(A,B,add,st){
+  A=A||blankCapPlan();B=B||blankCapPlan();
+  const name=id=>{const p=posIn(st,id);return p?p.name||"(bez názvu)":"(smazaná skupina)";};
+  const txt=g=>g?g.n+" "+(g.n===1?"člověk":g.n>=2&&g.n<=4?"lidé":"lidí")+" (2+ "+g.l2+", 3+ "+g.l3+", 4 "+g.l4+")":"bez plánu";
+  new Set([...Object.keys(A.groups||{}),...Object.keys(B.groups||{})]).forEach(id=>{
+    const x=(A.groups||{})[id]||null,y=(B.groups||{})[id]||null;
+    if(JSON.stringify(x)!==JSON.stringify(y))add("capplan","",{m:"cp:"+id,p:"Plán kapacit – "+name(id)+": ",v0:txt(x),v1:txt(y)});
+  });
+  if((A.note||"")!==(B.note||""))add("capplan","Plán kapacit: "+(B.note?"poznámka „"+B.note.slice(0,80)+(B.note.length>80?"…":"")+"“":"poznámka smazána"),{m:"cpnote"});
 }
 
 /* ==========================================================================

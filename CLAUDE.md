@@ -34,6 +34,18 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 30. 10. 2026 (verze 2.38):
+
+- Uživatel: „plánovací modul kapacit, ať jde nastavit kolik potřebujeme s jakými zkušenostmi na
+  daných odděleních a jak jsme na tom a kolik potřebujeme doškolit nebo doplnit zaměstnanců“.
+  - Nová část `plankap` (menu pod Maticí, dlaždice na telefonu), viz modul „Plán kapacit“ níže.
+  - Zkušenost = úroveň z procenta dovedností skupiny (`cpLevel`: dolů, 50/75/100 %), stejné
+    měřítko jako „zkušený pracovník“ v reportu kapacit. Plán je po skupinách Matice (projekt),
+    oddělení je součet.
+  - Testy: core „Plán kapacit (2.38)“, nový `tests/e2e_plankap.js`, `e2e_mobil` (14 částí),
+    `e2e_upgrade_prev.js` přepnutý na 2.37 → 2.38 (archiv `f6dacfb`).
+  - Verze dat 35, `ODM_VERSION` 2.38.
+
 Stav k 30. 10. 2026 (verze 2.37):
 
 - Uživatel: „Zakomponuj do auditu možnost importu docházky a výkonů z jednoho souboru. … první
@@ -65,9 +77,6 @@ Stav k 30. 10. 2026 (verze 2.37):
     (zlomek dne, text „6:30“, datum s časem — vše se čte), jednotka stráveného času (auto podle
     hlavičky a hodnot), kódy nepřítomnosti.
   - Verze dat 34, `ODM_VERSION` 2.37.
-- Čeká: **2.38 Plánování kapacit** (uživatel: „plánovací modul kapacit, ať jde nastavit kolik
-  potřebujeme s jakými zkušenostmi na daných odděleních a jak jsme na tom a kolik potřebujeme
-  doškolit nebo doplnit zaměstnanců“).
 
 Stav k 26. 10. 2026 (verze 2.36):
 
@@ -1377,6 +1386,23 @@ Docházka a výkony z jednoho souboru (2.37), `S.workAudit.dv`:
 - Projekt = skupina Matice (`dvGroupOf`): dnes podle zařazení, minulé dny podle `levelAt`;
   vedoucí, bez skupiny a neznámé ID jsou zvláštní „projekty“ na konci (`dvSpecial` v UI).
 
+## Plán kapacit (verze 2.38)
+
+Data `S.capPlan = {groups: {idSkupiny: {n, l2, l3, l4}}, note, by, at}` (`blankCapPlan`,
+`cleanCapPlan(o, idSkupin)`: jen existující skupiny Matice, počty 0–500, l4 ≤ l3 ≤ l2 ≤ n,
+nulová potřeba se neukládá). Úpravy přes `setCapNeed(id, patch)`: změna vyšší úrovně zvedne
+nižší, změna nižší sníží vyšší. Historie `cpChanges` (kind `capplan`, m `cp:<skupina>`,
+`cpnote`).
+
+Výpočet `capPlanGroup(p, pres)`: členové = lidé se skupinou, ne vyřazení, ne vedoucí (nemocní
+se počítají, zvlášť počet). `have.lK` = počet s úrovní ≥ K. `hire` = potřeba − členové.
+Pro K: `gap` = potřeba − máme, `train` = min(gap, členové pod K), `hireLv` = zbytek (musí přijít
+s úrovní). Kandidáti: shora od K = 4 nejvyšší procenta pod K; kdo se školí na 4 a je pod 3,
+pokryje i mezeru na 3. `capPlanAll()` = oddělení v pořadí skupin, součty jen ze skupin
+s plánem, `cpPresence` = Ø lidí skupiny v práci za posledních 20 pracovních dní s docházkou
+(`dvGroupOf`). UI v `app.js` (sekce „PLÁN KAPACIT“): `renderCapPlan`, `bindCapPlan`, PDF
+`exportCapPlanPdf` (na šířku), Excel `exportCapPlanXlsx`.
+
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 
 Uživatel chce z verze 2 udělat **jednu multifunkční aplikaci s moduly**, ať se nemusí
@@ -1548,7 +1574,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.34 | `bfc9e06` | Shortage – PDF po odděleních (každé oddělení od nového papíru, vlastní záhlaví, číslování položek i stran) (data verze 31) |
 | 2.35 | `7f3c6c7` | výkaz práce jednou pro Výrobu i Audit (sloupec Operace ve Výrobě, Nahrát i do Výroby v Auditu) (data verze 32) |
 | 2.36 | `5dc3da0` | Shortage – Doplnit chybějící (znovu vložené urgenty přidají jen chybějící položky, odebrané se nevrátí) (data verze 33) |
-| 2.37 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – docházka a výkony z jednoho souboru, Lidé v práci (den, měsíc, PDF, Excel), produktivita a koláč dílů v profilu; Kontroly podle dnešních příchodů (data verze 34) |
+| 2.37 | `f6dacfb` | Audit – docházka a výkony z jednoho souboru, Lidé v práci (den, měsíc, PDF, Excel), produktivita a koláč dílů v profilu; Kontroly podle dnešních příchodů (data verze 34) |
+| 2.38 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Plán kapacit – potřeba lidí celkem a po úrovních 2, 3, 4 u skupin, jak jsme na tom, doplnit, doškolit s kandidáty, PDF, Excel (data verze 35) |
 
 Verze 2.1 přidala:
 
@@ -1707,10 +1734,12 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `issued{period: {key: {at, tabaky, kafe, pos, lvl, pct, tier, raise}}}` (snímek při výdeji);
   - `marks{period: {key: {bodId: důvod}}}`: body prémie, které vedoucí označil jako nesplněné;
   - `capReport{groups[], thr, hidden[], note, s1am, detail?}`: report Směny a kapacita (`detail` 2.25: `all` | `none`, výchozí se neukládá);
-  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook`);
+  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook|workaudit|service|shortage|capplan`);
   - `logbooks[]` (2.16): Protokoly (viz níže);
   - `service` (2.21, 2.22): Servis, evidence zařízení, odeslání a vzory (viz níže);
   - `shortage` (2.27): Shortage, nahrané seznamy chybějících dílů (viz níže);
+  - `workAudit.dv` (2.37): docházka a výkony z jednoho souboru (viz Audit);
+  - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -1934,7 +1963,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 83 testů: proti původní aplikaci + opravy + 2.1 až 2.37
+node tests/test_core.js                 # 84 testů: proti původní aplikaci + opravy + 2.1 až 2.38
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -1994,6 +2023,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     los jen z lidí v práci, znovu, náhradník), Audit (dialog, Lidé v práci den a měsíc, popisek,
     PDF, Excel), profil s koláčem (legenda proti výpočtu, popisek, tmavé barvy), bez ID,
     nastavení sloupců, historie, telefon; hodiny stránky stojí na pátku 30. 10. 2026;
+  - `e2e_plankap.js` (2.38): Plán kapacit (potřeba po úrovních, srovnání, máme, Ø v práci,
+    doplnit, doškolit, kandidát do profilu, poznámka, historie, PDF přes pypdf, Excel, telefon);
   - `e2e_upgrade_prev.js`: aktualizace z předchozí verze na aktuální na Apachi (data
     položku po položce, 426 staré stránky, nové funkce nad převzatými daty);
   - `e2e_vykaz.js` (2.35): jeden výkaz práce pro Výrobu i Audit: odhad sloupce Operace, kusy
