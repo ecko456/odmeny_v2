@@ -22,6 +22,7 @@
       <button type="button" data-view="plankap"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.5" r="3"/><path d="M3.5 20v-1a5 5 0 0 1 5-5h1M15 20v-4M18.5 20v-7M22 20V10"/></svg><span>Plán kapacit</span></button>
       <button type="button" data-view="sankce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg><span>Sankce</span></button>
       <button type="button" data-view="kontroly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m8.5 11.5 2 2 4-4M8.5 17h7"/></svg><span>Kontroly</span><em class="nav-badge" id="navKt" hidden></em></button>
+      <button type="button" data-view="rychla"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/></svg><span>Rychlá kontrola</span></button>
       <button type="button" data-view="protokoly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6M9 11h6M9 14.5h3"/></svg><span>Protokoly</span></button>
       <button type="button" data-view="servis"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5a4.5 4.5 0 0 0-4.3 5.8L4 17a2.1 2.1 0 0 0 3 3l6.7-6.7A4.5 4.5 0 0 0 19.5 9l-2.7 2.7-3-.6-.6-3z"/></svg><span>Servis</span></button>
       <button type="button" data-view="shortage"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 8.5v5M12 16.6v.1"/></svg><span>Shortage</span></button>
@@ -275,6 +276,11 @@
       <div id="cpView"></div>
     </section>
 
+    <!-- ============ RYCHLÁ KONTROLA (telefon, 2.39) ============ -->
+    <section class="view" id="view-rychla" aria-label="Rychlá kontrola">
+      <div id="qkView"></div>
+    </section>
+
     <!-- ============ KONTROLY ============ -->
     <section class="view" id="view-kontroly" aria-labelledby="ktTitle">
       <header class="page-head">
@@ -284,6 +290,7 @@
           <p class="lede">Ke každému oddělení nutné úkony, které musí operátor dělat. Na týden dopředu se z každého oddělení vybere 25 % lidí (jde změnit v Nastavení) a rozloží se do pracovních dnů. U každého bodu se zapíše splněno, nebo nesplněno, a výsledek se propíše do karty člověka. V Nastavení jde přepnout losování každý den jen z lidí, kteří podle nahraných příchodů přišli do práce.</p>
         </div>
         <div class="page-actions noprint">
+          <button class="btn sec" type="button" data-go="rychla">Rychlá kontrola</button>
           <button class="btn sec" type="button" id="ktSettings">Nastavení</button>
           <input type="file" id="ktPresFile" accept=".xlsx,.xls,.xlsm,.csv" hidden>
         </div>

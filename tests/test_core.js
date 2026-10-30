@@ -3659,6 +3659,85 @@ test('Plán kapacit (2.38): potřeba po úrovních, máme, doplnit, doškolit s 
   return null;
 });
 
+test('Rychlá kontrola (2.39): počet lidí, rozdělení mezi oddělení, směna, příchody, přednost, výměna a uložení', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = blank();
+    const lvl = () => [1, 2, 3, 4].map(n => ({ name: 'L' + n, tabaky: n * 2, desc: '' }));
+    S.positions = [
+      { id: 'p_cnc', name: 'CNC', dept: 'Obrobna', max: null, levels: lvl(), penalty: [], bonus: [] },
+      { id: 'p_kon', name: 'Kontrola', dept: 'Kontrola kvality', max: null, levels: lvl(), penalty: [], bonus: [] },
+    ];
+    const add = (k, pos, wid, shift) => { S.employees[k] = { key: k, last: 'P' + k, first: 'Jan', positionId: pos, level: 1, note: '', wid, shift }; };
+    for (let i = 0; i < 8; i++) add('c' + i, 'p_cnc', String(i + 1), i < 4 ? 'R' : 'O');
+    for (let i = 0; i < 4; i++) add('k' + i, 'p_kon', String(11 + i), i < 2 ? 'R' : 'O');
+    add('v1', 'p_cnc', '50', 'R'); S.employees.v1.lead = ['Obrobna'];
+    add('x1', 'p_cnc', '51', 'R'); S.employees.x1.excluded = true;
+    S.employees.c7.sick = '2026-10-01';
+    S.audit.tasks['Obrobna'] = [{ id: 't1', text: 'Úklid' }];
+    S = sanitizeState(S);
+    const meta = { at: Date.UTC(2026, 9, 30, 7), by: 'Mistr' };
+    // c0 zkontrolovaný minulý týden, k0 má kontrolu v tomto týdnu
+    addToPlan('2026-W43', 'c0', '2026-10-20', meta);
+    recordCheck('2026-W43', audPlan('2026-W43').items[0].id, { date: '2026-10-20', answers: { t1: true } }, meta);
+    addToPlan('2026-W44', 'k0', '2026-10-27', meta);
+    const T = '2026-10-30';
+    let seed = 7;
+    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    const dep = l => l.reduce((m, x) => { m[x.dept] = (m[x.dept] || 0) + 1; return m; }, {});
+    const pool = quickPool({ today: T });
+    const all = [];
+    for (let i = 0; i < 40; i++) all.push(quickPick({ n: 5, today: T }, rnd));
+    const a = all[0];
+    const c0 = all.filter(r => r.list.some(x => x.key === 'c0')).length;
+    const ob = quickPick({ n: 10, dept: 'Obrobna', slot: 'am', today: T }, rnd);
+    const big = quickPick({ n: 9, today: T }, rnd);
+    S.workAudit.dv.pres[T] = { '2': [360, null], '6': [840, null], '12': [360, 900], '13': [null, null], '99': [360, null] };
+    const pr = quickPick({ n: 10, present: true, today: T }, rnd);
+    const noPres = quickPick({ n: 10, present: true, today: '2026-10-29' }, rnd);
+    const keys = a.list.map(x => x.key);
+    const oKey = a.list.find(x => x.dept === 'Obrobna').key;
+    const sw = quickSwap({ today: T }, keys, oKey, rnd);
+    const swOnly = quickSwap({ today: T, dept: 'Kontrola kvality' }, ['k1', 'k2', 'k3'], 'k1', rnd);
+    const err = f => { try { f(); return ''; } catch (e) { return e.message; } };
+    const sv = quickSave(keys, meta, T);
+    const sv2 = quickSave(keys, meta, T);
+    const after = quickPool({ today: T }).list.map(x => x.key);
+    return JSON.stringify({
+      pool: [pool.list.length, pool.busy, pool.list.map(x => x.key).sort()],
+      sizes: all.map(r => [r.list.length, r.pool, r.short, new Set(r.list.map(x => x.key)).size]).every(x => x.join() === '5,10,0,5'),
+      split: all.every(r => { const d = dep(r.list); return (d['Obrobna'] === 3 || d['Obrobna'] === 4) && d['Obrobna'] + (d['Kontrola kvality'] || 0) === 5; }),
+      c0, last: a.list.find(x => x.key === 'c0') ? 'c0' : '',
+      ob: [ob.list.map(x => x.key).sort(), ob.want, ob.short, ob.list.every(x => x.slot === 'am')],
+      obLast: ob.list[ob.list.length - 1].key, obLastDay: ob.list.find(x => x.key === 'c0').last,
+      big: [big.list.length, big.short, dep(big.list)],
+      pr: [pr.list.map(x => x.key).sort(), pr.present], noPres: noPres.list.length,
+      sw: [sw.dept, keys.includes(sw.key), sw.key !== oKey], swOnly: swOnly ? swOnly.key : null,
+      sv: [sv.week, sv.day, sv.added.length, sv.added.every(i => i.extra && i.state === 'plan' && i.day === T)],
+      sv2: sv2.added.length, after: after.some(k => keys.includes(k)),
+      weekend: err(() => quickSave(['c1'], meta, '2026-10-31')),
+      holiday: err(() => quickSave(['c1'], meta, '2026-10-28')),
+    });
+  })()`));
+  assert.deepStrictEqual(out.pool, [10, 1, ['c0', 'c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'k1', 'k2', 'k3']], 'bez nemocného, vedoucího, vyřazeného a k0 s kontrolou v týdnu');
+  assert.ok(out.sizes, 'vždy 5 různých lidí z 10');
+  assert.ok(out.split, 'Obrobna 7 a Kontrola 3 z 10 → 3,5 : 1,5');
+  assert.strictEqual(out.c0, 0, 'c0 (kontrola minulý týden) má nejnižší přednost, v Obrobně se vybírají 3–4 ze 7');
+  assert.deepStrictEqual(out.ob, [['c0', 'c1', 'c2', 'c3'], 10, 6, true], 'jen ranní z Obrobny, chybí 6');
+  assert.deepStrictEqual([out.obLast, out.obLastDay], ['c0', '2026-10-20'], 'nejdéle nekontrolovaní první, c0 poslední');
+  assert.deepStrictEqual(out.big, [9, 0, { Obrobna: 6, 'Kontrola kvality': 3 }], '9 × 0,7 = 6,3 → 6; 9 × 0,3 = 2,7 → 3');
+  assert.deepStrictEqual(out.pr, [['c1', 'c5', 'k1'], 4], 'jen lidé s dnešním příchodem (bez prázdného řádku, neznámé ID se počítá do přítomných)');
+  assert.strictEqual(out.noPres, 0, 'bez příchodů na ten den nikdo');
+  assert.deepStrictEqual(out.sw, ['Obrobna', false, true], 'náhradník ze stejného oddělení, který v seznamu není');
+  assert.strictEqual(out.swOnly, null, 'v oddělení nikdo nezbyl');
+  assert.deepStrictEqual(out.sv, ['2026-W44', '2026-10-30', 5, true]);
+  assert.strictEqual(out.sv2, 0, 'podruhé se nepřidá nikdo');
+  assert.strictEqual(out.after, false, 'uložení už se nelosují');
+  assert.match(out.weekend, /není pracovní den/);
+  assert.match(out.holiday, /není pracovní den/);
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

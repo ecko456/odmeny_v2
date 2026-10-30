@@ -3750,6 +3750,80 @@ function generateDayChecks(weekId,iso,meta,rnd){
   p.at=(meta&&meta.at)||Date.now();p.by=String((meta&&meta.by)||"").slice(0,60);p.pct=pct;
   return {plan:p,added,present:here.n,unknown:here.unknown.length,short};
 }
+/* Rychlá kontrola (2.39): vedoucí na telefonu zadá, kolik lidí chce zkontrolovat, a dostane
+   seznam jmen. Losuje se z kontrolovaných lidí (ne nemocní, ne vedoucí), volitelně jen
+   z oddělení, ze směny (ranní / odpolední podle zařazení a střídání skupin) a z lidí, kteří
+   jsou podle nahraných příchodů dnes v práci. Kdo už má v týdnu kontrolu (naplánovanou nebo
+   provedenou), se nelosuje. Přednost má ten, kdo nejdéle nebyl kontrolovaný (podle provedených
+   kontrol), shodu rozhodne náhoda. Bez vybraného oddělení se počet rozdělí mezi oddělení
+   podle počtu lidí v nabídce (největší zbytky), aby se nevylosovalo jen jedno oddělení. */
+function quickLastDone(){
+  const m={};
+  Object.values((S.audit&&S.audit.plans)||{}).forEach(p=>p.items.forEach(it=>{
+    if(it.state==="done"&&it.done&&(!m[it.key]||it.done>m[it.key]))m[it.key]=it.done;
+  }));
+  return m;
+}
+function quickPool(opt){
+  opt=opt||{};
+  const today=opt.today||todayIso(),week=isoWeek(today).id;
+  const mg=morningGroup(week,(S.capReport||{}).s1am);
+  const here=opt.present?audPresent(today):null;
+  const busy=new Set(((audPlan(week)||{}).items||[]).filter(i=>i.state!=="skip").map(i=>i.key));
+  const skip=new Set(opt.not||[]);
+  const last=quickLastDone();
+  const out=[];
+  audDepts().forEach(dept=>{
+    if(opt.dept&&opt.dept!==dept)return;
+    audPeople(dept).forEach(e=>{
+      if(e.sick||busy.has(e.key)||skip.has(e.key))return;
+      const slot=slotOn(e,mg);
+      if(opt.slot&&slot!==opt.slot)return;
+      if(opt.present&&(!here||!here.keys.has(e.key)))return;
+      out.push({key:e.key,name:audName(e),dept,wid:e.wid||"",slot,last:last[e.key]||""});
+    });
+  });
+  return {list:out,week,today,mg,present:here?here.n:null,busy:busy.size};
+}
+const quickOrder=(a,b)=>(a.last<b.last?-1:a.last>b.last?1:a.r-b.r);
+function quickPick(opt,rnd){
+  rnd=rnd||Math.random;
+  const pool=quickPool(opt),want=Math.max(0,Math.floor(+opt.n||0));
+  const by=new Map();
+  pool.list.forEach(x=>{if(!by.has(x.dept))by.set(x.dept,[]);by.get(x.dept).push({...x,r:rnd()});});
+  by.forEach(l=>l.sort(quickOrder));
+  const total=pool.list.length,n=Math.min(want,total);
+  // podíl oddělení: celé části, zbytek podle největších zbytků (shodu rozhodne náhoda)
+  const quota=[...by.entries()].map(([dept,l])=>{const q=n*l.length/(total||1);return {dept,l,k:Math.floor(q),f:q-Math.floor(q),r:rnd()};});
+  let left=n-quota.reduce((x,q)=>x+q.k,0);
+  quota.slice().sort((a,b)=>b.f-a.f||a.r-b.r).forEach(q=>{if(left>0&&q.k<q.l.length){q.k++;left--;}});
+  const list=[];
+  quota.forEach(q=>q.l.slice(0,q.k).forEach(x=>list.push(x)));
+  list.forEach(x=>{delete x.r;});
+  return {list,pool:total,want,short:Math.max(0,want-list.length),present:pool.present,week:pool.week,today:pool.today};
+}
+/* Náhradník za jednoho z vylosovaných: ze stejného oddělení (a stejných filtrů), kdo v seznamu
+   ještě není; když v oddělení nikdo nezbyl, z kteréhokoli oddělení v nabídce. */
+function quickSwap(opt,keys,key,rnd){
+  rnd=rnd||Math.random;
+  const pool=quickPool({...opt,not:keys}).list.map(x=>({...x,r:rnd()})).sort(quickOrder);
+  const was=S.employees[key],dept=was?empDept(was):"";
+  const x=pool.find(y=>y.dept===dept)||pool[0]||null;
+  if(x)delete x.r;
+  return x;
+}
+/* Uloží vylosované lidi do dnešních kontrol (plán týdne, „přidán ručně“). */
+function quickSave(keys,meta,today){
+  today=today||todayIso((meta&&meta.at)||Date.now());
+  const week=isoWeek(today).id;
+  if(!audDays(week).includes(today))throw new Error("Dnes není pracovní den, do plánu kontrol se seznam uložit nedá.");
+  const p=audPlan(week);
+  const have=new Set(((p||{}).items||[]).filter(i=>i.state!=="skip").map(i=>i.key));
+  const added=[];
+  keys.forEach(k=>{if(!have.has(k)&&S.employees[k]&&empDept(S.employees[k])){added.push(addToPlan(week,k,today,meta));have.add(k);}});
+  return {week,day:today,added};
+}
+
 /* Výsledek jedné kontroly: počet bodů, splněných, nesplněné body. */
 function checkScore(it){
   const n=it.results.length,ok=it.results.filter(r=>r.ok).length;

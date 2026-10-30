@@ -34,6 +34,29 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 30. 10. 2026 (verze 2.39):
+
+- Uživatel: „pro mobil udělej funkci na kontrolu, že nadefinuji kolik lidí chci zkontrolovat
+  a vygeneruje mi to list jmen. ať je to intuitivní a optimalizované pro telefon … pěkný design
+  a zároveň zachovat business design moderní firmy“.
+  - Nový pohled `rychla` (Rychlá kontrola): dlaždice v hlavním menu za Kontrolami, položka
+    plovoucího menu (`FAB_ITEMS`) hned pod Vyhledat člověka, tlačítko `[data-go="rychla"]`
+    v Kontrolách, položka v `#nav` (monitor).
+  - Core (za `generateDayChecks`): `quickLastDone` (poslední provedená kontrola), `quickPool(opt)`
+    (`{n, dept, slot am|pm, present, today, not}`; bez nemocných, vedoucích, vyřazených a lidí
+    s kontrolou v týdnu, směna `slotOn` se střídáním `S.capReport.s1am`, příchody `audPresent`),
+    `quickPick` (podíl oddělení největšími zbytky, v oddělení nejdéle nekontrolovaní, shoda
+    náhodně), `quickSwap` (náhradník ze stejného oddělení), `quickSave` (do dnešního plánu přes
+    `addToPlan`, `extra: true`; víkend a svátek chyba).
+  - UI (`app.js`, sekce RYCHLÁ KONTROLA): `ui.qk` (jen v paměti okna, směna se poprvé převezme
+    z `ui.homeShift`), `renderQuick`, `qkDraw`, `qkShare` (`navigator.share`, jinak schránka),
+    `qkSave`, `bindQuick`; zápis přes `ktCheckForm`. CSS `.qk-*` (hero jako HALA 2, počítadlo,
+    segment směny s jezdcem, animace řádků, `prefers-reduced-motion`).
+  - Data beze změny (35), `ODM_VERSION` 2.39. Test aktualizace má `SAME_DATA` (krok 3 se
+    vynechá) a krok 5 s Rychlou kontrolou; `e2e_mobil` počítá s novou dlaždicí a položkou menu.
+  - Testy: core „Rychlá kontrola (2.39)“, nový `tests/e2e_rychla.js`.
+  - V kontejneru je teď Chromium v `/opt/pw-browsers/chromium` (testy berou `CHROME=…`).
+
 Stav k 30. 10. 2026 (verze 2.38):
 
 - Uživatel: „plánovací modul kapacit, ať jde nastavit kolik potřebujeme s jakými zkušenostmi na
@@ -1575,7 +1598,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.35 | `7f3c6c7` | výkaz práce jednou pro Výrobu i Audit (sloupec Operace ve Výrobě, Nahrát i do Výroby v Auditu) (data verze 32) |
 | 2.36 | `5dc3da0` | Shortage – Doplnit chybějící (znovu vložené urgenty přidají jen chybějící položky, odebrané se nevrátí) (data verze 33) |
 | 2.37 | `f6dacfb` | Audit – docházka a výkony z jednoho souboru, Lidé v práci (den, měsíc, PDF, Excel), produktivita a koláč dílů v profilu; Kontroly podle dnešních příchodů (data verze 34) |
-| 2.38 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Plán kapacit – potřeba lidí celkem a po úrovních 2, 3, 4 u skupin, jak jsme na tom, doplnit, doškolit s kandidáty, PDF, Excel (data verze 35) |
+| 2.38 | `59470af` | Plán kapacit – potřeba lidí celkem a po úrovních 2, 3, 4 u skupin, jak jsme na tom, doplnit, doškolit s kandidáty, PDF, Excel (data verze 35) |
+| 2.39 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Rychlá kontrola na telefonu – počet lidí, směna, oddělení, jen lidé v práci, seznam jmen, výměna, sdílení, uložení do dnešních kontrol a zápis (data verze 35) |
 
 Verze 2.1 přidala:
 
@@ -1822,7 +1846,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `vyroba`, `top5`, `kontroly`, `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
+  `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
   (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
@@ -1963,7 +1987,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 84 testů: proti původní aplikaci + opravy + 2.1 až 2.38
+node tests/test_core.js                 # 85 testů: proti původní aplikaci + opravy + 2.1 až 2.39
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -2025,6 +2049,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     nastavení sloupců, historie, telefon; hodiny stránky stojí na pátku 30. 10. 2026;
   - `e2e_plankap.js` (2.38): Plán kapacit (potřeba po úrovních, srovnání, máme, Ø v práci,
     doplnit, doškolit, kandidát do profilu, poznámka, historie, PDF přes pypdf, Excel, telefon);
+  - `e2e_rychla.js` (2.39): Rychlá kontrola na telefonu (dlaždice, plovoucí menu, počet, směna,
+    oddělení, jen lidé v práci, přednost, výměna, sdílení, uložení, zápis, tmavý režim, 320 px);
   - `e2e_upgrade_prev.js`: aktualizace z předchozí verze na aktuální na Apachi (data
     položku po položce, 426 staré stránky, nové funkce nad převzatými daty);
   - `e2e_vykaz.js` (2.35): jeden výkaz práce pro Výrobu i Audit: odhad sloupce Operace, kusy

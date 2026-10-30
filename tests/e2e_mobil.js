@@ -16,7 +16,7 @@ const BASE = process.env.BASE || 'http://127.0.0.1:8490/';
 const shots = path.join(S, 'oshots-mobil');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
-const SECTIONS = ['prehled', 'lide', 'sankce', 'kontroly', 'protokoly', 'servis', 'shortage', 'top5', 'matice', 'plankap', 'dochazka', 'vyroba', 'audit', 'nastaveni'];
+const SECTIONS = ['prehled', 'lide', 'sankce', 'kontroly', 'rychla', 'protokoly', 'servis', 'shortage', 'top5', 'matice', 'plankap', 'dochazka', 'vyroba', 'audit', 'nastaveni'];
 
 async function watch(page, label) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
@@ -160,8 +160,8 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
     badge: document.querySelector('#fabMenu [data-fab="top5"] .nav-badge')?.textContent,
     exp: document.querySelector('#fab').getAttribute('aria-expanded'), scrim: !document.querySelector('#fabScrim').hidden,
   }));
-  check(JSON.stringify(menu.items) === JSON.stringify(['domu', 'search', 'sankce', 'top5', 'kontroly']), `plovoucí menu: ${menu.items.join(', ')}`);
-  check(menu.labels.join('|') === 'Hlavní menu|Vyhledat člověka|Sankce|Top 5|Kontroly' && menu.badge === '2' && menu.exp === 'true' && menu.scrim, `plovoucí menu: ${JSON.stringify(menu)}`);
+  check(JSON.stringify(menu.items) === JSON.stringify(['domu', 'search', 'rychla', 'sankce', 'top5', 'kontroly']), `plovoucí menu: ${menu.items.join(', ')}`);
+  check(menu.labels.join('|') === 'Hlavní menu|Vyhledat člověka|Rychlá kontrola|Sankce|Top 5|Kontroly' && menu.badge === '2' && menu.exp === 'true' && menu.scrim, `plovoucí menu: ${JSON.stringify(menu)}`);
   await page.screenshot({ path: `${shots}/06-fab.png` });
   await page.goBack();
   await page.waitForFunction(() => !ui.fabOpen);
@@ -305,7 +305,7 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
       text: getComputedStyle(document.querySelector('.brand-text')).display,
     };
   });
-  check(desk.visible === 14 && desk.navPos === 'static' && desk.fab === 'none', `desktop menu: ${JSON.stringify(desk)}`);
+  check(desk.visible === 15 && desk.navPos === 'static' && desk.fab === 'none', `desktop menu: ${JSON.stringify(desk)}`);
   check(desk.row && desk.below && desk.text !== 'none', `desktop logo, historie a období: ${JSON.stringify(desk)}`);
   await page.click('#brandHome');
   await page.waitForFunction(() => ui.view === 'prehled');

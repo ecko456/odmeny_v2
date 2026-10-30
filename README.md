@@ -62,6 +62,26 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.39
+
+- **Rychlá kontrola** (hlavně pro telefon): zadáš, kolik lidí chceš zkontrolovat, a aplikace
+  vylosuje seznam jmen. Otevře se z hlavního menu HALA 2 (dlaždice), z plovoucího menu vpravo
+  dole, z Kontrol (tlačítko Rychlá kontrola) i z postranního menu na monitoru.
+  - **Kolik lidí**: velká tlačítka − a +, rychlé volby 3, 5, 10 a 15.
+  - **Koho**: obě směny, ranní, nebo odpolední (podle zařazení a střídání skupin; předvyplní se
+    směna z hlavního menu), všechna oddělení, nebo jedno (s počtem lidí v nabídce), a když jsou
+    nahrané dnešní příchody, **jen lidé dnes v práci**.
+  - Losuje se spravedlivě: přednost mají ti, kdo **nejdéle nebyli kontrolovaní**. Kdo už má
+    v tomto týdnu kontrolu, nemocní a vedoucí se nelosují. Bez vybraného oddělení se počet
+    rozdělí mezi oddělení podle počtu lidí.
+  - U každého jména je oddělení, směna, ID a kdy byl naposledy kontrolovaný. Jednoho člověka
+    jde **vyměnit** (náhradník ze stejného oddělení), seznam jde **sdílet** (zpráva, nebo
+    schránka) a **uložit do dnešních kontrol**.
+  - Uložení lidé jsou v plánu Kontrol na dnešek (přidaní ručně). Na stejné stránce je postup
+    dne a u každého tlačítko **Zapsat** (stejný formulář jako v Kontrolách, výsledek se propíše
+    do karty člověka).
+- Data beze změny (verze dat 35), stránka 2.38 dál normálně ukládá.
+
 ## Co je nového ve verzi 2.38
 
 - **Plán kapacit** (nová část v menu, hned pod Maticí dovedností). U každé skupiny z Matice
@@ -1375,6 +1395,10 @@ v hlavičce každého skriptu:
 - `tests/e2e_plankap.js`: novinka 2.38 (Plán kapacit: potřeba po úrovních, srovnání počtů,
   máme, Ø v práci z docházky, doplnit, doškolit s kandidáty, poznámka, historie, PDF s textem
   přes pypdf, Excel, tmavý režim, telefon);
+- `tests/e2e_rychla.js`: novinka 2.39 (Rychlá kontrola na telefonu: dlaždice a plovoucí menu,
+  počet lidí, směna, oddělení, jen lidé v práci, přednost nekontrolovaných, výměna, sdílení
+  přes schránku, uložení do dnešních kontrol, zápis kontroly, tmavý režim, 320 px, monitor;
+  hodiny stránky stojí na 30. 10. 2026);
 - `tests/e2e_vedouci.js`: novinky 2.7 a 2.10 (vedoucí pracovníci: přidání s odděleními,
   oddíl v Lidech, z běžného člověka vedoucí a zpět, mimo přehled a sankce, pás v matici
   i v oddělení při filtru skupiny; dovednosti vedoucích: záložka Vedoucí, přidání, pořadí, přejmenování,
@@ -1391,11 +1415,11 @@ UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
 Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
-upraví jen seznam toho, co nová verze přidá, a krok 5): 2.37 → 2.38:
+upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.39:
 
 ```bash
-rm -rf /tmp/v237 && mkdir /tmp/v237 && git archive f6dacfb | tar -x -C /tmp/v237
-sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v237/deploy/install.sh
+rm -rf /tmp/v238 && mkdir /tmp/v238 && git archive 59470af | tar -x -C /tmp/v238
+sudo rm -rf /var/lib/odmeny_v2 /var/www/odmeny_v2 && sudo bash /tmp/v238/deploy/install.sh
 UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 ```
 

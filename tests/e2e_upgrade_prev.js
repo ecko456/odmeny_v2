@@ -1,14 +1,15 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, krok 5 a archiv; teď 2.37 → 2.38):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.38 → 2.39):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, Audit s kusy a hranicí zaškolení) a uloží je;
 //   2. nechá otevřenou starou stránku a spustí instalaci nové verze (UPGRADE_CMD);
-//   3. stará stránka už nesmí nic uložit (426, výzva k obnovení);
+//   3. stará stránka už nesmí nic uložit (426, výzva k obnovení); s SAME_DATA (verze dat beze změny)
+//      se krok vynechá, stará stránka smí dál ukládat;
 //   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
-//   5. v nové verzi zadá potřebu do Plánu kapacit (2.38); po novém přihlášení je uložená
-//      a původní data jsou pořád stejná.
+//   5. v nové verzi vylosuje Rychlou kontrolu (2.39) a uloží ji do dnešních kontrol; po novém
+//      přihlášení je v plánu a ostatní data jsou pořád stejná.
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive f6dacfb | tar -x -C $S/v237 && sudo bash $S/v237/deploy/install.sh
+//   git archive 59470af | tar -x -C $S/v238 && sudo bash $S/v238/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
@@ -16,13 +17,15 @@ const fs = require('fs');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.37$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.38$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.38$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.39$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
-const ADDED = { capPlan: 'blankCapPlan()' };
+const ADDED = {};
+/* Verze dat se nemění (2.39 má stejný tvar dat jako 2.38): stará stránka smí dál ukládat. */
+const SAME_DATA = true;
 
 async function watch(page, label, allow426 = false) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
@@ -123,11 +126,13 @@ const STATE = added => `(() => {
   execSync(process.env.UPGRADE_CMD || 'sudo bash deploy/install.sh', { stdio: 'inherit' });
 
   // ---- 3. stará stránka nesmí uložit ----
-  await old.evaluate(() => { S.workAudit.target = 11; save(); });
-  await old.waitForSelector('#dlg[open]', { timeout: 15000 });
-  const oldDialog = await old.textContent('#dlg');
-  check(/Aplikace byla aktualizována/.test(oldDialog), `stará stránka: ${oldDialog.slice(0, 120)}`);
-  await old.screenshot({ path: path.join(shots, '01-stara-po-aktualizaci.png') });
+  if (!SAME_DATA) {
+    await old.evaluate(() => { S.workAudit.target = 11; save(); });
+    await old.waitForSelector('#dlg[open]', { timeout: 15000 });
+    const oldDialog = await old.textContent('#dlg');
+    check(/Aplikace byla aktualizována/.test(oldDialog), `stará stránka: ${oldDialog.slice(0, 120)}`);
+    await old.screenshot({ path: path.join(shots, '01-stara-po-aktualizaci.png') });
+  }
 
   // ---- 4. nová verze: stejná data ----
   const ctx2 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -150,29 +155,37 @@ const STATE = added => `(() => {
   check(await page.evaluate(() => S.log.length) === beforeLog, 'historie změn se po aktualizaci liší');
 
   // ---- 5. nové funkce nad převzatými daty a jejich uložení ----
-  await page.click('#nav [data-view="plankap"]');
-  await page.waitForSelector('#cpView .cp-table');
-  await page.fill('#cp-g_brus-n', '4');
-  await page.press('#cp-g_brus-n', 'Enter');
-  await page.fill('#cp-g_brus-l3', '2');
-  await page.press('#cp-g_brus-l3', 'Enter');
-  await saved(page);
-  const recs = (await page.textContent('#cpView .cp-recs')).replace(/\s+/g, ' ').trim();
-  check(/^Brus: doplnit 2 lidi; doškolit 2 lidi: na úroveň 3 /.test(recs), `doporučení nad převzatými daty: ${recs}`);
-  await page.screenshot({ path: path.join(shots, '02-nova-plan.png'), fullPage: true });
+  await page.evaluate(() => showView('rychla'));
+  await page.waitForSelector('#view-rychla.on .qk-go');
+  const pool = await page.evaluate(() => quickPool(qkOpt()).list.map(x => x.key));
+  check(pool.length >= 1, `rychlá kontrola nad převzatými daty nemá koho losovat: ${pool}`);
+  await page.click('[data-qkset="3"]');
+  await page.click('.qk-go');
+  await page.waitForSelector('#qkResult .qk-row');
+  const drawn = await page.evaluate(() => [...document.querySelectorAll('#qkResult .qk-row')].map(r => r.dataset.qkkey));
+  check(drawn.length === Math.min(3, pool.length) && drawn.every(k => pool.includes(k)), `vylosováno: ${drawn}`);
+  const work = await page.evaluate(() => audDays(isoWeek(todayIso()).id).includes(todayIso()));
+  if (work) { await page.click('[data-qksave]'); await saved(page); }
+  await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const again = await ctx3.newPage();
   await watch(again, 'nová znovu');
   await login(again, key);
   const final = JSON.parse(await again.evaluate(STATE(ADDED)));
-  const cp = final.added.capPlan;
-  check(cp && JSON.stringify(cp.groups) === JSON.stringify({ g_brus: { l2: 2, l3: 2, l4: 0, n: 4 } }), `plán kapacit po novém přihlášení: ${JSON.stringify(cp)}`);
+  const today = await again.evaluate(() => todayIso());
+  const week = await again.evaluate(() => isoWeek(todayIso()).id);
+  if (work) {
+    const its = ((final.st.audit.plans[week] || {}).items || []).filter(i => i.day === today && i.extra);
+    check(its.length === drawn.length && its.every(i => drawn.includes(i.key)), `rychlá kontrola po novém přihlášení: ${JSON.stringify(its)}`);
+  }
   const keep = JSON.parse(JSON.stringify(before.st));
-  // historie změn přibyla (plán kapacit); původní záznamy v ní musí zůstat
+  // přibyl jen plán tohoto týdne (rychlá kontrola) a záznam v historii; ostatní beze změny
   const logNow = new Set(final.st.log.map(x => JSON.stringify(x)));
-  check(keep.log.every(x => logNow.has(JSON.stringify(x))) && final.st.log.some(x => /^Plán kapacit – Brus/.test(x.text)), 'historie změn: chybí původní záznamy, nebo záznam plánu');
+  check(keep.log.every(x => logNow.has(JSON.stringify(x))), 'historie změn: chybí původní záznamy');
   delete keep.log;
   delete final.st.log;
+  if (work && !keep.audit.plans[week]) delete final.st.audit.plans[week];
+  else if (work) { keep.audit.plans[week] = final.st.audit.plans[week]; }
   check(JSON.stringify(final.st) === JSON.stringify(keep), 'původní data se po použití nové verze změnila');
   if (JSON.stringify(final.st) !== JSON.stringify(keep)) {
     fs.writeFileSync(path.join(S, 'uprev-keep.json'), JSON.stringify(keep, null, 1));
