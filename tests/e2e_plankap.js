@@ -112,8 +112,9 @@ async function setNeed(page, group, key, value) {
   const short = await page.$$eval('#cpView tr[data-cpg="g_brus"] td.cp-short', els => els.map(e => e.dataset.label));
   check(JSON.stringify(short) === JSON.stringify(['Máme celkem', 'Máme 2+', 'Máme 3+', 'Máme 4']), `chybějící počty zvýrazněné: ${short}`);
   const recs = await page.$$eval('#cpView .cp-recs li', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
-  check(recs[0] === 'Brus: doplnit 2 lidi; doškolit 3 lidi: na úroveň 4 Bednář Jan 75 %; na úroveň 3 Cibulka Jan 63 %; na úroveň 2 Exner Jan 25 %', `doporučení Brus: ${recs[0]}`);
-  check(recs[1] === 'CNC: doškolit 1 člověka: na úroveň 3 Havel Jan 50 %', `doporučení CNC: ${recs[1]}`);
+  check(recs[0] === 'Brus: doplnit 2 lidi; doškolit 3 lidi: na úroveň 4 ID 101 75 %; na úroveň 3 ID 102 63 %; na úroveň 2 ID 104 25 %', `doporučení Brus: ${recs[0]}`);
+  check(!/Bednář|Cibulka|Exner|Havel/.test(await page.textContent('#cpView')), 'v plánu nejsou jména');
+  check(recs[1] === 'CNC: doškolit 1 člověka: na úroveň 3 ID 107 50 %', `doporučení CNC: ${recs[1]}`);
   const tiles = await page.$$eval('#cpView .stats .stat .v', els => els.map(e => e.textContent.trim()));
   check(JSON.stringify(tiles) === JSON.stringify(['11', '9', '7,3', '2', '4', '1/ 3']), `dlaždice: ${JSON.stringify(tiles)}`);
   await page.fill('#cpNote', 'Nábor 2 brusičů do konce listopadu.');
@@ -139,7 +140,7 @@ async function setNeed(page, group, key, value) {
   check(dl.suggestedFilename() === 'plan-kapacit-2026-10-30.pdf' && fs.readFileSync(pdfPath).slice(0, 5).toString() === '%PDF-', `PDF: ${dl.suggestedFilename()}`);
   try {
     const txt = execFileSync('python3', ['-c', 'import sys,pypdf;print("\\n".join(p.extract_text() for p in pypdf.PdfReader(sys.argv[1]).pages))', pdfPath]).toString();
-    check(/Plán kapacit/.test(txt) && /Brus/.test(txt) && /Bednář Jan \(75 %\)/.test(txt) && /Nábor 2 brusičů/.test(txt) && /Bez plánu: Lepení \(Lepení\)\./.test(txt), `text PDF: ${txt.slice(0, 300)}`);
+    check(/Plán kapacit/.test(txt) && /Brus/.test(txt) && /ID 101 \(75 %\)/.test(txt) && !/Bednář|Cibulka|Exner|Havel/.test(txt) && /Nábor 2 brusičů/.test(txt) && /Bez plánu: Lepení \(Lepení\)\./.test(txt), `text PDF: ${txt.slice(0, 300)}`);
   } catch (error) { console.log('pypdf není, text PDF se nekontroluje'); }
   const [dx] = await Promise.all([page.waitForEvent('download'), page.click('#cpXlsx')]);
   const xPath = path.join(shots, dx.suggestedFilename());
@@ -150,6 +151,8 @@ async function setNeed(page, group, key, value) {
     return { names: wb.SheetNames, plan: X.utils.sheet_to_json(wb.Sheets['Plán'], { header: 1 }), cand: X.utils.sheet_to_json(wb.Sheets['Doškolit'], { header: 1 }) };
   }, fs.readFileSync(xPath).toString('base64'));
   check(JSON.stringify(xl.names) === '["Plán","Doškolit"]' && xl.plan.length === 5 && xl.cand.length === 5, `Excel: ${JSON.stringify([xl.names, xl.plan.length, xl.cand.length])}`);
+  check(JSON.stringify(xl.cand[0]) === JSON.stringify(['Oddělení', 'Skupina', 'ID zaměstnance', 'Dovednosti (%)', 'Cílová úroveň', 'Chybí (%)']) && JSON.stringify(xl.cand[1].slice(0, 3)) === JSON.stringify(['Brus', 'Brus', '101']), `Excel Doškolit jen s ID: ${JSON.stringify(xl.cand.slice(0, 2))}`);
+  check(!JSON.stringify(xl).includes('Bednář'), 'Excel bez jmen');
   check(JSON.stringify(xl.plan[1].slice(0, 11)) === JSON.stringify(['Brus', 'Brus', 8, 5, 3, 2, 6, 4, 2, 1, 1]), `Excel řádek Brus: ${JSON.stringify(xl.plan[1])}`);
 
   // vynulování potřeby skupinu z plánu odebere

@@ -11120,13 +11120,15 @@ async function waDayDialog(iso) {
 const CP_COLS = [['n', 'celkem', 'Celkem lidí ve skupině'], ['l2', '2+', 'Aspoň úroveň 2 – Střední (50 % dovedností skupiny)'],
   ['l3', '3+', 'Aspoň úroveň 3 – Pokročilá (75 %)'], ['l4', '4', 'Úroveň 4 – Odborná (100 %)']];
 const CP_STATE = { ok: ['V pořádku', 'good'], train: ['Doškolit', 'warn'], hire: ['Doplnit lidi', 'crit'], none: ['Bez plánu', 'none'] };
+/* Plán kapacit ukazuje lidi jen podle ID zaměstnance (2.39.1), jméno je až v profilu. */
+const cpWho = c => (c.e && c.e.wid ? `ID ${c.e.wid}` : 'bez ID');
 const cpLvName = k => STD_SCALE[k].name.replace(' úroveň', '').toLowerCase();
 const lidiAcc = n => (n === 1 ? 'člověka' : n >= 2 && n <= 4 ? 'lidi' : 'lidí');
 function cpStateChip(st) {
   const [t, c] = CP_STATE[st];
   return `<span class="cp-state ${c}">${t}</span>`;
 }
-/* Doporučení skupiny jednou větou: kolik doplnit a koho doškolit (jména vedou do profilu). */
+/* Doporučení skupiny jednou větou: kolik doplnit a koho doškolit (ID vede do profilu). */
 function cpRecHtml(g) {
   const out = [];
   if (g.hire) {
@@ -11135,7 +11137,7 @@ function cpRecHtml(g) {
   }
   if (g.cand.length) {
     const by = [4, 3, 2].map(k => [k, g.cand.filter(c => c.to === k)]).filter(x => x[1].length);
-    out.push(`<b class="warn-t">doškolit ${g.cand.length} ${lidiAcc(g.cand.length)}</b>: ${by.map(([k, list]) => `na úroveň ${k} ${list.map(c => `<button class="linkish" type="button" data-cpperson="${esc(c.key)}">${esc(c.name)}</button> <small class="muted num">${nf(c.pct || 0, 0)} %</small>`).join(', ')}`).join('; ')}`);
+    out.push(`<b class="warn-t">doškolit ${g.cand.length} ${lidiAcc(g.cand.length)}</b>: ${by.map(([k, list]) => `na úroveň ${k} ${list.map(c => `<button class="linkish" type="button" data-cpperson="${esc(c.key)}">${esc(cpWho(c))}</button> <small class="muted num">${nf(c.pct || 0, 0)} %</small>`).join(', ')}`).join('; ')}`);
   }
   if (g.extra && g.state === 'ok') out.push(`o ${g.extra} ${lidiN(g.extra)} víc, než je potřeba`);
   return out.join('; ');
@@ -11258,7 +11260,7 @@ async function exportCapPlanPdf(button) {
         if (recs.length) {
           k.y += 1.5;
           recs.forEach(g => {
-            const txt = `${g.p.name}: ${[g.hire ? `doplnit ${g.hire} ${lidiAcc(g.hire)}` : '', g.cand.length ? `doškolit ${[4, 3, 2].map(lv => [lv, g.cand.filter(c => c.to === lv)]).filter(z => z[1].length).map(([lv, l]) => `na úroveň ${lv}: ${l.map(c => `${c.name} (${nf(c.pct || 0, 0)} %)`).join(', ')}`).join('; ')}` : ''].filter(Boolean).join('; ')}`;
+            const txt = `${g.p.name}: ${[g.hire ? `doplnit ${g.hire} ${lidiAcc(g.hire)}` : '', g.cand.length ? `doškolit ${[4, 3, 2].map(lv => [lv, g.cand.filter(c => c.to === lv)]).filter(z => z[1].length).map(([lv, l]) => `na úroveň ${lv}: ${l.map(c => `${cpWho(c)} (${nf(c.pct || 0, 0)} %)`).join(', ')}`).join('; ')}` : ''].filter(Boolean).join('; ')}`;
             k.para(txt, k.M, W, 8.4, { color: C.ink2 });
           });
         }
@@ -11278,9 +11280,9 @@ async function exportCapPlanXlsx() {
     const wb = X.utils.book_new();
     const head = ['Oddělení', 'Skupina', 'Potřeba celkem', 'Potřeba 2+', 'Potřeba 3+', 'Potřeba 4', 'Máme celkem', 'Máme 2+', 'Máme 3+', 'Máme 4', 'Nemocní', ...(all.pres ? ['Ø v práci'] : []), 'Doplnit', 'Doškolit', 'Stav'];
     const rows = all.groups.map(g => [g.p.dept || '', g.p.name || '', g.need.n, g.need.l2, g.need.l3, g.need.l4, g.have.n, g.have.l2, g.have.l3, g.have.l4, g.sick, ...(all.pres ? [g.pres == null ? '' : g.pres] : []), g.hire, g.trainN, CP_STATE[g.state][0]]);
-    const cand = all.groups.flatMap(g => g.cand.map(c => [g.p.dept || '', g.p.name || '', c.name, c.e.wid || '', Math.round((c.pct || 0) * 10) / 10, c.to, Math.round(c.miss * 10) / 10]));
+    const cand = all.groups.flatMap(g => g.cand.map(c => [g.p.dept || '', g.p.name || '', c.e.wid || 'bez ID', Math.round((c.pct || 0) * 10) / 10, c.to, Math.round(c.miss * 10) / 10]));
     [{ name: 'Plán', cols: [18, 20, 9, 9, 9, 9, 9, 9, 9, 9, 8, ...(all.pres ? [9] : []), 8, 8, 13], rows: [head, ...rows] },
-      { name: 'Doškolit', cols: [18, 20, 26, 10, 14, 12, 12], rows: [['Oddělení', 'Skupina', 'Zaměstnanec', 'ID', 'Dovednosti (%)', 'Cílová úroveň', 'Chybí (%)'], ...cand] }].forEach(sheet => {
+      { name: 'Doškolit', cols: [18, 20, 12, 14, 12, 12], rows: [['Oddělení', 'Skupina', 'ID zaměstnance', 'Dovednosti (%)', 'Cílová úroveň', 'Chybí (%)'], ...cand] }].forEach(sheet => {
       const ws = X.utils.aoa_to_sheet(sheet.rows.map(r => r.map(safeCell)));
       ws['!cols'] = sheet.cols.map(wch => ({ wch }));
       X.utils.book_append_sheet(wb, ws, sheet.name);
