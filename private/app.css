@@ -2577,3 +2577,9 @@ tr.dv-click:hover td { background: var(--surface-2); }
   .kp-tab td.kp-rank { display: none; }
   .kp-mrank { display: inline; font-weight: 700; color: var(--acc); }
 }
+
+/* Konce trestů: lidé, kteří v souboru nejsou (2.44.1) */
+.end-exbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+.end-extab { max-height: 50vh; overflow: auto; }
+.end-extab td.c, .end-extab th.c { width: 70px; text-align: center; }
+.end-extab input[type="checkbox"] { width: 20px; height: 20px; }

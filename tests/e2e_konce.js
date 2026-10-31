@@ -101,13 +101,24 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   const d1 = await text(page, '#dlgBody');
   check(/Řádků\s*6/.test(d1) && /Noví\s*1/.test(d1) && /Chyby\s*1/.test(d1), `souhrn: ${d1.slice(0, 300)}`);
   for (const re of [/jméno a příjmení jsou prohozené/, /„neznámo“ není datum/, /„noční“ neznám/, /v Lidech není, přidá se/]) check(re.test(d1), `kontrola řádků ${re}: ${d1.slice(0, 900)}`);
-  check(/Neznámé texty ve směnnosti/.test(d1) && /Havel Hugo/.test(d1), `neznámý text a chybějící lidé: ${d1.slice(0, 600)}`);
+  check(/Neznámé texty ve směnnosti/.test(d1) && /1 člověk z Lidí v souboru není/.test(d1), `neznámý text a chybějící lidé: ${d1.slice(0, 600)}`);
   await page.screenshot({ path: path.join(shots, '01-dialog.png') });
   // ruční převod neznámého textu: noční → Stálá odpolední
   await page.selectOption('#dlg [data-endl="nocni"]', 'O');
   await page.waitForFunction(() => /Chyby1/.test(document.querySelector('#endBody').textContent.replace(/\s+/g, '')));
   check(!/„noční“ neznám/.test(await text(page, '#endBody')), 'po převodu už neznámý text není chyba');
+  check(/1 člověk z Lidí v souboru není/.test(await text(page, '#endBody')), 'upozornění na chybějící');
   await page.click('#dlgOk');
+  // 2.44.1: tabulka lidí, kteří v souboru nejsou; poprvé nikoho nevyřadit
+  await page.waitForFunction(() => document.querySelector('#dlg[open] .end-extab'));
+  const ex1 = await page.evaluate(() => ({ rows: [...document.querySelectorAll('#dlg .end-extab tbody tr')].map(r => r.textContent.replace(/\s+/g, ' ').trim()), ok: document.querySelector('#dlgOk').disabled, title: document.querySelector('#dlgTitle').textContent }));
+  check(ex1.rows.length === 1 && /Havel Hugo/.test(ex1.rows[0]) && /ID 203/.test(ex1.rows[0]) && /Obrobna/.test(ex1.rows[0]) && /20\. 10\. 2026/.test(ex1.rows[0]) && ex1.ok === true, `tabulka chybějících: ${JSON.stringify(ex1)}`);
+  await page.click('#dlg [data-endex="all"]');
+  check(await page.isChecked('#dlg input[name="ex"]') && !(await page.isDisabled('#dlgOk')), 'Vybrat všechny');
+  await page.click('#dlg [data-endex="none"]');
+  check(!(await page.isChecked('#dlg input[name="ex"]')) && await page.isDisabled('#dlgOk'), 'Zrušit výběr');
+  await page.screenshot({ path: path.join(shots, '01b-chybejici.png') });
+  await page.click('#dlgCancel');
   await page.waitForSelector('#view-konce.on');
   await saved(page);
   const st = await page.evaluate(() => Object.fromEntries(Object.values(S.employees).map(e => [e.last, [e.end || '', e.shift || '', e.sick || '', e.positionId || '']])));
@@ -142,6 +153,31 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.click('#pNote');
   await saved(page);
   check(await page.evaluate(() => S.employees["adamek|ales"].end) === '2026-12-31', 'úprava data u člověka');
+  check(await page.evaluate(() => !S.employees['havel|hugo'].excluded), 'Nikoho nevyřazovat: Havel zůstal');
+
+  // 2.44.1: znovu stejný soubor, Havla vyřadit
+  await page.click('#nav [data-view="dochazka"]');
+  await page.setInputFiles('#endFile', file);
+  await page.waitForSelector('#dlg[open] .end-sum');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => document.querySelector('#dlg[open] .end-extab'));
+  await page.check('#dlg input[name="ex"][value="havel|hugo"]');
+  check(/vybráno 1/.test(await text(page, '#endExN')), 'počet vybraných');
+  await page.click('#dlgOk');
+  await page.waitForSelector('#view-konce.on');
+  await saved(page);
+  check(await page.evaluate(() => S.employees['havel|hugo'].excluded === true && !S.employees['fiala|filip'].excluded), 'Havel vyřazen, ostatní ne');
+  const log2 = await page.evaluate(() => S.log.map(x => x.text).join(' | '));
+  check(/vyřazeno ze seznamu 1/.test(log2) && /Havel Hugo vyřazen ze seznamu/.test(log2), `historie vyřazení: ${log2.slice(-400)}`);
+  check(/Teď lidí\s*6/.test(await text(page, '#endView')) && !/Havel Hugo/.test(await text(page, '#endView')), 'vyřazený v Koncích trestů není');
+  // třetí nahrání: vyřazený už v tabulce není, okno se neukáže
+  await page.click('#nav [data-view="dochazka"]');
+  await page.setInputFiles('#endFile', file);
+  await page.waitForSelector('#dlg[open] .end-sum');
+  check(!/z Lidí v souboru není/.test(await text(page, '#endBody')), 'vyřazený se znovu nenabízí');
+  await page.click('#dlgOk');
+  await page.waitForSelector('#view-konce.on');
+  check(!(await page.isVisible('#dlg[open]')), 'bez chybějících se tabulka neukáže');
 
   // 3) telefon a tmavý režim
   await page.setViewportSize({ width: 390, height: 844 });

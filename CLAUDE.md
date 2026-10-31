@@ -34,6 +34,20 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.44.1):
+
+- Uživatel: „do ‚Nahrát konce trestů a směnnost‘ pokud budeme mít v systému člověka, který
+  v importovaném seznamu není, tak mi vyskočí tabulka a odkliknu, zda ho vyřadíme“.
+  - Core: `endParse` vrací navíc `missingP` (`{key, name, wid, dept, end, sick}`, bez vedoucích
+    a vyřazených; `missing` = jen jména zůstalo), `endApply(…, {exclude: [klíče]})` nastaví
+    `excluded` jen lidem z `missingP` (ne vedoucím), `out.excluded`.
+  - UI: po potvrzení importu `endExcludeDialog(list, file)` (tabulka `.end-extab`, `input[name="ex"]`,
+    `[data-endex="all|none"]`, `#endExN`, OK „Vyřadit vybrané“ bez výběru zakázané, Zrušit =
+    „Nikoho nevyřazovat“); v prvním dialogu jen věta `.end-miss`. Historie přes `store.note`
+    („vyřazeno ze seznamu N“) a „… vyřazen ze seznamu“ u člověka.
+  - Testy: core „Konce trestů (2.44.1)“, `e2e_konce` (tabulka, Nikoho nevyřazovat, znovu
+    a vyřadit, vyřazený se znovu nenabízí). `ODM_VERSION` 2.44.1, data beze změny (39).
+
 Stav k 31. 10. 2026 (verze 2.44):
 
 - Uživatel: „modul ‚Audit‘ přejmenuj na ‚KPI‘ … smazat modul ‚Výroba‘ … smazat v KPI ‚Výrobní
@@ -1848,7 +1862,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.42.3 | `ecfee9f` | docházka z 2. listu, okno Jak se soubor načte při každém nahrání (AI návrh, vzor prvního člověka, úprava) (data verze 38) |
 | 2.42.4 | `fa9101b` | docházka podle vzoru – datum v hlavičce bez roku („01.10. Čt“), WPA kód, součty na konci |
 | 2.43 | `accd6f4` | Konce trestů (import se směnností a kontrolou, AI kontrola, přehled po měsících a odděleních), rozbalovací Teď v práci na telefonu (data verze 39) |
-| 2.44 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit přejmenovaný na KPI, Výroba pryč z menu, KPI bez Výrobního plánu a Úprav, nová záložka Výkonnost na osobu (po odděleních, průměr na den, řazení od nejlepších i nejhorších, Excel) |
+| 2.44 | `ee9fee7` | Audit přejmenovaný na KPI, Výroba pryč z menu, KPI bez Výrobního plánu a Úprav, nová záložka Výkonnost na osobu (po odděleních, průměr na den, řazení od nejlepších i nejhorších, Excel) |
+| 2.44.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Nahrát konce trestů a směnnost – tabulka lidí, kteří v souboru nejsou, s volbou vyřadit ze seznamu |
 
 Verze 2.1 přidala:
 

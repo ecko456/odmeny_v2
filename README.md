@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.44.1
+
+- **Nahrát konce trestů a směnnost: lidé, kteří v souboru nejsou.** Po zapsání se ukáže tabulka
+  lidí z Lidí, kteří v nahraném seznamu chybí (jméno, ID, oddělení, konec trestu). U každého
+  zaškrtneš, jestli ho vyřadit ze seznamu (Vybrat všechny / Zrušit výběr). „Nikoho nevyřazovat“
+  nechá všechny, jak jsou; zbytek importu se zapíše tak jako tak. Vyřazený zůstane v evidenci
+  a vrátit ho jde v Lidech. Vedoucí se nenabízejí. V historii změn je počet vyřazených.
+- Data beze změny (verze 39).
+
 ## Co je nového ve verzi 2.44
 
 - **Audit se jmenuje KPI** (menu, nadpis, hlášky, historie změn, PDF).

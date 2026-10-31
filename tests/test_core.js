@@ -3715,7 +3715,7 @@ test('Konce trestů a směnnost (2.43): import, kontrola řádků, zápis do Lid
   assert.deepStrictEqual(out.unknown, [{ text: 'směna X', n: 1 }]);
   assert.deepStrictEqual(out.missing, [], 'všichni nevyřazení jsou v souboru (vyřazený se nehlásí)');
   assert.deepStrictEqual(out.shifts, ['R', 'R', 'O', 'S1', 'S2', 'S1', 'SICK', 'SICK', '', null]);
-  assert.deepStrictEqual(out.r, { ends: 4, shifts: 4, sick: 1, back: 1, added: 1, skipped: 1 });
+  assert.deepStrictEqual(out.r, { ends: 4, shifts: 4, sick: 1, back: 1, added: 1, skipped: 1, excluded: 0 });
   assert.deepStrictEqual(out.a, ['2026-11-30', 'S2', ''], 'poslední řádek člověka vyhrává');
   assert.deepStrictEqual(out.b, ['2027-01-31', 'O', ''], 'jiná směnnost vypne nemoc');
   assert.deepStrictEqual(out.c, ['2027-01-10', 'R', '2026-11-03'], 'prohozené jméno spárováno, NEMOC nechá směnu');
@@ -4211,6 +4211,25 @@ test('KPI (2.44): výkonnost na osobu po odděleních, průměr na den, řazení
   assert.deepStrictEqual(out.sheet[1], ['Brus', 1, 'Pb Jan', '2', 'Brus', 2, 300, 150]);
   assert.deepStrictEqual(out.sheet[2], ['Celkem', '', '', '', '', 15, 1010, 67.3]);
   assert.strictEqual(out.none, true, 'měsíc bez evidence');
+  return null;
+});
+
+test('Konce trestů (2.44.1): lidé, kteří v souboru nejsou, jdou vyřadit', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    st.positions = [mkPos('g1', 'Brus', [])]; st.positions[0].dept = 'Broušení';
+    const add = (k, last, x) => { st.employees[k] = { key: k, last, first: 'Jan', positionId: 'g1', shift: 'R', note: '', ...(x || {}) }; };
+    add('a|jan', 'A', { wid: '1' }); add('b|jan', 'B', { end: '2026-12-01' }); add('c|jan', 'C'); add('v|jan', 'V', { lead: ['Broušení'] }); add('x|jan', 'X', { excluded: true });
+    S = sanitizeState(st);
+    const p = endParse([['A', 'Jan', '', 'Skupina 1']], null, { today: '2026-11-03' });
+    const o = endApply(p, { today: '2026-11-03', exclude: ['b|jan', 'v|jan', 'a|jan', 'nikdo|x'] });
+    return JSON.stringify({ miss: p.missingP, names: p.missing, o: o.excluded, ex: Object.values(S.employees).filter(e => e.excluded).map(e => e.key).sort() });
+  })()`));
+  assert.deepStrictEqual(out.miss, [{ key: 'b|jan', name: 'B Jan', wid: '', dept: 'Broušení', end: '2026-12-01', sick: false }, { key: 'c|jan', name: 'C Jan', wid: '', dept: 'Broušení', end: '', sick: false }], 'bez vedoucích a už vyřazených');
+  assert.deepStrictEqual(out.names, ['B Jan', 'C Jan']);
+  assert.strictEqual(out.o, 1, 'vyřadí jen vybrané chybějící (ne vedoucího, ne člověka ze souboru)');
+  assert.deepStrictEqual(out.ex, ['b|jan', 'x|jan']);
   return null;
 });
 

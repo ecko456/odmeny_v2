@@ -5092,16 +5092,20 @@ function endParse(aoa,cols,opts){
     rows.push({n:i+1,last,first,key:e?e.key:key,e,swapped,end,endRaw:txt(endRaw),shift,shiftRaw,issues});
   });
   const inFile=new Set(rows.filter(r=>r.last&&r.first).map(r=>r.key));
-  const missing=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&!inFile.has(e.key)).map(e=>(e.last+" "+e.first).trim()).sort((a,b)=>a.localeCompare(b,"cs"));
+  /* lidé z Lidí, kteří v souboru nejsou (2.44.1: v okně se dají vyřadit ze seznamu) */
+  const missingP=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&!inFile.has(e.key))
+    .map(e=>({key:e.key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",dept:endDeptOf(e),end:e.end||"",sick:!!e.sick}))
+    .sort((a,b)=>a.name.localeCompare(b.name,"cs"));
+  const missing=missingP.map(x=>x.name);
   const cnt=l=>rows.filter(r=>r.issues.some(x=>x.l===l)).length;
-  return {rows,header,unknown:[...unknown.values()],missing,
+  return {rows,header,unknown:[...unknown.values()],missing,missingP,
     sum:{rows:rows.length,err:cnt("e"),warn:cnt("w"),fresh:rows.filter(r=>!r.e&&r.last&&r.first).length,
       ends:rows.filter(r=>r.end).length,shifts:rows.filter(r=>r.shift&&r.shift!=="SICK").length,sick:rows.filter(r=>r.shift==="SICK").length}};
 }
 /** Zapíše řádky do Lidí (poslední řádek člověka vyhrává). Nový člověk jen s opts.add. */
 function endApply(parsed,opts){
   opts=opts||{};const today=opts.today||todayIso();
-  const out={ends:0,shifts:0,sick:0,back:0,added:0,skipped:0};
+  const out={ends:0,shifts:0,sick:0,back:0,added:0,skipped:0,excluded:0};
   const lastRow=new Map();parsed.rows.forEach(r=>{if(r.last&&r.first)lastRow.set(r.key,r);});
   parsed.rows.forEach(r=>{
     if(!r.last||!r.first){out.skipped++;return;}
@@ -5118,6 +5122,9 @@ function endApply(parsed,opts){
       if(e.sick){delete e.sick;out.back++;}
     }
   });
+  /* vyřadit vybrané lidi, kteří v souboru chybí (jen ty z parsed.missingP, ne vedoucí) */
+  const can=new Set((parsed.missingP||[]).map(x=>x.key));
+  (opts.exclude||[]).forEach(k=>{const e=S.employees[k];if(e&&can.has(k)&&!e.excluded&&!isLead(e)){e.excluded=true;out.excluded++;}});
   return out;
 }
 /** Přehled odchodů: po měsících a odděleních od tohoto měsíce na n měsíců. */

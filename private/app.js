@@ -7344,7 +7344,7 @@ async function endImport(file) {
     ${r.unknown.length ? `<div class="note w"><b>Neznámé texty ve směnnosti</b>, přiřaď je, nebo se směna u těch řádků nezmění:<div class="end-labels">${r.unknown.map(u => `<label class="field"><span>„${esc(u.text)}“ (${u.n}×)</span><select data-endl="${esc(endKey(u.text))}">${END_SHIFT_OPTS.map(([k, l]) => `<option value="${k}"${(labels[endKey(u.text)] || '') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`).join('')}</div></div>` : ''}
     ${endTableHtml(r, all)}
     <label class="check"><input type="checkbox" data-endall${all ? ' checked' : ''}><span>Ukázat všechny řádky (i bez upozornění)</span></label>
-    ${r.missing.length ? `<details class="end-miss"><summary><b>${r.missing.length} ${lidiN(r.missing.length)} z Lidí v souboru není</b> (třeba už odešli; nic se u nich nezmění)</summary><p class="small">${r.missing.slice(0, 80).map(esc).join(', ')}${r.missing.length > 80 ? '…' : ''}</p></details>` : ''}
+    ${r.missing.length ? `<div class="note w end-miss"><b>${r.missing.length} ${lidiN(r.missing.length)} z Lidí v souboru není.</b> Po zapsání se ukážou v tabulce a u každého rozhodneš, jestli ho vyřadit ze seznamu.</div>` : ''}
     ${r.sum.fresh ? `<label class="check"><input type="checkbox" name="add" checked><span>Přidat ${r.sum.fresh} ${r.sum.fresh === 1 ? 'nového člověka' : 'nových lidí'} do Lidí (bez skupiny, zařadíš je potom)</span></label>` : ''}`;
   const first = parse();
   const res = await dialog({
@@ -7373,12 +7373,38 @@ async function endImport(file) {
   if (res.value !== 'ok') return;
   const r = parse();
   const addEl = res.form.elements.namedItem('add');
-  const out = endApply(r, { add: !!(addEl && addEl.checked) });
-  store.note = { kind: 'person', keep: true, text: `Nahrány konce trestů a směnnost (${file.name}): konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}, zpět po nemoci ${out.back}${out.added ? `, nově přidáno ${out.added}` : ''}` };
+  const exclude = r.missingP.length ? await endExcludeDialog(r.missingP, file.name) : [];
+  const out = endApply(r, { add: !!(addEl && addEl.checked), exclude });
+  store.note = { kind: 'person', keep: true, text: `Nahrány konce trestů a směnnost (${file.name}): konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}, zpět po nemoci ${out.back}${out.added ? `, nově přidáno ${out.added}` : ''}${out.excluded ? `, vyřazeno ze seznamu ${out.excluded}` : ''}` };
   save();
   renderAll();
-  toast(`Zapsáno: konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}${out.back ? `, zpět po nemoci ${out.back}` : ''}${out.added ? `, nově ${out.added}` : ''}.`);
+  toast(`Zapsáno: konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}${out.back ? `, zpět po nemoci ${out.back}` : ''}${out.added ? `, nově ${out.added}` : ''}${out.excluded ? `, vyřazeno ${out.excluded}` : ''}.`);
   showView('konce');
+}
+
+/* Lidé z Lidí, kteří v nahraném souboru chybí (2.44.1): tabulka, u každého zaškrtnutí Vyřadit.
+   Výchozí nikdo; Zrušit = nikoho nevyřadit (zbytek importu se zapíše tak jako tak).
+   Vyřazený zůstane v evidenci a jde vrátit v Lidech. */
+async function endExcludeDialog(list, fileName) {
+  const rows = list.map(x => `<tr><td class="c" data-label="Vyřadit"><input type="checkbox" name="ex" value="${esc(x.key)}" aria-label="Vyřadit ${esc(x.name)}"></td>
+    <td class="name" data-label="Zaměstnanec"><b>${esc(x.name)}</b>${x.wid ? ` <small class="muted num">ID ${esc(x.wid)}</small>` : ''}</td>
+    <td data-label="Oddělení">${esc(x.dept)}</td><td class="num" data-label="Konec trestu">${x.end ? esc(endDateText(x.end)) : '<span class="muted">—</span>'}${x.sick ? ' <span class="tag warn">nemoc</span>' : ''}</td></tr>`).join('');
+  const res = await dialog({
+    title: 'Lidé, kteří v souboru nejsou', ok: 'Vyřadit vybrané', cancel: 'Nikoho nevyřazovat', wide: true,
+    html: `<p>V souboru <b>${esc(fileName)}</b> chybí ${list.length} ${lidiN(list.length)} z Lidí. Zaškrtni, koho vyřadit ze seznamu (třeba už odešli). Vyřazený zůstane v evidenci a vrátit ho jde v Lidech.</p>
+      <div class="end-exbar"><button class="btn sec small" type="button" data-endex="all">Vybrat všechny</button><button class="btn sec small" type="button" data-endex="none">Zrušit výběr</button><span class="small muted" id="endExN">vybráno 0</span></div>
+      <div class="table-card flat end-extab"><table class="stack"><thead><tr><th class="c">Vyřadit</th><th>Zaměstnanec</th><th>Oddělení</th><th>Konec trestu</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    onOpen: dlg => {
+      const boxes = () => [...dlg.querySelectorAll('input[name="ex"]')];
+      const count = () => { const n = boxes().filter(b => b.checked).length; $('#endExN', dlg).textContent = `vybráno ${n}`; $('#dlgOk').disabled = !n; };
+      dlg.querySelector('.end-exbar').addEventListener('click', event => { const b = event.target.closest('[data-endex]'); if (!b) return; boxes().forEach(x => { x.checked = b.dataset.endex === 'all'; }); count(); });
+      dlg.querySelector('.end-extab').addEventListener('change', count);
+      count();
+    },
+  });
+  $('#dlgOk').disabled = false;
+  if (res.value !== 'ok') return [];
+  return [...res.form.querySelectorAll('input[name="ex"]:checked')].map(x => x.value);
 }
 
 function endWhoHtml(x) {
