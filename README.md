@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.39.3
+
+- **Úvod HALA 2 na telefonu podle dnešních příchodů.** Když jsou nahrané dnešní příchody
+  (soubor s docházkou v Auditu, nebo Nahrát příchody v Kontrolách), úvod po přihlášení ukazuje
+  místo plánu, **kolik lidí je opravdu v práci**:
+  - velká čísla Ranní a Odpolední = lidé, kteří podle příchodů přišli (ranní = příchod před
+    12:00, odpolední od 12:00), vedle nich plán ze zařazení a rozdíl (−2 červeně);
+    odpolední se před 14:00 nehodnotí („směna ještě nezačala“);
+  - „Teď v práci“ (přišli a ještě neodešli), čas nahrání souboru;
+  - tabulka **V práci podle oddělení** se skutečností a plánem u každého oddělení, chybějící
+    červeně; lidé bez skupiny a neznámá ID zvlášť (neznámá ID mají i tlačítko do Auditu).
+  - Bez dnešních příchodů zůstává plánovaná obsazenost a nahoře je tlačítko **Nahrát dnešní
+    příchody** (otevře výběr souboru, po nahrání se úvod hned přepočítá).
+- Vedoucí se do obsazenosti nepočítají (jako v plánu). Data beze změny (verze dat 35).
+
 ## Co je nového ve verzi 2.39.2
 
 - **Plán kapacit jen s ID zaměstnanců.** V doporučení „doškolit“ v aplikaci, v PDF i v Excelu
@@ -1428,7 +1443,7 @@ UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
 Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
-upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.39.2:
+upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.39.3:
 
 ```bash
 rm -rf /tmp/v238 && mkdir /tmp/v238 && git archive 59470af | tar -x -C /tmp/v238

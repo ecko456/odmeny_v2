@@ -4987,6 +4987,28 @@ function dvDay(iso,opts){
   return {iso,today:iso===today,n:people.length,now:people.filter(x=>x.now).length,min:people.reduce((s,x)=>s+(x.min||0),0),
     open:people.filter(x=>x.min==null).length,groups,people,unknown:people.filter(x=>!x.e).map(x=>x.wid)};
 }
+/** Skutečná obsazenost dne pro úvod HALA 2 (2.39.3): kdo podle nahraných příchodů přišel, po
+    směnách a odděleních. Ranní = příchod před 12:00, odpolední od 12:00; bez času příchodu podle
+    směny ze zařazení. Vedoucí se nepočítají (jako v plánu), neznámé ID jde do „Neznámé ID“.
+    Bez příchodů na den null. */
+const DV_PM_FROM=720;
+function staffReal(iso,mg,opts){
+  const d=dvDay(iso,opts);
+  if(!d.n)return null;
+  const depts=new Map(),dget=k=>{if(!depts.has(k))depts.set(k,{am:0,pm:0,now:0});return depts.get(k);};
+  const t={am:0,pm:0,now:0,n:0,lead:0,unknown:0};
+  d.people.forEach(x=>{
+    if(x.e&&isLead(x.e)){t.lead++;return;}
+    let slot=x.in!=null?(x.in<DV_PM_FROM?"am":"pm"):x.e?slotOn(x.e,mg):"";
+    if(slot!=="am"&&slot!=="pm")slot=x.out!=null&&x.out>DV_PM_FROM+120?"pm":"am";
+    const r=dget(x.e?(empDept(x.e)||"Bez skupiny"):"Neznámé ID");
+    r[slot]++;t[slot]++;t.n++;
+    if(x.now){r.now++;t.now++;}
+    if(!x.e)t.unknown++;
+  });
+  const dv=S.workAudit.dv,f=dv.files.filter(z=>z.from&&z.to&&z.from<=iso&&iso<=z.to).sort((a,b)=>b.at-a.at)[0];
+  return {iso,...t,depts,at:f?f.at:0,by:f?f.by:""};
+}
 /** Dny s docházkou (seřazené). */
 function dvDays(){return Object.keys(((S.workAudit&&S.workAudit.dv)||{}).pres||{}).sort();}
 /** Měsíc: obsazenost po dnech a projektech a výkony po lidech a projektech. */

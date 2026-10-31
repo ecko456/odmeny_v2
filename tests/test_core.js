@@ -3738,6 +3738,39 @@ test('Rychlá kontrola (2.39): počet lidí, rozdělení mezi oddělení, směna
   return null;
 });
 
+test('Úvod HALA 2 (2.39.3): skutečná obsazenost podle dnešních příchodů – směna podle příchodu, oddělení, teď v práci', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = blank();
+    const lvl = () => [1, 2, 3, 4].map(n => ({ name: 'L' + n, tabaky: n * 2, desc: '' }));
+    S.positions = [
+      { id: 'p_cnc', name: 'CNC', dept: 'Obrobna', max: null, levels: lvl(), penalty: [], bonus: [] },
+      { id: 'p_kon', name: 'Kontrola', dept: 'Kontrola kvality', max: null, levels: lvl(), penalty: [], bonus: [] },
+    ];
+    const add = (k, pos, wid, shift) => { S.employees[k] = { key: k, last: 'P' + k, first: 'Jan', positionId: pos, level: 1, note: '', wid, shift }; };
+    add('c1', 'p_cnc', '1', 'R'); add('c2', 'p_cnc', '2', 'R'); add('c3', 'p_cnc', '3', 'O'); add('c4', 'p_cnc', '4', 'S1');
+    add('k1', 'p_kon', '11', 'R'); add('k2', 'p_kon', '12', 'O'); add('x1', '', '21', 'R');
+    add('v1', 'p_cnc', '50', 'R'); S.employees.v1.lead = ['Obrobna'];
+    S = sanitizeState(S);
+    const T = '2026-10-30', now = new Date(2026, 9, 30, 15, 0).getTime();
+    S.workAudit.dv.pres[T] = { '1': [360, 840], '2': [365, null], '3': [840, null], '4': [null, 1320], '11': [355, 830], '12': [860, null], '21': [400, null], '50': [350, null], '99': [370, null] };
+    S.workAudit.dv.files = [{ name: 'a.xlsx', at: 111, by: 'M', from: '2026-10-01', to: T }, { name: 'b.xlsx', at: 222, by: 'Mistr', from: T, to: T }, { name: 'c.xlsx', at: 333, by: 'X', from: '2026-09-01', to: '2026-09-30' }];
+    const r = staffReal(T, 'S2', { now });
+    const none = staffReal('2026-10-29', 'S2', { now });
+    return JSON.stringify({ t: [r.n, r.am, r.pm, r.now, r.lead, r.unknown, r.at, r.by], d: [...r.depts.entries()], none });
+  })()`));
+  // c1, c2, k1, x1 a 99 ráno; c3, k2 odpoledne; c4 bez příchodu → S1 v týdnu, kdy má ranní S2 = odpolední
+  assert.deepStrictEqual(out.t, [9 - 1, 5, 3, 5, 1, 1, 222, 'Mistr'], 'vedoucí zvlášť, teď v práci = přišel a neodešel (15:00)');
+  assert.deepStrictEqual(out.d, [
+    ['Obrobna', { am: 2, pm: 2, now: 2 }],
+    ['Kontrola kvality', { am: 1, pm: 1, now: 1 }],
+    ['Bez skupiny', { am: 1, pm: 0, now: 1 }],
+    ['Neznámé ID', { am: 1, pm: 0, now: 1 }],
+  ]);
+  assert.strictEqual(out.none, null, 'bez příchodů na den null');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

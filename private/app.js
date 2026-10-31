@@ -601,9 +601,14 @@ function renderHome(unfold = false) {
   const sel = ui.homeShift || '';
   const h = new Date().getHours();
   const live = sd.today ? liveSlot(h) : '';
-  const max = Math.max(1, ...sd.depts.map(r => Math.max(r.am.length, r.pm.length)));
+  // skutečnost podle dnes nahraných příchodů (2.39.3), jinak plán ze zařazení
+  const real = sd.today ? staffReal(sd.day, sd.mg) : null;
+  const rows = homeRows(sd, real);
+  const max = Math.max(1, ...rows.map(r => Math.max(r.v.am, r.v.pm)));
   const wage = wageAllPending().length;
   const flags = [
+    sd.today && !real && audDepts().length ? '<button type="button" class="hf warn" data-hgo="pres">Nahrát dnešní příchody</button>' : '',
+    real && real.unknown ? `<button type="button" class="hf warn" data-go="audit">${real.unknown} ID není v Lidech</button>` : '',
     sd.total.sick ? `<button type="button" class="hf" data-go="lide">${sd.total.sick} v nemoci</button>` : '',
     sd.total.none ? `<button type="button" class="hf warn" data-go="lide">${sd.total.none} bez směny</button>` : '',
     sd.total.rot ? `<button type="button" class="hf warn" data-hgo="cap">Směnnost: nastav střídání skupin</button>` : '',
@@ -611,15 +616,25 @@ function renderHome(unfold = false) {
     sd.deadlines.late ? `<button type="button" class="hf crit" data-go="top5">Top 5: ${sd.deadlines.late} po termínu</button>` : sd.deadlines.due ? `<button type="button" class="hf" data-go="top5">Top 5: ${sd.deadlines.due} termín</button>` : '',
     wage ? `<button type="button" class="hf crit" data-hgo="wage">Srážky ke zpracování: ${wage}</button>` : '',
   ].filter(Boolean).join('');
-  const big = k => `<div class="hb ${k}${live === k ? ' live' : ''}"><span class="hb-k">${k === 'am' ? I.sun : I.moon}${k === 'am' ? 'Ranní' : 'Odpolední'}${live === k ? '<i>teď</i>' : ''}</span>
-      <b class="num" data-count="${sd.total[k]}">${sd.total[k]}</b><small>${lidiN(sd.total[k])}${planText(sumPlan(sd, k)) ? ` · ${planText(sumPlan(sd, k))}` : ''}</small></div>`;
+  const big = k => {
+    const v = real ? real[k] : sd.total[k];
+    const p = sd.total[k];
+    // odpolední se před 14:00 nehodnotí (ještě nezačala)
+    const wait = real && k === 'pm' && h < 14 && !v;
+    const diff = real && !wait ? v - p : 0;
+    const sub = wait ? `plán ${p} · směna ještě nezačala` : real ? `${lidiN(v)} · plán ${p}${diff ? ` <em class="${diff < 0 ? 'neg' : 'pos'}">${diff > 0 ? '+' : '−'}${Math.abs(diff)}</em>` : ''}`
+      : `${lidiN(v)}${planText(sumPlan(sd, k)) ? ` · ${planText(sumPlan(sd, k))}` : ''}`;
+    return `<div class="hb ${k}${live === k ? ' live' : ''}"><span class="hb-k">${k === 'am' ? I.sun : I.moon}${k === 'am' ? 'Ranní' : 'Odpolední'}${live === k ? '<i>teď</i>' : ''}</span>
+      <b class="num" data-count="${v}">${v}</b><small>${sub}</small></div>`;
+  };
   box.innerHTML = `<div class="home" data-sel="${sel}">
     <section class="home-hero">
       <div class="hh-top"><span class="hh-brand">HALA <i>2</i></span><span class="hh-week">${esc(weekName(sd.week))}</span></div>
       <h1 id="homeTitle">${greeting(h)}</h1>
       <p class="hh-sub">${sd.today ? `Dnes je ${esc(dayLong(sd.day))}` : `Dnes se nepracuje · plán na ${esc(dayLong(sd.day))}`}</p>
-      <p class="hh-cap">Plánovaná obsazenost</p>
-      <div class="hh-big">${big('am')}${big('pm')}</div>
+      <p class="hh-cap">${real ? `V práci podle příchodů${real.at ? ` · nahráno ${new Date(real.at).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Plánovaná obsazenost'}</p>
+      <div class="hh-big${real ? ' real' : ''}">${big('am')}${big('pm')}</div>
+      ${real ? `<p class="hh-now"><span class="hh-dot" aria-hidden="true"></span>Teď v práci <b class="num">${real.now}</b> z ${real.n} ${real.n === 1 ? 'příchodu' : 'příchodů'}${real.lead ? ` · vedoucí ${real.lead}` : ''}</p>` : ''}
       ${flags ? `<div class="hh-flags">${flags}</div>` : ''}
     </section>
     <div class="seg" role="radiogroup" aria-label="Směna, kterou dnes řídíš" data-on="${sel}">
@@ -629,18 +644,32 @@ function renderHome(unfold = false) {
     ${sel ? '' : '<p class="home-hint">Vyber směnu, kterou dnes řídíš. Pak se otevře menu.</p>'}
     <div class="home-open${unfold ? ' unfold' : ''}"${sel ? '' : ' hidden'}>${sel ? homeOpenHtml(sd, sel) : ''}</div>
     <section class="home-staff card">
-      <div class="hs-head"><h2>Obsazenost podle oddělení</h2><span class="tiny muted">${sd.mg ? `ranní má ${sd.mg === 'S1' ? 'skupina 1' : 'skupina 2'}` : 'střídání skupin nenastavené'}</span></div>
-      ${sd.depts.length ? `<div class="hs-table">
+      <div class="hs-head"><h2>${real ? 'V práci podle oddělení' : 'Obsazenost podle oddělení'}</h2><span class="tiny muted">${sd.mg ? `ranní má ${sd.mg === 'S1' ? 'skupina 1' : 'skupina 2'}` : 'střídání skupin nenastavené'}</span></div>
+      ${rows.length ? `<div class="hs-table">
         <div class="hs-row hs-th"><span></span><span class="am">${I.sun}Ranní</span><span class="pm">${I.moon}Odpolední</span></div>
-        ${sd.depts.map(r => `<div class="hs-row">
-          <div class="hs-dept"><b>${esc(r.dept)}</b>${[r.sick.length ? `${r.sick.length} v nemoci` : '', r.rot.length ? `${r.rot.length} směnnost` : '', r.none.length ? `${r.none.length} bez směny` : ''].filter(Boolean).map(t => `<small>${esc(t)}</small>`).join('')}</div>
-          ${['am', 'pm'].map(k => `<div class="hs-cell ${k}${r.risks.some(x => x.slot === k && !x.n) ? ' risk' : ''}"><b class="num">${r[k].length}</b><span class="hs-bar"><i data-w="${(r[k].length / max * 100).toFixed(1)}"></i></span><small>${esc(planText(r.plan[k]))}</small></div>`).join('')}
+        ${rows.map(r => `<div class="hs-row">
+          <div class="hs-dept"><b>${esc(r.dept)}</b>${r.notes.map(t => `<small>${esc(t)}</small>`).join('')}</div>
+          ${['am', 'pm'].map(k => `<div class="hs-cell ${k}${r.risk[k] ? ' risk' : ''}${real && r.v[k] < r.p[k] && !(k === 'pm' && h < 14 && !real.pm) ? ' short' : ''}"><b class="num">${r.v[k]}</b><span class="hs-bar"><i data-w="${(r.v[k] / max * 100).toFixed(1)}"></i></span><small>${esc(real ? (r.p[k] || r.v[k] ? `plán ${r.p[k]}` : '') : planText(r.plan[k]))}</small></div>`).join('')}
         </div>`).join('')}</div>` : '<p class="small muted">Zatím nikdo nemá skupinu a směnu. Nastavíš je v Lidech.</p>'}
     </section>
     <button class="btn ghost home-lock" type="button" id="homeLock">${I.lock}Zamknout</button>
   </div>`;
   setWidths(box);
   $('#homeLock').onclick = () => lockApp();
+}
+/* Řádky oddělení na úvodu: plán ze zařazení, se skutečností podle příchodů navíc oddělení,
+   která v plánu nejsou (Bez skupiny, Neznámé ID). */
+function homeRows(sd, real) {
+  const rows = sd.depts.map(r => {
+    const x = real && real.depts.get(r.dept);
+    return { dept: r.dept, plan: r.plan, p: { am: r.am.length, pm: r.pm.length }, v: real ? { am: x ? x.am : 0, pm: x ? x.pm : 0 } : { am: r.am.length, pm: r.pm.length },
+      risk: real ? {} : { am: r.risks.some(q => q.slot === 'am' && !q.n), pm: r.risks.some(q => q.slot === 'pm' && !q.n) },
+      notes: [real && x && x.now !== x.am + x.pm ? `teď ${x.now}` : '', r.sick.length ? `${r.sick.length} v nemoci` : '', r.rot.length ? `${r.rot.length} směnnost` : '', r.none.length ? `${r.none.length} bez směny` : ''].filter(Boolean) };
+  });
+  if (real) real.depts.forEach((x, dept) => {
+    if (!sd.depts.some(r => r.dept === dept)) rows.push({ dept, plan: null, p: { am: 0, pm: 0 }, v: { am: x.am, pm: x.pm }, risk: {}, notes: x.now !== x.am + x.pm ? [`teď ${x.now}`] : [] });
+  });
+  return rows;
 }
 function homeOpenHtml(sd, sel) {
   return `<nav class="home-menu" aria-label="Části aplikace">${HOME_TILES.map(([v, label]) => {
@@ -658,6 +687,7 @@ function homeClick(event) {
   const go = event.target.closest('[data-hgo]');
   if (go && go.dataset.hgo === 'cap') { ui.mxTab = 'cap'; showView('matice'); return; }
   if (go && go.dataset.hgo === 'wage') openWageList();
+  if (go && go.dataset.hgo === 'pres') $('#ktPresFile').click();
 }
 
 /* Volba směny mění jen dotčené části (přepínač tak plynule přejede); poprvé se menu rozevře. */
@@ -7243,6 +7273,7 @@ async function ktPresImport(file) {
   }
   ui.kt.week = id;
   renderKontroly();
+  if (ui.view === 'domu') renderHome();
   toast(msg);
 }
 

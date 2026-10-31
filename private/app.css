@@ -1368,6 +1368,15 @@ body.splashing { overflow: hidden; }
 .hb small { display: block; margin-top: 4px; color: rgba(255, 255, 255, .76); font-size: 12.5px; }
 .home[data-sel="am"] .hb.pm, .home[data-sel="pm"] .hb.am { opacity: .42; transform: scale(.96); }
 .home[data-sel="am"] .hb.am, .home[data-sel="pm"] .hb.pm, .home[data-sel="both"] .hb { border-color: rgba(255, 255, 255, .45); background: rgba(255, 255, 255, .2); }
+.hb small em { margin-left: 4px; padding: 1px 6px; border-radius: 999px; font: 700 11.5px/1.3 var(--mono); font-style: normal; }
+.hb small em.neg { background: rgba(255, 112, 92, .38); color: #fff; }
+.hb small em.pos { background: rgba(255, 255, 255, .2); color: #fff; }
+.hh-now { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; color: rgba(255, 255, 255, .86); font-size: 13px; }
+.hh-now b { color: #fff; font: 700 15px/1 var(--disp); }
+.hh-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: #7CE0A3; box-shadow: 0 0 0 0 rgba(124, 224, 163, .6); animation: hh-live 2s ease-out infinite; }
+@keyframes hh-live { 70% { box-shadow: 0 0 0 7px rgba(124, 224, 163, 0); } 100% { box-shadow: 0 0 0 0 rgba(124, 224, 163, 0); } }
+@media (prefers-reduced-motion: reduce) { .hh-dot { animation: none; } }
+.hs-cell.short b { color: var(--crit); }
 .hh-flags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
 .hf { min-height: 30px; padding: 5px 11px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .15); color: #fff; font: 600 12.5px/1.2 var(--body); }
 .hf.warn { background: rgba(242, 196, 109, .3); }

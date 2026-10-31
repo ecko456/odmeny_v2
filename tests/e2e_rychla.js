@@ -80,6 +80,10 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
   });
   await saved(page);
   await page.evaluate(() => showView('domu'));
+  // úvod bez dnešních příchodů: plán a výzva k nahrání (otevře výběr souboru)
+  check(/Plánovaná obsazenost/.test(await text(page, '.home-hero')), 'úvod bez příchodů ukazuje plán');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser', { timeout: 5000 }), page.click('[data-hgo="pres"]')]);
+  check(!!chooser, 'Nahrát dnešní příchody otevře výběr souboru');
 
   // Vstup z hlavního menu: dlaždice Rychlá kontrola.
   if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="am"]');
@@ -196,6 +200,23 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
   check(/směnností: střídání skupin není nastavené/.test(await text(page, '#qkView')), 'upozornění na nenastavené střídání');
   check(/Není koho vylosovat/.test(await text(page, '.qk-go')) && await page.isDisabled('.qk-go'), 'bez nabídky tlačítko nejde');
   await page.evaluate(() => { S.capReport.s1am = '2026-W44'; renderQuick(); });
+
+  // Úvod HALA 2 se skutečností podle dnešních příchodů (2.39.3): 5 lidí ráno, nikdo odpoledne.
+  await page.evaluate(() => { S.workAudit.dv.files = [{ name: 'prichody.xlsx', at: new Date(2026, 9, 30, 6, 40).getTime(), by: 'Mistr', from: '2026-10-30', to: '2026-10-30', people: 5, days: 1, rows: 5, months: [] }]; showView('domu'); });
+  const hero = await text(page, '.home-hero');
+  check(/V práci podle příchodů · nahráno 06:40/.test(hero), `úvod se skutečností: ${hero}`);
+  const big = await page.$$eval('.hh-big .hb b', els => els.map(e => e.dataset.count));
+  const planBig = await page.evaluate(() => [staffDay().total.am, staffDay().total.pm]);
+  check(JSON.stringify(big) === JSON.stringify(['5', '0']), `v práci ranní / odpolední: ${big}`);
+  check(new RegExp(`plán ${planBig[0]}`).test(await text(page, '.hb.am small')), `u čísla plán: ${await text(page, '.hb.am small')}`);
+  check(/Teď v práci 5 z 5 příchodů/.test(hero), 'teď v práci');
+  check(/směna ještě nezačala/.test(await text(page, '.hb.pm small')) && await page.$$eval('.hs-cell.pm.short', e => e.length) === 0, 'odpolední v 10:00 bez rozdílu');
+  const hsum = await page.$$eval('.hs-row:not(.hs-th) .hs-cell.am b', els => els.reduce((a, e) => a + +e.textContent, 0));
+  check(hsum === 5 && /V práci podle oddělení/.test(await text(page, '.home-staff')), `oddělení: součet ranní ${hsum}`);
+  check(await page.isHidden('[data-hgo="pres"]'), 'po nahrání výzva zmizí');
+  check(await overflow(page) <= 0, `úvod se skutečností: posun do strany ${await overflow(page)} px`);
+  await page.waitForTimeout(1700);
+  await page.screenshot({ path: path.join(shots, '07-uvod-prichody.png'), fullPage: true });
 
   // Plovoucí menu a odkaz z Kontrol.
   await page.evaluate(() => showView('kontroly'));

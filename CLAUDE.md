@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.39.3):
+
+- Uživatel: „V telefonu při přihlášení, ať mi to ukáže vždy obsazenost podle toho, kolik je lidí
+  v práci podle toho co jsem ráno nahrál do kapacit“ (= dnešní příchody `S.workAudit.dv.pres`).
+  - Core `staffReal(iso, mg, opts)` (za `dvDay`): lidé s dnešním příchodem po směnách
+    (`DV_PM_FROM` 12:00; bez příchodu podle `slotOn`), oddělení `empDept` / „Bez skupiny“ /
+    „Neznámé ID“, vedoucí zvlášť (`lead`), `now` z `dvDay`, `at`/`by` z posledního souboru
+    `dv.files`, který den pokrývá. Bez příchodů null.
+  - UI `renderHome`: `homeRows(sd, real)` (plán + skutečnost, oddělení navíc), velká čísla se
+    skutečností a „plán N“ + rozdíl (`.hb small em.neg/pos`), odpolední do 14:00 bez rozdílu,
+    `.hh-now` (teď v práci), nadpis „V práci podle příchodů · nahráno HH:MM“, `.hs-cell.short`.
+    Bez příchodů flag `[data-hgo="pres"]` → `#ktPresFile` (`ktPresImport` pak překreslí úvod).
+  - Testy: core „Úvod HALA 2 (2.39.3)“, `e2e_rychla` (úvod bez a s příchody), aktualizace
+    2.38 → 2.39.3. `ODM_VERSION` 2.39.3, data beze změny (35).
+
 Stav k 31. 10. 2026 (verze 2.39.2):
 
 - Uživatel: „Plán kapacit ať ukazuje jen ID zaměstnance a ne jména“ a „ten PDF export udělej
@@ -1619,7 +1634,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.38 | `59470af` | Plán kapacit – potřeba lidí celkem a po úrovních 2, 3, 4 u skupin, jak jsme na tom, doplnit, doškolit s kandidáty, PDF, Excel (data verze 35) |
 | 2.39 | `6278dda` | Rychlá kontrola na telefonu – počet lidí, směna, oddělení, jen lidé v práci, seznam jmen, výměna, sdílení, uložení do dnešních kontrol a zápis (data verze 35) |
 | 2.39.1 | `03b273c` | Plán kapacit jen s ID zaměstnanců (aplikace, PDF, Excel) |
-| 2.39.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit v grafickém podání jako Kapacity a zaškolení (rámečky, dlaždice, graf po úrovních proti potřebě, tabulka) |
+| 2.39.2 | `b89b1c5` | PDF Plánu kapacit v grafickém podání jako Kapacity a zaškolení (rámečky, dlaždice, graf po úrovních proti potřebě, tabulka) |
+| 2.39.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvod HALA 2 na telefonu podle dnešních příchodů (v práci po směnách a odděleních proti plánu, teď v práci, nahrát příchody) |
 
 Verze 2.1 přidala:
 

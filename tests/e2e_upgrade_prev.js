@@ -1,5 +1,5 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.38 → 2.39.2):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.38 → 2.39.3):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, Audit s kusy a hranicí zaškolení) a uloží je;
 //   2. nechá otevřenou starou stránku a spustí instalaci nové verze (UPGRADE_CMD);
@@ -18,7 +18,7 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.38$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.39\\.2$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.39\\.3$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
