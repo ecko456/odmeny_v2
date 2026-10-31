@@ -4958,13 +4958,13 @@ function dvApply(wa,p,meta,opts){
 let DV_FROM="2026-11";   // let jen kvůli starším e2e testům se soubory za listopad (posunou hranici)
 /** Měsíc nebo den, který se plní ze souboru docházky a výkonů. */
 function dvOwns(x){return !!x&&String(x).slice(0,7)>=DV_FROM;}
-/** Odpracované hodiny dne z příchodu a odchodu: pobyt bez přestávky 30 min (nad 6 h, zákoník
-    práce § 88). Bez odchodu nebo příchodu se počítá délka směny. */
+/** Odpracované hodiny dne z příchodu a odchodu: pobyt minus přestávka 30 min (vždy, přání
+    uživatele). Bez odchodu nebo příchodu se počítá délka směny. */
 function dvHours(a,b){
   if(a==null&&b==null)return 0;
   const st=dvStay(a,b);
   if(st==null)return S.settings.shift;
-  const net=st>360?st-30:st;
+  const net=Math.max(0,st-30);
   return Math.round(Math.min(24,net/60)*100)/100;
 }
 /** Docházka pro odměny: dny ze souboru nahradí v měsíci stejné dny, ostatní dny zůstanou.

@@ -3524,20 +3524,20 @@ test('Docházka a výkony jediný zdroj od listopadu 2026 (2.42): docházka pro 
       first, after, ref, pcs,
       second: [r2.periods, P2.rows['a|a'].h, P2.rows['b|b'].h, P2.rows['b|b'].c],
       owns: [dvOwns('2026-10-31'), dvOwns('2026-11'), dvOwns('2027-01-05'), dvOwns('')],
-      hours: [dvHours(360, 720), dvHours(360, 1000), dvHours(360, null), dvHours(null, null), dvHours(1320, 360)],
+      hours: [dvHours(360, 720), dvHours(360, 1000), dvHours(360, null), dvHours(null, null), dvHours(1320, 360), dvHours(360, 380)],
       changes, clean: cleanWorkAudit({ groups: [{ id: 'q', name: 'Q', mg: ['g1', 'g1', 'bad id', 5] }] }).groups[0].mg,
     });
   })()`));
   assert.ok(out.oct, 'říjen (docházka i evidence práce) zůstane ze starých souborů');
   assert.deepStrictEqual(out.r, [[{ m: '2026-11', days: 2, people: 4 }], [{ m: '2026-11', people: 2, records: 3 }], ['2026-11-02', '2026-11-03'], 2], 'listopad do odměn, evidence a Auditu, kusy jen od listopadu');
   assert.deepStrictEqual(out.days, ['2026-11-01', '2026-11-02', '2026-11-03']);
-  assert.deepStrictEqual(out.a, [[0, 8, 5], [null, null, null]], 'pobyt bez 30 min přestávky nad 6 h');
+  assert.deepStrictEqual(out.a, [[0, 8, 4.5], [null, null, null]], 'pobyt vždy bez 30 min přestávky');
   assert.deepStrictEqual(out.b, [[0, 8, 0], [null, null, 'D']], 'buňka bez času = kód nepřítomnosti');
   assert.ok(out.c, 'vedoucí s ID má docházku (do odměn se nepočítá jinde)');
   assert.deepStrictEqual(out.d, [[0, 0, 0], [null, null, null]], 'člověk v listu bez příchodů má prázdný řádek');
   assert.deepStrictEqual(out.codes, { D: 1 });
   assert.strictEqual(out.file, 'Docházka a výkony: dav.xlsx');
-  assert.deepStrictEqual(out.att, [13, 2, 1, 8, 2], 'hodiny, omluvená D, absence bez příchodu');
+  assert.deepStrictEqual(out.att, [12.5, 2, 1, 8, 2], 'hodiny, omluvená D, absence bez příchodu');
   assert.deepStrictEqual(out.prod, ['a|a', 50, 180, 100, 120, 83.3, ['2026-10', '2026-11'], true], 'evidence práce podle ID, norma jen u řádků s normou');
   assert.deepStrictEqual(out.first, [[2, 1, 0, [1, 0], [0, 1]], [1, 0, 1, [1, 0], [0, 0]]], 'ranní před 12:00, vedoucí ne, neznámé ID jen v celku, skupina podle skupin Matice (Frézování podle názvu)');
   assert.deepStrictEqual(out.after, [2, 1, 0, [1, 1], [null, null]], 'po změně skupin Matice se dny přepočítají, absence zůstane');
@@ -3545,7 +3545,7 @@ test('Docházka a výkony jediný zdroj od listopadu 2026 (2.42): docházka pro 
   assert.deepStrictEqual(out.pcs, ['2026-11-02', '2026-11-03'], 'kusy do Auditu od listopadu vždy, 31. 10. bez zaškrtnutí ne');
   assert.deepStrictEqual(out.second, [[{ m: '2026-11', days: 1, people: 2 }], [0, 8, 8.5], [0, 8, 7.5], [null, null, null]], 'další nahrání nahradí jen svoje dny');
   assert.deepStrictEqual(out.owns, [false, true, true, false]);
-  assert.deepStrictEqual(out.hours, [6, 10.17, 7.5, 0, 7.5]);
+  assert.deepStrictEqual(out.hours, [5.5, 10.17, 7.5, 0, 7.5, 0]);
   assert.strictEqual(out.changes.length, 1);
   assert.deepStrictEqual(out.changes[0].slice(1), ['podle názvu', 'Brus A'], 'historie: skupiny Matice u skupiny Auditu');
   assert.deepStrictEqual(out.clean, ['g1']);

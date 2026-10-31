@@ -39,8 +39,8 @@ Stav k 31. 10. 2026 (verze 2.42):
 - Uživatel: „celý modul Audit, ať funguje na ‚Nahrát docházku a výkon‘. Nahradí to i modul
   Výroba a od listopadu se takto bude i evidovat docházka, tento měsíc říjen bude ještě docházka
   po staru“.
-  - Core (za `dvApply`): `DV_FROM = "2026-11"`, `dvOwns(měsíc|den)`, `dvHours` (pobyt − 30 min nad
-    6 h, bez jednoho času `S.settings.shift`), `dvToPeriods` (S.periods měsíce: dny od 1. do
+  - Core (za `dvApply`): `DV_FROM = "2026-11"`, `dvOwns(měsíc|den)`, `dvHours` (pobyt − 30 min vždy,
+    přání uživatele; bez jednoho času `S.settings.shift`), `dvToPeriods` (S.periods měsíce: dny od 1. do
     posledního nahraného, dny ze souboru nahradí, řádek pro každé ID listu spárované s Lidmi,
     kód z buňky bez času `a.abs`), `dvToProduction` (S.production měsíce celý, jméno = ID,
     `time: true`, norma z volitelného sloupce `dv.cols.work.norm`), `dvAuditGroups` (skupina
@@ -54,8 +54,9 @@ Stav k 31. 10. 2026 (verze 2.42):
     Nastavení: `waMgHtml` (`.wa-mg`, `[data-wagmg]`, `ui.wa.mgOpen`), starší soubory v
     `<details class="wa-old">` (`ui.wa.oldOpen`); tlačítka obsazenosti a výkazu z hlavičky pryč.
     Výroba zůstává v menu (říjen), Docházka i Výroba mají pruh `.dv-src`.
-  - Nejisté (neověřeno se skutečným souborem): přestávka 30 min, hodiny bez odchodu, jestli
-    soubor má sloupec normy. Uživateli řečeno.
+  - Uživatel potvrdil: přestávka je vždy 30 min; norma zatím v souboru nebude (plnění normy
+    za listopad se nespočítá, sloupec normy v Nastavení zůstává prázdný). Neověřeno se skutečným
+    souborem: hodiny bez odchodu = délka směny.
   - Verze dat 37, `ODM_VERSION` 2.42. Testy: core „Docházka a výkony jediný zdroj (2.42)“, nový
     `tests/e2e_zdroj.js` (hodiny stránky 3. 11. 2026), `e2e_upgrade_prev` 2.41 → 2.42 (archiv
     `48ad143`, `ADDED` mg a norm), `test_odmeny` (426 pro klienta 36).

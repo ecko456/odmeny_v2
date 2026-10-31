@@ -12076,9 +12076,9 @@ async function dvImport(file, opts = {}) {
         <div><h4>Vykázaná práce${w && !opts.attOnly ? ` <small class="muted">list ${esc(w.name)}</small>` : ''}</h4>${workHtml}</div></div>
       ${unknown.length ? `<div class="note w"><b>${unknown.length} ID není u nikoho v Lidech:</b> ${unknown.slice(0, 12).map(esc).join(', ')}${unknown.length > 12 ? '…' : ''}. Uloží se a přiřadí, jakmile ID doplníš v kartě člověka.</div>` : ''}
       ${owns ? `<div class="note i dv-owns"><b>Od listopadu 2026 je tenhle soubor jediný zdroj:</b><ul class="wa-imp">
-        ${attNew.length ? `<li>docházka pro odměny za ${esc(attNew.map(monthLabel).join(', '))}: hodiny z příchodu a odchodu (nad 6 h bez 30 min přestávky), buňka s kódem = nepřítomnost${noWid ? `; ${noWid} ${noWid === 1 ? 'člověk bez ID v Lidech se nezapíše' : 'lidí bez ID v Lidech se nezapíše'}` : ''},</li>` : ''}
+        ${attNew.length ? `<li>docházka pro odměny za ${esc(attNew.map(monthLabel).join(', '))}: hodiny z příchodu a odchodu (bez 30 min přestávky), buňka s kódem = nepřítomnost${noWid ? `; ${noWid} ${noWid === 1 ? 'člověk bez ID v Lidech se nezapíše' : 'lidí bez ID v Lidech se nezapíše'}` : ''},</li>` : ''}
         ${attNew.length ? '<li>obsazenost v Auditu (ranní = příchod před 12:00, skupiny podle skupin Matice v Nastavení),</li>' : ''}
-        ${prodNew.length ? `<li>evidence práce místo Výroby za ${esc(prodNew.map(monthLabel).join(', '))} (kusy, strávený čas${w && w.norm ? ', norma' : ', <b>bez normy</b>: sloupec normy nastavíš v Nastavení Auditu'}),</li>` : ''}
+        ${prodNew.length ? `<li>evidence práce místo Výroby za ${esc(prodNew.map(monthLabel).join(', '))} (kusy, strávený čas${w && w.norm ? ', norma' : ', bez normy'}),</li>` : ''}
         ${pcsNew ? `<li>kusy podle operací do Auditu (${pcsNew} ${denN(pcsNew)}).</li>` : ''}</ul></div>` : ''}
       <p class="tiny muted">${owns ? 'Říjen 2026 a dřív zůstává ze starých souborů. ' : 'Docházka pro odměny a Výroba za říjen 2026 a dřív se nemění. '}Sloupce změníš v Nastavení Auditu.</p>`,
   });

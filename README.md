@@ -67,11 +67,11 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
 - **Od listopadu 2026 jeden soubor na všechno.** Audit → **Nahrát docházku a výkony** plní
   za listopad 2026 a dál:
   - **docházku pro odměny** (Kafe, fond, absence, víkendy, srážky): hodiny dne = odchod −
-    příchod, nad 6 h bez 30 min přestávky; bez odchodu se počítá délka směny; buňka s textem
+    příchod − 30 min přestávky (vždy); bez odchodu se počítá délka směny; buňka s textem
     místo času (D, NEM…) je kód nepřítomnosti, omluvený podle seznamu v Nastavení;
   - **evidenci práce místo Výroby** (kusy a strávený čas podle ID zaměstnance, plnění normy
-    a využití fondu). Norma se počítá, jen když je v Nastavení Auditu vyplněný **sloupec normy**
-    (prázdný = soubor normu nemá a plnění normy se nespočítá);
+    a využití fondu). Norma zatím v souboru není, plnění normy se za listopad nespočítá; až bude,
+    stačí v Nastavení Auditu vyplnit **sloupec normy**;
   - **obsazenost v Auditu** (ranní = příchod před 12:00) a kusy podle operací.
 - **Říjen 2026 a dřív zůstává po staru.** Docházka, Výroba a starší soubory Auditu se dál
   nahrávají jako dřív, jen dny od 1. 11. 2026 přeskočí. V Docházce a Výrobě o tom je pruh.
