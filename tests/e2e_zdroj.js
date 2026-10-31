@@ -105,6 +105,18 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   await page.click('#nav [data-view="audit"]');
   check(await page.locator('#waAtt, #waWork').count() === 0 && await page.isVisible('#waDv'), 'v hlavičce Auditu jen jedno nahrání');
   await page.setInputFiles('#waDvFile', file);
+  // 2.42.3: nejdřív Jak se soubor načte (vzor prvního člověka), pak souhrn
+  await page.waitForSelector('#dlg[open] .dv-map');
+  { const mp = await text(page, '#dlgBody');
+    check(/Vzor: co se z toho načte/.test(mp) && /První člověk: ID 101/.test(mp), `vzor prvního člověka: ${mp.slice(0, 300)}`); }
+  // ruční úprava: špatný sloupec ID → vzor ukáže chybu, oprava → zase první člověk
+  await page.fill('#dlg [data-dvm="att.id"]', 'Z');
+  await page.waitForFunction(() => /není žádný řádek s ID/.test(document.querySelector('#dvmPrev').textContent));
+  await page.fill('#dlg [data-dvm="att.id"]', 'A');
+  await page.waitForFunction(() => /První člověk: ID 101/.test(document.querySelector('#dvmPrev').textContent));
+  check(/2\. 11\./.test(await text(page, '#dvmPrev')) && /8,00|8,5|7,5/.test(await text(page, '#dvmPrev')), `vzor dnů: ${await text(page, '#dvmPrev')}`);
+  await page.screenshot({ path: path.join(shots, '00-nacteni.png') });
+  await page.click('#dlgOk');
   await page.waitForSelector('#dlg[open] .dv-imp');
   const d1 = await text(page, '#dlgBody');
   check(/jediný zdroj/.test(d1) && /docházka pro odměny za listopad 2026/.test(d1) && /evidence práce místo Výroby za listopad 2026 \(kusy, strávený čas, norma\)/.test(d1), `dialog: ${d1}`);

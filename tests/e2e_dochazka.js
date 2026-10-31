@@ -174,6 +174,12 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.screenshot({ path: path.join(shots, '02-kontroly-ceka.png') });
 
   await page.setInputFiles('#ktPresFile', file);
+  // 2.42.3: nejdřív Jak se soubor načte (vzor prvního člověka), pak souhrn
+  await page.waitForSelector('#dlg[open] .dv-map');
+  { const mp = await text(page, '#dlgBody');
+    check(/Vzor: co se z toho načte/.test(mp) && /První člověk: ID 101/.test(mp), `vzor prvního člověka: ${mp.slice(0, 300)}`); }
+  await page.screenshot({ path: path.join(shots, '03a-kontroly-nacteni.png') });
+  await page.click('#dlgOk');
   await page.waitForSelector('#dlg[open] .dv-imp');
   const k1 = await text(page, '#dlgBody');
   check(/^Nahrát příchody$/.test(await text(page, '#dlgTitle')), 'titulek dialogu v Kontrolách');
@@ -216,6 +222,12 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   // 2) Audit: stejný soubor i s výkony.
   await page.click('#nav [data-view="audit"]');
   await page.setInputFiles('#waDvFile', file);
+  // 2.42.3: nejdřív Jak se soubor načte (vzor prvního člověka), pak souhrn
+  await page.waitForSelector('#dlg[open] .dv-map');
+  { const mp = await text(page, '#dlgBody');
+    check(/Vzor: co se z toho načte/.test(mp) && /První člověk: ID 101/.test(mp), `vzor prvního člověka: ${mp.slice(0, 300)}`); }
+  await page.screenshot({ path: path.join(shots, '05a-audit-nacteni.png') });
+  await page.click('#dlgOk');
   await page.waitForSelector('#dlg[open] .dv-imp');
   const d1 = await text(page, '#dlgBody');
   check(/^Nahrát docházku a výkony$/.test(await text(page, '#dlgTitle')), 'titulek dialogu v Auditu');

@@ -19,12 +19,12 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.41$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.42\\.2$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.42\\.3$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
-const ADDED = { 'workAudit.dv.cols.work.norm': '""', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
+const ADDED = { 'workAudit.dv.cols.work.norm': '""', 'workAudit.dv.sheets': '({ att: "", work: "" })', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
 /* Verze dat se mění (2.42: skupiny Matice u skupin Auditu, sloupec normy): stará stránka dostane 426. */
 const SAME_DATA = false;
 
@@ -168,7 +168,7 @@ const STATE = added => `(() => {
   const work = await page.evaluate(() => audDays(isoWeek(todayIso()).id).includes(todayIso()));
   if (work) { await page.click('[data-qksave]'); await saved(page); }
   // Audit (2.42): skupina Matice u skupiny Auditu a sloupec normy
-  await page.evaluate(() => { S.workAudit.groups[0].mg = ['g_brus']; S.workAudit.dv.cols.work.norm = 'K'; save(); });
+  await page.evaluate(() => { S.workAudit.groups[0].mg = ['g_brus']; S.workAudit.dv.cols.work.norm = 'K'; S.workAudit.dv.sheets = { att: 'List2', work: '' }; save(); });
   await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -182,7 +182,7 @@ const STATE = added => `(() => {
     const its = ((final.st.audit.plans[week] || {}).items || []).filter(i => i.day === today && i.extra);
     check(its.length === drawn.length && its.every(i => drawn.includes(i.key)), `rychlá kontrola po novém přihlášení: ${JSON.stringify(its)}`);
   }
-  check(JSON.stringify(final.added['workAudit.groups.0.mg']) === '["g_brus"]' && final.added['workAudit.dv.cols.work.norm'] === 'K', `Audit 2.42 po novém přihlášení: ${JSON.stringify(final.added)}`);
+  check(JSON.stringify(final.added['workAudit.groups.0.mg']) === '["g_brus"]' && final.added['workAudit.dv.cols.work.norm'] === 'K' && final.added['workAudit.dv.sheets'].att === 'List2', `Audit 2.42 po novém přihlášení: ${JSON.stringify(final.added)}`);
   const keep = JSON.parse(JSON.stringify(before.st));
   // přibyl jen plán tohoto týdne (rychlá kontrola) a záznam v historii; ostatní beze změny
   const logNow = new Set(final.st.log.map(x => JSON.stringify(x)));

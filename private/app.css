@@ -2464,3 +2464,15 @@ tr.dv-click:hover td { background: var(--surface-2); }
 /* Nastavení sloupců přes AI (2.42.2) */
 .dv-aitab tr.dv-aichg td { background: var(--good-soft); }
 .dv-aibar { margin-top: 10px; align-items: center; flex-wrap: wrap; }
+/* Jak se soubor načte (2.42.3) */
+.dv-map { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px 20px; }
+.dv-mapgrp h4, .dv-prev h4 { margin: 4px 0 6px; }
+.dv-map .field.dv-aichg input, .dv-map .field.dv-aichg select { background: var(--good-soft); }
+.dv-prevh { margin: 14px 0 4px; font-size: 15px; }
+.dv-prev { display: grid; gap: 6px; }
+.dv-prevtab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.dv-prevtab th, .dv-prevtab td { padding: 4px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.dv-prevtab th { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.dv-prevtab .r { text-align: right; }
+@media (max-width: 700px) { .dv-map { grid-template-columns: minmax(0, 1fr); } .dv-prevtab { font-size: 12px; } .dv-prevtab th, .dv-prevtab td { padding: 3px 4px; } }
+.dv-prevwrap { overflow-x: auto; }

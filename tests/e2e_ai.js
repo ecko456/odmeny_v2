@@ -311,11 +311,12 @@ async function pickParts(page, keys) {
     const att = X.utils.aoa_to_sheet([['Středisko', 'ID', 'Pozn.', ser(26), null, ser(27), null], [null, null, null, 'Příchod', 'Odchod', 'Příchod', 'Odchod'],
       ['H2', 501, '', 0.25, 0.6, 0.25, 0.6], ['H2', 502, '', 0.26, 0.61, null, null]]);
     ['D1', 'F1'].forEach(a => { att[a].z = 'd.m.yyyy'; });
-    X.utils.book_append_sheet(wb, att, 'Docházka');
+    X.utils.book_append_sheet(wb, att, 'List2');
     const work = X.utils.aoa_to_sheet([['Středisko', 'ID', 'Datum', 'Díl', 'Operace', 'V zakázce', 'Hotovo', '', '', 'Čas (min)'],
       ['H2', 501, d(26), 'Hřídel', 'Broušení', 50, 20, '', '', 120], ['H2', 502, d(27), 'Kryt', 'Frézování', 30, 10, '', '', 90]]);
     ['C2', 'C3'].forEach(a => { work[a].z = 'd.m.yyyy'; });
     X.utils.book_append_sheet(wb, work, 'práce');
+    wb.SheetNames.reverse();   // docházka je ve skutečném souboru na 2. listu a list se nejmenuje Docházka
     const bytes = new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' }));
     let str = '';
     for (let i = 0; i < bytes.length; i += 0x8000) str += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -324,16 +325,17 @@ async function pickParts(page, keys) {
   const before = mock.requests.length;
   await page.evaluate(() => showView('audit'));
   await page.setInputFiles('#waDvFile', { name: 'dochazka-jinak.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(xb64, 'base64') });
-  await page.waitForSelector('#dlg[open] button[value="ai"]');
-  check(!/2 lidé s příchodem/.test(await page.textContent('#dlgBody')), 'výchozí sloupce soubor nepřečtou správně');
-  await page.click('#dlg button[value="ai"]');
-  await page.waitForSelector('#dlg[open] .dv-aitab');
+  // 2.42.3: AI zmapuje soubor hned při nahrání, dialog ukáže návrh a vzor prvního člověka
+  await page.waitForSelector('#dlg[open] .dv-map');
+  await page.waitForFunction(() => /První člověk: ID 501/.test(document.querySelector('#dvmPrev').textContent));
   const colReq = JSON.parse(mock.requests[mock.requests.length - 1].body.messages[0].content);
   const sentText = JSON.stringify(colReq);
   check(mock.requests.length === before + 1 && colReq.listy.length === 2, `AI dostala oba listy: ${sentText.slice(0, 120)}`);
   check(!/501|502|Hřídel|Kryt|Zkouška/.test(sentText) && /Příchod/.test(sentText) && /ID/.test(sentText), `do AI jen nadpisy a typy: ${sentText}`);
   const prop = await page.textContent('#dlgBody');
-  check(/Norma v souboru není/.test(prop) && await page.locator('#dlg tr.dv-aichg').count() >= 4, `návrh se změnami: ${prop.slice(0, 200)}`);
+  check(/Norma v souboru není/.test(prop) && /návrh AI/.test(prop) && await page.locator('#dlg .dv-map .dv-aichg').count() >= 4, `návrh se změnami: ${prop.slice(0, 200)}`);
+  check(await page.inputValue('#dlg [data-dvm="att.id"]') === 'B' && await page.inputValue('#dlg [data-dvm="work.date"]') === 'C', 'pole předvyplněná návrhem');
+  check(/Zkouška0 Test/.test(prop) && /Hřídel/.test(prop) && /6:00/.test(prop), `vzor prvního člověka: ${prop.slice(0, 400)}`);
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${shots}/10-ai-sloupce.png` });
   await page.click('#dlgOk');
@@ -346,7 +348,7 @@ async function pickParts(page, keys) {
   await saved(page);
   const st = await page.evaluate(() => ({ cols: S.workAudit.dv.cols, unit: S.workAudit.dv.unit, pres: Object.keys(S.workAudit.dv.pres['2026-10-26'] || {}), log: S.log.slice(-6).map(x => x.text).join(' | ') }));
   check(st.cols.att.id === 'B' && st.cols.att.first === 'D' && st.cols.work.date === 'C' && st.unit === 'min' && JSON.stringify(st.pres) === '["501","502"]', `uložené sloupce a data: ${JSON.stringify(st)}`);
-  check(/podle návrhu AI/.test(st.log), `historie: ${st.log}`);
+  check(/změněny sloupce souboru docházky/.test(st.log), `historie: ${st.log}`);
 
   await browser.close();
   server.close();

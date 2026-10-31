@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.42.3):
+
+- Uživatel: „docházka je vždy v tom 2. listu … jeden den má dva sloupce, příchod a odchod …
+  ať to klidně AI vždy zmapuje a ukáže třeba vzor prvního člověka z docházky, abych to mohl
+  případně upravit“.
+  - Data: `S.workAudit.dv.sheets = {att, work}` (název listu bez „soubor ›“, prázdné = sám),
+    `cleanDv`, historie v `wadvcols`. Verze dat 38.
+  - Core: `dvSheetName`, `dvSheets(sheets, pick)` (zapamatovaný list, pak název Docházka /
+    vykázaná práce, pak **docházka = 2. list**, práce = jiný list), `dvParse` bere `dv.sheets`,
+    `dvPreview(p, n)` (první člověk s příchodem: dny s příchodem, odchodem, kódem a hodinami
+    `dvHours`, jeho záznamy práce, jinak první záznamy). AI prompt: docházka bývá na 2. listu.
+  - UI: `dvMapDialog(sheets, file, {noAi})` při každém `dvImport` (i Kontroly): návrh AI
+    (`dvAiPropose`, změny `.dv-aichg`), výběr listů a písmen `[data-dvm]`, vzor `#dvmPrev`
+    (`dvPrevHtml`, přepočet na `input` po 250 ms), uloží `dv.cols/unit/sheets`. V souhrnu
+    a v dialogu bez dat tlačítko `value="map"` → znovu bez AI. `dvAiSetup` a `DV_AI_BTN` pryč,
+    v Nastavení `[data-dvaipick]` otevře stejné okno.
+  - Testy: core „Jak se soubor načte (2.42.3)“, `test_odmeny` (426 pro klienta 37),
+    `e2e_dochazka`, `e2e_zdroj` (vzor, ruční oprava písmene), `e2e_ai` (docházka na 2. listu
+    bez názvu), `e2e_upgrade_prev` 2.41 → 2.42.3 (`ADDED` i `dv.sheets`).
+
 Stav k 31. 10. 2026 (verze 2.42.2):
 
 - Uživatel: „Nemůžeš to napojit přes API na AI co jsme již používali v TOP 5? Aby jen vždy
@@ -1764,7 +1784,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.41 | `48ad143` | Report docházky – vlastní skupiny z oddělení, značka dne přesčas / práce ve svátek mimo normu (data verze 36) |
 | 2.42 | `351e34c` | od listopadu 2026 soubor Docházka a výkony jediný zdroj (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v Auditu, skupiny Matice u skupin Auditu) (data verze 37) |
 | 2.42.1 | `952edb7` | Report docházky – nahraný den, upozornění na párování, ID podle číslic; Rychlá kontrola – klepnutím na člověka body kontroly a zápis |
-| 2.42.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ✦ Nastavit sloupce souboru Docházka a výkony přes AI (jen nadpisy a typy buněk) |
+| 2.42.2 | `9df70cc` | ✦ Nastavit sloupce souboru Docházka a výkony přes AI (jen nadpisy a typy buněk) |
+| 2.42.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: docházka z 2. listu, okno Jak se soubor načte při každém nahrání (AI návrh, vzor prvního člověka, úprava) (data verze 38) |
 
 Verze 2.1 přidala:
 
@@ -1876,7 +1897,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `37` (od 2.42):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `38` (od 2.42.3):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1928,6 +1949,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `service` (2.21, 2.22): Servis, evidence zařízení, odeslání a vzory (viz níže);
   - `shortage` (2.27): Shortage, nahrané seznamy chybějících dílů (viz níže);
   - `workAudit.dv` (2.37): docházka a výkony z jednoho souboru (viz Audit);
+  - `workAudit.dv.sheets` (2.42.3): zapamatované listy souboru docházky a výkonů;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
@@ -2153,7 +2175,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 29 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 92 testů: proti původní aplikaci + opravy + 2.1 až 2.42
+node tests/test_core.js                 # 93 testů: proti původní aplikaci + opravy + 2.1 až 2.42
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

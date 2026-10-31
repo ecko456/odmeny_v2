@@ -2097,7 +2097,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=37;
+const DATA_VERSION=38;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -4743,7 +4743,7 @@ function waChanges(A,B,add){
     if((qa.marks[iso]||"")!==(qb.marks[iso]||""))add("workaudit","",{m:"wadrm:"+iso,p:"Report docházky "+dayText(iso)+": ",v0:DR_MARK[qa.marks[iso]]||"počítá se do normy",v1:DR_MARK[qb.marks[iso]]||"počítá se do normy"});
   });
   const da=A.dv||blankDv(),db=B.dv||blankDv();
-  if(JSON.stringify(da.cols)!==JSON.stringify(db.cols)||da.unit!==db.unit)add("workaudit","Audit: změněny sloupce souboru docházky a výkonů",{m:"wadvcols"});
+  if(JSON.stringify(da.cols)!==JSON.stringify(db.cols)||da.unit!==db.unit||JSON.stringify(da.sheets||{})!==JSON.stringify(db.sheets||{}))add("workaudit","Audit: změněny sloupce souboru docházky a výkonů",{m:"wadvcols"});
   if((A.trainPct||null)!==(B.trainPct||null))add("workaudit","",{m:"watrain",p:"Audit – hranice zaškolení: ",v0:A.trainPct?"od "+A.trainPct+" %":"podle Matice dovedností",v1:B.trainPct?"od "+B.trainPct+" %":"podle Matice dovedností"});
   const ra=A.rep||{},rb=B.rep||{};
   if((ra.place||"")!==(rb.place||"")||(ra.firm||"")!==(rb.firm||""))add("workaudit","",{m:"warep",p:"Audit – záhlaví reportů: ",v0:[ra.place,ra.firm].filter(Boolean).join(" · ")||"bez názvu",v1:[rb.place,rb.firm].filter(Boolean).join(" · ")||"bez názvu"});
@@ -4782,7 +4782,7 @@ const DV_COLS={att:{id:"A",first:"B"},work:{id:"A",part:"D",op:"E",order:"F",don
 const DV_COL_LABEL={id:"ID zaměstnance",first:"První den (příchod)",part:"Název dílu",op:"Operace",order:"Množství v zakázce",done:"Dokončené množství",time:"Strávený čas",date:"Datum (prázdné = najde se samo)",norm:"Norma (prázdné = soubor normu nemá)"};
 const DV_MAX_DAYS=800,DV_MAX_MONTHS=36,DV_MAX_PEOPLE=800,DV_MAX_PARTS=300,DV_MAX_OPS=100;
 const DV_UNITS=["auto","min","h"];
-function blankDv(){return {cols:JSON.parse(JSON.stringify(DV_COLS)),unit:"auto",pres:{},perf:{},files:[]};}
+function blankDv(){return {cols:JSON.parse(JSON.stringify(DV_COLS)),unit:"auto",sheets:{att:"",work:""},pres:{},perf:{},files:[]};}
 /** Datum bez času (hlavička docházky): číslo dne z Excelu, „1.10.2026“, „2026-10-01“. */
 function dvDate(v){
   if(typeof v==="number"&&v%1)return null;
@@ -4818,17 +4818,23 @@ function dvDur(v,unit){
   if(n==null||n<0)return null;
   return unit==="frac"?n*1440:unit==="h"?n*60:n;
 }
-/** Listy souboru: Docházka podle názvu (jinak první), vykázaná práce podle názvu (jinak druhý). */
-function dvSheets(sheets){
+/** Listy souboru (2.42.3): zapamatovaný název listu, jinak podle názvu (Docházka, vykázaná práce),
+    jinak docházka na 2. listu (přání uživatele: „docházka je vždy v tom 2. listu“) a práce na
+    tom druhém. Soubor s jedním listem = docházka. */
+function dvSheetName(s){return String((s&&s.name)||"").split("›").pop().trim();}
+function dvSheets(sheets,pick){
   const list=(sheets||[]).filter(s=>s&&Array.isArray(s.aoa));
-  const nm=s=>norm(String(s.name||"").split("›").pop());
-  const att=list.find(s=>/dochaz/.test(nm(s)))||list[0]||null;
-  const work=list.find(s=>s!==att&&/vykaz|prace|vykon/.test(nm(s)))||list.find(s=>s!==att)||null;
+  const nm=s=>norm(dvSheetName(s));
+  const by=n=>n?list.find(s=>dvSheetName(s)===n)||null:null;
+  pick=pick||{};
+  const att=by(pick.att)||list.find(s=>/dochaz/.test(nm(s)))||(list.length>1?list[1]:list[0])||null;
+  const pw=by(pick.work);
+  const work=(pw&&pw!==att?pw:null)||list.find(s=>s!==att&&/vykaz|prace|vykon/.test(nm(s)))||list.find(s=>s!==att)||null;
   return {att,work};
 }
 function dvParse(sheets,dv,unit){
   dv=dv||blankDv();
-  const {att,work}=dvSheets(sheets);
+  const {att,work}=dvSheets(sheets,dv.sheets);
   return {att:att?dvParseAtt(att,dv.cols.att):null,work:work?dvParseWork(work,dv.cols.work,unit||dv.unit):null};
 }
 function dvParseAtt(sheet,c){
@@ -4950,6 +4956,20 @@ function dvApply(wa,p,meta,opts){
   const prod=w?dvToProduction(w,meta,((a&&a.to)||w.to||todayIso(meta.at)).slice(0,7)):[];
   const occ=a?dvToAudit(wa,a.dates,a.abs):[];
   return {days:a?a.dates.length:0,months,audit,periods,prod,occ};
+}
+/** Vzor načtení (2.42.3): první člověk z listu docházky (prvních n dní s příchodem, odchodem,
+    kódem a hodinami pro odměny) a jeho první záznamy práce, ať je vidět, co se odkud čte. */
+function dvPreview(p,n){
+  n=n||3;
+  const a=p&&p.att&&p.att.ok?p.att:null,w=p&&p.work&&p.work.ok?p.work:null;
+  const wid=a?(a.ids||[]).find(id=>a.dates.some(iso=>(a.pres[iso]||{})[id]))||(a.ids||[])[0]||"":(w&&w.recs[0]?w.recs[0].wid:"");
+  const e=wid?dvWidMap().get(wid)||null:null;
+  const days=a?a.dates.slice(0,n).map(iso=>{const v=(a.pres[iso]||{})[wid]||null,c=((a.abs||{})[iso]||{})[wid]||"";
+    return {iso,in:v?v[0]:null,out:v?v[1]:null,code:v?"":c,h:v?dvHours(v[0],v[1]):0};}):[];
+  const recs=w?w.recs.filter(x=>x.wid===wid).slice(0,n):[];
+  return {wid,name:e?(e.last+" "+e.first).trim():"",known:!!e,days,recs:recs.length?recs:(w?w.recs.slice(0,n):[]),own:recs.length>0,
+    att:a?{name:a.name,days:a.dates.length,people:a.people,rows:a.rows}:null,work:w?{name:w.name,rows:w.rows,unit:w.unit,dateCol:w.dateCol}:null,
+    errAtt:p&&p.att&&!p.att.ok?p.att.err:"",errWork:p&&p.work&&!p.work.ok?p.work.err:""};
 }
 /** Ukázka souboru pro AI (2.42.2), ať správně nastaví sloupce: první řádky listů. Skutečný text
     zůstane jen v nadpisech (řádky před prvním datovým řádkem), jména z Lidí se v nich nahradí
@@ -5106,6 +5126,7 @@ function cleanDv(o){
   Object.keys(DV_COLS.att).forEach(k=>{if(k in ca)out.cols.att[k]=waLetter(ca[k])||DV_COLS.att[k];});
   Object.keys(DV_COLS.work).forEach(k=>{if(k in cw)out.cols.work[k]=k==="date"||k==="norm"?waLetter(cw[k]):(waLetter(cw[k])||DV_COLS.work[k]);});
   out.unit=DV_UNITS.includes(o.unit)?o.unit:"auto";
+  const sh=obj(o.sheets);out.sheets={att:str(sh.att,60),work:str(sh.work,60)};
   Object.keys(obj(o.pres)).filter(iso=>WA_ISO.test(iso)).sort().slice(-DV_MAX_DAYS).forEach(iso=>{
     const day={};
     Object.entries(obj(o.pres[iso])).slice(0,DV_MAX_PEOPLE).forEach(([k,v])=>{if(wid(k)&&Array.isArray(v)){const a=clock(v[0]),b=clock(v[1]);if(a!=null||b!=null)day[k]=[a,b];}});

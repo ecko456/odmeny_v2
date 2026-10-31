@@ -301,9 +301,9 @@ const ODM_AI_COLS_FIELDS = [
 const ODM_AI_COLS_SYSTEM = <<<'TXT'
 Pomáháš nastavit import Excelu do aplikace pro výrobu. Dostaneš JSON s prvními řádky listů jednoho souboru. Buňky jsou zapsané pod písmenem sloupce jako v Excelu. Text nadpisů je skutečný; hodnoty z datových řádků jsou nahrazené typem v lomených závorkách (<číslo>, <celé číslo>, <čas>, <datum 2026-11-02>, <text>, <text s číslicemi>), jména lidí jako [osoba N].
 
-Soubor má dva listy:
-1. Docházka: v jednom sloupci ID zaměstnance, pak pro každý den dvojice sloupců příchod a odchod; datum dne je v řádku nad dvojicí (u prvního sloupce dvojice). Najdi sloupec s ID (att.id) a sloupec příchodu prvního dne (att.first).
-2. Vykázaná práce: řádek na záznam. Najdi sloupce: ID zaměstnance (work.id), název dílu (work.part), operace (work.op), množství v zakázce (work.order), dokončené množství (work.done), strávený čas (work.time), datum záznamu (work.date) a norma času (work.norm).
+Soubor má dva listy (docházka bývá na 2. listu, vykázaná práce na 1.; rozhoduj podle obsahu):
+- Docházka: v jednom sloupci ID zaměstnance, pak pro každý den dva sloupce, příchod a odchod; datum dne je v řádku nad dvojicí (u prvního sloupce dvojice). Najdi sloupec s ID (att.id) a sloupec příchodu prvního dne (att.first).
+- Vykázaná práce: řádek na záznam. Najdi sloupce: ID zaměstnance (work.id), název dílu (work.part), operace (work.op), množství v zakázce (work.order), dokončené množství (work.done), strávený čas (work.time), datum záznamu (work.date) a norma času (work.norm).
 
 Pravidla:
 - vracej jen písmena sloupců (A, B, …, AA), sloupec, který v listu není, vrať jako prázdný řetězec;

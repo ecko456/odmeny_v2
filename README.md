@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.42.3
+
+- **Docházka je na 2. listu.** Když se list nejmenuje „Docházka“, bere se docházka z 2. listu
+  a vykázaná práce z toho druhého. Vybrané listy si aplikace pamatuje.
+- **Při každém nahrání okno „Jak se soubor načte“.** AI (když je zapnutá) soubor zmapuje:
+  list docházky a práce, sloupec ID, příchod prvního dne (každý den má dva sloupce, příchod
+  a odchod), díl, operace, kusy, čas a datum. Pod tím je **vzor prvního člověka**: jeho ID
+  a jméno z Lidí, první dny s příchodem, odchodem a hodinami, a jeho záznamy práce. Písmeno
+  sloupce nebo list jde přepsat a vzor se hned přepočítá. Teprve pak následuje souhrn
+  a Nahrát (tam je tlačítko „Zpět k načtení sloupců“).
+- Bez AI se okno ukáže taky, s uloženým nastavením.
+- **Verze dat 38:** stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.42.2
 
 - **Nastavení sloupců přes AI.** Když soubor Docházka a výkony nejde přečíst, nebo čísla

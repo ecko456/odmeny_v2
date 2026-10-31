@@ -12060,53 +12060,113 @@ function dvFilesHtml() {
 function dvSettingsHtml() {
   const dv = S.workAudit.dv;
   return `<div class="card" id="dvColsCard"><h3>Docházka a výkony z jednoho souboru</h3>
-    <p class="small muted">První list Docházka: ID zaměstnance a první den (příchod, vedle odchod; každý další den o dva sloupce dál, datum v hlavičce). Druhý list vykázaná práce. Písmena jako v Excelu.</p>
+    <p class="small muted">Docházka (výchozí 2. list, ${esc(dv.sheets.att || 'podle názvu nebo pořadí')}): ID zaměstnance a první den (příchod, vedle odchod; každý další den o dva sloupce dál, datum v hlavičce). Vykázaná práce (${esc(dv.sheets.work || 'druhý list')}). Písmena jako v Excelu. Při každém nahrání se ukáže, jak se soubor načte, a jde to upravit.</p>
     <div class="wa-colgrid">${DV_SET_COLS.map(([kind, key, label]) => `<label class="field wa-letter"><span>${esc(label)}</span><input value="${esc(dv.cols[kind][key])}" maxlength="3" data-dvcol="${kind}.${key}" placeholder="—" autocapitalize="characters"></label>`).join('')}</div>
     <label class="field dv-unit"><span>Strávený čas je v</span><select id="dvUnit">${[['auto', 'najít podle hodnot a hlavičky'], ['min', 'minutách'], ['h', 'hodinách']].map(([k, l]) => `<option value="${k}"${dv.unit === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-    <div class="row gap"><button class="btn ghost small" type="button" data-dvcolreset>Vrátit výchozí sloupce</button>${ui.me && ui.me.ai ? '<button class="btn sec small" type="button" data-dvaipick>' + I.sparkle + '<span>Nastavit sloupce přes AI ze souboru…</span></button><span class="tiny muted">AI dostane jen nadpisy prvních řádků, ne jména ani hodnoty.</span>' : ''}</div></div>`;
+    <div class="row gap"><button class="btn ghost small" type="button" data-dvcolreset>Vrátit výchozí sloupce</button>${ui.me && ui.me.ai ? '<button class="btn sec small" type="button" data-dvaipick>' + I.sparkle + '<span>Nastavit načtení podle souboru…</span></button><span class="tiny muted">AI dostane jen nadpisy prvních řádků, ne jména ani hodnoty.</span>' : '<button class="btn sec small" type="button" data-dvaipick>Nastavit načtení podle souboru…</button>'}</div></div>`;
 }
 
-/* ---------- nastavení sloupců přes AI (2.42.2) ---------- */
-/* Pošle AI jen nadpisy prvních řádků a typy buněk (dvAiSample), ukáže návrh sloupců a po
-   potvrzení ho uloží. Vrací true, když se sloupce změnily. */
-const DV_AI_BTN = () => (ui.me && ui.me.ai ? `<button class="btn sec" type="submit" value="ai" formnovalidate>${I.sparkle}<span>Nastavit sloupce přes AI</span></button>` : '');
-async function dvAiSetup(sheets, fileName) {
+/* ---------- jak se soubor načte: AI návrh, ruční úprava a vzor prvního člověka (2.42.3) ---------- */
+/* AI dostane jen nadpisy prvních řádků a typy buněk (dvAiSample). Bez AI se začne od uloženého
+   nastavení. Vrací {cfg} po potvrzení (uloží se do dv), nebo null. */
+const DV_UNIT_T = { auto: 'najít sám', min: 'v minutách', h: 'v hodinách' };
+async function dvAiPropose(sheets) {
+  if (!(ui.me && ui.me.ai)) return null;
   const sample = dvAiSample(sheets, Object.values(S.employees));
-  if (!sample.length) { toast('V souboru není žádný list.', true); return false; }
+  if (!sample.length) return null;
   toast('AI čte nadpisy souboru…');
-  let r;
-  try { r = await Vault.api('ai_columns', { method: 'POST', body: { sheets: sample } }); } catch (error) { toast(error.message, true); return false; }
+  try { return await Vault.api('ai_columns', { method: 'POST', body: { sheets: sample } }); } catch (error) { toast(`AI: ${error.message} Použije se uložené nastavení.`, true); return null; }
+}
+function dvPrevHtml(sheets, cfg) {
+  const dvx = { cols: cfg.cols, unit: cfg.unit, sheets: cfg.sheets };
+  const p = dvParse(sheets, dvx, cfg.unit);
+  const v = dvPreview(p, 3);
+  const t = m => (m == null ? '—' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
+  const who = v.wid ? `<b>ID ${esc(v.wid)}</b> ${v.known ? `· ${esc(v.name)}` : '<span class="tag warn">v Lidech není</span>'}` : '<span class="muted">nikdo</span>';
+  const att = v.att ? `<h4>Docházka <small class="muted">list ${esc(v.att.name)} · ${v.att.days} ${denN(v.att.days)}, ${v.att.people} ${lidiN(v.att.people)}</small></h4>
+      <p class="small">První člověk: ${who}</p>
+      <div class="dv-prevwrap"><table class="dv-prevtab"><thead><tr><th>Den</th><th>Příchod</th><th>Odchod</th><th>Hodiny</th></tr></thead><tbody>${v.days.map(d => `<tr><td class="num">${esc(ktDay(d.iso))}</td><td class="num">${d.code ? `<span class="tag">${esc(d.code)}</span>` : t(d.in)}</td><td class="num">${d.code ? '' : t(d.out)}</td><td class="num">${d.code ? 'nepřítomnost' : nf(d.h, 2)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="tiny muted">Hodiny = odchod − příchod − 30 min přestávky, bez odchodu délka směny.</p>`
+    : `<h4>Docházka</h4><div class="note e">${esc(v.errAtt || 'List s docházkou nenalezen.')}</div>`;
+  const work = v.work ? `<h4>Vykázaná práce <small class="muted">list ${esc(v.work.name)} · ${v.work.rows} ${zaznamN(v.work.rows)}, čas ${esc(DV_UNIT_TEXT[v.work.unit] || v.work.unit)}</small></h4>
+      ${v.own ? '' : '<p class="small muted">Tenhle člověk ve vykázané práci není, ukázka prvních záznamů:</p>'}
+      <div class="dv-prevwrap"><table class="dv-prevtab"><thead><tr><th>ID</th><th>Datum</th><th>Díl</th><th>Operace</th><th class="r">Zakázka</th><th class="r">Hotovo</th><th class="r">Čas</th></tr></thead><tbody>${v.recs.map(x => `<tr><td class="num">${esc(x.wid)}</td><td class="num">${x.iso ? esc(dayText(x.iso)) : '—'}</td><td>${esc(x.part)}</td><td>${esc(x.op || '—')}</td><td class="r num">${nf(x.f, 0)}</td><td class="r num">${nf(x.g, 0)}</td><td class="r num">${esc(dvH(x.t))}</td></tr>`).join('')}</tbody></table></div>`
+    : `<h4>Vykázaná práce</h4><div class="note w">${esc(v.errWork || 'List s vykázanou prací nenalezen, nahraje se jen docházka.')}</div>`;
+  return { html: `<div class="dv-prev">${att}${work}</div>`, ok: !!(v.att || v.work) };
+}
+async function dvMapDialog(sheets, fileName, opts = {}) {
   const dv = S.workAudit.dv;
-  const head = (kind, letter) => {
-    const want = kind === 'att' ? r.att_sheet : r.work_sheet;
-    const sh = sample.find(x => x.name === want) || sample[kind === 'att' ? 0 : Math.min(1, sample.length - 1)];
-    const t = sh ? sh.rows.map(row => row[letter]).filter(x => x && !/^<|^\[/.test(x)).slice(0, 2).join(' · ') : '';
-    return t;
-  };
-  const rows = DV_SET_COLS.map(([kind, key, label]) => {
-    const v = (r[kind] || {})[key] || '';
-    const req = !(key === 'date' || key === 'norm');
-    const use = v || (req ? dv.cols[kind][key] : '');
-    const same = use === (dv.cols[kind][key] || '');
-    return { kind, key, label, v, use, same, req, h: v ? head(kind, v) : '' };
-  });
-  const changed = rows.filter(x => !x.same).length + (r.unit !== dv.unit ? 1 : 0);
+  const names = (sheets || []).filter(sh => sh && Array.isArray(sh.aoa)).map(dvSheetName);
+  const ai = opts.noAi ? null : await dvAiPropose(sheets);
+  const cur = dvSheets(sheets, dv.sheets);
+  const cfg = { cols: JSON.parse(JSON.stringify(dv.cols)), unit: dv.unit,
+    sheets: { att: cur.att ? dvSheetName(cur.att) : '', work: cur.work ? dvSheetName(cur.work) : '' } };
+  const changedByAi = [];
+  if (ai) {
+    DV_SET_COLS.forEach(([kind, key]) => {
+      const v = (ai[kind] || {})[key] || '';
+      const req = !(key === 'date' || key === 'norm');
+      if ((v || !req) && v !== (cfg.cols[kind][key] || '')) { cfg.cols[kind][key] = v; changedByAi.push(`${kind}.${key}`); }
+    });
+    if (DV_UNITS.includes(ai.unit) && ai.unit !== cfg.unit) { cfg.unit = ai.unit; changedByAi.push('unit'); }
+    if (names.includes(ai.att_sheet) && ai.att_sheet !== cfg.sheets.att) { cfg.sheets.att = ai.att_sheet; changedByAi.push('s.att'); }
+    if (names.includes(ai.work_sheet) && ai.work_sheet !== cfg.sheets.work) { cfg.sheets.work = ai.work_sheet; changedByAi.push('s.work'); }
+  }
+  const sel = (id, v, list) => `<select data-dvm="${id}">${list.map(([k, l]) => `<option value="${esc(k)}"${k === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const mark = k => (changedByAi.includes(k) ? ' dv-aichg' : '');
+  const sheetList = [['', '—'], ...names.map(n => [n, n])];
+  const first = dvPrevHtml(sheets, cfg);
   const res = await dialog({
-    title: 'Návrh sloupců od AI', ok: changed ? 'Použít návrh' : 'Zavřít', cancel: changed ? 'Zrušit' : '', wide: true,
-    html: `<p><b>${esc(fileName || '')}</b>${r.att_sheet || r.work_sheet ? ` <small class="muted">docházka: ${esc(r.att_sheet || '—')} · práce: ${esc(r.work_sheet || '—')}</small>` : ''}</p>
-      <div class="table-card flat"><table class="stack dv-aitab"><thead><tr><th>Co</th><th>Sloupec</th><th>Nadpis v souboru</th><th>Teď</th></tr></thead><tbody>${rows.map(x => `<tr${x.same ? '' : ' class="dv-aichg"'}>
-        <td data-label="Co">${esc(x.label)}</td><td data-label="Sloupec" class="num"><b>${esc(x.use || '—')}</b>${!x.v && x.req ? ' <small class="warn-t">AI nenašla, zůstává</small>' : ''}</td>
-        <td data-label="Nadpis">${esc(x.h || '—')}</td><td data-label="Teď" class="num muted">${esc(dv.cols[x.kind][x.key] || '—')}</td></tr>`).join('')}
-        <tr${r.unit !== dv.unit ? ' class="dv-aichg"' : ''}><td data-label="Co">Strávený čas je v</td><td data-label="Sloupec"><b>${esc({ auto: 'najít sám', min: 'minutách', h: 'hodinách' }[r.unit])}</b></td><td></td><td data-label="Teď" class="muted">${esc({ auto: 'najít sám', min: 'minutách', h: 'hodinách' }[dv.unit])}</td></tr></tbody></table></div>
-      ${r.note ? `<div class="note i">${esc(r.note)}</div>` : ''}
-      <p class="tiny muted">${changed ? 'Změněné řádky jsou zvýrazněné. Po použití se soubor načte znovu a uvidíš, co z něj vyšlo.' : 'Sloupce už jsou nastavené stejně.'} AI dostala jen nadpisy prvních řádků a typ buněk (číslo, čas, datum), žádná jména ani hodnoty.</p>`,
+    title: 'Jak se soubor načte', ok: 'Pokračovat', wide: true,
+    html: `<p><b>${esc(fileName || '')}</b> ${ai ? `<span class="tag acc">${I.sparkle} návrh AI</span>` : (ui.me && ui.me.ai && !opts.noAi ? '' : '<span class="small muted">podle uloženého nastavení</span>')}</p>
+      ${ai && ai.note ? `<div class="note i">${esc(ai.note)}</div>` : ''}
+      <div class="dv-map">
+        <div class="dv-mapgrp"><h4>Docházka</h4>
+          <label class="field${mark('s.att')}"><span>List</span>${sel('s.att', cfg.sheets.att, sheetList)}</label>
+          ${DV_SET_COLS.filter(([k]) => k === 'att').map(([kind, key, label]) => `<label class="field wa-letter${mark(`${kind}.${key}`)}"><span>${esc(label.replace(/^Docházka: /, ''))}</span><input data-dvm="${kind}.${key}" value="${esc(cfg.cols[kind][key] || '')}" maxlength="3" autocapitalize="characters"></label>`).join('')}
+          <p class="tiny muted">Každý den má dva sloupce: příchod a vedle něj odchod. Datum je v řádku nad nimi.</p></div>
+        <div class="dv-mapgrp"><h4>Vykázaná práce</h4>
+          <label class="field${mark('s.work')}"><span>List</span>${sel('s.work', cfg.sheets.work, sheetList)}</label>
+          <div class="wa-colgrid">${DV_SET_COLS.filter(([k]) => k === 'work').map(([kind, key, label]) => `<label class="field wa-letter${mark(`${kind}.${key}`)}"><span>${esc(label.replace(/^Práce: /, ''))}</span><input data-dvm="${kind}.${key}" value="${esc(cfg.cols[kind][key] || '')}" maxlength="3" placeholder="—" autocapitalize="characters"></label>`).join('')}</div>
+          <label class="field${mark('unit')}"><span>Strávený čas</span>${sel('unit', cfg.unit, Object.entries(DV_UNIT_T))}</label></div>
+      </div>
+      <h3 class="dv-prevh">Vzor: co se z toho načte</h3>
+      <div id="dvmPrev">${first.html}</div>
+      <p class="tiny muted">Písmena sloupců jako v Excelu. Když něco nesedí, oprav písmeno nebo list, vzor se hned přepočítá.${ai ? ' AI dostala jen nadpisy prvních řádků a typ buněk, žádná jména ani hodnoty.' : ''}</p>`,
+    onOpen: dlg => {
+      let tm = 0;
+      const read = () => {
+        $$('[data-dvm]', dlg).forEach(el => {
+          const k = el.dataset.dvm;
+          if (k === 'unit') cfg.unit = el.value;
+          else if (k.startsWith('s.')) cfg.sheets[k.slice(2)] = el.value;
+          else { const [kind, key] = k.split('.'); cfg.cols[kind][key] = waLetter(el.value) || ''; }
+        });
+        $('#dvmPrev', dlg).innerHTML = dvPrevHtml(sheets, cfg).html;
+      };
+      $('.dv-map', dlg).addEventListener('input', () => { clearTimeout(tm); tm = setTimeout(read, 250); });
+      $('.dv-map', dlg).addEventListener('change', read);
+    },
+    validate: form => {
+      const miss = DV_SET_COLS.filter(([kind, key]) => key !== 'date' && key !== 'norm' && !waLetter(form.querySelector(`[data-dvm="${kind}.${key}"]`).value));
+      const bad = [...form.querySelectorAll('input[data-dvm]')].filter(el => el.value.trim() && !waLetter(el.value));
+      return bad.length ? 'Sloupec je písmeno jako v Excelu (A až ZZZ).' : miss.length ? `Vyplň sloupec: ${miss.map(x => x[2]).join(', ')}.` : null;
+    },
   });
-  if (!changed || res.value !== 'ok') return false;
-  rows.forEach(x => { dv.cols[x.kind][x.key] = x.use; });
-  dv.unit = DV_UNITS.includes(r.unit) ? r.unit : 'auto';
-  store.note = { kind: 'workaudit', text: `Audit: sloupce souboru docházky a výkonů nastavené podle návrhu AI (${fileName || 'soubor'})`, keep: true };
-  save();
-  return true;
+  if (res.value !== 'ok') return null;
+  // poslední stav polí (i bez čekání na přepočet)
+  $$('#dlgForm [data-dvm]').forEach(el => {
+    const k = el.dataset.dvm;
+    if (k === 'unit') cfg.unit = DV_UNITS.includes(el.value) ? el.value : 'auto';
+    else if (k.startsWith('s.')) cfg.sheets[k.slice(2)] = names.includes(el.value) ? el.value : '';
+    else { const [kind, key] = k.split('.'); cfg.cols[kind][key] = waLetter(el.value) || ''; }
+  });
+  const before = JSON.stringify([dv.cols, dv.unit, dv.sheets]);
+  dv.cols = cfg.cols;
+  dv.unit = cfg.unit;
+  dv.sheets = { att: cfg.sheets.att, work: cfg.sheets.work };
+  if (before !== JSON.stringify([dv.cols, dv.unit, dv.sheets])) save();
+  return { cfg, ai: !!ai };
 }
 
 /* ---------- nahrání souboru ---------- */
@@ -12117,6 +12177,8 @@ async function dvImport(file, opts = {}) {
   const dv = wa.dv;
   let sheets;
   try { sheets = await readTable(file); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return null; }
+  // 2.42.3: vždy nejdřív ukázat, jak se soubor načte (návrh AI, vzor prvního člověka, úprava)
+  if (!(await dvMapDialog(sheets, file.name, opts))) return null;
   const p = dvParse(sheets, dv, dv.unit);
   if (opts.attOnly) p.work = null;
   const a = p.att && p.att.ok ? p.att : null;
@@ -12126,9 +12188,9 @@ async function dvImport(file, opts = {}) {
     const errs = [p.att && p.att.err, p.work && p.work.err].filter(Boolean);
     const go = await dialog({ title: 'V souboru nejsou žádná data', ok: 'Nastavit sloupce', cancel: 'Zavřít',
       html: `<p><b>${esc(file.name)}</b>: ${opts.attOnly ? 'nenašla se docházka' : 'nenašla se docházka ani vykázaná práce'}.</p>${errs.length ? `<ul class="wa-imp">${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
-        <p class="small muted">První list má být Docházka: ve sloupci ${esc(c.att.id)} ID zaměstnance, od sloupce ${esc(c.att.first)} příchod a odchod, nad nimi datum dne. Když má soubor sloupce jinde, nastav je v Nastavení Auditu${ui.me && ui.me.ai ? ', nebo je nech nastavit AI' : ''}.</p>
-        ${DV_AI_BTN() ? `<div class="row gap">${DV_AI_BTN()}</div>` : ''}` });
-    if (go.value === 'ai') { if (await dvAiSetup(sheets, file.name)) return dvImport(file, opts); return null; }
+        <p class="small muted">Docházka (obvykle 2. list): ve sloupci ${esc(c.att.id)} ID zaměstnance, od sloupce ${esc(c.att.first)} příchod a vedle odchod, nad nimi datum dne. Zkus upravit načtení.</p>
+        <div class="row gap"><button class="btn sec" type="submit" value="map" formnovalidate>Upravit načtení</button></div>` });
+    if (go.value === 'map') return dvImport(file, { ...opts, noAi: true });
     if (go.value === 'ok') { Object.assign(ui.wa, { tab: 'nastaveni' }); showView('audit'); renderWorkAudit(); $('#dvColsCard')?.scrollIntoView({ block: 'center' }); }
     return null;
   }
@@ -12172,15 +12234,15 @@ async function dvImport(file, opts = {}) {
         ${prodNew.length ? `<li>evidence práce místo Výroby za ${esc(prodNew.map(monthLabel).join(', '))} (kusy, strávený čas${w && w.norm ? ', norma' : ', bez normy'}),</li>` : ''}
         ${pcsNew ? `<li>kusy podle operací do Auditu (${pcsNew} ${denN(pcsNew)}).</li>` : ''}</ul></div>` : ''}
       <p class="tiny muted">${owns ? 'Říjen 2026 a dřív zůstává ze starých souborů. ' : 'Docházka pro odměny a Výroba za říjen 2026 a dřív se nemění. '}Sloupce změníš v Nastavení Auditu.</p>
-      ${DV_AI_BTN() ? `<div class="row gap dv-aibar"><span class="small muted">Nesedí čísla nebo lidé?</span>${DV_AI_BTN()}</div>` : ''}`,
+      <div class="row gap dv-aibar"><span class="small muted">Nesedí čísla nebo lidé?</span><button class="btn sec small" type="submit" value="map" formnovalidate>Zpět k načtení sloupců</button></div>`,
   });
-  if (res.value === 'ai') { if (await dvAiSetup(sheets, file.name)) return dvImport(file, opts); return null; }
+  if (res.value === 'map') return dvImport(file, { ...opts, noAi: true });
   if (res.value !== 'ok') return null;
   const f = res.form.elements;
   const unit = f.namedItem('unit') ? f.namedItem('unit').value : dv.unit;
   if (w && unit !== dv.unit) {
     dv.unit = DV_UNITS.includes(unit) ? unit : 'auto';
-    const sheet = dvSheets(sheets).work;
+    const sheet = dvSheets(sheets, dv.sheets).work;
     const again = sheet ? dvParseWork(sheet, c.work, dv.unit) : null;
     if (again && again.ok) { p.work = again; w = again; }
   }
@@ -12551,7 +12613,7 @@ function bindWorkAudit() {
         if (!f) return;
         let sh;
         try { sh = await readTable(f); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
-        if (await dvAiSetup(sh, f.name)) { renderWorkAudit(); toast('Sloupce nastavené. Teď soubor nahraj tlačítkem Nahrát docházku a výkony.'); }
+        if (await dvMapDialog(sh, f.name)) { renderWorkAudit(); toast('Načtení nastavené. Teď soubor nahraj tlačítkem Nahrát docházku a výkony.'); }
       };
       inp.click();
       return;
