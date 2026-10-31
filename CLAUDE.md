@@ -34,6 +34,32 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.43):
+
+- Uživatel: „v docházce modul pro import dat … A příjmení, B jméno, C konec trestu, D směnnost
+  (Stálá ranní, Stálá odpolední, Skupina 1, Skupina 2, NEMOC) … modul ‚Konce trestů‘ … přehled po
+  měsících, kdy nám z jakého oddělení odejdou zaměstnanci … AI, ať zkontroluje správnost“;
+  pak „v mobilní verzi ‚Teď v práci‘ rozevírací seznam … rozpad přítomných na oddělení
+  s porovnáním vůči plánu a kdo nedorazil“.
+  - Data: `e.end` (ISO, konec trestu), sanitize, historie `end:` a jen jedna `shift:` (duplicita
+    pryč). Verze dat 39.
+  - Core (před „od listopadu 2026 jediný zdroj“): `END_COLS`, `END_SHIFT_T`, `endShiftOf` (texty →
+    R/O/S1/S2/SICK, `labels` ruční nebo AI), `endDateOf`, `endParse(aoa, cols, {today, labels})`
+    (řádky s `issues` e/w/i, `unknown` texty, `missing` lidé, `sum`), `endApply` (poslední řádek
+    člověka vyhrává, `add` noví), `endsOverview(today, n)` (měsíce, oddělení `endDeptOf`: Vedoucí /
+    Bez skupiny, po termínu, bez data, `remain`), `endsSheets`, `endAiSample` (bez dat!),
+    `staffNow(sd, slot, {now})` (plán směny po odděleních proti `dvDay`, `missing`, `wait`
+    odpolední před 14:00, `extra`).
+  - Server: `odm_ai_ends`, `ODM_AI_ENDS_SYSTEM`, akce `ai_ends` (`{sheet, labels ≤ 20}`).
+  - UI: `#btnEnds`/`#endFile` v Docházce, `endImport` (dialog, `[data-endc]` sloupce,
+    `[data-endl]` texty, `[data-endall]`), pohled `konce` (`renderEnds`, `ui.end.n`,
+    `[data-endn]`, `[data-endxlsx]`, `[data-endperson]`), `#pEnd` u člověka (uloží na focusout),
+    dlaždice a `homeTileMeta`. Úvod: `<details class="hh-nowbox">` + `homeNowHtml` (`#homeNow`,
+    `ui.homeNowOpen`, překreslí i `chooseShift`).
+  - Testy: core „Konce trestů (2.43)“ a „Teď v práci (2.43)“, `test_odmeny` `test_ends_check`
+    (426 pro 38), nový `tests/e2e_konce.js`, `e2e_rychla` (rozbalení), `e2e_mobil` (16 částí),
+    `e2e_upgrade_prev` 2.41 → 2.43.
+
 Stav k 31. 10. 2026 (verze 2.42.4):
 
 - Uživatel poslal vzor docházky (prázdná hlavička, jen list „Docházka“, A–BN): A1 „WPA kód“,
@@ -1799,7 +1825,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.42.1 | `952edb7` | Report docházky – nahraný den, upozornění na párování, ID podle číslic; Rychlá kontrola – klepnutím na člověka body kontroly a zápis |
 | 2.42.2 | `9df70cc` | ✦ Nastavit sloupce souboru Docházka a výkony přes AI (jen nadpisy a typy buněk) |
 | 2.42.3 | `ecfee9f` | docházka z 2. listu, okno Jak se soubor načte při každém nahrání (AI návrh, vzor prvního člověka, úprava) (data verze 38) |
-| 2.42.4 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: docházka podle vzoru – datum v hlavičce bez roku („01.10. Čt“), WPA kód, součty na konci |
+| 2.42.4 | `fa9101b` | docházka podle vzoru – datum v hlavičce bez roku („01.10. Čt“), WPA kód, součty na konci |
+| 2.43 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Konce trestů (import se směnností a kontrolou, AI kontrola, přehled po měsících a odděleních), rozbalovací Teď v práci na telefonu (data verze 39) |
 
 Verze 2.1 přidala:
 
@@ -1911,7 +1938,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `38` (od 2.42.3):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `39` (od 2.43):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1964,6 +1991,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `shortage` (2.27): Shortage, nahrané seznamy chybějících dílů (viz níže);
   - `workAudit.dv` (2.37): docházka a výkony z jednoho souboru (viz Audit);
   - `workAudit.dv.sheets` (2.42.3): zapamatované listy souboru docházky a výkonů;
+  - `employees[].end` (2.43): konec trestu;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
@@ -2048,7 +2076,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
+  `konce` (2.43), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
   (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
@@ -2188,8 +2216,8 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 (jen v kontejneru, **nikdy ne na ostrém serveru**).
 
 ```bash
-python3 -m unittest discover -s tests   # 29 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 94 testů: proti původní aplikaci + opravy + 2.1 až 2.42
+python3 -m unittest discover -s tests   # 30 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
+node tests/test_core.js                 # 96 testů: proti původní aplikaci + opravy + 2.1 až 2.42
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -2254,6 +2282,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
+  - `e2e_konce.js` (2.43): import konců trestů a směnnosti, kontroly řádků, Konce trestů, Excel, telefon;
   - `e2e_rychla.js` (2.39): Rychlá kontrola na telefonu (dlaždice, plovoucí menu, počet, směna,
     oddělení, jen lidé v práci, přednost, výměna, sdílení, uložení, zápis, tmavý režim, 320 px);
   - `e2e_upgrade_prev.js`: aktualizace z předchozí verze na aktuální na Apachi (data

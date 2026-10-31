@@ -2097,7 +2097,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=38;
+const DATA_VERSION=39;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -2229,6 +2229,8 @@ function sanitizeState(input){
     if(SHIFT_KEYS.includes(e.shift))emp.shift=e.shift;
     /* nemoc (2.9): od kdy; dočasně se nepočítá do kapacit směn */
     if(ISO_DAY.test(String(e.sick||"")))emp.sick=String(e.sick);
+    /* konec trestu (2.43): datum, kdy člověk odchází; podle něj modul Konce trestů */
+    if(ISO_DAY.test(String(e.end||"")))emp.end=String(e.end);
     /* původní zařazení z verze 2.3: snímek při převodu, dokud ho vedoucí nesmaže */
     const lg=obj(e.legacy);
     if(e.legacy&&typeof e.legacy==="object"){
@@ -2494,6 +2496,7 @@ function describeChanges(a,b,meta){
     }
     if(!!x.shortFri!==!!y.shortFri)add("person",n+": zkrácený pátek "+(y.shortFri?"zapnut":"vypnut"),{key:k});
     if(!!x.sick!==!!y.sick)add("person",n+(y.sick?": nemoc, dočasně se nepočítá do kapacit":": zpět po nemoci, zase v kapacitách"),{key:k});
+    if((x.end||"")!==(y.end||""))add("person","",{key:k,m:"end:"+k,p:n+": konec trestu ",v0:x.end?endDateText(x.end):"neuveden",v1:y.end?endDateText(y.end):"neuveden"});
     if((x.note||"")!==(y.note||""))add("person",n+": upravena poznámka",{key:k,m:"note:"+k});
     if((x.wid||"")!==(y.wid||""))widMoves.push([k,x.wid||"",y.wid||""]);
     const sx=x.skills||{},sy=y.skills||{};
@@ -5021,6 +5024,152 @@ function dvAiSample(sheets,employees){
   flat.forEach(([r,k],i)=>{r[k]=masked[i];});
   return out;
 }
+/* ================= Konce trestů a směnnost (2.43) =================
+   Import tabulky: A příjmení, B jméno, C konec trestu, D směnnost (Stálá ranní, Stálá odpolední,
+   Skupina 1, Skupina 2, NEMOC). Aktualizuje u lidí směnu, nemoc a konec trestu; přehled po
+   měsících ukazuje, kdy a z jakého oddělení lidé odchází. */
+const END_COLS={last:"A",first:"B",end:"C",shift:"D"};
+const END_SHIFT_T={R:"Stálá ranní",O:"Stálá odpolední",S1:"Skupina 1",S2:"Skupina 2",SICK:"NEMOC"};
+function endDateText(iso){const p=String(iso||"").split("-");return p.length===3?(+p[2])+". "+(+p[1])+". "+p[0]:"";}
+/** Text směnnosti → R, O, S1, S2, SICK; prázdné ""; neznámé null. labels = ruční nebo AI převod. */
+function endShiftOf(v,labels){
+  const t=norm(String(v==null?"":v)).replace(/[._\-–]+/g," ").replace(/\s+/g," ").trim();
+  if(!t)return "";
+  if(labels&&labels[t])return labels[t];
+  if(/^(nemoc|nem|pn|neschopnost|pracovni neschopnost|nemocny|nemocna)$/.test(t))return "SICK";
+  if(/^(stala )?ranni( stala)?$|^r$|^sr$|^ranni smena$/.test(t))return "R";
+  if(/^(stala )?odpoledni( stala)?$|^o$|^so$|^odpoledni smena$/.test(t))return "O";
+  if(/^(smennost )?(skupina|skup|sk|s) ?1$|^1 ?(skupina|sk)$/.test(t))return "S1";
+  if(/^(smennost )?(skupina|skup|sk|s) ?2$|^2 ?(skupina|sk)$/.test(t))return "S2";
+  return null;
+}
+function endKey(t){return norm(String(t==null?"":t)).replace(/\s+/g," ").trim();}
+/** Konec trestu z buňky: datum Excelu, Date, „31.12.2026“, ISO. */
+function endDateOf(v){
+  if(v==null||v==="")return "";
+  const d=cellToDateTime(v);
+  return d&&d.y>=1990&&d.y<=2100&&d.m>=1&&d.m<=12&&d.d>=1&&d.d<=31?d.y+"-"+String(d.m).padStart(2,"0")+"-"+String(d.d).padStart(2,"0"):null;
+}
+/** Přečte řádky a zkontroluje je proti Lidem. Vrací {rows, header, labels (neznámé texty směnnosti),
+    sum}. Řádek: {n, last, first, key, e, swapped, end, endRaw, shift, shiftRaw, issues[{l:e|w|i, t}]}. */
+function endParse(aoa,cols,opts){
+  opts=opts||{};cols=Object.assign({},END_COLS,cols||{});
+  const today=opts.today||todayIso(),labels=opts.labels||{};
+  const ix=k=>waIndex(cols[k]);
+  const txt=v=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
+  const rows=[],seen=new Map(),unknown=new Map();let header=false;
+  (aoa||[]).forEach((row,i)=>{
+    row=row||[];
+    const last=txt(row[ix("last")]),first=txt(row[ix("first")]),endRaw=row[ix("end")],shiftRaw=txt(row[ix("shift")]);
+    if(!last&&!first&&!txt(endRaw)&&!shiftRaw)return;
+    if(i<5&&/prijmeni|jmeno|^name/.test(norm(last+" "+first))&&endDateOf(endRaw)==null){header=true;return;}
+    const issues=[],add=(l,t)=>issues.push({l,t});
+    if(!last||!first)add("e","chybí "+(!last?"příjmení":"jméno")+", řádek se přeskočí");
+    const key=(norm(last)+"|"+norm(first));
+    let e=S.employees[key]||null,swapped=false;
+    if(!e&&last&&first){const k2=norm(first)+"|"+norm(last);if(S.employees[k2]){e=S.employees[k2];swapped=true;add("w","jméno a příjmení jsou prohozené, spáruje se s "+(e.last+" "+e.first).trim());}}
+    const end=endDateOf(endRaw);
+    if(end===null)add("e","konec trestu „"+txt(endRaw)+"“ není datum, nezmění se");
+    else if(!end)add("w","konec trestu chybí, nezmění se");
+    else if(end<today)add("w","konec trestu "+endDateText(end)+" už minul");
+    else if(daysBetween(today,end)>365*40)add("w","konec trestu "+endDateText(end)+" je přes 40 let");
+    let shift=endShiftOf(shiftRaw,labels);
+    if(shift===null){add("e","směnnost „"+shiftRaw+"“ neznám, nezmění se");const k=endKey(shiftRaw);unknown.set(k,(unknown.get(k)||{text:shiftRaw,n:0}));unknown.get(k).n++;}
+    else if(!shift)add("w","směnnost chybí, nezmění se");
+    if(last&&first){
+      const k=e?e.key:key;
+      if(seen.has(k))add("e","stejný člověk už je na řádku "+seen.get(k)+", použije se poslední");
+      seen.set(k,i+1);
+      if(!e)add("w","v Lidech není, přidá se jako nový (bez skupiny)");
+      else{
+        if(e.excluded)add("w","v Lidech je vyřazený");
+        if(end&&e.end&&e.end!==end)add("i","konec trestu "+endDateText(e.end)+" → "+endDateText(end));
+        if(shift&&shift!=="SICK"&&(e.shift||"")!==shift)add("i","směna "+shiftName(e.shift)+" → "+shiftName(shift));
+        if(shift==="SICK"&&!e.sick)add("i","nemoc od dneška");
+        if(shift&&shift!=="SICK"&&e.sick)add("i","zpět po nemoci");
+      }
+    }
+    rows.push({n:i+1,last,first,key:e?e.key:key,e,swapped,end,endRaw:txt(endRaw),shift,shiftRaw,issues});
+  });
+  const inFile=new Set(rows.filter(r=>r.last&&r.first).map(r=>r.key));
+  const missing=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&!inFile.has(e.key)).map(e=>(e.last+" "+e.first).trim()).sort((a,b)=>a.localeCompare(b,"cs"));
+  const cnt=l=>rows.filter(r=>r.issues.some(x=>x.l===l)).length;
+  return {rows,header,unknown:[...unknown.values()],missing,
+    sum:{rows:rows.length,err:cnt("e"),warn:cnt("w"),fresh:rows.filter(r=>!r.e&&r.last&&r.first).length,
+      ends:rows.filter(r=>r.end).length,shifts:rows.filter(r=>r.shift&&r.shift!=="SICK").length,sick:rows.filter(r=>r.shift==="SICK").length}};
+}
+/** Zapíše řádky do Lidí (poslední řádek člověka vyhrává). Nový člověk jen s opts.add. */
+function endApply(parsed,opts){
+  opts=opts||{};const today=opts.today||todayIso();
+  const out={ends:0,shifts:0,sick:0,back:0,added:0,skipped:0};
+  const lastRow=new Map();parsed.rows.forEach(r=>{if(r.last&&r.first)lastRow.set(r.key,r);});
+  parsed.rows.forEach(r=>{
+    if(!r.last||!r.first){out.skipped++;return;}
+    if(lastRow.get(r.key)!==r)return;   // stejný člověk víckrát: platí poslední řádek
+    let e=S.employees[r.key];
+    if(!e){
+      if(!opts.add){out.skipped++;return;}
+      e=S.employees[r.key]={key:r.key,first:r.first,last:r.last,positionId:null,level:null,note:""};out.added++;
+    }
+    if(r.end&&e.end!==r.end){e.end=r.end;out.ends++;}
+    if(r.shift==="SICK"){if(!e.sick){e.sick=today;out.sick++;}}
+    else if(r.shift){
+      if(e.shift!==r.shift){e.shift=r.shift;out.shifts++;}
+      if(e.sick){delete e.sick;out.back++;}
+    }
+  });
+  return out;
+}
+/** Přehled odchodů: po měsících a odděleních od tohoto měsíce na n měsíců. */
+function endDeptOf(e){return isLead(e)?"Vedoucí":empDept(e)||"Bez skupiny";}
+function endsOverview(today,n){
+  today=today||todayIso();n=n||12;
+  const months=[];let y=+today.slice(0,4),m=+today.slice(5,7);
+  for(let i=0;i<n;i++){months.push(y+"-"+String(m).padStart(2,"0"));m++;if(m>12){m=1;y++;}}
+  const people=Object.values(S.employees).filter(e=>!e.excluded);
+  const order=[...departments(),"Bez skupiny","Vedoucí"];
+  const item=e=>{const p=e.positionId?S.positions.find(x=>x.id===e.positionId):null;
+    return {key:e.key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",dept:endDeptOf(e),group:p?p.name:"",shift:e.shift||"",sick:!!e.sick,end:e.end||"",days:e.end?daysBetween(today,e.end):null};};
+  const all=people.map(item);
+  const deptNames=order.filter(d=>all.some(x=>x.dept===d));
+  all.forEach(x=>{if(!deptNames.includes(x.dept))deptNames.push(x.dept);});
+  const byEnd=(a,b)=>a.end.localeCompare(b.end)||a.name.localeCompare(b.name,"cs");
+  const overdue=all.filter(x=>x.end&&x.end<today).sort(byEnd),noEnd=all.filter(x=>!x.end).sort((a,b)=>a.name.localeCompare(b.name,"cs"));
+  const last=months[months.length-1];
+  const later=all.filter(x=>x.end&&x.end.slice(0,7)>last).sort(byEnd);
+  const mo=months.map(id=>{const list=all.filter(x=>x.end&&x.end>=today&&x.end.slice(0,7)===id).sort(byEnd);
+    return {m:id,total:list.length,people:list,byDept:Object.fromEntries(deptNames.map(d=>[d,list.filter(x=>x.dept===d)]))};});
+  const depts=deptNames.map(d=>{
+    const head=all.filter(x=>x.dept===d).length,od=overdue.filter(x=>x.dept===d).length;
+    let left=od;const leave=mo.map(x=>x.byDept[d].length),remain=leave.map(c=>{left+=c;return head-left;});
+    return {name:d,head,overdue:od,leave,remain,later:later.filter(x=>x.dept===d).length,noEnd:noEnd.filter(x=>x.dept===d).length};
+  });
+  return {today,months:mo,depts,overdue,noEnd,later,head:all.length,
+    next3:mo.slice(0,3).reduce((s,x)=>s+x.total,0),thisMonth:mo[0]?mo[0].total:0,leaving:mo.reduce((s,x)=>s+x.total,0)};
+}
+/** Excel: oddělení × měsíce a seznam lidí. */
+function endsSheets(ov){
+  const head=["Oddělení","Teď lidí","Po termínu",...ov.months.map(x=>monthLabel(x.m)),"Později","Bez data","Zůstane po "+ov.months.length+" měs."];
+  const rows=ov.depts.map(d=>[d.name,d.head,d.overdue,...d.leave,d.later,d.noEnd,d.remain[d.remain.length-1]]);
+  const tot=["Celkem",ov.head,ov.overdue.length,...ov.months.map(x=>x.total),ov.later.length,ov.noEnd.length,ov.depts.reduce((s,d)=>s+d.remain[d.remain.length-1],0)];
+  const list=[...ov.overdue,...ov.months.flatMap(x=>x.people),...ov.later,...ov.noEnd];
+  return [{name:"Po měsících",rows:[["Konce trestů – odchody po měsících a odděleních, stav k "+endDateText(ov.today)],[],head,...rows,tot]},
+    {name:"Lidé",rows:[["Příjmení a jméno","ID","Oddělení","Skupina","Směna","Konec trestu","Za dní"],
+      ...list.map(x=>[x.name,x.wid,x.dept,x.group,x.sick?"NEMOC":shiftName(x.shift),x.end?endDateText(x.end):"",x.days==null?"":x.days])]}];
+}
+/** Ukázka pro AI (2.43): jen nadpisy, typy buněk a texty sloupce směnnosti (jen když je to
+    výčet do 20 hodnot, ať neodejdou jména). Konce trestů ani jména se neposílají. */
+function endAiSample(sheet,cols,employees){
+  const s=dvAiSample([sheet],employees)[0]||{name:"",rows:[]};
+  /* konec trestu je citlivý údaj: z dat zůstane jen typ */
+  s.rows=s.rows.map(r=>Object.fromEntries(Object.entries(r).map(([k,v])=>[k,/^<datum/.test(v)?"<datum>":/^\d{1,2}\.\s?\d{1,2}\.\s?\d{2,4}$/.test(v)?"<datum>":v])));
+  cols=Object.assign({},END_COLS,cols||{});
+  const ix=waIndex(cols.shift),vals=new Map();
+  (sheet.aoa||[]).slice(0,5000).forEach(r=>{const t=String((r||[])[ix]==null?"":(r||[])[ix]).replace(/\s+/g," ").trim();if(t&&t.length<=40&&!/\d{3,}/.test(t))vals.set(endKey(t),t);});
+  const labels=vals.size<=20?maskNamesMany([...vals.values()],employees||[]).texts:[];
+  return {sheet:s,labels};
+}
+
 /* ---------- od listopadu 2026 jediný zdroj (2.42) ----------
    Soubor Docházka a výkony plní za měsíce od DV_FROM docházku pro odměny (S.periods), evidenci
    práce místo Výroby (S.production) a obsazenost s kusy v Auditu. Říjen 2026 a dřív zůstává
@@ -5226,6 +5375,43 @@ function staffReal(iso,mg,opts){
   });
   const dv=S.workAudit.dv,f=dv.files.filter(z=>z.from&&z.to&&z.from<=iso&&iso<=z.to).sort((a,b)=>b.at-a.at)[0];
   return {iso,...t,depts,at:f?f.at:0,by:f?f.by:""};
+}
+/** Rozpad „Teď v práci“ (2.43): po odděleních plán směny ze zařazení proti lidem, kteří podle
+    příchodů přišli; kdo z plánu nedorazil a kdo přišel mimo plán. slot am | pm | jinak obě.
+    Odpolední, která ještě nezačala (dnes před 14:00), se nehlásí jako nedorazili, jen „čeká se“. */
+function staffNow(sd,slot,opts){
+  opts=opts||{};
+  const d=dvDay(sd.day,opts);
+  if(!d.n)return null;
+  const slots=slot==="am"||slot==="pm"?[slot]:["am","pm"];
+  const hour=new Date(opts.now||Date.now()).getHours(),waitPm=d.today&&hour<14;
+  const came=new Map();d.people.forEach(x=>{if(x.e)came.set(x.e.key,x);});
+  const who=(e,x)=>({key:e?e.key:"",name:e?(e.last+" "+e.first).trim():"",wid:e?(e.wid||""):(x?x.wid:""),in:x?x.in:null,out:x?x.out:null,now:!!(x&&x.now)});
+  const map=new Map(),get=dept=>{if(!map.has(dept))map.set(dept,{dept,plan:0,came:0,now:0,sick:0,missing:[],wait:[],extra:[]});return map.get(dept);};
+  const planned=new Set();
+  sd.depts.forEach(r=>{
+    const g=get(r.dept);g.sick=r.sick.length;
+    slots.forEach(sl=>r[sl].forEach(e=>{
+      planned.add(e.key);g.plan++;
+      const x=came.get(e.key);
+      if(x){g.came++;if(x.now)g.now++;}
+      else if(sl==="pm"&&waitPm)g.wait.push(who(e,null));
+      else g.missing.push(who(e,null));
+    }));
+  });
+  d.people.forEach(x=>{
+    if(x.e&&(isLead(x.e)||planned.has(x.e.key)))return;
+    const sl=x.in!=null?(x.in<DV_PM_FROM?"am":"pm"):"am";
+    if(!slots.includes(sl))return;
+    const g=get(x.e?(empDept(x.e)||"Bez skupiny"):"Neznámé ID");
+    g.came++;if(x.now)g.now++;g.extra.push(who(x.e,x));
+  });
+  const byName=(a,b)=>(a.name||a.wid).localeCompare(b.name||b.wid,"cs",{numeric:true});
+  const depts=[...map.values()].filter(g=>g.plan||g.came);
+  depts.forEach(g=>{g.missing.sort(byName);g.wait.sort(byName);g.extra.sort(byName);g.diff=g.came-g.plan;});
+  const t={plan:0,came:0,now:0,missing:0,wait:0,extra:0};
+  depts.forEach(g=>{t.plan+=g.plan;t.came+=g.came;t.now+=g.now;t.missing+=g.missing.length;t.wait+=g.wait.length;t.extra+=g.extra.length;});
+  return {day:sd.day,slots,depts,total:t,waitPm};
 }
 /* ================= Report docházky: plnění denního požadavku (2.40) =================
    Z nahraných příchodů (Audit, docházka a výkony): kolik lidí ze skupin Matice přišlo proti

@@ -62,6 +62,24 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.43
+
+- **Konce trestů a směnnost z tabulky.** V Docházce tlačítko **Nahrát konce trestů a směnnost**:
+  A příjmení, B jméno, C konec trestu, D směnnost (Stálá ranní, Stálá odpolední, Skupina 1,
+  Skupina 2, NEMOC). Před zápisem okno s kontrolou každého řádku: prohozené jméno a příjmení,
+  datum, které není datum nebo už minulo, neznámý text směnnosti (jde ručně přiřadit), stejný
+  člověk dvakrát, nový člověk (přidá se bez skupiny), kdo z Lidí v souboru chybí. Chybné údaje
+  se nezapíšou, prázdné nic nemažou. NEMOC zapne nemoc od dneška, jiná směnnost ji vypne.
+- **AI kontrola souboru** (když je zapnutá): zkontroluje rozložení sloupců a přiřadí neobvyklé
+  texty směnnosti. Dostane jen nadpisy, typy buněk a texty směnnosti, **žádná jména ani data
+  konců trestů**.
+- **Nový modul Konce trestů**: kolik lidí odchází tento měsíc, do 3 měsíců, kdo je po termínu,
+  tabulka oddělení × měsíce (6, 12 nebo 24 měsíců) se sloupcem Zůstane, seznam lidí po měsících
+  a odděleních, Excel. Konec trestu jde zadat i u člověka v Lidech.
+- **Úvod na telefonu: rozbalovací „Teď v práci“.** Po odděleních pruh přišlo / plán, rozdíl,
+  kdo z plánu nedorazil a kdo přišel mimo plán; podle zvolené směny (odpolední před 14:00 „čeká“).
+- **Verze dat 39:** stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.42.4
 
 - **Docházka podle vzoru docházkového systému.** Hlavička dne je text „01.10. Čt“ (den, měsíc

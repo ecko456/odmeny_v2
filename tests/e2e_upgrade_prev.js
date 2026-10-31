@@ -19,7 +19,7 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.41$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.42\\.4$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.43$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
@@ -168,7 +168,7 @@ const STATE = added => `(() => {
   const work = await page.evaluate(() => audDays(isoWeek(todayIso()).id).includes(todayIso()));
   if (work) { await page.click('[data-qksave]'); await saved(page); }
   // Audit (2.42): skupina Matice u skupiny Auditu a sloupec normy
-  await page.evaluate(() => { S.workAudit.groups[0].mg = ['g_brus']; S.workAudit.dv.cols.work.norm = 'K'; S.workAudit.dv.sheets = { att: 'List2', work: '' }; save(); });
+  await page.evaluate(() => { S.workAudit.groups[0].mg = ['g_brus']; S.workAudit.dv.cols.work.norm = 'K'; S.workAudit.dv.sheets = { att: 'List2', work: '' }; S.employees['adámek|aleš'].end = '2027-02-28'; save(); });
   await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -183,6 +183,8 @@ const STATE = added => `(() => {
     check(its.length === drawn.length && its.every(i => drawn.includes(i.key)), `rychlá kontrola po novém přihlášení: ${JSON.stringify(its)}`);
   }
   check(JSON.stringify(final.added['workAudit.groups.0.mg']) === '["g_brus"]' && final.added['workAudit.dv.cols.work.norm'] === 'K' && final.added['workAudit.dv.sheets'].att === 'List2', `Audit 2.42 po novém přihlášení: ${JSON.stringify(final.added)}`);
+  check(final.st.employees['adámek|aleš'] && final.st.employees['adámek|aleš'].end === '2027-02-28', 'konec trestu (2.43) po novém přihlášení');
+  if (final.st.employees['adámek|aleš']) delete final.st.employees['adámek|aleš'].end;
   const keep = JSON.parse(JSON.stringify(before.st));
   // přibyl jen plán tohoto týdne (rychlá kontrola) a záznam v historii; ostatní beze změny
   const logNow = new Set(final.st.log.map(x => JSON.stringify(x)));

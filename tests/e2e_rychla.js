@@ -235,6 +235,20 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
   check(await overflow(page) <= 0, `úvod se skutečností: posun do strany ${await overflow(page)} px`);
   await page.waitForTimeout(1700);
   await page.screenshot({ path: path.join(shots, '07-uvod-prichody.png'), fullPage: true });
+  // Rozbalovací Teď v práci (2.43): oddělení s pruhem, kdo z plánu nedorazil
+  check(await page.isHidden('#homeNow'), 'rozpad je sbalený');
+  await page.click('.hh-nowbox > summary');
+  await page.waitForSelector('#homeNow .hn-dept');
+  const hn = await page.evaluate(() => {
+    const x = staffNow(staffDay(), ui.homeShift);
+    return { ui: [...document.querySelectorAll('#homeNow .hn-dept')].map(d => [d.querySelector('.hn-head b').textContent, d.querySelector('.hn-head .num').textContent.replace(/\s+/g, ''), d.querySelectorAll('.hn-chip.miss').length]),
+      core: x.depts.map(d => [d.dept, `${d.came}/${d.plan}`, d.missing.length]), open: ui.homeNowOpen, miss: x.total.missing };
+  });
+  check(JSON.stringify(hn.ui) === JSON.stringify(hn.core) && hn.open === true && hn.miss > 0, `rozpad po odděleních: ${JSON.stringify(hn)}`);
+  check(/nedorazilo/.test(await text(page, '#homeNow .hn-sum')) && /Nedorazili/.test(await text(page, '#homeNow')), 'souhrn a nedorazili');
+  check(await overflow(page) <= 0, `rozpad: posun do strany ${await overflow(page)} px`);
+  await page.screenshot({ path: path.join(shots, '07b-ted-v-praci.png'), fullPage: true });
+  await page.click('.hh-nowbox > summary');
 
   // Sobota 31. 10. (2.40.1): s dnešními příchody úvod ukáže dnešek (mimo plán), bez nich plán
   // na pondělí, poslední nahrané příchody a výzvu k nahrání.

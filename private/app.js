@@ -391,6 +391,7 @@ function renderAll() {
   if (ui.view === 'audit') renderWorkAudit(); else renderWaBadge();
   if (ui.view === 'plankap') renderCapPlan();
   if (ui.view === 'rychla') renderQuick();
+  if (ui.view === 'konce') renderEnds();
   renderSaveState();
   renderLogBadge();
 }
@@ -412,6 +413,7 @@ function showView(name) {
   if (name === 'audit') renderWorkAudit();
   if (name === 'plankap') renderCapPlan();
   if (name === 'rychla') renderQuick();
+  if (name === 'konce') renderEnds();
   closeFab();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
@@ -527,6 +529,7 @@ function bindPhoneUi() {
   });
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && ui.fabOpen) { closeFab(); $('#fab').focus(); } });
   $('#homeView').addEventListener('click', homeClick);
+  $('#homeView').addEventListener('toggle', event => { if (event.target.matches && event.target.matches('.hh-nowbox')) ui.homeNowOpen = event.target.open; }, true);
   // Úvodní text pod nadpisem je na telefonu na dva řádky, klepnutím se rozbalí celý.
   $('#main').addEventListener('click', event => {
     const lede = event.target.closest('.page-head .lede');
@@ -557,7 +560,7 @@ function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm'
 function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
 function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
 function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
-const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['vyroba', 'Výroba'], ['audit', 'Audit'], ['nastaveni', 'Nastavení']];
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['vyroba', 'Výroba'], ['audit', 'Audit'], ['nastaveni', 'Nastavení']];
 
 function homeTileMeta(view, sd) {
   const p = curPeriod();
@@ -571,6 +574,7 @@ function homeTileMeta(view, sd) {
     case 'matice': { const n = departments().length; return `${n} ${n === 1 ? 'oddělení' : 'oddělení'}`; }
     case 'plankap': { const a = capPlanAll(); return !a.setN ? 'potřeba lidí' : a.tot.hire ? `doplnit ${a.tot.hire}` : a.tot.trainN ? `doškolit ${a.tot.trainN}` : 'v pořádku'; }
     case 'dochazka': return p ? 'nahráno' : 'nahrát export';
+    case 'konce': { const o = endsOverview(todayIso(), 3); return o.thisMonth ? `tento měsíc ${o.thisMonth}` : o.next3 ? `do 3 měsíců ${o.next3}` : 'odchody po měsících'; }
     case 'vyroba': return prodPeriod() ? 'evidence práce' : 'nahrát evidenci';
     case 'protokoly': {
       const books = S.logbooks || [];
@@ -642,7 +646,8 @@ function renderHome(unfold = false) {
       <p class="hh-sub">${off ? `Dnes je ${esc(dayLong(sd.day))} · ${offT}, směna mimo plán` : sd.today ? `Dnes je ${esc(dayLong(sd.day))}` : `Dnes se nepracuje · plán na ${esc(dayLong(sd.day))}`}</p>
       <p class="hh-cap">${real ? `V práci podle příchodů${real.at ? ` · nahráno ${new Date(real.at).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Plánovaná obsazenost'}</p>
       <div class="hh-big${real ? ' real' : ''}">${big('am')}${big('pm')}</div>
-      ${real ? `<p class="hh-now"><span class="hh-dot" aria-hidden="true"></span>Teď v práci <b class="num">${real.now}</b> z ${real.n} ${real.n === 1 ? 'příchodu' : 'příchodů'}${real.lead ? ` · vedoucí ${real.lead}` : ''}</p>` : ''}
+      ${real ? `<details class="hh-nowbox"${ui.homeNowOpen ? ' open' : ''}><summary class="hh-now"><span class="hh-dot" aria-hidden="true"></span><span>Teď v práci <b class="num">${real.now}</b> z ${real.n} ${real.n === 1 ? 'příchodu' : 'příchodů'}${real.lead ? ` · vedoucí ${real.lead}` : ''}</span><span class="hh-more">po odděleních${I.back}</span></summary>
+        <div class="hn-panel" id="homeNow">${homeNowHtml(sd, sel)}</div></details>` : ''}
       ${flags ? `<div class="hh-flags">${flags}</div>` : ''}
     </section>
     <div class="seg" role="radiogroup" aria-label="Směna, kterou dnes řídíš" data-on="${sel}">
@@ -664,6 +669,28 @@ function renderHome(unfold = false) {
   </div>`;
   setWidths(box);
   $('#homeLock').onclick = () => lockApp();
+}
+/* Rozbalovací rozpad „Teď v práci“ (2.43): oddělení s pruhem přišlo / plán, kdo nedorazil
+   a kdo přišel mimo plán. Směna podle volby na úvodu (bez volby obě). */
+function homeNowHtml(sd, sel) {
+  const x = staffNow(sd, sel === 'am' || sel === 'pm' ? sel : '');
+  if (!x) return '';
+  const t = x.total;
+  const clock = m => (m == null ? '' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
+  const chip = (p, cls) => `<span class="hn-chip ${cls}"><b>${esc(p.name || `ID ${p.wid}`)}</b>${p.name && p.wid ? `<small>ID ${esc(p.wid)}</small>` : ''}${p.in != null ? `<small>${clock(p.in)}</small>` : ''}</span>`;
+  const slotT = x.slots.length === 2 ? 'obě směny' : x.slots[0] === 'am' ? 'ranní' : 'odpolední';
+  return `<div class="hn-sum"><span><b class="num">${t.came}</b> přišlo z plánu <b class="num">${t.plan}</b> · ${slotT}</span>${t.missing ? `<span class="hn-bad">${t.missing} nedorazilo</span>` : '<span class="hn-good">všichni z plánu jsou tu</span>'}${t.wait ? `<span class="muted">${t.wait} odpolední čeká</span>` : ''}</div>
+    ${x.depts.map(g => {
+      const pct = g.plan ? Math.min(100, g.came / g.plan * 100) : 100;
+      const st = !g.plan ? 'extra' : g.missing.length ? 'short' : 'ok';
+      return `<div class="hn-dept ${st}">
+        <div class="hn-head"><b>${esc(g.dept)}</b><span class="num">${g.came}<small> / ${g.plan}</small></span>${g.plan && g.diff ? `<em class="${g.diff < 0 ? 'neg' : 'pos'}">${g.diff > 0 ? '+' : '−'}${Math.abs(g.diff)}</em>` : ''}</div>
+        <div class="hn-bar" role="img" aria-label="${esc(`${g.dept}: přišlo ${g.came} z plánu ${g.plan}`)}"><i data-w="${pct.toFixed(1)}"></i></div>
+        <p class="hn-meta">${[`teď ${g.now}`, g.sick ? `${g.sick} v nemoci` : '', g.wait.length ? `${g.wait.length} odpolední čeká` : ''].filter(Boolean).join(' · ')}</p>
+        ${g.missing.length ? `<div class="hn-who"><span class="hn-lab">Nedorazili</span>${g.missing.map(p => chip(p, 'miss')).join('')}</div>` : ''}
+        ${g.extra.length ? `<div class="hn-who"><span class="hn-lab">Mimo plán</span>${g.extra.map(p => chip(p, 'extra')).join('')}</div>` : ''}
+      </div>`;
+    }).join('')}`;
 }
 /* Řádky oddělení na úvodu: plán ze zařazení, se skutečností podle příchodů navíc oddělení,
    která v plánu nejsou (Bez skupiny, Neznámé ID). */
@@ -713,6 +740,14 @@ function chooseShift(k) {
   if (hint) hint.remove();
   const open = $('.home-open', home);
   open.innerHTML = homeOpenHtml(staffDay(), k);
+  const now = $('#homeNow', home);   // rozpad Teď v práci podle zvolené směny (2.43)
+  if (now) {
+    let sd = staffDay();
+    const today = todayIso();
+    if (!sd.today && dvLastPres(today) === today) sd = staffDay(today, true);
+    now.innerHTML = homeNowHtml(sd, k);
+    setWidths(now);
+  }
   open.hidden = false;
   if (first && !reducedMotion()) {
     open.classList.add('unfold');
@@ -1581,6 +1616,7 @@ function renderPersonDetail() {
         <label class="field"><span>Směna</span><select id="pShift"><option value="">— bez směny —</option>${SHIFTS.map(([k, label]) => `<option value="${k}"${shiftOf(e) === k ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select></label>
         <label class="field"><span>Poznámka</span><input type="text" id="pNote" value="${esc(e.note || '')}" placeholder="volitelné" maxlength="500"></label>
         <label class="field"><span>ID v evidenci práce</span><input type="text" id="pWid" value="${esc(e.wid || '')}" placeholder="volitelné" maxlength="40" autocomplete="off"></label>
+        <label class="field"><span>Konec trestu${e.end ? ` <small class="muted">za ${Math.max(0, daysBetween(todayIso(), e.end))} dní</small>` : ''}</span><input type="date" id="pEnd" value="${esc(e.end || '')}"></label>
       </div>
       <label class="switch"><input type="checkbox" id="pFri"${e.shortFri ? ' checked' : ''}><span>Zkrácený pátek: ${nf(friShift())} h se počítá jako celá směna</span></label>
       <label class="switch"><input type="checkbox" id="pSick"${e.sick ? ' checked' : ''}><span>Nemoc: dočasně se nepočítá do kapacit směn${e.sick ? ` (od ${esc(dayText(e.sick))})` : ''}</span></label>
@@ -1631,6 +1667,16 @@ function renderPersonDetail() {
     toast(`${e.last} ${e.first}${e.shortFri ? `: pátek ${nf(friShift())} h = celá směna.` : `: pátek zase ${nf(S.settings.shift)} h.`}`);
   };
   $('#pLead').onchange = event => setLead(e, event.target.checked);
+  // konec trestu (2.43): ukládá se při opuštění pole (datum se píše po číslicích, nepřekreslovat na change)
+  $('#pEnd').addEventListener('focusout', event => {
+    const v = event.target.value;
+    if (v && !ISO_DAY.test(v)) return;
+    if ((e.end || '') === v) return;
+    if (v) e.end = v; else delete e.end;
+    save();
+    if (ui.view === 'konce') renderEnds();
+    toast(v ? `${e.last} ${e.first}: konec trestu ${endDateText(v)}.` : `${e.last} ${e.first}: konec trestu smazán.`);
+  });
   $('#pSick').onchange = event => {
     if (event.target.checked) e.sick = todayIso(); else delete e.sick;
     save(); renderPeople(); renderMatrix();
@@ -7031,6 +7077,7 @@ function bindEvents() {
   bindTop5Events();
   bindKontrolyEvents();
   bindQuick();
+  bindEnds();
   window.addEventListener('beforeunload', event => {
     if (store.dirty || store.saving) { event.preventDefault(); event.returnValue = ''; }
   });
@@ -7241,6 +7288,150 @@ function bindQuick() {
   });
   view.addEventListener('change', event => {
     if (event.target.matches('[data-qkpres]')) { ui.qk.present = event.target.checked; renderQuick(); }
+  });
+}
+
+/* ==========================================================================
+   KONCE TRESTŮ A SMĚNNOST (2.43): import v Docházce a přehled odchodů po měsících
+   ========================================================================== */
+const END_SHIFT_OPTS = [['', '— neznám, nechat —'], ['R', 'Stálá ranní'], ['O', 'Stálá odpolední'], ['S1', 'Skupina 1'], ['S2', 'Skupina 2'], ['SICK', 'NEMOC']];
+function endBestSheet(sheets) {
+  let best = null;
+  let score = -1;
+  (sheets || []).forEach(sh => { const r = endParse(sh.aoa); const sc = r.rows.filter(x => x.last && x.first && (x.end || x.shift)).length; if (sc > score) { score = sc; best = sh; } });
+  return best;
+}
+function endTableHtml(r, all) {
+  const rank = x => (x.issues.some(i => i.l === 'e') ? 0 : x.issues.some(i => i.l === 'w') ? 1 : x.issues.some(i => i.l === 'i') ? 2 : 3);
+  const list = r.rows.slice().sort((a, b) => rank(a) - rank(b) || a.n - b.n).filter(x => all || rank(x) < 2);
+  const shown = list.slice(0, all ? 400 : 60);
+  const tag = l => ({ e: 'end-err', w: 'end-warn', i: 'end-info' }[l]);
+  return list.length ? `<div class="table-card flat end-tabwrap"><table class="stack end-tab"><thead><tr><th class="r">Řádek</th><th>Příjmení a jméno</th><th>Konec trestu</th><th>Směnnost</th><th>Kontrola</th></tr></thead><tbody>${shown.map(x => `<tr class="${['end-row-e', 'end-row-w', '', ''][rank(x)]}">
+      <td class="r num" data-label="Řádek">${x.n}</td><td data-label="Jméno"><b>${esc(x.last)}</b> ${esc(x.first)}</td>
+      <td class="num" data-label="Konec trestu">${x.end ? esc(endDateText(x.end)) : `<span class="muted">${esc(x.endRaw || '—')}</span>`}</td>
+      <td data-label="Směnnost">${x.shift ? esc(END_SHIFT_T[x.shift]) : `<span class="muted">${esc(x.shiftRaw || '—')}</span>`}</td>
+      <td class="wrap" data-label="Kontrola">${x.issues.length ? x.issues.map(i => `<span class="${tag(i.l)}">${esc(i.t)}</span>`).join('') : '<span class="end-ok">v pořádku</span>'}</td></tr>`).join('')}</tbody></table></div>
+      ${list.length > shown.length ? `<p class="tiny muted">… a ${list.length - shown.length} dalších řádků</p>` : ''}`
+    : '<p class="small end-ok">Žádný řádek nemá chybu ani upozornění.</p>';
+}
+async function endImport(file) {
+  if (!file) return;
+  let sheets;
+  try { sheets = await readTable(file); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
+  const sheet = endBestSheet(sheets);
+  if (!sheet) { toast('V souboru není žádný list.', true); return; }
+  const cols = { ...END_COLS };
+  const labels = {};
+  let ai = null;
+  if (ui.me && ui.me.ai) {
+    const sample = endAiSample(sheet, cols, Object.values(S.employees));
+    toast('AI kontroluje rozložení souboru…');
+    try { ai = await Vault.api('ai_ends', { method: 'POST', body: { sheet: sample.sheet, labels: sample.labels } }); } catch (error) { toast(`AI: ${error.message} Kontroluje se jen v aplikaci.`, true); }
+    if (ai) {
+      Object.assign(cols, ai.cols || {});
+      (ai.labels || []).forEach(l => { const k = endKey(l.text); if (endShiftOf(l.text) === null) labels[k] = l.shift; });
+    }
+  }
+  let all = false;
+  const parse = () => endParse(sheet.aoa, cols, { labels });
+  const body = r => `<div class="stats end-sum">
+      ${statTile('Řádků', String(r.sum.rows), r.header ? 'bez řádku s nadpisy' : 'bez nadpisů')}
+      ${statTile('Konec trestu', String(r.sum.ends), 'řádků s datem')}
+      ${statTile('Směnnost', String(r.sum.shifts), r.sum.sick ? `+ ${r.sum.sick} NEMOC` : 'řádků se směnou')}
+      ${statTile('Noví', String(r.sum.fresh), 'v Lidech nejsou')}
+      ${statTile('Chyby', String(r.sum.err), r.sum.err ? 'tyhle údaje se nezapíšou' : 'žádné', r.sum.err ? 'crit' : 'good')}
+      ${statTile('Upozornění', String(r.sum.warn), 'zkontroluj', r.sum.warn ? 'warn' : '')}</div>
+    ${r.unknown.length ? `<div class="note w"><b>Neznámé texty ve směnnosti</b>, přiřaď je, nebo se směna u těch řádků nezmění:<div class="end-labels">${r.unknown.map(u => `<label class="field"><span>„${esc(u.text)}“ (${u.n}×)</span><select data-endl="${esc(endKey(u.text))}">${END_SHIFT_OPTS.map(([k, l]) => `<option value="${k}"${(labels[endKey(u.text)] || '') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`).join('')}</div></div>` : ''}
+    ${endTableHtml(r, all)}
+    <label class="check"><input type="checkbox" data-endall${all ? ' checked' : ''}><span>Ukázat všechny řádky (i bez upozornění)</span></label>
+    ${r.missing.length ? `<details class="end-miss"><summary><b>${r.missing.length} ${lidiN(r.missing.length)} z Lidí v souboru není</b> (třeba už odešli; nic se u nich nezmění)</summary><p class="small">${r.missing.slice(0, 80).map(esc).join(', ')}${r.missing.length > 80 ? '…' : ''}</p></details>` : ''}
+    ${r.sum.fresh ? `<label class="check"><input type="checkbox" name="add" checked><span>Přidat ${r.sum.fresh} ${r.sum.fresh === 1 ? 'nového člověka' : 'nových lidí'} do Lidí (bez skupiny, zařadíš je potom)</span></label>` : ''}`;
+  const first = parse();
+  const res = await dialog({
+    title: 'Konce trestů a směnnost', ok: 'Zapsat', wide: true,
+    html: `<p><b>${esc(file.name)}</b> ${sheets.length > 1 ? `<small class="muted">list ${esc(dvSheetName(sheet))}</small>` : ''} ${ai ? `<span class="tag acc">${I.sparkle} zkontrolováno AI</span>` : ''}</p>
+      ${ai ? `<div class="note ${ai.ok ? 'i' : 'w'}">${ai.ok ? '<b>AI: rozložení souboru sedí.</b> ' : '<b>AI: v rozložení něco nesedí.</b> '}${esc(ai.note || '')}</div>` : ''}
+      <div class="end-cols">${[['last', 'Příjmení'], ['first', 'Jméno'], ['end', 'Konec trestu'], ['shift', 'Směnnost']].map(([k, l]) => `<label class="field wa-letter${cols[k] !== END_COLS[k] ? ' dv-aichg' : ''}"><span>${l}</span><input data-endc="${k}" value="${esc(cols[k])}" maxlength="3" autocapitalize="characters"></label>`).join('')}</div>
+      <div id="endBody">${body(first)}</div>
+      <p class="tiny muted">Chybné údaje se nezapíšou, ostatní z řádku ano. Prázdný konec trestu nebo směnnost nic nemaže. NEMOC zapne u člověka nemoc od dneška (směna zůstane), jiná směnnost nemoc vypne.${ai ? ' AI dostala jen nadpisy, typy buněk a texty směnnosti, žádná jména ani data.' : ''}</p>`,
+    onOpen: dlg => {
+      let tm = 0;
+      const redraw = () => { $('#endBody', dlg).innerHTML = body(parse()); };
+      dlg.querySelector('.end-cols').addEventListener('input', event => {
+        const k = event.target.dataset.endc;
+        if (!k) return;
+        clearTimeout(tm);
+        tm = setTimeout(() => { const v = waLetter(event.target.value); if (v) { cols[k] = v; redraw(); } }, 250);
+      });
+      $('#endBody', dlg).addEventListener('change', event => {
+        const t = event.target;
+        if (t.dataset.endl != null) { if (t.value) labels[t.dataset.endl] = t.value; else delete labels[t.dataset.endl]; redraw(); }
+        else if (t.matches('[data-endall]')) { all = t.checked; redraw(); }
+      });
+    },
+  });
+  if (res.value !== 'ok') return;
+  const r = parse();
+  const addEl = res.form.elements.namedItem('add');
+  const out = endApply(r, { add: !!(addEl && addEl.checked) });
+  store.note = { kind: 'person', keep: true, text: `Nahrány konce trestů a směnnost (${file.name}): konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}, zpět po nemoci ${out.back}${out.added ? `, nově přidáno ${out.added}` : ''}` };
+  save();
+  renderAll();
+  toast(`Zapsáno: konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}${out.back ? `, zpět po nemoci ${out.back}` : ''}${out.added ? `, nově ${out.added}` : ''}.`);
+  showView('konce');
+}
+
+function endWhoHtml(x) {
+  return `<li class="end-person"><span class="end-d num">${esc(endDateText(x.end))}</span><span class="nm"><b>${esc(x.name)}</b><small>${esc([x.wid ? `ID ${x.wid}` : '', x.group, x.sick ? 'NEMOC' : shiftName(x.shift)].filter(Boolean).join(' · '))}</small></span>
+    <span class="end-in ${x.days != null && x.days < 0 ? 'neg' : x.days != null && x.days <= 30 ? 'soon' : ''}">${x.days == null ? '' : x.days < 0 ? `před ${-x.days} d` : x.days === 0 ? 'dnes' : `za ${x.days} d`}</span>
+    <button class="icon-btn" type="button" data-endperson="${esc(x.key)}" title="Otevřít v Lidech" aria-label="Otevřít ${esc(x.name)} v Lidech">${I.back}</button></li>`;
+}
+function renderEnds() {
+  const box = $('#endView');
+  if (!box || !S) return;
+  if (!ui.end) ui.end = { n: 12 };
+  const ov = endsOverview(todayIso(), ui.end.n);
+  const cell = n => (n ? `<b>${n}</b>` : '<span class="muted">·</span>');
+  const anyEnd = ov.head - ov.noEnd.length;
+  box.innerHTML = `<div class="t5-weekbar end-bar"><div class="chips" role="group" aria-label="Období">${[[6, '6 měsíců'], [12, '12 měsíců'], [24, '24 měsíců']].map(([k, l]) => `<button type="button" class="chip${ui.end.n === k ? ' on' : ''}" data-endn="${k}" aria-pressed="${ui.end.n === k}">${l}</button>`).join('')}</div>
+      <span class="spacer"></span><button class="btn sec" type="button" data-endxlsx>Excel</button></div>
+    <div class="stats">${statTile('Teď lidí', String(ov.head), `${anyEnd} s datem konce`)}
+      ${statTile('Odchází tento měsíc', String(ov.thisMonth), monthLabel(ov.months[0].m), ov.thisMonth ? 'warn' : '')}
+      ${statTile('Do 3 měsíců', String(ov.next3), ov.months.slice(0, 3).map(x => `${monthLabel(x.m).split(' ')[0]} ${x.total}`).join(' · '))}
+      ${statTile(`Za ${ov.months.length} měsíců`, String(ov.leaving), `zůstane ${ov.head - ov.overdue.length - ov.leaving}`)}
+      ${statTile('Po termínu', String(ov.overdue.length), ov.overdue.length ? 'konec trestu už minul' : 'nikdo', ov.overdue.length ? 'crit' : 'good')}
+      ${statTile('Bez data', String(ov.noEnd.length), ov.noEnd.length ? 'nahraj tabulku v Docházce' : 'všichni mají datum', ov.noEnd.length ? 'warn' : '')}</div>
+    ${!anyEnd ? `<div class="note w">Zatím nikdo nemá konec trestu. Nahraj tabulku (A příjmení, B jméno, C konec trestu, D směnnost) tlačítkem nahoře nebo v Docházce.</div>` : ''}
+    <div class="card"><h3>Odchody po měsících a odděleních</h3><p class="small muted">Počet lidí, kterým v daném měsíci končí trest. Zůstane = dnešní počet bez lidí po termínu a bez odchodů do konce vybraného období.</p>
+      <div class="table-card flat end-gridwrap"><table class="end-grid"><thead><tr><th>Oddělení</th><th class="r">Teď</th><th class="r">Zůstane</th>${ov.overdue.length ? '<th class="r">Po termínu</th>' : ''}${ov.months.map(x => `<th class="r">${esc(monthLabel(x.m).replace(/ (\d{4})$/, ' ’$1').replace(/’(\d\d)(\d\d)$/, '’$2'))}</th>`).join('')}<th class="r">Později</th></tr></thead><tbody>
+        ${ov.depts.map(d => `<tr><th scope="row">${esc(d.name)}</th><td class="r num">${d.head}</td><td class="r num end-rem"><b>${d.remain[d.remain.length - 1]}</b></td>${ov.overdue.length ? `<td class="r num end-od">${cell(d.overdue)}</td>` : ''}${d.leave.map(n => `<td class="r num${n ? ' end-hit' : ''}">${cell(n)}</td>`).join('')}<td class="r num">${cell(d.later)}</td></tr>`).join('')}
+        <tr class="end-tot"><th scope="row">Celkem</th><td class="r num">${ov.head}</td><td class="r num end-rem"><b>${ov.head - ov.overdue.length - ov.leaving}</b></td>${ov.overdue.length ? `<td class="r num">${ov.overdue.length}</td>` : ''}${ov.months.map(x => `<td class="r num">${x.total || '·'}</td>`).join('')}<td class="r num">${ov.later.length || '·'}</td></tr>
+      </tbody></table></div></div>
+    ${ov.overdue.length ? `<div class="card end-month"><h3>Po termínu <span class="tag warn">${ov.overdue.length}</span></h3><p class="small muted">Konec trestu už minul, ale v Lidech jsou pořád aktivní. Vyřaď je, nebo oprav datum.</p><ul class="end-list">${ov.overdue.map(endWhoHtml).join('')}</ul></div>` : ''}
+    ${ov.months.filter(x => x.total).map(x => `<div class="card end-month"><h3>${esc(monthLabel(x.m))} <span class="tag">${x.total} ${lidiN(x.total)}</span></h3>
+      ${ov.depts.filter(d => x.byDept[d.name].length).map(d => `<h4>${esc(d.name)} <small class="muted">${x.byDept[d.name].length} z ${d.head}</small></h4><ul class="end-list">${x.byDept[d.name].map(endWhoHtml).join('')}</ul>`).join('')}</div>`).join('')}
+    ${ov.noEnd.length ? `<details class="card end-month"><summary><b>Bez data konce trestu</b> <span class="tag">${ov.noEnd.length}</span></summary><p class="small">${ov.noEnd.map(x => esc(x.name)).join(', ')}</p></details>` : ''}`;
+}
+async function exportEndsXlsx() {
+  const ov = endsOverview(todayIso(), (ui.end && ui.end.n) || 12);
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    endsSheets(ov).forEach(sheet => { const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell))); X.utils.book_append_sheet(wb, ws, sheet.name); });
+    downloadFile(`konce-trestu-${ov.today}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+function bindEnds() {
+  const pick = () => $('#endFile').click();
+  $('#btnEnds').onclick = pick;
+  $('#btnEnds2').onclick = pick;
+  $('#endFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; endImport(f); };
+  $('#endView').addEventListener('click', event => {
+    const t = event.target;
+    let b;
+    if ((b = t.closest('[data-endn]'))) { ui.end.n = +b.dataset.endn; renderEnds(); return; }
+    if (t.closest('[data-endxlsx]')) { exportEndsXlsx(); return; }
+    if ((b = t.closest('[data-endperson]'))) { ui.selPerson = b.dataset.endperson; ui.personOpen = true; ui.listY = 0; showView('lide'); renderPeople(); }
   });
 }
 

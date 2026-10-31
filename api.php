@@ -232,6 +232,26 @@ try {
         }
     }
 
+    // Kontrola souboru Konce trestů a směnnost (2.43): nadpisy, typy buněk a texty směnnosti, nic se neukládá.
+    if ($action === 'ai_ends' && $method === 'POST') {
+        $input = odm_input(ODM_MAX_SMALL_JSON_BYTES);
+        $sheets = odm_ai_clean_sample(['sheets' => [is_array($input['sheet'] ?? null) ? $input['sheet'] : null]]);
+        $labels = $input['labels'] ?? [];
+        if (!is_array($labels) || count($labels) > 20) {
+            odm_fail('Nejvýš 20 textů směnnosti.', 400);
+        }
+        $labels = array_values(array_unique(array_filter(array_map(static fn($t) => mb_substr(odm_ai_clean(is_string($t) ? $t : ''), 0, 40, 'UTF-8'), $labels), static fn($t) => $t !== '')));
+        if (!odm_ai_available()) {
+            odm_fail('AI není na serveru zapnutá.', 503);
+        }
+        odm_ai_throttle($session['card_id'], strlen(json_encode([$sheets, $labels], JSON_UNESCAPED_UNICODE)));
+        try {
+            odm_json(odm_ai_ends($sheets[0], $labels));
+        } catch (RuntimeException $error) {
+            odm_fail($error->getMessage(), $error->getCode() >= 400 && $error->getCode() < 600 ? $error->getCode() : 502);
+        }
+    }
+
     if ($action === 'versions' && $method === 'GET') {
         $rows = odm_all('SELECT v.rev, v.size, v.created_at, c.label AS card_label, d.label AS device_label FROM versions v LEFT JOIN cards c ON c.id = v.card_id LEFT JOIN devices d ON d.id = v.device_id ORDER BY v.rev DESC');
         odm_json(['items' => array_map(static fn(array $row): array => [

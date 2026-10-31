@@ -81,7 +81,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "38", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "39", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -411,6 +411,9 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.42.2 by zahodila zapamatované listy souboru docházky a výkonů z verze 2.42.3.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "37"})
         self.assertEqual(status, 426)
+        # Stránka verze 2.42.4 by zahodila konec trestu u lidí z verze 2.43.
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "38"})
+        self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
         # Čtení a přihlášení staré stránce nevadí, jen zápis.
@@ -423,7 +426,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.42.4")
+        self.assertEqual(result["version"], "2.43")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -580,6 +583,13 @@ class FakeAnthropic:
                 if owner.mode == "overloaded":
                     return self.reply(529, {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}})
                 sent = json.loads(body["messages"][0]["content"])
+                if "texty_smennosti" in sent:   # kontrola souboru Konce trestů (2.43)
+                    reply = {"cols": {"last": "a", "first": "B", "end": "C", "shift": "Ž"},
+                             "labels": [{"text": t, "shift": "S1" if "1" in t else "?"} for t in sent["texty_smennosti"]] + [{"text": "nebylo", "shift": "R"}],
+                             "ok": False, "note": "Ve sloupci C je text."}
+                    return self.reply(200, {"id": "msg_test", "type": "message", "role": "assistant", "model": body.get("model"),
+                                            "content": [{"type": "text", "text": json.dumps(reply, ensure_ascii=False)}], "stop_reason": "end_turn",
+                                            "stop_sequence": None, "usage": {"input_tokens": 12, "output_tokens": 9}})
                 if "listy" in sent:   # nastavení sloupců (2.42.2)
                     reply = owner.columns if owner.columns is not None else {
                         "att": {"id": "A", "first": "C"},
@@ -661,6 +671,22 @@ class OdmenyAiTests(unittest.TestCase):
         status, result = self.client.api("POST", "ai_columns", sample)
         self.assertEqual(status, 200, result)
         self.assertEqual((result["att"]["id"], result["unit"], result["work"]["time"]), ("", "auto", ""), "nesmysly z odpovědi se zahodí")
+
+    def test_ends_check(self):
+        body = {"sheet": {"name": "List1", "rows": [{"A": "Příjmení", "B": "Jméno", "C": "Konec trestu", "D": "Směnnost"}, {"A": "<text>", "C": "<datum>", "D": "<text>"}]},
+                "labels": ["Skupina 1", "nemoc!", "Skupina 1"]}
+        self.client.setup()
+        self.assertEqual(self.client.api("POST", "ai_ends", body)[0], 503)
+        self.enable()
+        status, result = self.client.api("POST", "ai_ends", body)
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["cols"], {"last": "A", "first": "B", "end": "C", "shift": "D"}, "neplatné písmeno = výchozí")
+        self.assertEqual(result["labels"], [{"text": "Skupina 1", "shift": "S1"}], "jen poslané texty a platné směny")
+        self.assertEqual((result["ok"], result["note"]), (False, "Ve sloupci C je text."))
+        sent = json.loads(self.api_mock.requests[-1]["body"]["messages"][0]["content"])
+        self.assertEqual(sent["texty_smennosti"], ["Skupina 1", "nemoc!"], "bez duplicit")
+        for bad in ({"labels": []}, {"sheet": {"rows": [{}] * 7}}, {"sheet": {"rows": []}, "labels": ["x"] * 21}):
+            self.assertEqual(self.client.api("POST", "ai_ends", bad)[0], 400, bad)
 
     def test_needs_session_and_key(self):
         status, _ = self.client.api("POST", "ai_rewrite", {"text": "Díl se upíná ručně."})
