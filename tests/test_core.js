@@ -3635,6 +3635,36 @@ test('Jak se soubor načte (2.42.3): docházka na 2. listu, zapamatovaný list, 
     [['101', 'Hřídel', 60]], true, 'List2', 'List1'], 'první člověk s příchodem, jeho dny a záznamy práce');
   return null;
 });
+test('Docházka podle vzoru docházkového systému (2.42.4): „WPA kód“, datum „01.10. Čt“ bez roku, součty na konci', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const DOW = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
+    const head = ['WPA kód'], sub = [null];
+    for (let d = 1; d <= 31; d++) { head.push(String(d).padStart(2, '0') + '.10. ' + DOW[new Date(Date.UTC(2026, 9, d)).getUTCDay()], null); sub.push('Příchod', 'Odchod'); }
+    head.push('Všední dny (h)', 'Víkend (h)', 'Celkem (h)'); sub.push(null, null, null);
+    const row = (wid, fill) => { const r = [wid]; for (let d = 1; d <= 31; d++) r.push(...fill(d)); r.push(160, 8, 168); return r; };
+    const aoa = [head, sub,
+      row(101, d => (d === 2 ? ['D', null] : d <= 3 ? [6 / 24, 14.5 / 24] : [null, null])),
+      row('0102', d => (d === 1 ? ['6:05', '14:35'] : [null, null])),
+      [null], row(999, d => (d === 31 ? [7 / 24, null] : [null, null]))];
+    const sheets = [{ name: 'f.xlsx › Docházka', aoa }];
+    const dv = blankDv();
+    const p = dvParse(sheets, dv, 'auto', '2026-11-03');
+    const a = p.att;
+    return JSON.stringify({ ok: a.ok, from: a.from, to: a.to, days: a.dates.length, people: a.people, rows: a.rows, ids: a.ids,
+      p1: a.pres['2026-10-01'], p31: a.pres['2026-10-31'], abs: a.abs['2026-10-02'], work: p.work,
+      jan: dvParse(sheets, dv, 'auto', '2027-01-05').att.from });
+  })()`));
+  assert.ok(out.ok);
+  assert.deepStrictEqual([out.from, out.to, out.days], ['2026-10-01', '2026-10-31', 31], 'datum bez roku, rok podle dneška, součty Všední dny / Víkend / Celkem nejsou den');
+  assert.deepStrictEqual([out.people, out.rows, out.ids], [3, 3, ['101', '102', '999']]);
+  assert.deepStrictEqual(out.p1, { 101: [360, 870], 102: [365, 875] });
+  assert.deepStrictEqual(out.p31, { 999: [420, null] });
+  assert.deepStrictEqual(out.abs, { 101: 'D' });
+  assert.strictEqual(out.work, null, 'soubor jen s listem docházky');
+  assert.strictEqual(out.jan, '2026-10-01', 'říjen nahraný v lednu je loňský');
+  return null;
+});
 test('Audit (2.37): docházka a výkony z jednoho souboru – čtení, uložení, obsazenost po projektech, produktivita', () => {
   const core = loadCore();
   const out = JSON.parse(run(core, `(() => {

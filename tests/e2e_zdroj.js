@@ -88,18 +88,19 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   const octBefore = await page.evaluate(() => JSON.stringify(S.periods['2026-10']));
 
   // soubor: 31. 10. (říjen zůstane po staru), 2. a 3. 11.; 202 má 3. 11. kód D
-  const att = [['ID', ser(10, 31), null, ser(11, 2), null, ser(11, 3), null], [null, 'Příchod', 'Odchod', 'Příchod', 'Odchod', 'Příchod', 'Odchod'],
-    [101, 0.25, 14 / 24, 0.25, 14.5 / 24, 0.25, null],
-    [102, null, null, 14 / 24, 22.5 / 24, 14 / 24, null],
-    [201, null, null, 0.25, 14.5 / 24, 0.25, null],
-    [202, null, null, 0.25, 14.5 / 24, 'D', null]];
+  // rozložení jako vzor docházkového systému (2.42.4): „WPA kód“, datum textem bez roku, součty na konci, docházka na 2. listu
+  const att = [['WPA kód', '31.10. So', null, '02.11. Po', null, '03.11. Út', null, 'Všední dny (h)', 'Víkend (h)', 'Celkem (h)'], [null, 'Příchod', 'Odchod', 'Příchod', 'Odchod', 'Příchod', 'Odchod'],
+    [101, 0.25, 14 / 24, 0.25, 14.5 / 24, 0.25, null, 8, 7.5, 15.5],
+    [102, null, null, 14 / 24, 22.5 / 24, 14 / 24, null, 8, 0, 8],
+    [201, null, null, 0.25, 14.5 / 24, 0.25, null, 8, 0, 8],
+    [202, null, null, 0.25, 14.5 / 24, 'D', null, 8, 0, 8]];
   const work = [['ID', 'Datum', 'Zakázka', 'Díl', 'Operace', 'V zakázce', 'Hotovo', '', '', 'Čas (min)', 'Norma (min)'],
     [101, { m: 10, d: 2 }, 45100, 'Hřídel', 'Broušení', 100, 40, '', '', 120, 100],
     [201, { m: 10, d: 2 }, 45101, 'Kryt', 'Frézování', 50, 10, '', '', 60, 66],
     [101, { m: 10, d: 3 }, 45102, 'Hřídel', 'Broušení', 100, 30, '', '', 200, 240],
     [101, { m: 9, d: 31 }, 45100, 'Hřídel', 'Broušení', 100, 5, '', '', 30, 30]];
   const file = { name: 'dochazka-vykony-listopad.xlsx', mimeType: XLSX_TYPE,
-    buffer: await makeXlsx(page, [{ name: 'Docházka', rows: att, dateRow: 0 }, { name: 'vykázaná práce', rows: work, dateCol: 1 }]) };
+    buffer: await makeXlsx(page, [{ name: 'vykázaná práce', rows: work, dateCol: 1 }, { name: 'Docházka', rows: att }]) };
 
   // 1) Audit: v hlavičce jen Nahrát docházku a výkony
   await page.click('#nav [data-view="audit"]');

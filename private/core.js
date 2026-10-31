@@ -4784,9 +4784,24 @@ const DV_MAX_DAYS=800,DV_MAX_MONTHS=36,DV_MAX_PEOPLE=800,DV_MAX_PARTS=300,DV_MAX
 const DV_UNITS=["auto","min","h"];
 function blankDv(){return {cols:JSON.parse(JSON.stringify(DV_COLS)),unit:"auto",sheets:{att:"",work:""},pres:{},perf:{},files:[]};}
 /** Datum bez času (hlavička docházky): číslo dne z Excelu, „1.10.2026“, „2026-10-01“. */
-function dvDate(v){
+function dvDate(v,ref){
   if(typeof v==="number"&&v%1)return null;
   if(typeof v==="string"&&/\d:\d/.test(v))return null;
+  /* 2.42.4: hlavička docházkového systému „01.10. Čt“ (den, měsíc, zkratka dne, bez roku), nebo
+     „01.10.2026 Čt“. Rok chybí → ten, se kterým je datum nejblíž dnešku (soubor za prosinec
+     nahraný v lednu je loňský). */
+  if(typeof v==="string"){
+    const m=v.trim().match(/^(\d{1,2})\.\s?(\d{1,2})\.?\s?(\d{4})?\.?(?:\s*\p{L}{1,3}\.?)?$/u);
+    if(m){
+      const dd=+m[1],mm=+m[2];
+      if(mm<1||mm>12||dd<1||dd>31)return null;
+      const pad=n=>String(n).padStart(2,"0"),ok=y=>{const t=new Date(Date.UTC(y,mm-1,dd));return t.getUTCMonth()===mm-1;};
+      if(m[3]){const y=+m[3];return y>=2000&&y<=2100&&ok(y)?y+"-"+pad(mm)+"-"+pad(dd):null;}
+      const r=String(ref||todayIso()),ry=+r.slice(0,4),rt=Date.UTC(ry,+r.slice(5,7)-1,+r.slice(8,10));
+      const y=[ry-1,ry,ry+1].filter(ok).sort((a,b)=>Math.abs(Date.UTC(a,mm-1,dd)-rt)-Math.abs(Date.UTC(b,mm-1,dd)-rt))[0];
+      return y?y+"-"+pad(mm)+"-"+pad(dd):null;
+    }
+  }
   const d=cellToDateTime(v);
   return d&&d.y>=2000&&d.y<=2100&&d.m>=1&&d.m<=12&&d.d>=1&&d.d<=31?d.y+"-"+String(d.m).padStart(2,"0")+"-"+String(d.d).padStart(2,"0"):null;
 }
@@ -4832,24 +4847,24 @@ function dvSheets(sheets,pick){
   const work=(pw&&pw!==att?pw:null)||list.find(s=>s!==att&&/vykaz|prace|vykon/.test(nm(s)))||list.find(s=>s!==att)||null;
   return {att,work};
 }
-function dvParse(sheets,dv,unit){
+function dvParse(sheets,dv,unit,ref){
   dv=dv||blankDv();
   const {att,work}=dvSheets(sheets,dv.sheets);
-  return {att:att?dvParseAtt(att,dv.cols.att):null,work:work?dvParseWork(work,dv.cols.work,unit||dv.unit):null};
+  return {att:att?dvParseAtt(att,dv.cols.att,ref):null,work:work?dvParseWork(work,dv.cols.work,unit||dv.unit):null};
 }
-function dvParseAtt(sheet,c){
+function dvParseAtt(sheet,c,ref){
   const rows=sheet.aoa||[],idc=Math.max(0,waIndex(c.id)),first=Math.max(0,waIndex(c.first));
   const name=String(sheet.name||"").split("›").pop().trim();
   // hlavička: řádek s nejvíc daty (jen datum bez času) od prvního sloupce dne
   let hr=-1,best=0;
   for(let r=0;r<Math.min(rows.length,20);r++){
     const row=rows[r]||[];let n=0;
-    for(let k=first;k<row.length;k++)if(dvDate(row[k]))n++;
+    for(let k=first;k<row.length;k++)if(dvDate(row[k],ref))n++;
     if(n>best){best=n;hr=r;}
   }
   if(hr<0)return {ok:false,name,err:"V listu "+name+" není v hlavičce žádné datum (čeká se např. 1.10.2026 nad sloupci příchod a odchod)."};
   const head=rows[hr]||[],pairs=[];
-  for(let k=first;k<head.length;){const iso=dvDate(head[k]);if(iso){pairs.push({iso,c:k});k+=2;}else k++;}
+  for(let k=first;k<head.length;){const iso=dvDate(head[k],ref);if(iso){pairs.push({iso,c:k});k+=2;}else k++;}
   const pres={},abs={},people=new Set(),ids=new Set();let n=0,codes=0;
   const code=v=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().toUpperCase().slice(0,16);
   for(let r=hr+1;r<rows.length;r++){

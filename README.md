@@ -62,6 +62,13 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.42.4
+
+- **Docházka podle vzoru docházkového systému.** Hlavička dne je text „01.10. Čt“ (den, měsíc
+  a zkratka dne, **bez roku**); dřív ji aplikace nepoznala a ze souboru nenačetla nikoho. Rok se
+  doplní tak, aby datum bylo co nejblíž dnešku (říjen nahraný v lednu je loňský). Sloupec ID je
+  „WPA kód“, sloupce se součty na konci (Všední dny, Víkend, Celkem) se přeskočí.
+
 ## Co je nového ve verzi 2.42.3
 
 - **Docházka je na 2. listu.** Když se list nejmenuje „Docházka“, bere se docházka z 2. listu

@@ -34,6 +34,19 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.42.4):
+
+- Uživatel poslal vzor docházky (prázdná hlavička, jen list „Docházka“, A–BN): A1 „WPA kód“,
+  B1 „01.10. Čt“ (sloučeno B1:C1), D1 „02.10. Pá“ … BJ1 „31.10. So“, ve 2. řádku Příchod / Odchod,
+  na konci BL „Všední dny (h)“, BM „Víkend (h)“, BN „Celkem (h)“ (sloučené přes 2 řádky). Datové
+  řádky ve vzoru nejsou, formát časů ani tvar WPA kódu tedy pořád nevíme. Vzor do repa nepatří.
+  - **Příčina, proč se nikdo nenačetl:** datum v hlavičce bez roku `dvDate` neznal. Teď
+    `dvDate(v, ref)` čte „DD.MM.“, „DD.MM. Čt“, „DD.MM.RRRR Čt“; rok bez roku = nejblíž `ref`
+    (výchozí dnešek). `dvParse(…, ref)` → `dvParseAtt(sheet, c, ref)`. AI prompt zná „01.10. Čt“
+    a „WPA kód“.
+  - Testy: core „Docházka podle vzoru … (2.42.4)“, `e2e_zdroj` má hlavičku podle vzoru a docházku
+    na 2. listu. `ODM_VERSION` 2.42.4, data beze změny (38).
+
 Stav k 31. 10. 2026 (verze 2.42.3):
 
 - Uživatel: „docházka je vždy v tom 2. listu … jeden den má dva sloupce, příchod a odchod …
@@ -1785,7 +1798,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.42 | `351e34c` | od listopadu 2026 soubor Docházka a výkony jediný zdroj (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v Auditu, skupiny Matice u skupin Auditu) (data verze 37) |
 | 2.42.1 | `952edb7` | Report docházky – nahraný den, upozornění na párování, ID podle číslic; Rychlá kontrola – klepnutím na člověka body kontroly a zápis |
 | 2.42.2 | `9df70cc` | ✦ Nastavit sloupce souboru Docházka a výkony přes AI (jen nadpisy a typy buněk) |
-| 2.42.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: docházka z 2. listu, okno Jak se soubor načte při každém nahrání (AI návrh, vzor prvního člověka, úprava) (data verze 38) |
+| 2.42.3 | `ecfee9f` | docházka z 2. listu, okno Jak se soubor načte při každém nahrání (AI návrh, vzor prvního člověka, úprava) (data verze 38) |
+| 2.42.4 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: docházka podle vzoru – datum v hlavičce bez roku („01.10. Čt“), WPA kód, součty na konci |
 
 Verze 2.1 přidala:
 
@@ -2175,7 +2189,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 29 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 93 testů: proti původní aplikaci + opravy + 2.1 až 2.42
+node tests/test_core.js                 # 94 testů: proti původní aplikaci + opravy + 2.1 až 2.42
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
