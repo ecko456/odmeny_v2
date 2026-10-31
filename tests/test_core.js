@@ -3771,6 +3771,51 @@ test('Úvod HALA 2 (2.39.3): skutečná obsazenost podle dnešních příchodů 
   return null;
 });
 
+test('Report docházky (2.40): plnění denního požadavku z příchodů – den, týden, rok, plán, svátek, Excel', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = blank();
+    const lvl = () => [1, 2, 3, 4].map(n => ({ name: 'L' + n, tabaky: n * 2, desc: '' }));
+    S.positions = [{ id: 'g1', name: 'Brus', dept: 'Brus', max: null, levels: lvl(), penalty: [], bonus: [] }, { id: 'g2', name: 'CNC', dept: 'Obrobna', max: null, levels: lvl(), penalty: [], bonus: [] }];
+    const add = (k, pos, wid) => { S.employees[k] = { key: k, last: 'P' + k, first: 'Jan', positionId: pos, level: 1, note: '', wid }; };
+    ['1', '2', '3', '4'].forEach(w => add('b' + w, 'g1', w)); ['11', '12'].forEach(w => add('c' + w, 'g2', w));
+    add('v', 'g1', '50'); S.employees.v.lead = ['Brus'];
+    S = sanitizeState(S);
+    S.capPlan.groups.g1 = { n: 5, l2: 0, l3: 0, l4: 0 };
+    S.workAudit.target = 6;
+    S.employees.b4.sick = '2026-10-27';
+    const p = (iso, w) => { S.workAudit.dv.pres[iso] = Object.fromEntries(w.map(x => [x, [360, null]])); };
+    p('2026-10-26', ['1', '2', '3', '4', '11', '12', '50']);
+    p('2026-10-27', ['1', '2', '11', '12', '77']);
+    p('2026-10-28', ['1', '2']);
+    const now = Date.UTC(2026, 9, 27, 9);
+    const d = drReport('day', '2026-10-27', { now });
+    const w = drReport('week', '2026-10-27', { now });
+    const y = drReport('year', '2026-10-27', { now });
+    const none = S.workAudit.target; S.workAudit.target = null;
+    const own = drReport('day', '2026-10-26', { now }).req;
+    S.workAudit.target = none;
+    const sh = drSheets(w);
+    return JSON.stringify({
+      d: [d.d.kind, d.d.plan, d.d.done, d.d.met, d.d.rows.map(r => [r.name, r.plan, r.done, r.note])],
+      w: [w.n, w.met, w.pct, w.nf, w.futMet, w.weekend, w.noData, w.trend.map(t => [t.iso, t.kind, t.value, t.met]), w.groupsReal.map(g => [g.name, g.sumDone, g.daysMet, g.cnt])],
+      y: [y.trend[9], y.trend[10].kind, y.trend[8].kind], own, sh: [sh.map(x => x.name), sh[0].rows[0].slice(0, 9), sh[0].rows[3].slice(0, 8)],
+    });
+  })()`));
+  // 27. 10.: Brus plán 5 (Plán kapacit), přišli 2, b3 chybí, b4 nemocný; CNC 2/2; ID 77 neznámé
+  assert.deepStrictEqual(out.d, ['real', 7, 5, false, [['Brus', 5, 2, 'nemoc 1 · nepřišli ID 3'], ['CNC', 2, 2, ''], ['Neznámé ID', 0, 1, '']]]);
+  // týden: 26. splněno (6, vedoucí ne), 27. ne, 28. svátek (přesčas), 29.–30. plán (Brus 5 − nemocný = 4, CNC 2, celkem 6 = splněno)
+  assert.deepStrictEqual(out.w.slice(0, 7), [2, 1, 50, 2, 2, 1, 0]);
+  assert.deepStrictEqual(out.w[7].map(t => t[0] + t[1]), ['2026-10-26real', '2026-10-27real', '2026-10-29plan', '2026-10-30plan']);
+  assert.deepStrictEqual(out.w[8], [['Brus', 6, 0, 2], ['CNC', 4, 2, 2], ['Neznámé ID', 1, 1, 1]]);
+  assert.deepStrictEqual([out.y[0].kind, out.y[0].value, out.y[0].n, out.y[1], out.y[2]], ['real', 50, 2, 'plan', 'empty']);
+  assert.strictEqual(out.own, 7, 'bez vlastního požadavku = součet plánů skupin');
+  assert.deepStrictEqual(out.sh[0], ['Přehled dní', 'Skupiny']);
+  assert.deepStrictEqual(out.sh[1], ['Datum', 'Den', 'Druh', 'Požadavek', 'Plán', 'Dodáno', 'Rozdíl', 'V normě', 'Brus']);
+  assert.deepStrictEqual(out.sh[2], ['2026-10-28', 'St', 'víkend / svátek (mimo normu)', 6, 7, 2, -4, '']);
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

@@ -5009,6 +5009,133 @@ function staffReal(iso,mg,opts){
   const dv=S.workAudit.dv,f=dv.files.filter(z=>z.from&&z.to&&z.from<=iso&&iso<=z.to).sort((a,b)=>b.at-a.at)[0];
   return {iso,...t,depts,at:f?f.at:0,by:f?f.by:""};
 }
+/* ================= Report docházky: plnění denního požadavku (2.40) =================
+   Z nahraných příchodů (Audit, docházka a výkony): kolik lidí ze skupin Matice přišlo proti
+   plánu skupiny a proti dennímu požadavku (Nastavení Auditu, požadavek lidí). Plán skupiny =
+   potřeba celkem z Plánu kapacit, jinak počet lidí ve skupině. Den v normě = dodáno ≥ požadavek;
+   plnění normy za období = podíl pracovních dnů v normě (nic se nesčítá ani nedorovnává).
+   Víkendy a svátky jsou mimo normu, budoucí dny (od zítřka) jsou plánovaná kapacita (plán bez
+   nemocných) a do plnění se nepočítají. Lidé se v reportu uvádějí jen s ID. */
+const DR_MODES=["day","week","month","year"];
+function drCtx(opts){
+  opts=opts||{};
+  const groups=S.positions.filter(isGroup).map(p=>{
+    const need=(S.capPlan&&S.capPlan.groups[p.id])||null;
+    const members=Object.values(S.employees).filter(e=>e.positionId===p.id&&!e.excluded&&!isLead(e));
+    return {id:p.id,name:p.name||"(bez názvu)",plan:need&&need.n?need.n:members.length,cap:!!(need&&need.n),members};
+  });
+  const t=S.workAudit&&S.workAudit.target;
+  return {today:todayIso(opts.now),dv:(S.workAudit&&S.workAudit.dv)||blankDv(),map:dvWidMap(),groups,
+    req:t!=null&&t>0?+t:groups.reduce((x,g)=>x+g.plan,0),reqOwn:t!=null&&t>0};
+}
+function drDay(iso,ctx){
+  ctx=ctx||drCtx();
+  const [y,m,d]=iso.split("-").map(Number),day=mkDay(y,m,d);
+  const pres=ctx.dv.pres[iso];
+  const has=!!pres&&Object.values(pres).some(v=>v[0]!=null||v[1]!=null);
+  const kind=has?"real":iso>ctx.today?"plan":"none";
+  const rows=ctx.groups.map(g=>({id:g.id,name:g.name,plan:g.plan,done:0,sick:0,miss:[],note:""}));
+  const byId=new Map(rows.map(r=>[r.id,r]));
+  if(kind==="real"){
+    const came=new Set();
+    Object.entries(pres).forEach(([wid,v])=>{
+      if(v[0]==null&&v[1]==null)return;
+      const e=ctx.map.get(wid)||null;
+      if(e&&isLead(e))return;
+      if(e)came.add(e.key);
+      const g=dvGroupOf(e,iso,ctx.today);
+      let r=byId.get(g.id);
+      if(!r){r={id:g.id,name:g.id==="?"?"Neznámé ID":"Bez skupiny",plan:0,done:0,sick:0,miss:[],note:"",extra:true};byId.set(g.id,r);rows.push(r);}
+      r.done++;
+    });
+    Object.values(S.employees).forEach(e=>{
+      if(e.excluded||isLead(e)||came.has(e.key))return;
+      const r=byId.get(dvGroupOf(e,iso,ctx.today).id);
+      if(!r||r.extra)return;
+      if(e.sick&&e.sick<=iso)r.sick++;else r.miss.push(e.wid||"");
+    });
+  }else if(kind==="plan"){
+    rows.forEach(r=>{const g=ctx.groups.find(x=>x.id===r.id);r.sick=g.members.filter(e=>e.sick&&e.sick<=iso).length;r.done=Math.max(0,r.plan-r.sick);});
+  }
+  rows.forEach(r=>{
+    if(kind==="none")return;
+    const parts=[];
+    if(r.sick)parts.push("nemoc "+r.sick);
+    if(kind==="real"&&r.done<r.plan&&r.miss.length){
+      const ids=r.miss.map(w=>w?"ID "+w:"bez ID").sort((a,b)=>a.localeCompare(b,"cs",{numeric:true}));
+      parts.push("nepřišli "+ids.slice(0,6).join(", ")+(ids.length>6?" a "+(ids.length-6)+" další":""));
+    }
+    r.note=parts.join(" · ");
+  });
+  const plan=rows.filter(r=>!r.extra).reduce((x,r)=>x+r.plan,0),done=rows.reduce((x,r)=>x+r.done,0);
+  return {iso,day,work:day.work,kind,rows,plan,done,req:ctx.req,met:done>=ctx.req};
+}
+function drDates(mode,ref){
+  const [y,m]=ref.split("-").map(Number),out=[];
+  if(mode==="day")return [ref];
+  if(mode==="week"){const w=isoWeek(ref);for(let i=0;i<7;i++)out.push(addDays(w.from,i));return out;}
+  const last=mo=>new Date(y,mo,0).getDate();
+  const push=mo=>{for(let i=1;i<=last(mo);i++)out.push(y+"-"+String(mo).padStart(2,"0")+"-"+String(i).padStart(2,"0"));};
+  if(mode==="month")push(m);else for(let mo=1;mo<=12;mo++)push(mo);
+  return out;
+}
+/** Report za den, týden, měsíc nebo rok (ref = libovolný den období). */
+function drReport(mode,ref,opts){
+  mode=DR_MODES.includes(mode)?mode:"day";
+  const ctx=drCtx(opts),dates=drDates(mode,ref);
+  if(mode==="day")return {mode,ref,from:ref,to:ref,req:ctx.req,reqOwn:ctx.reqOwn,today:ctx.today,groups:ctx.groups,d:drDay(ref,ctx)};
+  const all=dates.map(iso=>drDay(iso,ctx));
+  const work=all.filter(d=>d.work&&d.kind!=="none"),real=work.filter(d=>d.kind==="real"),fut=work.filter(d=>d.kind==="plan");
+  const n=real.length,met=real.filter(d=>d.met).length,nf=fut.length,futMet=fut.filter(d=>d.met).length;
+  const agg=list=>{
+    const m=new Map();
+    list.forEach(d=>d.rows.forEach(r=>{
+      if(r.extra&&!r.done)return;
+      const g=m.get(r.id)||{id:r.id,name:r.name,extra:!!r.extra,sumPlan:0,sumDone:0,cnt:0,daysMet:0};
+      g.sumPlan+=r.plan;g.sumDone+=r.done;g.cnt++;if(r.done>=r.plan)g.daysMet++;m.set(r.id,g);
+    }));
+    return [...m.values()].map(g=>({...g,avgPlan:g.sumPlan/g.cnt,avgDone:g.sumDone/g.cnt}));
+  };
+  let trend;
+  if(mode==="year"){
+    trend=Array.from({length:12},(_,i)=>{
+      const mm=String(i+1).padStart(2,"0"),rr=real.filter(d=>d.iso.slice(5,7)===mm),ff=fut.filter(d=>d.iso.slice(5,7)===mm);
+      if(rr.length)return {label:i,value:rr.filter(d=>d.met).length/rr.length*100,kind:"real",n:rr.length,met:rr.filter(d=>d.met).length};
+      if(ff.length)return {label:i,value:ff.filter(d=>d.met).length/ff.length*100,kind:"plan",n:ff.length,met:ff.filter(d=>d.met).length};
+      return {label:i,value:0,kind:"empty",n:0,met:0};
+    });
+  }else trend=work.map(d=>({iso:d.iso,day:d.day,value:d.done,kind:d.kind,met:d.met}));
+  const worst=n?real.slice().sort((a,b)=>a.done-b.done||(a.iso<b.iso?-1:1))[0]:null;
+  return {mode,ref,from:dates[0],to:dates[dates.length-1],req:ctx.req,reqOwn:ctx.reqOwn,today:ctx.today,groups:ctx.groups,days:all,
+    n,met,pct:n?met/n*100:null,avg:n?real.reduce((x,d)=>x+d.done,0)/n:null,worst,nf,futMet,planPct:nf?futMet/nf*100:null,onlyPlan:!n&&nf>0,
+    noData:all.filter(d=>d.work&&d.kind==="none"&&d.iso<=ctx.today).length,
+    weekend:all.filter(d=>!d.work&&d.kind==="real").length,
+    groupsReal:agg(real),groupsPlan:agg(fut),trend};
+}
+/** Excel: přehled dní a skupiny za období. */
+function drSheets(r){
+  const days=r.mode==="day"?[r.d]:r.days;
+  const names=r.groups.map(g=>g.name);
+  const kindT={real:"skutečnost",plan:"plánovaná kapacita",none:"bez dat"};
+  const dayRows=days.map(d=>{
+    const by=new Map(d.rows.map(x=>[x.id,x]));
+    const extra=d.rows.filter(x=>x.extra).reduce((s2,x)=>s2+x.done,0);
+    return [d.iso,["Ne","Po","Út","St","Čt","Pá","So"][d.day.dow],d.work?kindT[d.kind]:(d.kind==="real"?"víkend / svátek (mimo normu)":"víkend / svátek"),
+      d.req,d.kind==="none"?"":d.plan,d.kind==="none"?"":d.done,d.kind==="none"?"":d.done-d.req,
+      !d.work||d.kind!=="real"?"":d.met?"ano":"ne",...r.groups.map(g=>d.kind==="none"?"":(by.get(g.id)||{done:0}).done),d.kind==="none"?"":extra];
+  });
+  const sheets=[{name:"Přehled dní",cols:[12,5,26,10,8,8,8,9,...names.map(()=>10),12],
+    rows:[["Datum","Den","Druh","Požadavek","Plán","Dodáno","Rozdíl","V normě",...names,"Bez skupiny / neznámé ID"],...dayRows]}];
+  if(r.mode==="day"){
+    sheets.push({name:"Skupiny",cols:[24,8,8,8,10,60],rows:[["Skupina","Plán","Dodáno","Rozdíl","Pokrytí %","Poznámka"],
+      ...r.d.rows.map(x=>[x.name,x.plan,x.done,x.done-x.plan,x.plan?Math.round(x.done/x.plan*100):"",x.note])]});
+  }else{
+    const g=r.onlyPlan?r.groupsPlan:r.groupsReal;
+    sheets.push({name:"Skupiny",cols:[24,10,10,12,8],rows:[["Skupina","Ø plán","Ø dodáno","Dní v plánu","Dní"],
+      ...g.map(x=>[x.name,Math.round(x.avgPlan*10)/10,Math.round(x.avgDone*10)/10,x.daysMet,x.cnt])]});
+  }
+  return sheets;
+}
 /** Dny s docházkou (seřazené). */
 function dvDays(){return Object.keys(((S.workAudit&&S.workAudit.dv)||{}).pres||{}).sort();}
 /** Měsíc: obsazenost po dnech a projektech a výkony po lidech a projektech. */

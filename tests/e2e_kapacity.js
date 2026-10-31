@@ -190,7 +190,10 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
     'Výkon na hodinu (index)', 'Zaškolený proti zácviku', 'Lidé ve skupinách: zaškolení a v zácviku', 'Výkon na odpracovanou hodinu (index, Ø', `Po skupinách — ${MON}`,
     'ZAŠK. PROTI', 'VÝKON CELKEM', 'zatím bez lidí v matici dovedností — doplnit', 'Bez skupiny', '2 lidé se směnou bez skupiny', 'CELKEM', 'Zaškolený —', 'Výkon —', 'Vygenerováno']
     .forEach(t => check(text.includes(t), `měsíc: chybí „${t}“`));
-  check(/VYKÁZÁNO A PLÁN · docházka je nahraná do|PLÁN · docházka za/.test(text), 'měsíc: pruh vykázáno a plán');
+  // pruh jen když měsíc má plánované dny (poslední den měsíce o víkendu už žádný nemá)
+  const mPlan = await page.evaluate(() => !!capMonthReport(todayIso().slice(0, 7)).plan);
+  if (mPlan) check(/VYKÁZÁNO A PLÁN · docházka je nahraná do|PLÁN · docházka za/.test(text), 'měsíc: pruh vykázáno a plán');
+  else check(!/VYKÁZÁNO A PLÁN/.test(text), 'měsíc bez plánovaných dnů: bez pruhu');
   const mRows = await page.$$eval('#waView .ctr-tab tbody tr', rows => rows.map(r => r.cells[0].textContent.trim()));
   check(JSON.stringify(mRows) === JSON.stringify(['Brus', 'CNC', 'Písek', 'Lepení', 'Bez skupiny', 'CELKEM']), `měsíc: řádky ${mRows}`);
   const mTot = await page.evaluate(() => { const r = capMonthReport(todayIso().slice(0, 7)); return [r.tot.n, r.tot.ok, r.tot.tr]; });

@@ -9711,7 +9711,7 @@ async function exportShortagePdf(id, button = null, split = false) {
    záložky, nahrání obou souborů, úpravy hodnot s důvodem, nastavení skupin a operací,
    PDF a Excel pro auditora.
    ========================================================================== */
-const WA_TABS = [['prehled', 'Přehled'], ['lide', 'Lidé v práci'], ['kapacity', 'Kapacity a zaškolení'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
+const WA_TABS = [['prehled', 'Přehled'], ['lide', 'Lidé v práci'], ['report', 'Report docházky'], ['kapacity', 'Kapacity a zaškolení'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
 const WA_MODES = [['month', 'Měsíc'], ['week', 'Týden'], ['custom', 'Vlastní']];
 const WA_HIST = [[13, '13 týdnů'], [26, '26 týdnů'], [52, '52 týdnů'], [0, 'Vše']];
 const waN = (v, d = 0) => (v == null ? '—' : nf(v, d));
@@ -9775,6 +9775,7 @@ function renderWorkAudit() {
   if (tab === 'plan') { view.innerHTML = waPlanHtml(); setWidths(view); return; }
   if (tab === 'kapacity') { view.innerHTML = waCtHtml(); setWidths(view); return; }   // nepotřebuje data Auditu
   if (tab === 'lide') { view.innerHTML = dvHtml(); setWidths(view); return; }   // docházka a výkony z jednoho souboru (2.37)
+  if (tab === 'report') { view.innerHTML = drHtml(); drPaint(view); return; }   // report docházky po vzoru (2.40)
   if (!has) { view.innerHTML = waStartHtml(); return; }
   if (tab === 'prehled') { view.innerHTML = waHistHtml(); setWidths(view); return; }
   const r = waRange();
@@ -11415,6 +11416,406 @@ const dvClockText = m => (m == null ? '—' : `${Math.floor(m / 60)}:${String(m 
 const dvH = (min, d = 1) => `${nf((+min || 0) / 60, d)} h`;
 const dvPct = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
 const zaznamN = n => (n === 1 ? 'záznam' : n >= 2 && n <= 4 ? 'záznamy' : 'záznamů');
+/* ==========================================================================
+   REPORT DOCHÁZKY (2.40): plnění denního požadavku z nahraných příchodů, Den / Týden / Měsíc /
+   Rok. Obsah stránky skládá drView (výrok, ukazatel, dlaždice, graf, tabulka), kreslí ho
+   drPaperHtml v aplikaci i pdfDrPage do PDF (A4 na výšku, stejné značky grafu).
+   ========================================================================== */
+const DR_MODE_T = [['day', 'Den'], ['week', 'Týden'], ['month', 'Měsíc'], ['year', 'Rok']];
+const DRC = { good: '#0CA30C', goodT: '#0A7D0A', goodS: '#E7F6E7', warn: '#E79A00', warnT: '#9A6A00', warnS: '#FDF1D8', crit: '#D03B3B', critT: '#B62D2D', critS: '#FBE4E4',
+  plan: '#9FB3C8', acc: '#2A78D6', planBox: '#4F7AA8', planS: '#E8EDF2', grid: '#E6E5DF', muted: '#898781', txt2: '#52514E', ink: '#0B0B0B', line: '#DDDDDA', soft: '#F6F6F3' };
+const DR_VC = { ok: DRC.good, warn: DRC.warn, no: DRC.crit, plan: DRC.planBox };
+const DR_ST = { good: [DRC.goodS, DRC.goodT], warning: [DRC.warnS, DRC.warnT], critical: [DRC.critS, DRC.critT], plan: [DRC.planS, DRC.planBox] };
+const DR_MON = ['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'];
+const DR_MONF = ['Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen', 'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'];
+const dniN = n => (n === 1 ? 'den' : n >= 2 && n <= 4 ? 'dny' : 'dní');
+const drSign = n => `${n < 0 ? '−' : n > 0 ? '+' : ''}${nf(Math.abs(n), 1)}`;
+const drSt = (plan, done) => (plan <= 0 ? 'good' : done / plan >= 1 ? 'good' : done / plan >= 0.9 ? 'warning' : 'critical');
+function drRef() {
+  if (!ui.wa.dr) ui.wa.dr = { mode: 'day', ref: '' };
+  if (!WA_ISO.test(ui.wa.dr.ref || '')) ui.wa.dr.ref = todayIso();
+  return ui.wa.dr;
+}
+function drShift(dir) {
+  const st = drRef();
+  const [y, m, d] = st.ref.split('-').map(Number);
+  if (st.mode === 'day') st.ref = addDays(st.ref, dir);
+  else if (st.mode === 'week') st.ref = addDays(st.ref, 7 * dir);
+  else if (st.mode === 'month') { const t = new Date(Date.UTC(y, m - 1 + dir, 1)); st.ref = isoOf(t.getTime()); }
+  else st.ref = `${y + dir}-${String(m).padStart(2, '0')}-${String(Math.min(d, 28)).padStart(2, '0')}`;
+}
+function drPeriodLabel(r) {
+  const [y, m] = r.ref.split('-').map(Number);
+  if (r.mode === 'day') return { main: dayText(r.ref), sub: DOW_NAME[r.d.day.dow] };
+  if (r.mode === 'week') { const w = isoWeek(r.ref); return { main: `Týden ${w.w}`, sub: ctrRange(w.from, w.to) }; }
+  if (r.mode === 'month') return { main: `${DR_MONF[m - 1]} ${y}`, sub: 'měsíční souhrn' };
+  return { main: `Rok ${y}`, sub: 'roční souhrn' };
+}
+
+/* ---------- grafy (značky jako u Kapacit a zaškolení: ctrSvg i pdfCtrChart) ---------- */
+function drAxis(maxV) { const D = Math.ceil(Math.max(1, maxV) / 10) * 10 || 10; return { D, ticks: [0, 1, 2, 3, 4, 5].map(t => (D * t) / 5) }; }
+function drFit(t, w, px) { const n = Math.max(3, Math.floor(w / (px * 0.56))); return t.length > n ? `${t.slice(0, n - 1)}…` : t; }
+function drColChart(rows, req, planned) {
+  const W = 720, H = 270, L = 40, R = 16, T = 16, B = 42, PH = H - T - B;
+  const ax = drAxis(Math.max(req, ...rows.map(r => Math.max(r.plan, r.done))));
+  const y = v => T + PH - (v / ax.D) * PH;
+  const marks = [];
+  ax.ticks.forEach(v => { marks.push({ t: 'line', x1: L, y1: y(v), x2: W - R, y2: y(v), c: DRC.grid }); marks.push({ t: 'text', x: L - 8, y: y(v) + 4, s: 11, c: DRC.muted, a: 'end', v: nf(v, 0) }); });
+  const band = (W - L - R) / Math.max(1, rows.length), bw = Math.min(30, band * 0.3);
+  rows.forEach((r, i) => {
+    const cx = L + band * i + band / 2;
+    const dc = drSt(r.plan, r.done) === 'good' ? (planned ? DRC.acc : DRC.good) : DRC.crit;
+    if (r.plan) marks.push({ t: 'rect', x: cx - bw - 3, y: y(r.plan), w: bw, h: y(0) - y(r.plan), c: DRC.plan });
+    if (r.done) marks.push({ t: 'rect', x: cx + 3, y: y(r.done), w: bw, h: y(0) - y(r.done), c: dc });
+    marks.push({ t: 'text', x: cx + 3 + bw / 2, y: y(r.done) - 6, s: 11, b: true, c: dc, a: 'middle', v: String(r.done) });
+    marks.push({ t: 'text', x: cx, y: H - B + 20, s: 12, c: DRC.txt2, a: 'middle', v: drFit(r.name, band - 4, 12) });
+  });
+  marks.push({ t: 'line', x1: L, y1: y(req), x2: W - R, y2: y(req), c: DRC.crit, w: 1.5, dash: [5, 4] });
+  marks.push({ t: 'text', x: W - R, y: y(req) - 5, s: 10.5, b: true, c: DRC.crit, a: 'end', v: `požadavek ${req}` });
+  return { vb: [W, H], marks, aria: rows.map(r => `${r.name}: ${r.done} z plánu ${r.plan}`).join(', ') };
+}
+function drTrendChart(r) {
+  const W = 720, H = 270, L = 40, R = 16, T = 18, B = 44, PH = H - T - B;
+  const year = r.mode === 'year';
+  const pts = r.trend.map(p => ({ ...p, label: year ? DR_MON[p.label] : r.mode === 'week' ? `${DOW[p.day.dow]} ${p.day.d}.` : String(p.day.d) }));
+  const ref = year ? 100 : r.req;
+  const ax = drAxis(Math.max(ref, ...pts.map(p => p.value)));
+  const y = v => T + PH - (v / ax.D) * PH;
+  const U = year ? ' %' : '';
+  const marks = [];
+  ax.ticks.forEach(v => { marks.push({ t: 'line', x1: L, y1: y(v), x2: W - R, y2: y(v), c: DRC.grid }); marks.push({ t: 'text', x: L - 8, y: y(v) + 4, s: 11, c: DRC.muted, a: 'end', v: nf(v, 0) + (year ? '%' : '') }); });
+  const n = Math.max(1, pts.length), band = (W - L - R) / n, bw = Math.max(4, Math.min(34, band * 0.6)), every = n > 16 ? Math.ceil(n / 16) : 1;
+  pts.forEach((p, i) => {
+    const cx = L + band * i + band / 2;
+    if (p.kind !== 'empty') {
+      const c = p.kind === 'plan' ? DRC.acc : (year ? p.value >= 80 : p.met) ? DRC.good : DRC.crit;
+      if (p.value > 0) marks.push({ t: 'rect', x: cx - bw / 2, y: y(p.value), w: bw, h: y(0) - y(p.value), c });
+      if (n <= 14) marks.push({ t: 'text', x: cx, y: y(p.value) - 5, s: 10.5, b: true, c, a: 'middle', v: nf(p.value, 0) + U });
+    }
+    if (i % every === 0) marks.push({ t: 'text', x: cx, y: H - B + 18, s: n > 16 ? 9.5 : 11, c: DRC.txt2, a: 'middle', v: p.label });
+  });
+  marks.push({ t: 'line', x1: L, y1: y(ref), x2: W - R, y2: y(ref), c: DRC.crit, w: 1.5, dash: [5, 4] });
+  marks.push({ t: 'text', x: W - R, y: y(ref) - 5, s: 10.5, b: true, c: DRC.crit, a: 'end', v: year ? 'cíl 100 %' : `požadavek ${ref}` });
+  return { vb: [W, H], marks, aria: pts.map(p => `${p.label}: ${p.kind === 'empty' ? 'bez dat' : nf(p.value, 0) + U}`).join(', ') };
+}
+
+/* ---------- obsah stránky ---------- */
+function drView(r) {
+  const place = ctrRep().place;
+  const per = drPeriodLabel(r);
+  const req = r.req;
+  const v = { title: `Report docházky${place ? ` — ${place}` : ''}`, org: ctrSub(`plnění denního požadavku (norma) ${req}`, 'víkendy mimo', 'budoucí dny = plánovaná kapacita'), per };
+  if (r.mode === 'day') {
+    const d = r.d;
+    const planned = d.kind === 'plan';
+    const exists = d.kind === 'real';
+    const wknd = !d.work;
+    const rows = d.rows;
+    const ok = d.done >= req;
+    const shown = planned || exists;
+    const diffPlan = d.done - d.plan;
+    const diffMin = d.done - req;
+    const pct = req ? (d.done / req) * 100 : 0;
+    const under = rows.filter(x => !x.extra && x.done < x.plan);
+    v.modeName = planned ? 'Plánovaná kapacita – den' : 'Denní report';
+    v.banner = planned ? 'Budoucí den — místo skutečné docházky je plánovaná kapacita: plán skupin bez lidí, kteří jsou dnes nemocní.' : '';
+    v.verdict = {
+      cls: planned ? (ok ? 'plan' : 'warn') : !exists ? 'warn' : wknd ? 'warn' : ok ? 'ok' : 'no',
+      lbl: `${planned ? 'Plánovaná kapacita · ' : ''}Denní požadavek (norma) ${req} ${lidiN(req)}${wknd ? ' · víkend / svátek — mimo normu' : ''}`,
+      head: planned ? (ok ? 'KAPACITA POKRYJE POŽADAVEK' : 'KAPACITA NESTAČÍ') : !exists ? 'BEZ DAT' : wknd ? (ok ? 'PŘESČAS – SPLNĚNO' : 'PŘESČAS') : ok ? 'SPLNĚNO' : 'NESPLNĚNO',
+      sub: planned ? (ok ? `Rezerva ${diffMin} ${lidiN(diffMin)} nad požadavek` : `Chybí ${-diffMin} ${lidiAcc(-diffMin)} do denního požadavku`)
+        : !exists ? 'Pro tento den nejsou nahrané příchody'
+        : wknd ? 'Víkend a svátek se do plnění normy nezapočítávají'
+        : ok ? (diffMin > 0 ? `Rezerva ${diffMin} ${lidiN(diffMin)} nad požadavek` : 'Přesně na denním požadavku') : `Chybí ${-diffMin} ${lidiAcc(-diffMin)} do denního požadavku`,
+      big: shown ? String(d.done) : '–', bigL: planned ? 'plánovaná kapacita' : 'reálně dodáno',
+    };
+    v.gauge = { pct: shown ? pct : 0, color: planned ? (ok ? DRC.acc : DRC.warn) : ok ? DRC.good : pct >= 90 ? DRC.warn : DRC.crit,
+      kl: planned ? 'Pokrytí požadavku' : 'Plnění', foot: planned ? 'kapacita / požadavek' : 'dodáno / denní požadavek' };
+    v.tiles = [
+      { lab: 'Plán na den', dot: DRC.plan, val: String(d.plan), foot: 'součet plánu všech skupin' },
+      { lab: planned ? 'Kapacita vs. plán' : 'Rozdíl vs. plán', dot: DRC.crit, val: shown ? drSign(diffPlan) : '–', color: shown && diffPlan < 0 ? DRC.crit : shown && diffPlan > 0 ? DRC.goodT : null,
+        foot: !shown ? 'bez dat' : diffPlan < 0 ? (planned ? 'omezení oproti plánu' : 'manko oproti plánu') : diffPlan > 0 ? 'nad plánem' : 'přesně podle plánu' },
+      { lab: planned ? 'Skupiny s omezením' : 'Skupiny pod plánem', dot: DRC.warn, val: shown ? String(under.length) : '–', small: `/ ${rows.filter(x => !x.extra).length}`,
+        foot: !shown ? 'bez dat' : under.length ? under.map(x => x.name).join(', ') : planned ? 'všechny skupiny v plné kapacitě' : 'všechny skupiny v pořádku' },
+    ];
+    v.chart = { title: planned ? 'Plán vs. plánovaná kapacita po skupinách' : 'Plán vs. dodáno po skupinách',
+      legend: [['Plán', DRC.plan], [planned ? 'Kapacita v plné výši' : 'Dodáno (splněno)', planned ? DRC.acc : DRC.good], [planned ? 'Kapacita pod plánem' : 'Dodáno (pod plánem)', DRC.crit], ['Požadavek', DRC.crit, 'dash']],
+      ...drColChart(rows, req, planned) };
+    const st = x => (drSt(x.plan, x.done) === 'good' ? ['good', planned ? 'PLNÁ KAPACITA' : 'OK'] : ['critical', planned ? 'OMEZENÍ' : 'POD PLÁNEM']);
+    v.table = {
+      title: planned ? 'Rozpad plánované kapacity po skupinách' : 'Rozpad po skupinách',
+      cols: [{ h: 'Skupina' }, { h: 'Plán', r: true }, { h: planned ? 'Plán. kapacita' : 'Dodáno', r: true }, { h: 'Rozdíl', r: true }, { h: 'Pokrytí', r: true }, { h: 'Stav' }, { h: 'Poznámka', wide: true }],
+      rows: rows.map(x => ({ cells: [x.name, String(x.plan), shown ? String(x.done) : '–', shown ? drSign(x.done - x.plan) : '–', shown && x.plan ? `${Math.round((x.done / x.plan) * 100)} %` : '–', shown ? st(x) : null, x.note] })),
+      total: { cells: ['CELKEM', String(d.plan), shown ? String(d.done) : '–', shown ? drSign(diffPlan) : '–', shown ? `${Math.round(pct)} %` : '–',
+        shown ? [ok ? 'good' : 'critical', planned ? (ok ? 'POKRYTO' : 'NEDOSTATEK') : ok ? 'SPLNĚNO' : 'NESPLNĚNO'] : null, ''] },
+    };
+  } else {
+    const periodName = { week: 'Týdenní', month: 'Měsíční', year: 'Roční' }[r.mode];
+    const { n, met, nf: nfu, futMet, onlyPlan } = r;
+    const cls = onlyPlan ? (r.planPct >= 100 ? 'plan' : r.planPct >= 80 ? 'warn' : 'no') : !n ? 'warn' : met === n ? 'ok' : r.pct >= 80 ? 'warn' : 'no';
+    const planNote = nfu ? ` · výhled: kapacita pokryje požadavek ${futMet} z ${nfu} plánovaných ${dniN(nfu)}` : '';
+    v.modeName = `${periodName}${onlyPlan ? ' výhled kapacity' : ' souhrn'}`;
+    v.banner = '';
+    if (onlyPlan) {
+      v.verdict = { cls, lbl: `${periodName} výhled kapacity · požadavek ${req}/den · víkendy mimo`, head: 'PLÁNOVANÁ KAPACITA',
+        sub: `Období je v budoucnu, zobrazen plán. Kapacita pokryje požadavek ${futMet} z ${nfu} pracovních ${dniN(nfu) === 'den' ? 'dne' : 'dní'}`, big: `${Math.round(r.planPct)} %`, bigL: 'pokrytí plánem' };
+      v.gauge = { pct: r.planPct, color: cls === 'plan' ? DRC.plan : cls === 'warn' ? DRC.warn : DRC.crit, kl: 'Pokrytí plánem', foot: 'dní pokrytých plánem / prac. dní' };
+      v.tiles = [
+        { lab: 'Denní požadavek', dot: DRC.plan, val: String(req), foot: 'norma na každý pracovní den' },
+        { lab: 'Dní pokrytých plánem', dot: DRC.plan, val: String(futMet), small: `/ ${nfu}`, foot: 'plánovaná kapacita ≥ požadavek' },
+        { lab: 'Dní s nedostatkem', dot: DRC.crit, val: String(nfu - futMet), color: nfu - futMet ? DRC.crit : DRC.goodT, foot: nfu - futMet ? 'plán nedosáhne požadavku' : 'plán pokrývá každý den' },
+      ];
+    } else {
+      v.verdict = { cls, lbl: `${periodName} plnění normy · požadavek ${req}/den · víkendy mimo`, head: !n ? 'BEZ DAT' : met === n ? 'NORMA SPLNĚNA' : 'NORMA NESPLNĚNA',
+        sub: !n ? 'V období nejsou nahrané příchody (bez víkendů)' : `Celý požadavek ${req} splněn ${met} z ${n} pracovních ${n === 1 ? 'dne' : 'dní'} · ${n - met} ${dniN(n - met)} pod normou${planNote}`,
+        big: n ? `${Math.round(r.pct)} %` : '–', bigL: 'plnění normy' };
+      v.gauge = { pct: n ? r.pct : 0, color: cls === 'ok' ? DRC.good : cls === 'warn' ? DRC.warn : DRC.crit, kl: 'Plnění normy', foot: 'dní v normě / prac. dní' };
+      v.tiles = [
+        { lab: 'Denní požadavek', dot: DRC.plan, val: String(req), foot: 'norma na každý pracovní den' },
+        { lab: 'Dní v normě', dot: DRC.good, val: String(met), small: `/ ${n}`, color: n && met === n ? DRC.goodT : null, foot: 'celý požadavek splněn (bez víkendů)' },
+        { lab: 'Dní pod normou', dot: DRC.crit, val: String(n - met), color: n - met ? DRC.crit : DRC.goodT,
+          foot: r.worst && n - met ? `nejníže ${dayText(r.worst.iso)} — dodáno ${r.worst.done}` : n ? 'požadavek splněn každý den' : 'bez dat' },
+      ];
+    }
+    const hasPlan = r.trend.some(p => p.kind === 'plan');
+    v.chart = { title: r.mode === 'year' ? `Plnění normy v roce ${r.ref.slice(0, 4)}` : r.mode === 'week' ? 'Jednotlivé dny vs. požadavek (týden)' : 'Jednotlivé dny vs. požadavek (měsíc)',
+      sub: r.mode === 'year' ? 'Podíl pracovních dní se splněným celým požadavkem po měsících · cíl 100 %' : `Zeleně = požadavek ${req} splněn · červeně = pod požadavkem · víkendy mimo`,
+      legend: [['Požadavek splněn', DRC.good], ['Pod požadavkem', DRC.crit], ...(hasPlan ? [['Plánovaná kapacita', DRC.acc]] : []), [r.mode === 'year' ? 'Cíl' : 'Požadavek', DRC.crit, 'dash']],
+      ...drTrendChart(r) };
+    const src = onlyPlan ? r.groupsPlan : r.groupsReal;
+    const st = g => { const q = g.daysMet / g.cnt; return q >= 1 ? ['good', onlyPlan ? 'PLNÁ KAPACITA' : 'OK'] : q >= 0.8 ? ['warning', 'MÍRNĚ POD'] : ['critical', onlyPlan ? 'OMEZENÍ' : 'POD PLÁNEM']; };
+    v.table = {
+      title: onlyPlan ? 'Průměrná plánovaná kapacita po skupinách' : 'Průměr po skupinách',
+      cols: [{ h: 'Skupina' }, { h: 'Ø plán', r: true }, { h: onlyPlan ? 'Ø kapacita' : 'Ø dodáno', r: true }, { h: onlyPlan ? 'Dní v plné kapacitě' : 'Dní v plánu', r: true }, { h: 'Stav' }],
+      rows: src.map(g => ({ cells: [g.name, nf(g.avgPlan, 1), nf(g.avgDone, 1), `${g.daysMet}/${g.cnt}`, st(g)] })),
+      empty: !n && !nfu ? 'V období nejsou nahrané příchody ani plánované dny (bez víkendů).' : '',
+      total: n ? { cells: ['CELKEM', nf(r.groupsReal.filter(g => !g.extra).reduce((x, g) => x + g.avgPlan, 0), 1), nf(r.avg, 1), `${met}/${n}`, [met === n ? 'good' : r.pct >= 80 ? 'warning' : 'critical', met === n ? 'SPLNĚNO' : 'NESPLNĚNO']] } : null,
+    };
+    v.notes = [r.noData ? `Bez nahraných příchodů: ${r.noData} ${pracDnyN(r.noData)} (do plnění se nepočítají).` : '', r.weekend ? `Docházka o víkendu nebo ve svátek: ${r.weekend} ${dniN(r.weekend)} (přesčas, mimo normu).` : ''].filter(Boolean);
+  }
+  v.foot = `Plnění normy = podíl pracovních dní, kdy celkový počet lidí v práci dosáhl denního požadavku ${req}${r.reqOwn ? ' (Audit, Nastavení)' : ' (součet plánů skupin)'}. Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině. Víkendy a svátky jsou mimo normu, budoucí dny jsou plánovaná kapacita a do plnění se nepočítají. Lidé jen s ID. Vygenerováno ${dayText(todayIso())}.`;
+  return v;
+}
+
+/* ---------- v aplikaci ---------- */
+function drGaugeSvg(g) {
+  const C = 2 * Math.PI * 52;
+  const frac = Math.max(0, Math.min(1, g.pct / 100));
+  return `<svg viewBox="0 0 120 120" class="dr-gauge" aria-hidden="true"><circle cx="60" cy="60" r="52" fill="none" stroke="${DRC.grid}" stroke-width="12"/><circle cx="60" cy="60" r="52" fill="none" stroke="${g.color}" stroke-width="12" stroke-linecap="round" transform="rotate(-90 60 60)" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${(C * (1 - frac)).toFixed(1)}"/><text x="60" y="64" text-anchor="middle" font-size="24" font-weight="800" fill="${DRC.ink}">${Math.round(g.pct)}%</text><text x="60" y="82" text-anchor="middle" font-size="11" fill="${DRC.muted}">plnění</text></svg>`;
+}
+function drPill(st) { return st ? `<span class="dr-st ${st[0]}">${esc(st[1])}</span>` : ''; }
+function drPaperHtml(v) {
+  const tiles = `<div class="dr-kpi dr-kpi-g">${drGaugeSvg(v.gauge)}<div><b class="kl">${esc(v.gauge.kl)}</b><span class="kf">${esc(v.gauge.foot)}</span></div></div>${v.tiles.map(t => `<div class="dr-kpi"><b class="kl"><i class="dot" data-c="${t.dot}"></i>${esc(t.lab)}</b><span class="kv" data-c="${t.color || ''}">${esc(t.val)}${t.small ? ` <small>${esc(t.small)}</small>` : ''}</span><span class="kf">${esc(t.foot)}</span></div>`).join('')}`;
+  const legend = `<div class="dr-legend">${v.chart.legend.map(([t, c, k]) => `<span><i class="${k || 'sq'}" data-c="${c}"></i>${esc(t)}</span>`).join('')}</div>`;
+  const tb = v.table;
+  const cell = (c, i) => (i === 5 && tb.cols.length === 7) || (i === 4 && tb.cols.length === 5) ? `<td>${drPill(c)}</td>` : `<td class="${tb.cols[i].r ? 'r' : ''}${tb.cols[i].wide ? ' wide' : ''}">${esc(c)}</td>`;
+  const body = tb.empty ? `<tr><td colspan="${tb.cols.length}" class="dr-empty">${esc(tb.empty)}</td></tr>`
+    : tb.rows.map(row => `<tr>${row.cells.map(cell).join('')}</tr>`).join('') + (tb.total ? `<tr class="tot">${tb.total.cells.map(cell).join('')}</tr>` : '');
+  return `<div class="dr-paper">
+    <div class="dr-head"><div class="dr-brand"><div class="dr-t1">${esc(v.title)}</div><div class="dr-org">${esc(v.org)}</div>
+      <div class="dr-per"><b>${esc(v.modeName)} — ${esc(v.per.main)}</b><span>${esc(v.per.sub)}</span></div></div>
+      <div class="dr-verdict ${v.verdict.cls}"><span class="lbl">${esc(v.verdict.lbl)}</span><b class="hd">${esc(v.verdict.head)}</b><span class="big">${esc(v.verdict.big)}<small>${esc(v.verdict.bigL)}</small></span><span class="sub">${esc(v.verdict.sub)}</span></div></div>
+    ${v.banner ? `<div class="dr-banner"><b>PLÁN</b>${esc(v.banner)}</div>` : ''}
+    <div class="dr-kpis">${tiles}</div>
+    <div class="dr-card"><div class="dr-h">${esc(v.chart.title)}</div>${v.chart.sub ? `<div class="dr-sub">${esc(v.chart.sub)}</div>` : ''}${legend}<div class="dr-chart">${ctrSvg(v.chart)}</div></div>
+    <div class="dr-h">${esc(tb.title)}</div>
+    <div class="dr-scroll"><table class="dr-tab"><thead><tr>${tb.cols.map(c => `<th class="${c.r ? 'r' : ''}">${esc(c.h)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+    ${(v.notes || []).map(t => `<div class="dr-note">${esc(t)}</div>`).join('')}
+    <div class="dr-foot">${esc(v.foot)}</div>
+  </div>`;
+}
+function drHtml() {
+  const st = drRef();
+  const r = drReport(st.mode, st.ref);
+  const per = drPeriodLabel(r);
+  const bar = `<div class="t5-weekbar dr-bar">
+      <div class="chips" role="group" aria-label="Období">${DR_MODE_T.map(([k, l]) => `<button type="button" class="chip${k === st.mode ? ' on' : ''}" data-drmode="${k}" aria-pressed="${k === st.mode}">${l}</button>`).join('')}</div>
+      <div class="dr-nav"><button class="icon-btn" type="button" data-drshift="-1" aria-label="Předchozí">${I.back}</button><span class="dr-lab"><b>${esc(per.main)}</b><small>${esc(per.sub)}</small></span><button class="icon-btn t5-next" type="button" data-drshift="1" aria-label="Následující">${I.back}</button></div>
+      <label class="dr-date"><span class="sr-only">Den v období</span><input type="date" id="drDate" value="${esc(st.ref)}"></label><button class="btn ghost small" type="button" data-drapply>Zobrazit</button><button class="btn ghost small" type="button" data-drtoday>Dnes</button>
+      <span class="spacer"></span>
+      <button class="btn sec" type="button" data-drxlsx>Excel</button>
+      <button class="btn" type="button" data-drpdf>PDF</button>
+    </div>`;
+  const hint = dvHas() ? '' : `<div class="note w">Zatím nejsou nahrané příchody. Report ukáže skutečnost po nahrání souboru s docházkou (záložka Lidé v práci). <button class="btn small" type="button" data-dvpick>Nahrát docházku</button></div>`;
+  return `${bar}${hint}${drPaperHtml(drView(r))}`;
+}
+function drPaint(root) { $$('[data-c]', root).forEach(el => { const c = el.dataset.c; if (!c) return; if (el.classList.contains('kv')) el.style.color = c; else el.style.setProperty('--c', c); }); }
+
+/* ---------- PDF (A4 na výšku, souřadnice v px jako Kapacity a zaškolení: 1280 px = 210 mm) ---------- */
+function pdfDrPage(P, v) {
+  const { doc } = P;
+  const X = 56, CW = 1168, TOP = 48, BOT = P.PH - 60;
+  let y = TOP;
+  // záhlaví vlevo, výrok vpravo
+  const VW = 360, LW = CW - VW - 28;
+  let ly = y;
+  const put = (t, px, o, gap) => { P.split(t, px, LW, o).forEach(ln => { P.text(ln, X, ly + px, px, o); ly += px * 1.3; }); ly += gap; };
+  put(v.title, 32, { b: true }, 4);
+  put(v.org, 13, { c: DRC.txt2 }, 18);
+  put(`${v.modeName} — ${v.per.main}`, 24, { b: true }, 2);
+  put(v.per.sub, 14, { c: DRC.muted }, 0);
+  const vx = X + CW - VW, vr = vx + VW - 22;
+  const subL = P.split(v.verdict.sub, 13, VW - 44);
+  const lblL = P.split(v.verdict.lbl.toUpperCase(), 11, VW - 44, { b: true });
+  const vh = Math.max(ly - y, 22 + lblL.length * 15 + 36 + 54 + subL.length * 17 + 16);
+  P.box(vx, y, VW, vh, { fill: DR_VC[v.verdict.cls], r: 14 });
+  let vy = y + 22;
+  lblL.forEach(ln => { P.text(ln, vr, vy + 11, 11, { b: true, c: '#FFFFFF', a: 'end' }); vy += 15; });
+  P.text(v.verdict.head, vr, vy + 30, 28, { b: true, c: '#FFFFFF', a: 'end' }); vy += 36;
+  const bigW = P.width(v.verdict.bigL, 14);
+  P.text(v.verdict.bigL, vr, vy + 44, 14, { c: '#FFFFFF', a: 'end' });
+  P.text(v.verdict.big, vr - bigW - 10, vy + 44, 44, { b: true, c: '#FFFFFF', a: 'end' }); vy += 54;
+  subL.forEach(ln => { P.text(ln, vr, vy + 13, 13, { c: '#FFFFFF', a: 'end' }); vy += 17; });
+  y += vh + 22;
+  if (v.banner) {
+    const bl = P.split(v.banner, 13, CW - 120);
+    const bh = 18 + bl.length * 17;
+    P.box(X, y, CW, bh, { fill: DRC.planS, r: 10 });
+    P.box(X + 14, y + bh / 2 - 11, 56, 22, { fill: DRC.planBox, r: 11 });
+    P.text('PLÁN', X + 42, y + bh / 2 + 5, 12, { b: true, c: '#FFFFFF', a: 'middle' });
+    bl.forEach((ln, i) => P.text(ln, X + 84, y + 9 + 13 + i * 17, 13, { c: DRC.planBox }));
+    y += bh + 18;
+  }
+  // dlaždice: ukazatel plnění a tři čísla
+  const TW = (CW - 3 * 16) / 4;
+  const footL = v.tiles.map(t => P.split(t.foot, 12, TW - 36));
+  const gFoot = P.split(v.gauge.foot, 12, TW - 150);
+  const TH = Math.max(132, 20 + 18 + 46 + Math.max(...footL.map(f => f.length)) * 15.6 + 16);
+  v.tiles.concat([null]).forEach((t, k) => {
+    const i = k === 3 ? 0 : k + 1;
+    const tx = X + i * (TW + 16);
+    P.box(tx, y, TW, TH, { stroke: DRC.line, r: 12 });
+    if (i === 0) {
+      const cx = tx + 20 + 50, cy = y + TH / 2, rr = 42;
+      const ring = (a0, a1, c) => {
+        const pts = [];
+        const steps = Math.max(2, Math.ceil(((a1 - a0) / (2 * Math.PI)) * 90));
+        for (let s2 = 0; s2 <= steps; s2 += 1) { const a = a0 + ((a1 - a0) * s2) / steps; pts.push([cx + rr * Math.sin(a), cy - rr * Math.cos(a)]); }
+        P.poly(pts, c, 12);
+      };
+      ring(0, 2 * Math.PI, DRC.grid);
+      const frac = Math.max(0, Math.min(1, v.gauge.pct / 100));
+      if (frac > 0) ring(0, 2 * Math.PI * frac, v.gauge.color);
+      P.text(`${Math.round(v.gauge.pct)}%`, cx, cy + 8, 22, { b: true, c: DRC.ink, a: 'middle' });
+      P.text(v.gauge.kl, tx + 134, y + 36, 13, { b: true, c: DRC.txt2 });
+      gFoot.forEach((ln, j) => P.text(ln, tx + 134, y + 58 + j * 15.6, 12, { c: DRC.muted }));
+      return;
+    }
+    let ty = y + 18;
+    P.dot(tx + 24, ty + 8, 5, t.dot);
+    P.text(t.lab, tx + 36, ty + 13, 13, { b: true, c: DRC.txt2 });
+    ty += 24;
+    P.text(t.val, tx + 18, ty + 36, 36, { b: true, c: t.color || DRC.ink });
+    if (t.small) P.text(t.small, tx + 18 + P.width(t.val, 36, { b: true }) + 8, ty + 36, 18, { c: DRC.muted });
+    ty += 48;
+    footL[i - 1].forEach(ln => { P.text(ln, tx + 18, ty + 12, 12, { c: DRC.muted }); ty += 15.6; });
+  });
+  y += TH + 24;
+  // graf v rámečku
+  const inner = CW - 40;
+  const chH = (v.chart.vb[1] * inner) / v.chart.vb[0];
+  const legH = 22;
+  const subH = v.chart.sub ? 20 : 0;
+  const boxH = 20 + 22 + subH + legH + 8 + chH + 12;
+  if (y + boxH > BOT) { doc.addPage('a4', 'portrait'); y = TOP; }
+  P.box(X, y, CW, boxH, { stroke: DRC.line, r: 12 });
+  let cy2 = y + 20;
+  P.text(v.chart.title, X + 20, cy2 + 17, 18, { b: true, c: DRC.ink }); cy2 += 26;
+  if (v.chart.sub) { P.text(v.chart.sub, X + 20, cy2 + 12, 12, { c: DRC.muted }); cy2 += subH; }
+  let lx = X + 20;
+  v.chart.legend.forEach(([t, c, k]) => {
+    if (k === 'dash') P.line(lx, cy2 + 8, lx + 18, cy2 + 8, c, 2, [4, 3]); else P.box(lx, cy2 + 2, 12, 12, { fill: c, r: 3 });
+    const w0 = k === 'dash' ? 18 : 12;
+    P.text(t, lx + w0 + 6, cy2 + 12, 12, { c: DRC.txt2 });
+    lx += w0 + 6 + P.width(t, 12) + 20;
+  });
+  cy2 += legH + 8;
+  pdfCtrChart(P, v.chart, X + 20, cy2, inner);
+  y += boxH + 24;
+  // tabulka
+  const tb = v.table;
+  const nc = tb.cols.length;
+  const wide = tb.cols.findIndex(c => c.wide);
+  const stCol = nc === 7 ? 5 : 4;
+  const txt = (c, i) => (i === stCol ? (c ? c[1] : '') : String(c == null ? '' : c));
+  const want = tb.cols.map((c, i) => Math.max(P.width(c.h.toUpperCase(), 11, { b: true }), ...[...tb.rows, ...(tb.total ? [tb.total] : [])].map(rw => P.width(txt(rw.cells[i], i), 14, { b: i === 0 }) + (i === stCol ? 24 : 0))) + 24);
+  let ws = want.slice();
+  ws[0] = Math.max(ws[0], 190);
+  const sum = ws.reduce((a, b) => a + b, 0);
+  if (wide >= 0) { const rest = sum - ws[wide]; ws[wide] = Math.max(160, CW - rest); }
+  const tot = ws.reduce((a, b) => a + b, 0);
+  ws = ws.map(w => (w * CW) / tot);
+  const xs = ws.map((_, i) => X + ws.slice(0, i).reduce((a, b) => a + b, 0));
+  const head = () => {
+    P.text(tb.title, X, y + 17, 18, { b: true, c: DRC.ink }); y += 30;
+    tb.cols.forEach((c, i) => P.text(c.h.toUpperCase(), c.r ? xs[i] + ws[i] - 12 : xs[i] + 12, y + 12, 11, { b: true, c: DRC.muted, a: c.r ? 'end' : undefined }));
+    y += 20;
+    P.line(X, y, X + CW, y, '#CCCCCC', 2);
+  };
+  if (y + 30 + 20 + 40 > BOT) { doc.addPage('a4', 'portrait'); y = TOP; }
+  head();
+  const row = (rw, total) => {
+    const lines = rw.cells.map((c, i) => (i === stCol ? [txt(c, i)] : P.split(txt(c, i), 14, ws[i] - 24, { b: i === 0 || total })));
+    const h = 16 + Math.max(...lines.map(l => l.length)) * 18.2;
+    if (y + h > BOT) { doc.addPage('a4', 'portrait'); y = TOP; head(); }
+    if (total) P.box(X, y, CW, h, { fill: DRC.soft });
+    rw.cells.forEach((c, i) => {
+      if (i === stCol) {
+        if (!c) return;
+        const [bg, fg] = DR_ST[c[0]] || DR_ST.good;
+        const w = P.width(c[1], 11, { b: true }) + 20;
+        P.box(xs[i] + 10, y + h / 2 - 11, w, 22, { fill: bg, r: 11 });
+        P.text(c[1], xs[i] + 20, y + h / 2 + 4, 11, { b: true, c: fg });
+        return;
+      }
+      const col = tb.cols[i];
+      lines[i].forEach((ln, j) => P.text(ln, col.r ? xs[i] + ws[i] - 12 : xs[i] + 12, y + 8 + 14 + j * 18.2, 14, { b: i === 0 || total, c: i === nc - 1 && wide >= 0 ? DRC.txt2 : DRC.ink, a: col.r ? 'end' : undefined }));
+    });
+    y += h;
+    P.line(X, y, X + CW, y, '#EEEEEE', 1);
+  };
+  if (tb.empty) { P.text(tb.empty, X + CW / 2, y + 26, 14, { c: DRC.muted, a: 'middle' }); y += 40; }
+  else { tb.rows.forEach(rw => row(rw, false)); if (tb.total) row(tb.total, true); }
+  y += 18;
+  const notes = [...(v.notes || []), v.foot];
+  const nl = notes.flatMap(t => P.split(t, 12, CW));
+  if (y + 12 + nl.length * 16 > BOT) { doc.addPage('a4', 'portrait'); y = TOP; }
+  P.line(X, y, X + CW, y, '#EEEEEE', 1);
+  y += 10;
+  nl.forEach(ln => { P.text(ln, X, y + 12, 12, { c: DRC.muted }); y += 16; });
+}
+async function exportDrPdf(button) {
+  const st = drRef();
+  const r = drReport(st.mode, st.ref);
+  const v = drView(r);
+  await withPdf(button, doc => {
+    doc.setProperties({ title: `Report docházky · ${v.per.main}`, creator: EXPORT_NAME });
+    const P = ctrPdf(doc);
+    pdfDrPage(P, v);
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i += 1) {
+      doc.setPage(i);
+      P.text(`${EXPORT_NAME} · Report docházky · ${v.modeName} — ${v.per.main}`, 56, P.PH - 22, 11, { c: DRC.muted });
+      P.text(`Strana ${i} / ${n}`, 1224, P.PH - 22, 11, { c: DRC.muted, a: 'end' });
+    }
+    downloadFile(`report-dochazky-${st.mode === 'day' ? r.from : `${r.from}-${r.to}`}.pdf`, doc.output('blob'), 'application/pdf');
+  }, 'portrait', { mono: true });
+}
+async function exportDrXlsx() {
+  const st = drRef();
+  const r = drReport(st.mode, st.ref);
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    drSheets(r).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`report-dochazky-${st.mode === 'day' ? r.from : `${r.from}-${r.to}`}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
 function dvHas() { const dv = S.workAudit.dv; return !!(Object.keys(dv.pres).length || Object.keys(dv.perf).length); }
 function dvMonths() { const dv = S.workAudit.dv; return [...new Set([...Object.keys(dv.pres).map(i => i.slice(0, 7)), ...Object.keys(dv.perf)])].sort().reverse(); }
 /* Výchozí den: dnes, když je nahraný (nebo není nic), jinak poslední den s docházkou. */
@@ -11953,6 +12354,16 @@ function bindWorkAudit() {
     if (pick) { $(pick.dataset.wapick === 'att' ? '#waAttFile' : '#waWorkFile').click(); return; }
     // Lidé v práci (2.37)
     if (t.closest('[data-dvpick]')) { $('#waDvFile').click(); return; }
+    // Report docházky (2.40)
+    const drm = t.closest('[data-drmode]');
+    if (drm) { drRef().mode = drm.dataset.drmode; renderWorkAudit(); return; }
+    const drs = t.closest('[data-drshift]');
+    if (drs) { drShift(+drs.dataset.drshift); renderWorkAudit(); return; }
+    if (t.closest('[data-drtoday]')) { drRef().ref = todayIso(); renderWorkAudit(); return; }
+    if (t.closest('[data-drapply]')) { const v = $('#drDate').value; if (WA_ISO.test(v)) { drRef().ref = v; renderWorkAudit(); } return; }
+    const drp = t.closest('[data-drpdf]');
+    if (drp) { exportDrPdf(drp); return; }
+    if (t.closest('[data-drxlsx]')) { exportDrXlsx(); return; }
     const dvm = t.closest('[data-dvmode]');
     if (dvm) { ui.wa.dvMode = dvm.dataset.dvmode; renderWorkAudit(); return; }
     const dvd = t.closest('[data-dvday]');
@@ -12048,6 +12459,7 @@ function bindWorkAudit() {
     if (day && !t.closest('a, input, select')) { waDayDialog(day.dataset.waday); }
   });
   wv.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && event.target.id === 'drDate') { event.preventDefault(); $('[data-drapply]').click(); return; }
     if (event.key === 'Enter' && event.target.matches('[data-wadate]')) { event.preventDefault(); waApplyDates(event.target.closest('[data-wadates]').dataset.wadates); return; }
     if (event.key !== 'Enter' || !event.target.matches('tr[data-waday], tr[data-waweek], tr[data-wagrp], tr[data-dvgo], tr[data-dvperson]')) return;
     event.preventDefault();

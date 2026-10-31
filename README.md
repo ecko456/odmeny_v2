@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.40
+
+- **Audit → Report docházky** (nová záložka za Lidé v práci): report plnění denního požadavku
+  z nahraných příchodů po vzoru reportu docházky, ke stažení jako **PDF** (A4 na výšku, jedna
+  strana) i **Excel**.
+  - Období **Den, Týden, Měsíc, Rok**, šipky na předchozí a další období, datum a tlačítko Dnes.
+  - Den: výrok (SPLNĚNO / NESPLNĚNO / BEZ DAT, u budoucího dne plánovaná kapacita), ukazatel
+    plnění, dlaždice Plán na den, Rozdíl vs. plán a Skupiny pod plánem, graf Plán vs. dodáno po
+    skupinách s čarou požadavku a tabulka po skupinách s poznámkou (nemoc, kdo nepřišel, jen ID).
+  - Týden a měsíc: plnění normy = podíl pracovních dnů, kdy celkový počet lidí v práci dosáhl
+    požadavku, graf jednotlivých dnů, průměr po skupinách s počtem dnů v plánu. Rok: plnění
+    po měsících.
+  - Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne,
+    neznámá ID zvlášť). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině.
+    Požadavek = denní požadavek lidí z Nastavení Auditu (výchozí 100).
+  - Víkendy a svátky jsou mimo normu (docházka v nich je přesčas), budoucí dny jsou plánovaná
+    kapacita (plán bez nemocných) a do plnění se nepočítají. Nadpis bere název z Auditu.
+- Data beze změny (verze dat 35).
+
 ## Co je nového ve verzi 2.39.3
 
 - **Úvod HALA 2 na telefonu podle dnešních příchodů.** Když jsou nahrané dnešní příchody
@@ -1423,6 +1442,9 @@ v hlavičce každého skriptu:
 - `tests/e2e_plankap.js`: novinka 2.38 (Plán kapacit: potřeba po úrovních, srovnání počtů,
   máme, Ø v práci z docházky, doplnit, doškolit s kandidáty, poznámka, historie, PDF s textem
   přes pypdf, Excel, tmavý režim, telefon);
+- `tests/e2e_report.js`: novinka 2.40 (Report docházky: den, týden, měsíc, rok, plán, svátek,
+  výpočet proti očekávání, PDF s textem přes pypdf, Excel, tmavý režim, telefon; hodiny stránky
+  stojí na 30. 10. 2026);
 - `tests/e2e_rychla.js`: novinka 2.39 (Rychlá kontrola na telefonu: dlaždice a plovoucí menu,
   počet lidí, směna, oddělení, jen lidé v práci, přednost nekontrolovaných, výměna, sdílení
   přes schránku, uložení do dnešních kontrol, zápis kontroly, tmavý režim, 320 px, monitor;
@@ -1443,7 +1465,7 @@ UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
 Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
-upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.39.3:
+upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.40:
 
 ```bash
 rm -rf /tmp/v238 && mkdir /tmp/v238 && git archive 59470af | tar -x -C /tmp/v238

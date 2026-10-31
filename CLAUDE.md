@@ -34,6 +34,27 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.40):
+
+- Uživatel (s přílohou: HTML „Report docházky“, plnění denního požadavku po skupinách, Den /
+  Týden / Měsíc / Rok, PDF na jednu stranu): „z nahraných dat do kapacity potřeboval mít možnost
+  stahovat reporty po vzorku v příloze“. Příloha obsahuje název organizace a logo: do repa ne.
+  - Core (za `staffReal`): `drCtx` (skupiny Matice, plán = `capPlan.n`, jinak členové bez
+    vyřazených a vedoucích; požadavek `wa.target`, jinak součet plánů), `drDay(iso)` (`kind`
+    real | plan | none; real z `dv.pres` přes `dvGroupOf`, vedoucí ne, Bez skupiny / Neznámé ID
+    jako `extra`; poznámka nemoc a „nepřišli ID …“; plan = plán − nemocní od data), `drDates`,
+    `drReport(mode, ref)` (n, met, pct, nf, futMet, onlyPlan, noData, weekend, groupsReal/Plan,
+    trend; rok po měsících), `drSheets` (Přehled dní, Skupiny).
+  - UI (`app.js`, sekce REPORT DOCHÁZKY): záložka Auditu `report` (`WA_TABS`), `ui.wa.dr {mode,
+    ref}`, `drView` (výrok, ukazatel, dlaždice, graf, tabulka, poznámky; texty po vzoru),
+    grafy `drColChart`, `drTrendChart` jako značky (`ctrSvg`, `pdfCtrChart`), `drPaperHtml`
+    (papír `.dr-*` bílý i v tmavém režimu, barvy přes `data-c` a `drPaint`), `pdfDrPage` (ctrPdf,
+    A4 na výšku, ukazatel jako kruh z `P.poly`), `exportDrPdf`, `exportDrXlsx`.
+    Datum: pole `#drDate` + Zobrazit / Enter (nepřekreslovat na `change`).
+  - Testy: core „Report docházky (2.40)“, nový `tests/e2e_report.js`. `e2e_kapacity` čeká pruh
+    vykázáno a plán jen když měsíc má plánované dny (31. 10. 2026 je sobota, padalo i na 2.39.3).
+  - `ODM_VERSION` 2.40, data beze změny (35).
+
 Stav k 31. 10. 2026 (verze 2.39.3):
 
 - Uživatel: „V telefonu při přihlášení, ať mi to ukáže vždy obsazenost podle toho, kolik je lidí
@@ -1635,7 +1656,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.39 | `6278dda` | Rychlá kontrola na telefonu – počet lidí, směna, oddělení, jen lidé v práci, seznam jmen, výměna, sdílení, uložení do dnešních kontrol a zápis (data verze 35) |
 | 2.39.1 | `03b273c` | Plán kapacit jen s ID zaměstnanců (aplikace, PDF, Excel) |
 | 2.39.2 | `b89b1c5` | PDF Plánu kapacit v grafickém podání jako Kapacity a zaškolení (rámečky, dlaždice, graf po úrovních proti potřebě, tabulka) |
-| 2.39.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvod HALA 2 na telefonu podle dnešních příchodů (v práci po směnách a odděleních proti plánu, teď v práci, nahrát příchody) |
+| 2.39.3 | `aca21b0` | úvod HALA 2 na telefonu podle dnešních příchodů (v práci po směnách a odděleních proti plánu, teď v práci, nahrát příchody) |
+| 2.40 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – Report docházky po vzoru (plnění denního požadavku z příchodů, Den / Týden / Měsíc / Rok, PDF a Excel) |
 
 Verze 2.1 přidala:
 
@@ -2023,7 +2045,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 85 testů: proti původní aplikaci + opravy + 2.1 až 2.39
+node tests/test_core.js                 # 87 testů: proti původní aplikaci + opravy + 2.1 až 2.40
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -2085,6 +2107,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     nastavení sloupců, historie, telefon; hodiny stránky stojí na pátku 30. 10. 2026;
   - `e2e_plankap.js` (2.38): Plán kapacit (potřeba po úrovních, srovnání, máme, Ø v práci,
     doplnit, doškolit, kandidát do profilu, poznámka, historie, PDF přes pypdf, Excel, telefon);
+  - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
   - `e2e_rychla.js` (2.39): Rychlá kontrola na telefonu (dlaždice, plovoucí menu, počet, směna,
     oddělení, jen lidé v práci, přednost, výměna, sdílení, uložení, zápis, tmavý režim, 320 px);
   - `e2e_upgrade_prev.js`: aktualizace z předchozí verze na aktuální na Apachi (data
