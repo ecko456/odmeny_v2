@@ -12063,7 +12063,50 @@ function dvSettingsHtml() {
     <p class="small muted">První list Docházka: ID zaměstnance a první den (příchod, vedle odchod; každý další den o dva sloupce dál, datum v hlavičce). Druhý list vykázaná práce. Písmena jako v Excelu.</p>
     <div class="wa-colgrid">${DV_SET_COLS.map(([kind, key, label]) => `<label class="field wa-letter"><span>${esc(label)}</span><input value="${esc(dv.cols[kind][key])}" maxlength="3" data-dvcol="${kind}.${key}" placeholder="—" autocapitalize="characters"></label>`).join('')}</div>
     <label class="field dv-unit"><span>Strávený čas je v</span><select id="dvUnit">${[['auto', 'najít podle hodnot a hlavičky'], ['min', 'minutách'], ['h', 'hodinách']].map(([k, l]) => `<option value="${k}"${dv.unit === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-    <button class="btn ghost small" type="button" data-dvcolreset>Vrátit výchozí sloupce</button></div>`;
+    <div class="row gap"><button class="btn ghost small" type="button" data-dvcolreset>Vrátit výchozí sloupce</button>${ui.me && ui.me.ai ? '<button class="btn sec small" type="button" data-dvaipick>' + I.sparkle + '<span>Nastavit sloupce přes AI ze souboru…</span></button><span class="tiny muted">AI dostane jen nadpisy prvních řádků, ne jména ani hodnoty.</span>' : ''}</div></div>`;
+}
+
+/* ---------- nastavení sloupců přes AI (2.42.2) ---------- */
+/* Pošle AI jen nadpisy prvních řádků a typy buněk (dvAiSample), ukáže návrh sloupců a po
+   potvrzení ho uloží. Vrací true, když se sloupce změnily. */
+const DV_AI_BTN = () => (ui.me && ui.me.ai ? `<button class="btn sec" type="submit" value="ai" formnovalidate>${I.sparkle}<span>Nastavit sloupce přes AI</span></button>` : '');
+async function dvAiSetup(sheets, fileName) {
+  const sample = dvAiSample(sheets, Object.values(S.employees));
+  if (!sample.length) { toast('V souboru není žádný list.', true); return false; }
+  toast('AI čte nadpisy souboru…');
+  let r;
+  try { r = await Vault.api('ai_columns', { method: 'POST', body: { sheets: sample } }); } catch (error) { toast(error.message, true); return false; }
+  const dv = S.workAudit.dv;
+  const head = (kind, letter) => {
+    const want = kind === 'att' ? r.att_sheet : r.work_sheet;
+    const sh = sample.find(x => x.name === want) || sample[kind === 'att' ? 0 : Math.min(1, sample.length - 1)];
+    const t = sh ? sh.rows.map(row => row[letter]).filter(x => x && !/^<|^\[/.test(x)).slice(0, 2).join(' · ') : '';
+    return t;
+  };
+  const rows = DV_SET_COLS.map(([kind, key, label]) => {
+    const v = (r[kind] || {})[key] || '';
+    const req = !(key === 'date' || key === 'norm');
+    const use = v || (req ? dv.cols[kind][key] : '');
+    const same = use === (dv.cols[kind][key] || '');
+    return { kind, key, label, v, use, same, req, h: v ? head(kind, v) : '' };
+  });
+  const changed = rows.filter(x => !x.same).length + (r.unit !== dv.unit ? 1 : 0);
+  const res = await dialog({
+    title: 'Návrh sloupců od AI', ok: changed ? 'Použít návrh' : 'Zavřít', cancel: changed ? 'Zrušit' : '', wide: true,
+    html: `<p><b>${esc(fileName || '')}</b>${r.att_sheet || r.work_sheet ? ` <small class="muted">docházka: ${esc(r.att_sheet || '—')} · práce: ${esc(r.work_sheet || '—')}</small>` : ''}</p>
+      <div class="table-card flat"><table class="stack dv-aitab"><thead><tr><th>Co</th><th>Sloupec</th><th>Nadpis v souboru</th><th>Teď</th></tr></thead><tbody>${rows.map(x => `<tr${x.same ? '' : ' class="dv-aichg"'}>
+        <td data-label="Co">${esc(x.label)}</td><td data-label="Sloupec" class="num"><b>${esc(x.use || '—')}</b>${!x.v && x.req ? ' <small class="warn-t">AI nenašla, zůstává</small>' : ''}</td>
+        <td data-label="Nadpis">${esc(x.h || '—')}</td><td data-label="Teď" class="num muted">${esc(dv.cols[x.kind][x.key] || '—')}</td></tr>`).join('')}
+        <tr${r.unit !== dv.unit ? ' class="dv-aichg"' : ''}><td data-label="Co">Strávený čas je v</td><td data-label="Sloupec"><b>${esc({ auto: 'najít sám', min: 'minutách', h: 'hodinách' }[r.unit])}</b></td><td></td><td data-label="Teď" class="muted">${esc({ auto: 'najít sám', min: 'minutách', h: 'hodinách' }[dv.unit])}</td></tr></tbody></table></div>
+      ${r.note ? `<div class="note i">${esc(r.note)}</div>` : ''}
+      <p class="tiny muted">${changed ? 'Změněné řádky jsou zvýrazněné. Po použití se soubor načte znovu a uvidíš, co z něj vyšlo.' : 'Sloupce už jsou nastavené stejně.'} AI dostala jen nadpisy prvních řádků a typ buněk (číslo, čas, datum), žádná jména ani hodnoty.</p>`,
+  });
+  if (!changed || res.value !== 'ok') return false;
+  rows.forEach(x => { dv.cols[x.kind][x.key] = x.use; });
+  dv.unit = DV_UNITS.includes(r.unit) ? r.unit : 'auto';
+  store.note = { kind: 'workaudit', text: `Audit: sloupce souboru docházky a výkonů nastavené podle návrhu AI (${fileName || 'soubor'})`, keep: true };
+  save();
+  return true;
 }
 
 /* ---------- nahrání souboru ---------- */
@@ -12083,7 +12126,9 @@ async function dvImport(file, opts = {}) {
     const errs = [p.att && p.att.err, p.work && p.work.err].filter(Boolean);
     const go = await dialog({ title: 'V souboru nejsou žádná data', ok: 'Nastavit sloupce', cancel: 'Zavřít',
       html: `<p><b>${esc(file.name)}</b>: ${opts.attOnly ? 'nenašla se docházka' : 'nenašla se docházka ani vykázaná práce'}.</p>${errs.length ? `<ul class="wa-imp">${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : ''}
-        <p class="small muted">První list má být Docházka: ve sloupci ${esc(c.att.id)} ID zaměstnance, od sloupce ${esc(c.att.first)} příchod a odchod, nad nimi datum dne. Když má soubor sloupce jinde, nastav je v Nastavení Auditu.</p>` });
+        <p class="small muted">První list má být Docházka: ve sloupci ${esc(c.att.id)} ID zaměstnance, od sloupce ${esc(c.att.first)} příchod a odchod, nad nimi datum dne. Když má soubor sloupce jinde, nastav je v Nastavení Auditu${ui.me && ui.me.ai ? ', nebo je nech nastavit AI' : ''}.</p>
+        ${DV_AI_BTN() ? `<div class="row gap">${DV_AI_BTN()}</div>` : ''}` });
+    if (go.value === 'ai') { if (await dvAiSetup(sheets, file.name)) return dvImport(file, opts); return null; }
     if (go.value === 'ok') { Object.assign(ui.wa, { tab: 'nastaveni' }); showView('audit'); renderWorkAudit(); $('#dvColsCard')?.scrollIntoView({ block: 'center' }); }
     return null;
   }
@@ -12126,8 +12171,10 @@ async function dvImport(file, opts = {}) {
         ${attNew.length ? '<li>obsazenost v Auditu (ranní = příchod před 12:00, skupiny podle skupin Matice v Nastavení),</li>' : ''}
         ${prodNew.length ? `<li>evidence práce místo Výroby za ${esc(prodNew.map(monthLabel).join(', '))} (kusy, strávený čas${w && w.norm ? ', norma' : ', bez normy'}),</li>` : ''}
         ${pcsNew ? `<li>kusy podle operací do Auditu (${pcsNew} ${denN(pcsNew)}).</li>` : ''}</ul></div>` : ''}
-      <p class="tiny muted">${owns ? 'Říjen 2026 a dřív zůstává ze starých souborů. ' : 'Docházka pro odměny a Výroba za říjen 2026 a dřív se nemění. '}Sloupce změníš v Nastavení Auditu.</p>`,
+      <p class="tiny muted">${owns ? 'Říjen 2026 a dřív zůstává ze starých souborů. ' : 'Docházka pro odměny a Výroba za říjen 2026 a dřív se nemění. '}Sloupce změníš v Nastavení Auditu.</p>
+      ${DV_AI_BTN() ? `<div class="row gap dv-aibar"><span class="small muted">Nesedí čísla nebo lidé?</span>${DV_AI_BTN()}</div>` : ''}`,
   });
+  if (res.value === 'ai') { if (await dvAiSetup(sheets, file.name)) return dvImport(file, opts); return null; }
   if (res.value !== 'ok') return null;
   const f = res.form.elements;
   const unit = f.namedItem('unit') ? f.namedItem('unit').value : dv.unit;
@@ -12497,6 +12544,18 @@ function bindWorkAudit() {
     if (pick) { $(pick.dataset.wapick === 'att' ? '#waAttFile' : '#waWorkFile').click(); return; }
     // Lidé v práci (2.37)
     if (t.closest('[data-dvpick]')) { $('#waDvFile').click(); return; }
+    if (t.closest('[data-dvaipick]')) {
+      const inp = Object.assign(document.createElement('input'), { type: 'file', accept: '.xlsx,.xls,.xlsm,.csv' });
+      inp.onchange = async () => {
+        const f = inp.files[0];
+        if (!f) return;
+        let sh;
+        try { sh = await readTable(f); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
+        if (await dvAiSetup(sh, f.name)) { renderWorkAudit(); toast('Sloupce nastavené. Teď soubor nahraj tlačítkem Nahrát docházku a výkony.'); }
+      };
+      inp.click();
+      return;
+    }
     // Report docházky (2.40)
     const drm = t.closest('[data-drmode]');
     if (drm) { drRef().mode = drm.dataset.drmode; renderWorkAudit(); return; }

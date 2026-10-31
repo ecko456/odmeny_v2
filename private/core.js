@@ -4951,6 +4951,41 @@ function dvApply(wa,p,meta,opts){
   const occ=a?dvToAudit(wa,a.dates,a.abs):[];
   return {days:a?a.dates.length:0,months,audit,periods,prod,occ};
 }
+/** Ukázka souboru pro AI (2.42.2), ať správně nastaví sloupce: první řádky listů. Skutečný text
+    zůstane jen v nadpisech (řádky před prvním datovým řádkem), jména z Lidí se v nich nahradí
+    [osoba N]. Hodnoty datových řádků (ID, časy, kusy, díly) jdou jen jako typ buňky. */
+function dvAiSample(sheets,employees){
+  const W=70,ROWS=6;
+  const txt=v=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
+  const isId=v=>typeof v==="number"?Number.isFinite(v):/^[A-Za-z]{0,4}[-\/]?\d[\w\-\/]{0,28}$/.test(txt(v));
+  const iso=v=>{const d=dvDateAny(v);return d?"<datum "+d+">":null;};
+  const out=(sheets||[]).filter(sh=>sh&&Array.isArray(sh.aoa)).slice(0,4).map(sh=>{
+    const rows=sh.aoa.filter(r=>Array.isArray(r)&&r.some(c=>txt(c)!=="")).slice(0,ROWS);
+    const dataAt=rows.findIndex(r=>{const k=r.findIndex(c=>txt(c)!=="");return k>=0&&k<3&&isId(r[k]);});
+    const dateCol=k=>!!(sh.dateCols&&sh.dateCols.has(k));
+    return {name:txt(String(sh.name||"").split("›").pop()).slice(0,60),rows:rows.map((r,i)=>{
+      const head=dataAt<0||i<dataAt,cells={};
+      r.slice(0,W).forEach((v,k)=>{
+        let t=txt(v);if(t==="")return;
+        if(v instanceof Date)t=iso(v)||"<datum>";
+        else if(typeof v==="number"){
+          if(dateCol(k)||(Number.isInteger(v)&&v>20000&&v<80000&&head))t=iso(v)||"<číslo>";
+          else if(head)t=String(v);
+          else t=v>0&&v<1?"<čas>":Number.isInteger(v)?"<celé číslo>":"<číslo>";
+        }else if(/\d/.test(t)){
+          t=/^\d{1,2}:\d{2}(:\d{2})?$/.test(t)?"<čas>":(iso(t)||(head&&t.length<=40?t:"<text s číslicemi>"));
+        }else if(!head)t="<text>";
+        cells[colLetter(k)]=t.slice(0,60);
+      });
+      return cells;
+    })};
+  });
+  /* jména lidí v nadpisech (třeba nadpis listu se jménem vedoucího) */
+  const flat=[];out.forEach(sh=>sh.rows.forEach(r=>Object.keys(r).forEach(k=>flat.push([r,k]))));
+  const masked=maskNamesMany(flat.map(([r,k])=>r[k]),employees||[]).texts;
+  flat.forEach(([r,k],i)=>{r[k]=masked[i];});
+  return out;
+}
 /* ---------- od listopadu 2026 jediný zdroj (2.42) ----------
    Soubor Docházka a výkony plní za měsíce od DV_FROM docházku pro odměny (S.periods), evidenci
    práce místo Výroby (S.production) a obsazenost s kusy v Auditu. Říjen 2026 a dřív zůstává

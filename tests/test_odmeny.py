@@ -420,7 +420,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.42.1")
+        self.assertEqual(result["version"], "2.42.2")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -565,6 +565,7 @@ class FakeAnthropic:
     def __init__(self):
         self.requests = []
         self.mode = "ok"
+        self.columns = None
         owner = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -575,7 +576,16 @@ class FakeAnthropic:
                     return self.reply(401, {"type": "error", "error": {"type": "authentication_error", "message": "invalid x-api-key"}})
                 if owner.mode == "overloaded":
                     return self.reply(529, {"type": "error", "error": {"type": "overloaded_error", "message": "Overloaded"}})
-                parts = [{"id": p["id"], "text": "Upraveno: " + p["text"]} for p in json.loads(body["messages"][0]["content"])["parts"]]
+                sent = json.loads(body["messages"][0]["content"])
+                if "listy" in sent:   # nastavení sloupců (2.42.2)
+                    reply = owner.columns if owner.columns is not None else {
+                        "att": {"id": "A", "first": "C"},
+                        "work": {"id": "B", "part": "D", "op": "E", "order": "F", "done": "G", "time": "J", "date": "a", "norm": "Ž1"},
+                        "unit": "min", "att_sheet": "Docházka", "work_sheet": "práce", "note": "Datum je nejisté."}
+                    return self.reply(200, {"id": "msg_test", "type": "message", "role": "assistant", "model": body.get("model"),
+                                            "content": [{"type": "text", "text": json.dumps(reply, ensure_ascii=False)}], "stop_reason": "end_turn",
+                                            "stop_sequence": None, "usage": {"input_tokens": 12, "output_tokens": 9}})
+                parts = [{"id": p["id"], "text": "Upraveno: " + p["text"]} for p in sent["parts"]]
                 if owner.mode == "missing":
                     parts = parts[1:]
                 content = [] if owner.mode == "refusal" else [{"type": "text", "text": json.dumps({"parts": parts}, ensure_ascii=False)}]
@@ -622,6 +632,32 @@ class OdmenyAiTests(unittest.TestCase):
         key = self.server.data / "anthropic-api-key"
         key.write_text(self.KEY + "\n")
         key.chmod(0o600)
+
+    def test_columns_sends_only_the_sample(self):
+        sample = {"sheets": [{"name": "Docházka", "rows": [{"A": "ID", "B": "<datum 2026-11-02>"}, {"B": "Příchod", "C": "Odchod"}, {"A": "<celé číslo>", "B": "<čas>"}]},
+                             {"name": "práce", "rows": [{"A": "Datum", "B": "ID", "D": "Díl"}, {"A": "<datum 2026-11-02>", "B": "<celé číslo>"}]}]}
+        status, _ = self.client.api("POST", "ai_columns", sample)
+        self.assertIn(status, (401, 403))
+        self.client.setup()
+        self.assertEqual(self.client.api("POST", "ai_columns", sample)[0], 503)
+        self.enable()
+        status, result = self.client.api("POST", "ai_columns", sample)
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["att"], {"id": "A", "first": "C"})
+        self.assertEqual(result["work"]["id"], "B")
+        self.assertEqual(result["work"]["date"], "A", "malé písmeno se převede")
+        self.assertEqual(result["work"]["norm"], "", "neplatný sloupec = prázdný")
+        self.assertEqual((result["unit"], result["att_sheet"], result["note"]), ("min", "Docházka", "Datum je nejisté."))
+        req = self.api_mock.requests[-1]["body"]
+        self.assertEqual(json.loads(req["messages"][0]["content"])["listy"][0]["radky"][0], {"A": "ID", "B": "<datum 2026-11-02>"})
+        self.assertIn("Docházka", req["system"] if isinstance(req["system"], str) else json.dumps(req["system"], ensure_ascii=False))
+        for bad in ({}, {"sheets": []}, {"sheets": [{"rows": [{}]}] * 5}, {"sheets": [{"rows": [{}] * 7}]},
+                    {"sheets": [{"rows": [{"a1": "x"}]}]}, {"sheets": [{"rows": [{f"A{i}": "x" for i in range(71)}]}]}):
+            self.assertEqual(self.client.api("POST", "ai_columns", bad)[0], 400, bad)
+        self.api_mock.columns = {"att": {"id": 5}, "work": {}, "unit": "dny"}
+        status, result = self.client.api("POST", "ai_columns", sample)
+        self.assertEqual(status, 200, result)
+        self.assertEqual((result["att"]["id"], result["unit"], result["work"]["time"]), ("", "auto", ""), "nesmysly z odpovědi se zahodí")
 
     def test_needs_session_and_key(self):
         status, _ = self.client.api("POST", "ai_rewrite", {"text": "Díl se upíná ručně."})

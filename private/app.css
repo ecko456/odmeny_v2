@@ -2461,3 +2461,6 @@ tr.dv-click:hover td { background: var(--surface-2); }
 .qk-row button.qk-open:hover { background: rgba(127, 127, 127, .1); }
 .qk-row button.qk-open:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
 .dr-check { margin: 0 0 12px; }
+/* Nastavení sloupců přes AI (2.42.2) */
+.dv-aitab tr.dv-aichg td { background: var(--good-soft); }
+.dv-aibar { margin-top: 10px; align-items: center; flex-wrap: wrap; }

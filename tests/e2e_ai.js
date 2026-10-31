@@ -35,7 +35,12 @@ const server = http.createServer((req, res) => {
     mock.requests.push({ path: req.url, headers: req.headers, body });
     const send = (status, payload) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(payload)); };
     if (mock.mode === 'overloaded') return send(529, { type: 'error', error: { type: 'overloaded_error', message: 'Overloaded' } });
-    const parts = JSON.parse(body.messages[0].content).parts.map(p => ({ id: p.id, text: polish(p.text) }));
+    const sent = JSON.parse(body.messages[0].content);
+    if (sent.listy) {   // nastavení sloupců souboru docházky a výkonů (2.42.2)
+      const cols = { att: { id: 'B', first: 'D' }, work: { id: 'B', part: 'D', op: 'E', order: 'F', done: 'G', time: 'J', date: 'C', norm: '' }, unit: 'min', att_sheet: 'Docházka', work_sheet: 'práce', note: 'Norma v souboru není.' };
+      return send(200, { id: 'msg_e2e', type: 'message', role: 'assistant', model: body.model, content: [{ type: 'text', text: JSON.stringify(cols) }], stop_reason: 'end_turn', stop_sequence: null, usage: { input_tokens: 10, output_tokens: 10 } });
+    }
+    const parts = sent.parts.map(p => ({ id: p.id, text: polish(p.text) }));
     const reply = () => send(200, { id: 'msg_e2e', type: 'message', role: 'assistant', model: body.model,
       content: [{ type: 'text', text: JSON.stringify({ parts }) }], stop_reason: 'end_turn', stop_sequence: null,
       usage: { input_tokens: 10, output_tokens: 10 } });
@@ -46,7 +51,7 @@ const lastParts = () => JSON.parse(mock.requests[mock.requests.length - 1].body.
 
 async function watch(page, label) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
-  page.on('response', r => { if (r.status() >= 400 && !/action=ai_rewrite/.test(r.url())) problems.push(`${label} HTTP ${r.status()} ${r.url()}`); });
+  page.on('response', r => { if (r.status() >= 400 && !/action=ai_(rewrite|columns)/.test(r.url())) problems.push(`${label} HTTP ${r.status()} ${r.url()}`); });
   page.on('pageerror', err => problems.push(`${label} pageerror: ${err.message}`));
   await page.addInitScript(() => {
     document.addEventListener('securitypolicyviolation', e => console.error(`CSP ${e.violatedDirective} ${e.blockedURI}`));
@@ -290,6 +295,58 @@ async function pickParts(page, keys) {
   await page.waitForTimeout(400);   // dialog se zobrazuje s animací
   await page.screenshot({ path: `${shots}/09-dark-proposal.png` });
   await page.click('#dlgCancel');
+
+  // Nastavení sloupců souboru Docházka a výkony přes AI (2.42.2): sloupce jinde než výchozí.
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.evaluate(() => {
+    ['501', '502'].forEach((wid, i) => { const k = `aiprobe${i}|test`; S.employees[k] = { key: k, last: `Zkouška${i}`, first: 'Test', positionId: null, note: '', wid }; });
+    save();
+  });
+  await saved(page);
+  const xb64 = await page.evaluate(async () => {
+    const X = await xlsx();
+    const d = n => new Date(Date.UTC(2026, 9, n, 12));
+    const wb = X.utils.book_new();
+    const ser = n => (Date.UTC(2026, 9, n) - Date.UTC(1899, 11, 30)) / 864e5;
+    const att = X.utils.aoa_to_sheet([['Středisko', 'ID', 'Pozn.', ser(26), null, ser(27), null], [null, null, null, 'Příchod', 'Odchod', 'Příchod', 'Odchod'],
+      ['H2', 501, '', 0.25, 0.6, 0.25, 0.6], ['H2', 502, '', 0.26, 0.61, null, null]]);
+    ['D1', 'F1'].forEach(a => { att[a].z = 'd.m.yyyy'; });
+    X.utils.book_append_sheet(wb, att, 'Docházka');
+    const work = X.utils.aoa_to_sheet([['Středisko', 'ID', 'Datum', 'Díl', 'Operace', 'V zakázce', 'Hotovo', '', '', 'Čas (min)'],
+      ['H2', 501, d(26), 'Hřídel', 'Broušení', 50, 20, '', '', 120], ['H2', 502, d(27), 'Kryt', 'Frézování', 30, 10, '', '', 90]]);
+    ['C2', 'C3'].forEach(a => { work[a].z = 'd.m.yyyy'; });
+    X.utils.book_append_sheet(wb, work, 'práce');
+    const bytes = new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' }));
+    let str = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) str += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(str);
+  });
+  const before = mock.requests.length;
+  await page.evaluate(() => showView('audit'));
+  await page.setInputFiles('#waDvFile', { name: 'dochazka-jinak.xlsx', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', buffer: Buffer.from(xb64, 'base64') });
+  await page.waitForSelector('#dlg[open] button[value="ai"]');
+  check(!/2 lidé s příchodem/.test(await page.textContent('#dlgBody')), 'výchozí sloupce soubor nepřečtou správně');
+  await page.click('#dlg button[value="ai"]');
+  await page.waitForSelector('#dlg[open] .dv-aitab');
+  const colReq = JSON.parse(mock.requests[mock.requests.length - 1].body.messages[0].content);
+  const sentText = JSON.stringify(colReq);
+  check(mock.requests.length === before + 1 && colReq.listy.length === 2, `AI dostala oba listy: ${sentText.slice(0, 120)}`);
+  check(!/501|502|Hřídel|Kryt|Zkouška/.test(sentText) && /Příchod/.test(sentText) && /ID/.test(sentText), `do AI jen nadpisy a typy: ${sentText}`);
+  const prop = await page.textContent('#dlgBody');
+  check(/Norma v souboru není/.test(prop) && await page.locator('#dlg tr.dv-aichg').count() >= 4, `návrh se změnami: ${prop.slice(0, 200)}`);
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: `${shots}/10-ai-sloupce.png` });
+  await page.click('#dlgOk');
+  await page.waitForSelector('#dlg[open] .dv-imp');
+  const imp = await page.textContent('#dlgBody');
+  check(/2 dny/.test(imp) && /2 lidé s příchodem/.test(imp) && /2 záznamy/.test(imp), `po návrhu se soubor přečte: ${imp.slice(0, 300)}`);
+  await page.screenshot({ path: `${shots}/11-ai-nahrani.png` });
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => S.workAudit.dv.files.length > 0, null, { timeout: 15000 });
+  await saved(page);
+  const st = await page.evaluate(() => ({ cols: S.workAudit.dv.cols, unit: S.workAudit.dv.unit, pres: Object.keys(S.workAudit.dv.pres['2026-10-26'] || {}), log: S.log.slice(-6).map(x => x.text).join(' | ') }));
+  check(st.cols.att.id === 'B' && st.cols.att.first === 'D' && st.cols.work.date === 'C' && st.unit === 'min' && JSON.stringify(st.pres) === '["501","502"]', `uložené sloupce a data: ${JSON.stringify(st)}`);
+  check(/podle návrhu AI/.test(st.log), `historie: ${st.log}`);
 
   await browser.close();
   server.close();

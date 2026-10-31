@@ -3577,6 +3577,30 @@ test('Report docházky (2.42.1): párování ID podle číslic, skupina bez hist
   assert.deepStrictEqual(out.pr, { days: 1, came: 2, unknown: ['5', '999'], noGroup: [{ key: 'c|c', name: 'Cibulka Cyril', wid: '88' }] });
   return null;
 });
+test('Nastavení sloupců přes AI (2.42.2): ukázka souboru bez jmen a hodnot', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const ser = (m, d) => (Date.UTC(2026, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5;
+    const att = [['Docházka – listopad Novák'], ['ID', ser(11, 2), null, ser(11, 3), null], [null, 'Příchod', 'Odchod', 'Příchod', 'Odchod'],
+      [101, 0.25, 0.6, '6:00', '14:30'], ['0102', 'NEM', null, 0.25, null], [103, 0.25, 0.6, null, null], [104, 0.25, 0.6, null, null], [105, 0.25, 0.6, null, null]];
+    const work = [['ID zaměstnance', 'Datum', 'Zakázka', 'Název dílu', 'Operace', 'V zakázce', 'Hotovo', '', '', 'Čas (min)'],
+      [101, ser(11, 2), 45100, 'Hřídel H-20', 'Broušení', 100, 40, '', '', 120], ['A-77', ser(11, 2), 45101, 'Jan Novák', 'Frézování', 50, 10.5, '', '', 0.04]];
+    const wide = [Array.from({ length: 90 }, (_, i) => 'S' + i)];
+    return JSON.stringify(dvAiSample([{ name: 'f.xlsx › Docházka', aoa: att, dateCols: new Set() }, { name: 'f.xlsx › práce', aoa: work, dateCols: new Set([1]) }, { name: 'w', aoa: wide }, { name: 'x', aoa: [['a']] }, { name: 'y', aoa: [['b']] }], [{ first: 'Jan', last: 'Novák' }]));
+  })()`));
+  assert.strictEqual(out.length, 4, 'nejvýš 4 listy');
+  assert.deepStrictEqual(out[0].rows.length, 6, 'nejvýš 6 řádků');
+  assert.deepStrictEqual(out[0].rows.slice(0, 5), [{ A: 'Docházka – listopad [osoba 1]' }, { A: 'ID', B: '<datum 2026-11-02>', D: '<datum 2026-11-03>' },
+    { B: 'Příchod', C: 'Odchod', D: 'Příchod', E: 'Odchod' }, { A: '<celé číslo>', B: '<čas>', C: '<čas>', D: '<čas>', E: '<čas>' }, { A: '<text s číslicemi>', B: '<text>', D: '<čas>' }]);
+  assert.deepStrictEqual(out[1].rows, [{ A: 'ID zaměstnance', B: 'Datum', C: 'Zakázka', D: 'Název dílu', E: 'Operace', F: 'V zakázce', G: 'Hotovo', J: 'Čas (min)' },
+    { A: '<celé číslo>', B: '<datum 2026-11-02>', C: '<celé číslo>', D: '<text s číslicemi>', E: '<text>', F: '<celé číslo>', G: '<celé číslo>', J: '<celé číslo>' },
+    { A: '<text s číslicemi>', B: '<datum 2026-11-02>', C: '<celé číslo>', D: '<text>', E: '<text>', F: '<celé číslo>', G: '<číslo>', J: '<čas>' }], 'datové řádky jen jako typ, jméno ani díl neodejdou');
+  assert.strictEqual(Object.keys(out[2].rows[0]).length, 70, 'nejvýš 70 sloupců');
+  assert.deepStrictEqual(out.map(x => x.name), ['Docházka', 'práce', 'w', 'x']);
+  const all = JSON.stringify(out);
+  ['Novák', 'Hřídel', '101', '0102', 'A-77', 'NEM', '45100'].forEach(x => assert.ok(!all.includes(x), 'neodešle ' + x));
+  return null;
+});
 test('Audit (2.37): docházka a výkony z jednoho souboru – čtení, uložení, obsazenost po projektech, produktivita', () => {
   const core = loadCore();
   const out = JSON.parse(run(core, `(() => {

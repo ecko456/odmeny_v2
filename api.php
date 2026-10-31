@@ -217,6 +217,21 @@ try {
         }
     }
 
+    // Nastavení sloupců souboru Docházka a výkony (2.42.2): jen nadpisy a typy buněk, nic se neukládá.
+    if ($action === 'ai_columns' && $method === 'POST') {
+        $input = odm_input(ODM_MAX_SMALL_JSON_BYTES);
+        $sheets = odm_ai_clean_sample($input);
+        if (!odm_ai_available()) {
+            odm_fail('AI není na serveru zapnutá.', 503);
+        }
+        odm_ai_throttle($session['card_id'], strlen(json_encode($sheets, JSON_UNESCAPED_UNICODE)));
+        try {
+            odm_json(odm_ai_columns($sheets));
+        } catch (RuntimeException $error) {
+            odm_fail($error->getMessage(), $error->getCode() >= 400 && $error->getCode() < 600 ? $error->getCode() : 502);
+        }
+    }
+
     if ($action === 'versions' && $method === 'GET') {
         $rows = odm_all('SELECT v.rev, v.size, v.created_at, c.label AS card_label, d.label AS device_label FROM versions v LEFT JOIN cards c ON c.id = v.card_id LEFT JOIN devices d ON d.id = v.device_id ORDER BY v.rev DESC');
         odm_json(['items' => array_map(static fn(array $row): array => [

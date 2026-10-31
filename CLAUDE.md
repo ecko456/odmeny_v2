@@ -34,6 +34,27 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.42.2):
+
+- Uživatel: „Nemůžeš to napojit přes API na AI co jsme již používali v TOP 5? Aby jen vždy
+  nastavil vstupní data … stačí přečíst první dva řádky a přiřadit kde co bude načítat.“
+  - Další výjimka z pravidla „AI neposílá data“: jen nadpisy prvních řádků souboru a typy
+    buněk, uživatel o to požádal. `dvAiSample(sheets, employees)` (core): ≤ 4 listy, 6 řádků,
+    70 sloupců; text jen v řádcích před prvním datovým řádkem (datový = první buňka v A–C je
+    číslo / ID s číslicí), jména z Lidí `maskNamesMany`; ostatní `<celé číslo>`, `<čas>`,
+    `<datum ISO>`, `<text>`, `<text s číslicemi>`.
+  - Server: `odm_ai_call` (společné volání, chyby, `fallbacks`), `odm_ai_rewrite` přes něj,
+    `odm_ai_clean_sample`, `odm_ai_columns` (`ODM_AI_COLS_SYSTEM`, schéma `att{id, first}`,
+    `work{id, part, op, order, done, time, date, norm}`, `unit`, `att_sheet`, `work_sheet`,
+    `note`; jen písmena A–ZZZ), akce `ai_columns` v `api.php`, limity `odm_ai_throttle`
+    (hlášky „AI je omezená…“).
+  - UI: `dvAiSetup(sheets, file)` (dialog `.dv-aitab`, změny `.dv-aichg`, povinné sloupce, které
+    AI nenajde, zůstanou), tlačítko `DV_AI_BTN` (`value="ai"`) v dialogu bez dat i v dialogu
+    nahrání (`.dv-aibar`), `[data-dvaipick]` v Nastavení; po použití `dvImport` znovu.
+  - Testy: core „Nastavení sloupců přes AI (2.42.2)“, `test_odmeny` `test_columns_sends_only_the_sample`
+    (mock pozná `listy`), `e2e_ai` (soubor se sloupci jinde, návrh, znovu načtení, historie).
+    `ODM_VERSION` 2.42.2, data 37.
+
 Stav k 31. 10. 2026 (verze 2.42.1):
 
 - Uživatel: „Norma zatím nebude uváděna. Přestávka je vždy 30 minut“ (`dvHours`: pobyt − 30 min
@@ -1742,7 +1763,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.40.1 | `16e5802` | úvod HALA 2 o víkendu a ve svátek podle dnešních příchodů, poslední nahrané příchody |
 | 2.41 | `48ad143` | Report docházky – vlastní skupiny z oddělení, značka dne přesčas / práce ve svátek mimo normu (data verze 36) |
 | 2.42 | `351e34c` | od listopadu 2026 soubor Docházka a výkony jediný zdroj (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v Auditu, skupiny Matice u skupin Auditu) (data verze 37) |
-| 2.42.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Report docházky – nahraný den, upozornění na párování, ID podle číslic; Rychlá kontrola – klepnutím na člověka body kontroly a zápis |
+| 2.42.1 | `952edb7` | Report docházky – nahraný den, upozornění na párování, ID podle číslic; Rychlá kontrola – klepnutím na člověka body kontroly a zápis |
+| 2.42.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ✦ Nastavit sloupce souboru Docházka a výkony přes AI (jen nadpisy a typy buněk) |
 
 Verze 2.1 přidala:
 
@@ -2130,8 +2152,8 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 (jen v kontejneru, **nikdy ne na ostrém serveru**).
 
 ```bash
-python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 91 testů: proti původní aplikaci + opravy + 2.1 až 2.42
+python3 -m unittest discover -s tests   # 29 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
+node tests/test_core.js                 # 92 testů: proti původní aplikaci + opravy + 2.1 až 2.42
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -2150,7 +2172,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
     nezbývá pracovní den), jinak odznak nezapsaných kontrol;
   - `e2e_matice.js`: Matice dovedností, kapacita, prémie a srážka ze mzdy (2.4), PDF matice jen s ID (2.20),
     v zaškolování v reportu kapacit, PDF bez rizik a plánované kapacity (2.23);
-  - `e2e_ai.js`: ✦ Přeformulovat (2.5); sám spustí náhradní API na 127.0.0.1:8598, server
+  - `e2e_ai.js`: ✦ Přeformulovat (2.5), nastavení sloupců přes AI (2.42.2); sám spustí náhradní API na 127.0.0.1:8598, server
     musí běžet s `ODMENY_AI_BASE_URL=http://127.0.0.1:8598`;
   - `e2e_vedouci.js`: vedoucí pracovníci (2.7) a jejich dovednosti (2.10);
   - `e2e_skener.js`: skener kartičky v Sankcích (2.13), falešná kamera Chromia;

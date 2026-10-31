@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.42.2
+
+- **Nastavení sloupců přes AI.** Když soubor Docházka a výkony nejde přečíst, nebo čísla
+  nesedí, je v dialogu nahrání tlačítko **✦ Nastavit sloupce přes AI** (a v Nastavení Auditu
+  „Nastavit sloupce přes AI ze souboru…“). AI přečte první řádky obou listů a navrhne, ve kterém
+  sloupci je ID, první den docházky, díl, operace, kusy, čas a datum. Návrh se ukáže v tabulce
+  proti současnému nastavení a použije se až po potvrzení; soubor se pak načte znovu.
+- Použije se stejné AI jako ✦ v Top 5 (stejný klíč na serveru i limity). AI dostane **jen
+  nadpisy** prvních řádků a typ ostatních buněk (číslo, čas, datum). ID, jména, díly ani časy
+  se neposílají, nic se neukládá.
+
 ## Co je nového ve verzi 2.42.1
 
 - **Report docházky po nahrání.** Report se přepne na nahraný den. Nad reportem je vidět,

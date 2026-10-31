@@ -112,6 +112,8 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   await page.screenshot({ path: path.join(shots, '01-dialog.png') });
   await confirm(page);
   await saved(page);
+  // záznam v historii vzniká při uložení; počkat, až tam je (jinak občas čteme dřív)
+  await page.waitForFunction(() => S.log.some(x => /dochazka-vykony/.test(x.text)), null, { timeout: 15000 }).catch(() => {});
   const r = await page.evaluate(() => {
     const P = S.periods['2026-11'];
     const keep = S.current; S.current = '2026-11'; _prodIdx = null;
