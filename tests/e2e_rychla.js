@@ -218,6 +218,24 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
   await page.waitForTimeout(1700);
   await page.screenshot({ path: path.join(shots, '07-uvod-prichody.png'), fullPage: true });
 
+  // Sobota 31. 10. (2.40.1): s dnešními příchody úvod ukáže dnešek (mimo plán), bez nich plán
+  // na pondělí, poslední nahrané příchody a výzvu k nahrání.
+  await ctx.clock.setFixedTime(new Date(2026, 9, 31, 9, 0));
+  await page.evaluate(() => { const w = S.employees['cibulka|jan'].wid, v = S.employees['dvořák|jan'].wid; S.workAudit.dv.pres['2026-10-31'] = { [w]: [420, null], [v]: [425, null] }; showView('domu'); });
+  const sat = await text(page, '.home-hero');
+  check(/sobota 31\. října · víkend, směna mimo plán/.test(sat) && /V práci podle příchodů/.test(sat), `sobota s příchody: ${sat}`);
+  check(JSON.stringify(await page.$$eval('.hh-big .hb b', els => els.map(e => e.dataset.count))) === JSON.stringify(['2', '0']), 'sobota: 2 lidé ráno');
+  check(/lidé · mimo plán/.test(await text(page, '.hb.am small')) && !(await page.$('.hb em.neg')), 'sobota: bez rozdílu proti plánu');
+  await page.screenshot({ path: path.join(shots, '08-sobota.png') });
+  await page.evaluate(() => { delete S.workAudit.dv.pres['2026-10-31']; renderHome(); });
+  const satNo = await text(page, '.home-hero');
+  check(/Dnes se nepracuje · plán na pondělí 2\. listopadu/.test(satNo) && /Plánovaná obsazenost/.test(satNo), `sobota bez příchodů: ${satNo}`);
+  check(/Poslední příchody: Pá 30\. 10\. · 5 lidí/.test(satNo) && await page.isVisible('[data-hgo="pres"]'), 'sobota: poslední příchody a výzva k nahrání');
+  await page.click('[data-hgo="lastpres"]');
+  await page.waitForFunction(() => ui.view === 'audit' && ui.wa.tab === 'lide' && ui.wa.dvDay === '2026-10-30');
+  await ctx.clock.setFixedTime(NOW);
+  await page.evaluate(() => showView('domu'));
+
   // Plovoucí menu a odkaz z Kontrol.
   await page.evaluate(() => showView('kontroly'));
   await page.click('#fab');

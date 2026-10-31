@@ -1091,10 +1091,11 @@ function groupPlan(p,v,days,thr){
 const DAY_SLOTS=["am","pm"];
 /* Směna člověka v týdnu: am / pm, „rot“ = skupina 1 nebo 2 bez nastaveného střídání, „none“ = bez směny. */
 function slotOn(e,mg){const s=shiftOf(e);return s==="R"?"am":s==="O"?"pm":s==="S1"||s==="S2"?(mg?(s===mg?"am":"pm"):"rot"):"none";}
-function staffDay(from){
+function staffDay(from,exact){
   from=from||todayIso();
   let day=from;
-  for(let i=0;i<14;i++){const [y,m,d]=day.split("-").map(Number);if(mkDay(y,m,d).work)break;day=addDays(day,1);}
+  // exact (2.40.1): přesně tento den i o víkendu a svátku (úvod s dnešními příchody)
+  if(!exact)for(let i=0;i<14;i++){const [y,m,d]=day.split("-").map(Number);if(mkDay(y,m,d).work)break;day=addDays(day,1);}
   const week=isoWeek(day).id,rep=S.capReport||blankCapReport(),mg=morningGroup(week,rep.s1am);
   const thr=clamp(Math.round(+rep.thr||3),1,4);
   const slotOf=e=>slotOn(e,mg);
@@ -5135,6 +5136,11 @@ function drSheets(r){
       ...g.map(x=>[x.name,Math.round(x.avgPlan*10)/10,Math.round(x.avgDone*10)/10,x.daysMet,x.cnt])]});
   }
   return sheets;
+}
+/** Poslední den s nahranými příchody do data včetně (2.40.1), jinak "". */
+function dvLastPres(to){
+  const pres=((S.workAudit&&S.workAudit.dv)||{}).pres||{};
+  return Object.keys(pres).filter(iso=>iso<=to&&Object.values(pres[iso]).some(v=>v[0]!=null||v[1]!=null)).sort().pop()||"";
 }
 /** Dny s docházkou (seřazené). */
 function dvDays(){return Object.keys(((S.workAudit&&S.workAudit.dv)||{}).pres||{}).sort();}

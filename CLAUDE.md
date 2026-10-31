@@ -34,6 +34,20 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.40.1):
+
+- Uživatel (v sobotu): „v mobilní verzi po přihlášení nevidím aktuální stav. Ukazuje mi to plán
+  na pondělí a dnes nevidím nic.“ `staffDay` skáče na další pracovní den a skutečnost
+  (`staffReal`) se brala jen pro pracovní den.
+  - Core: `staffDay(from, exact)` (exact = přesně ten den i o víkendu), `dvLastPres(to)`
+    (poslední den s příchodem do data, prázdné řádky ne).
+  - `renderHome`: když má dnešek příchody a není pracovní den (`off`), úvod je za dnešek
+    (`staffDay(today, true)`), čísla „mimo plán“ bez rozdílu, bez plánu v oddělení, podnadpis
+    „víkend / svátek, směna mimo plán“. Bez dnešních příchodů flag Nahrát dnešní příchody
+    i o víkendu a `[data-hgo="lastpres"]` (Audit, Lidé v práci na tom dni).
+  - Testy: core „Úvod HALA 2 (2.40.1)“, `e2e_rychla` (sobota s příchody a bez nich, hodiny
+    stránky přepnuté na 31. 10.). `ODM_VERSION` 2.40.1, data beze změny (35).
+
 Stav k 31. 10. 2026 (verze 2.40):
 
 - Uživatel (s přílohou: HTML „Report docházky“, plnění denního požadavku po skupinách, Den /
@@ -1657,7 +1671,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.39.1 | `03b273c` | Plán kapacit jen s ID zaměstnanců (aplikace, PDF, Excel) |
 | 2.39.2 | `b89b1c5` | PDF Plánu kapacit v grafickém podání jako Kapacity a zaškolení (rámečky, dlaždice, graf po úrovních proti potřebě, tabulka) |
 | 2.39.3 | `aca21b0` | úvod HALA 2 na telefonu podle dnešních příchodů (v práci po směnách a odděleních proti plánu, teď v práci, nahrát příchody) |
-| 2.40 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit – Report docházky po vzoru (plnění denního požadavku z příchodů, Den / Týden / Měsíc / Rok, PDF a Excel) |
+| 2.40 | `abc9792` | Audit – Report docházky po vzoru (plnění denního požadavku z příchodů, Den / Týden / Měsíc / Rok, PDF a Excel) |
+| 2.40.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvod HALA 2 o víkendu a ve svátek podle dnešních příchodů, poslední nahrané příchody |
 
 Verze 2.1 přidala:
 
@@ -2045,7 +2060,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 87 testů: proti původní aplikaci + opravy + 2.1 až 2.40
+node tests/test_core.js                 # 88 testů: proti původní aplikaci + opravy + 2.1 až 2.40.1
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

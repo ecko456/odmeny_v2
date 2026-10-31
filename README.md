@@ -62,6 +62,16 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.40.1
+
+- **Úvod HALA 2 na telefonu o víkendu a ve svátek.** Když máš na dnešek nahrané příchody
+  (třeba sobotní směna), úvod ukáže dnešní skutečnost (kolik lidí přišlo, teď v práci,
+  po odděleních) s poznámkou „víkend, směna mimo plán“, ne plán na pondělí.
+- Bez dnešních příchodů zůstane plán na další pracovní den a nahoře je **Nahrát dnešní
+  příchody** (teď i o víkendu) a **Poslední příchody: den · počet lidí** (otevře Audit, Lidé
+  v práci, na tom dni).
+- Data beze změny (verze dat 35).
+
 ## Co je nového ve verzi 2.40
 
 - **Audit → Report docházky** (nová záložka za Lidé v práci): report plnění denního požadavku
@@ -1465,7 +1475,7 @@ UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
 Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
-upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.40:
+upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.40.1:
 
 ```bash
 rm -rf /tmp/v238 && mkdir /tmp/v238 && git archive 59470af | tar -x -C /tmp/v238

@@ -3816,6 +3816,20 @@ test('Report docházky (2.40): plnění denního požadavku z příchodů – de
   return null;
 });
 
+test('Úvod HALA 2 (2.40.1): přesně dnešní den i o víkendu, poslední den s příchody', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = sanitizeState(blank());
+    S.workAudit.dv.pres['2026-10-29'] = { '1': [360, null] };
+    S.workAudit.dv.pres['2026-10-30'] = { '1': [null, null] };
+    S.workAudit.dv.pres['2026-11-02'] = { '1': [360, null] };
+    const a = staffDay('2026-10-31'), b = staffDay('2026-10-31', true);
+    return JSON.stringify([a.day, a.today, b.day, b.today, dvLastPres('2026-10-31'), dvLastPres('2026-10-28')]);
+  })()`));
+  assert.deepStrictEqual(out, ['2026-11-02', false, '2026-10-31', true, '2026-10-29', ''], 'prázdný řádek bez časů se nepočítá, budoucnost ne');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

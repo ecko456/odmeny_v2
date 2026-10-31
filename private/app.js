@@ -597,17 +597,25 @@ function homeRisks(sd, sel) {
 function renderHome(unfold = false) {
   const box = $('#homeView');
   if (!box || !S) return;
-  const sd = staffDay();
+  const today = todayIso();
+  let sd = staffDay();
+  // dnešní příchody i o víkendu a svátku (2.40.1): pak úvod ukáže dnešek, ne plán dalšího pracovního dne
+  const off = !sd.today && !!dvLastPres(today) && dvLastPres(today) === today;
+  if (off) sd = staffDay(today, true);
+  const offT = off && mkDay(...today.split('-').map(Number)).hol ? 'svátek' : 'víkend';
   const sel = ui.homeShift || '';
   const h = new Date().getHours();
-  const live = sd.today ? liveSlot(h) : '';
+  const live = sd.today && !off ? liveSlot(h) : '';
   // skutečnost podle dnes nahraných příchodů (2.39.3), jinak plán ze zařazení
   const real = sd.today ? staffReal(sd.day, sd.mg) : null;
+  const last = real ? '' : dvLastPres(today);
+  const lastN = last ? staffReal(last, staffDay(last, true).mg) : null;
   const rows = homeRows(sd, real);
   const max = Math.max(1, ...rows.map(r => Math.max(r.v.am, r.v.pm)));
   const wage = wageAllPending().length;
   const flags = [
-    sd.today && !real && audDepts().length ? '<button type="button" class="hf warn" data-hgo="pres">Nahrát dnešní příchody</button>' : '',
+    !real && audDepts().length ? '<button type="button" class="hf warn" data-hgo="pres">Nahrát dnešní příchody</button>' : '',
+    lastN ? `<button type="button" class="hf" data-hgo="lastpres" data-iso="${last}">Poslední příchody: ${esc(DOW[mkDay(...last.split('-').map(Number)).dow])} ${esc(dayText(last, false))} · ${lastN.n} ${lidiN(lastN.n)}</button>` : '',
     real && real.unknown ? `<button type="button" class="hf warn" data-go="audit">${real.unknown} ID není v Lidech</button>` : '',
     sd.total.sick ? `<button type="button" class="hf" data-go="lide">${sd.total.sick} v nemoci</button>` : '',
     sd.total.none ? `<button type="button" class="hf warn" data-go="lide">${sd.total.none} bez směny</button>` : '',
@@ -620,9 +628,9 @@ function renderHome(unfold = false) {
     const v = real ? real[k] : sd.total[k];
     const p = sd.total[k];
     // odpolední se před 14:00 nehodnotí (ještě nezačala)
-    const wait = real && k === 'pm' && h < 14 && !v;
-    const diff = real && !wait ? v - p : 0;
-    const sub = wait ? `plán ${p} · směna ještě nezačala` : real ? `${lidiN(v)} · plán ${p}${diff ? ` <em class="${diff < 0 ? 'neg' : 'pos'}">${diff > 0 ? '+' : '−'}${Math.abs(diff)}</em>` : ''}`
+    const wait = real && !off && k === 'pm' && h < 14 && !v;
+    const diff = real && !wait && !off ? v - p : 0;
+    const sub = off ? `${lidiN(v)} · mimo plán` : wait ? `plán ${p} · směna ještě nezačala` : real ? `${lidiN(v)} · plán ${p}${diff ? ` <em class="${diff < 0 ? 'neg' : 'pos'}">${diff > 0 ? '+' : '−'}${Math.abs(diff)}</em>` : ''}`
       : `${lidiN(v)}${planText(sumPlan(sd, k)) ? ` · ${planText(sumPlan(sd, k))}` : ''}`;
     return `<div class="hb ${k}${live === k ? ' live' : ''}"><span class="hb-k">${k === 'am' ? I.sun : I.moon}${k === 'am' ? 'Ranní' : 'Odpolední'}${live === k ? '<i>teď</i>' : ''}</span>
       <b class="num" data-count="${v}">${v}</b><small>${sub}</small></div>`;
@@ -631,7 +639,7 @@ function renderHome(unfold = false) {
     <section class="home-hero">
       <div class="hh-top"><span class="hh-brand">HALA <i>2</i></span><span class="hh-week">${esc(weekName(sd.week))}</span></div>
       <h1 id="homeTitle">${greeting(h)}</h1>
-      <p class="hh-sub">${sd.today ? `Dnes je ${esc(dayLong(sd.day))}` : `Dnes se nepracuje · plán na ${esc(dayLong(sd.day))}`}</p>
+      <p class="hh-sub">${off ? `Dnes je ${esc(dayLong(sd.day))} · ${offT}, směna mimo plán` : sd.today ? `Dnes je ${esc(dayLong(sd.day))}` : `Dnes se nepracuje · plán na ${esc(dayLong(sd.day))}`}</p>
       <p class="hh-cap">${real ? `V práci podle příchodů${real.at ? ` · nahráno ${new Date(real.at).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Plánovaná obsazenost'}</p>
       <div class="hh-big${real ? ' real' : ''}">${big('am')}${big('pm')}</div>
       ${real ? `<p class="hh-now"><span class="hh-dot" aria-hidden="true"></span>Teď v práci <b class="num">${real.now}</b> z ${real.n} ${real.n === 1 ? 'příchodu' : 'příchodů'}${real.lead ? ` · vedoucí ${real.lead}` : ''}</p>` : ''}
@@ -649,7 +657,7 @@ function renderHome(unfold = false) {
         <div class="hs-row hs-th"><span></span><span class="am">${I.sun}Ranní</span><span class="pm">${I.moon}Odpolední</span></div>
         ${rows.map(r => `<div class="hs-row">
           <div class="hs-dept"><b>${esc(r.dept)}</b>${r.notes.map(t => `<small>${esc(t)}</small>`).join('')}</div>
-          ${['am', 'pm'].map(k => `<div class="hs-cell ${k}${r.risk[k] ? ' risk' : ''}${real && r.v[k] < r.p[k] && !(k === 'pm' && h < 14 && !real.pm) ? ' short' : ''}"><b class="num">${r.v[k]}</b><span class="hs-bar"><i data-w="${(r.v[k] / max * 100).toFixed(1)}"></i></span><small>${esc(real ? (r.p[k] || r.v[k] ? `plán ${r.p[k]}` : '') : planText(r.plan[k]))}</small></div>`).join('')}
+          ${['am', 'pm'].map(k => `<div class="hs-cell ${k}${r.risk[k] ? ' risk' : ''}${real && !off && r.v[k] < r.p[k] && !(k === 'pm' && h < 14 && !real.pm) ? ' short' : ''}"><b class="num">${r.v[k]}</b><span class="hs-bar"><i data-w="${(r.v[k] / max * 100).toFixed(1)}"></i></span><small>${esc(real ? (off ? '' : r.p[k] || r.v[k] ? `plán ${r.p[k]}` : '') : planText(r.plan[k]))}</small></div>`).join('')}
         </div>`).join('')}</div>` : '<p class="small muted">Zatím nikdo nemá skupinu a směnu. Nastavíš je v Lidech.</p>'}
     </section>
     <button class="btn ghost home-lock" type="button" id="homeLock">${I.lock}Zamknout</button>
@@ -688,6 +696,7 @@ function homeClick(event) {
   if (go && go.dataset.hgo === 'cap') { ui.mxTab = 'cap'; showView('matice'); return; }
   if (go && go.dataset.hgo === 'wage') openWageList();
   if (go && go.dataset.hgo === 'pres') $('#ktPresFile').click();
+  if (go && go.dataset.hgo === 'lastpres') { Object.assign(ui.wa, { tab: 'lide', dvMode: 'day', dvDay: go.dataset.iso }); showView('audit'); }
 }
 
 /* Volba směny mění jen dotčené části (přepínač tak plynule přejede); poprvé se menu rozevře. */
