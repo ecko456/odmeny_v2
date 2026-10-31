@@ -80,7 +80,7 @@ async function nav(page, view) {
   await page.click('#ovBody tr[data-key] td.col-name');
   await page.waitForSelector('#ovBody tr.detail');
   await page.screenshot({ path: `${shots}/04-overview-detail.png`, fullPage: true });
-  for (const view of ['lide', 'matice', 'sankce', 'kontroly', 'dochazka', 'vyroba', 'top5', 'nastaveni']) {
+  for (const view of ['lide', 'matice', 'sankce', 'kontroly', 'dochazka', 'audit', 'top5', 'nastaveni']) {
     await page.click(`#nav [data-view="${view}"]`);
     await page.waitForTimeout(350);
     await page.screenshot({ path: `${shots}/05-${view}.png`, fullPage: true });

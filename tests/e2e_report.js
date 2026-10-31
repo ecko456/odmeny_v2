@@ -1,4 +1,4 @@
-// Prohlížečový průchod: Report docházky v Auditu (verze 2.40), plnění denního požadavku z nahraných
+// Prohlížečový průchod: Report docházky v KPI (verze 2.40), plnění denního požadavku z nahraných
 // příchodů po vzoru reportu uživatele: Den, Týden, Měsíc, Rok, výrok, ukazatel, dlaždice, graf,
 // tabulka po skupinách, PDF (A4 na výšku, text přes pypdf, když je), Excel, telefon a tmavý režim;
 // 2.41: skupiny reportu z oddělení (přejmenování, přesun oddělení), značka dne přesčas mimo normu, historie.
@@ -101,7 +101,7 @@ const pdfText = file => {
   check(exp.next[0] && exp.next[1] === 5 && exp.next[2] === 5 && JSON.stringify(exp.next[3]) === JSON.stringify([['Brus', 9], ['Lepení', 4], ['CNC', 3]]), `příští týden = plán bez nemocného: ${JSON.stringify(exp.next)}`);
   check(exp.year[2] === 'real' && Math.round(exp.year[1]) === 50 && exp.year[3] === 'plan' && exp.year[4] === 'empty', `rok: ${JSON.stringify(exp.year)}`);
 
-  // Audit → Report docházky, den
+  // KPI → Report docházky, den
   await page.click('#nav [data-view="audit"]');
   await page.click('[data-watab="report"]');
   await page.waitForSelector('.dr-paper');

@@ -1,7 +1,7 @@
 // Prohlížečový průchod: docházka a výkony z jednoho souboru (verze 2.37). První list Docházka
 // (ID zaměstnance, pod datem dne příchod a odchod), druhý vykázaná práce (ID, díl, operace,
 // množství v zakázce, dokončené množství, strávený čas). Kontroly podle dnešních příchodů
-// (nahrání v Kontrolách, los jen z lidí v práci), import v Auditu, záložka Lidé v práci (den
+// (nahrání v Kontrolách, los jen z lidí v práci), import v KPI, záložka Lidé v práci (den
 // i měsíc, PDF, Excel), produktivita s koláčem dílů v profilu, telefon a tmavý režim.
 // Hodiny stránky stojí na pátku 30. 10. 2026 v 10:00 (týden se svátkem 28. 10.).
 // Všechna data jsou vymyšlená.
@@ -219,7 +219,7 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.evaluate(() => { save(); renderKontroly(); });
   await saved(page);
 
-  // 2) Audit: stejný soubor i s výkony.
+  // 2) KPI: stejný soubor i s výkony.
   await page.click('#nav [data-view="audit"]');
   await page.setInputFiles('#waDvFile', file);
   // 2.42.3: nejdřív Jak se soubor načte (vzor prvního člověka), pak souhrn
@@ -230,19 +230,19 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.click('#dlgOk');
   await page.waitForSelector('#dlg[open] .dv-imp');
   const d1 = await text(page, '#dlgBody');
-  check(/^Nahrát docházku a výkony$/.test(await text(page, '#dlgTitle')), 'titulek dialogu v Auditu');
+  check(/^Nahrát docházku a výkony$/.test(await text(page, '#dlgTitle')), 'titulek dialogu v KPI');
   const recs = wk.rows.length - 2;
   check(new RegExp(`${recs} záznamů, 12 lidí: \\d`).test(d1), `souhrn výkonů: ${d1}`);
   check(/Datum ze sloupce B \(26\. 10\. 2026 – 29\. 10\. 2026\)\./.test(d1), `sloupec s datem B, ne čísla zakázek: ${d1}`);
   check(/4 dny už jsou nahrané/.test(d1), `upozornění na nahrané dny: ${d1}`);
-  check(await page.isChecked('#dlg [name="toAudit"]'), 'kusy do Auditu zaškrtnuté (dny ještě nemají výkaz)');
+  check(await page.isChecked('#dlg [name="toAudit"]'), 'kusy do KPI zaškrtnuté (dny ještě nemají výkaz)');
   check(await page.evaluate(() => document.querySelector('#dlg [name="unit"] option[value="auto"]').textContent) === 'najít sám (teď minuty)', 'jednotka času podle hlavičky (min)');
   await page.screenshot({ path: path.join(shots, '05-audit-dialog.png') });
   await confirm(page);
   await page.waitForSelector('#waView .dv-bars');
   await saved(page);
   const t2 = await text(page, '#toast');
-  check(/^Nahráno: docházka za 5 dní, výkony za říjen 2026, kusy do Auditu za 3 dny\. 3 nové operace čekají na skupinu v Nastavení\.$/.test(t2), `hláška Auditu: ${t2}`);
+  check(/^Nahráno: docházka za 5 dní, výkony za říjen 2026, kusy do KPI za 3 dny\. 3 nové operace čekají na skupinu v Nastavení\.$/.test(t2), `hláška KPI: ${t2}`);
   const a1 = await page.evaluate(() => ({ tab: ui.wa.tab, mode: ui.wa.dvMode, day: ui.wa.dvDay, files: S.workAudit.dv.files.length, perf: Object.keys(S.workAudit.dv.perf['2026-10'] || {}).length, pcs: Object.keys(S.workAudit.pcs).sort() }));
   check(a1.tab === 'lide' && a1.mode === 'day' && a1.day === '2026-10-30' && a1.files === 2 && a1.perf === 12 && JSON.stringify(a1.pcs) === '["2026-10-26","2026-10-27","2026-10-29"]', `po nahrání: ${JSON.stringify(a1)}`);
   const per101 = await page.evaluate(() => S.workAudit.dv.perf['2026-10']['101'].p);
@@ -339,9 +339,9 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.click('#dvColsCard [data-dvcolreset]');
   await saved(page);
   const log = await page.evaluate(() => S.log.map(x => x.text));
-  check(log.some(t => /^Audit: nahrán soubor dochazka-vykony-rijen\.xlsx: docházka 26\. 10\. 2026 – 30\. 10\. 2026 \(13 lidí\)$/.test(t)), `historie: nahrání v Kontrolách (${log.slice(0, 6).join(' | ')})`);
-  check(log.some(t => /^Audit: nahrán soubor dochazka-vykony-rijen\.xlsx: docházka .*, výkony za říjen 2026, kusy do Auditu za 3 dny$/.test(t)), 'historie: nahrání v Auditu');
-  check(log.some(t => t === 'Audit: změněny sloupce souboru docházky a výkonů'), 'historie: sloupce');
+  check(log.some(t => /^KPI: nahrán soubor dochazka-vykony-rijen\.xlsx: docházka 26\. 10\. 2026 – 30\. 10\. 2026 \(13 lidí\)$/.test(t)), `historie: nahrání v Kontrolách (${log.slice(0, 6).join(' | ')})`);
+  check(log.some(t => /^KPI: nahrán soubor dochazka-vykony-rijen\.xlsx: docházka .*, výkony za říjen 2026, kusy do KPI za 3 dny$/.test(t)), 'historie: nahrání v KPI');
+  check(log.some(t => t === 'KPI: změněny sloupce souboru docházky a výkonů'), 'historie: sloupce');
 
   // 5) Telefon a tmavý režim: Lidé v práci a profil bez vodorovného posunu.
   const mp = page;

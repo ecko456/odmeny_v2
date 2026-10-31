@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.44
+
+- **Audit se jmenuje KPI** (menu, nadpis, hlášky, historie změn, PDF).
+- **Výroba je pryč z menu a z hlavního menu telefonu.** Od listopadu 2026 se evidence práce
+  nahrává v KPI (Docházka a výkony). Starší soubory (říjen a dřív) jdou dál otevřít z KPI,
+  Nastavení → Starší soubory; uložená data zůstávají.
+- **V KPI zmizely záložky Výrobní plán a Úpravy** (uložený plán i ruční úpravy zůstávají v datech,
+  úpravy dne jsou dál vidět v detailu dne).
+- **Nová záložka Výkonnost na osobu**: lidé po odděleních (oddělení podle skupiny v Matici ke
+  konci měsíce), Ø ks na den (kusy ÷ odpracované dny z docházky), Ø vykázané hodiny na den,
+  kusy za hodinu, plnění normy a využití fondu. Řazení podle vybraného ukazatele **od nejlepších
+  nebo od nejhorších**, pořadí v oddělení, pruh proti nejlepšímu v oddělení (zeleně nad průměrem
+  oddělení, jantarově pod ním), vážený průměr oddělení, filtr oddělení, výběr měsíce, Excel.
+  Vedoucí a vyřazení se nepočítají. Klik na člověka otevře profil.
+- Data beze změny (verze 39).
+
 ## Co je nového ve verzi 2.43
 
 - **Konce trestů a směnnost z tabulky.** V Docházce tlačítko **Nahrát konce trestů a směnnost**:

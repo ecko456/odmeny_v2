@@ -34,6 +34,27 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.44):
+
+- Uživatel: „modul ‚Audit‘ přejmenuj na ‚KPI‘ … smazat modul ‚Výroba‘ … smazat v KPI ‚Výrobní
+  plán‘ + ‚Úpravy‘ a nahradit je ‚Výkonost na osobu‘ … rozpad na osoby, jejich průměr na den podle
+  oddělení … řazení od nejlepších po nejhorší“.
+  - Přejmenování jen ve viditelných textech (i historie změn, PDF „HALA 2 · KPI · …“); identifikátory
+    (`audit`, `workAudit`, `wa*`) zůstaly. Pohled `audit` = KPI.
+  - Výroba: pryč z `#nav` a `HOME_TILES`, pohled `vyroba` zůstal (odkaz z KPI Nastavení → Starší
+    soubory, `showView('vyroba')` rozsvítí v menu KPI). Testy ji otevírají přes `showView`.
+  - `WA_TABS` bez `plan` a `upravy`; `WA_OLD_TABS` je pořád umí vykreslit (`ui.wa.tab`), jen ne
+    z rozhraní (e2e_audit je tak zkouší). Data a kód plánu zůstaly.
+  - Core (před PLÁN KAPACIT): `KPI_SORT`, `kpiMonths`, `kpiPerf(month, {sort, dir, now})` (přes
+    `withPeriod`, `prodIndex`, `attendance`, `workedDays`; oddělení z `dvGroupOf` ke konci měsíce;
+    `v{ks, h, ph, norm, use}`, `rank`, `depts[].avg` vážený `kpiAvg`, `unmatched`, `noAtt`), `kpiCmp`
+    (bez hodnoty vždy na konci), `kpiSheets`.
+  - UI: záložka `vykon` (`kpHtml`, `ui.wa.kp {month, sort, dir, dept}`, `#kpMonth`, `#kpDept`,
+    `#kpSort`, `[data-kpdir]`, `[data-kpxlsx]` → `exportKpXlsx`, řádek `data-dvperson` = profil),
+    CSS `.kp-*`.
+  - Testy: core „KPI (2.44)“, nový `tests/e2e_vykon.js`, `e2e_mobil` (15 položek menu),
+    `e2e_upgrade_prev` 2.41 → 2.44. `ODM_VERSION` 2.44, data beze změny (39).
+
 Stav k 31. 10. 2026 (verze 2.43):
 
 - Uživatel: „v docházce modul pro import dat … A příjmení, B jméno, C konec trestu, D směnnost
@@ -1826,7 +1847,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.42.2 | `9df70cc` | ✦ Nastavit sloupce souboru Docházka a výkony přes AI (jen nadpisy a typy buněk) |
 | 2.42.3 | `ecfee9f` | docházka z 2. listu, okno Jak se soubor načte při každém nahrání (AI návrh, vzor prvního člověka, úprava) (data verze 38) |
 | 2.42.4 | `fa9101b` | docházka podle vzoru – datum v hlavičce bez roku („01.10. Čt“), WPA kód, součty na konci |
-| 2.43 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Konce trestů (import se směnností a kontrolou, AI kontrola, přehled po měsících a odděleních), rozbalovací Teď v práci na telefonu (data verze 39) |
+| 2.43 | `accd6f4` | Konce trestů (import se směnností a kontrolou, AI kontrola, přehled po měsících a odděleních), rozbalovací Teď v práci na telefonu (data verze 39) |
+| 2.44 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Audit přejmenovaný na KPI, Výroba pryč z menu, KPI bez Výrobního plánu a Úprav, nová záložka Výkonnost na osobu (po odděleních, průměr na den, řazení od nejlepších i nejhorších, Excel) |
 
 Verze 2.1 přidala:
 
@@ -2282,6 +2304,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
+  - `e2e_vykon.js` (2.44): KPI v menu, Výroba pryč, Výkonnost na osobu (pořadí, řazení, filtr, Excel, profil, telefon);
   - `e2e_konce.js` (2.43): import konců trestů a směnnosti, kontroly řádků, Konce trestů, Excel, telefon;
   - `e2e_rychla.js` (2.39): Rychlá kontrola na telefonu (dlaždice, plovoucí menu, počet, směna,
     oddělení, jen lidé v práci, přednost, výměna, sdílení, uložení, zápis, tmavý režim, 320 px);

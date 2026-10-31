@@ -1,9 +1,9 @@
-// Prohlížečový průchod záložkou Kapacity a zaškolení v Auditu (verze 2.30, stránky podle vzoru 2.31):
+// Prohlížečový průchod záložkou Kapacity a zaškolení v KPI (verze 2.30, stránky podle vzoru 2.31):
 // vymyšlení lidé ve třech skupinách, docházka za poslední čtyři měsíce do včerejška, historie hodnocení
 // (zaškolování), nemoc, vyřazený, vedoucí a lidé bez skupiny, evidence práce s normou. Kontroluje
 // měsíční souhrn, týdenní souhrn a vývoj zaškolení (texty, tabulky proti výpočtu, grafy s tooltipem),
 // záhlaví reportu, vlastní období, PDF na výšku (text, jen ID, žádná jména, Plex Mono) a Excel
-// (listy a součty proti výpočtu), hranici zaškolení z Nastavení Auditu (2.33), telefon a tmavý režim.
+// (listy a součty proti výpočtu), hranici zaškolení z Nastavení KPI (2.33), telefon a tmavý režim.
 // Všechna data jsou vymyšlená.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -167,7 +167,7 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   }, { LAST, FIRST });
   await saved(page);
 
-  // Záložka v Auditu (nepotřebuje obsazenost ani výkaz práce): stránky reportu jako vzor (2.31).
+  // Záložka v KPI (nepotřebuje obsazenost ani výkaz práce): stránky reportu jako vzor (2.31).
   await page.click('#nav [data-view="audit"]');
   await page.click('#waTabs [data-watab="kapacity"]');
   await page.waitForSelector('#waView .ctr-paper');
@@ -286,7 +286,7 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   check(JSON.stringify([book.lidi, book.ok, book.realH]) === JSON.stringify(book.exp), `Excel Souhrn ${[book.lidi, book.ok, book.realH]} ≠ ${book.exp}`);
   check(book.devRows === book.devExp, `Excel Vývoj zaškolení: ${book.devRows} ≠ ${book.devExp}`);
 
-  // Hranice zaškolení (2.33): vlastní procento v Nastavení Auditu platí pro celý report (aplikace, PDF, Excel).
+  // Hranice zaškolení (2.33): vlastní procento v Nastavení KPI platí pro celý report (aplikace, PDF, Excel).
   const M0 = await page.evaluate(() => todayIso().slice(0, 7));
   await page.click(`#waView .ctr-nav [data-wactpage="month:${M0}"]`);
   await page.waitForSelector('#waView .ctr-paper[data-ctrpage="month"]');
@@ -306,7 +306,7 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   await page.waitForFunction(() => S.workAudit.trainPct === 50);
   await saved(page);
   check(/Hranice zaškolení: od 50 % dovedností skupiny\./.test(await page.textContent('#toast')), 'hláška po uložení hranice');
-  check((await page.textContent('#waTrainCard')).includes('Zaškolený od 50 % dovedností skupiny, pod 50 % v zaškolení (nastaveno v Auditu)'), 'Nastavení: hranice slovy');
+  check((await page.textContent('#waTrainCard')).includes('Zaškolený od 50 % dovedností skupiny, pod 50 % v zaškolení (nastaveno v KPI)'), 'Nastavení: hranice slovy');
   await page.locator('#waTrainCard').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(shots, '06-hranice-nastaveni.png'), fullPage: false });
   await page.click('#waTabs [data-watab="kapacity"]');
@@ -314,16 +314,16 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   const after = await page.evaluate(m => { const r = capMonthReport(m); return { ok: r.tot.ok, tr: r.tot.tr, n: r.tot.n }; }, M0);
   check(after.ok >= before.ok && after.ok + after.tr === before.ok + before.tr2 && after.ok > before.ok, `nižší hranice = víc zaškolených: ${JSON.stringify([before, after])}`);
   text = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
-  check(text.includes('procento dovedností skupiny v matici dovedností aspoň 50 % (hranice zaškolení z nastavení Auditu)') && text.includes('V zácviku = zařazen ve skupině, pod 50 %'), `měsíc: poznámka s hranicí ${text.slice(-700)}`);
+  check(text.includes('procento dovedností skupiny v matici dovedností aspoň 50 % (hranice zaškolení z nastavení KPI)') && text.includes('V zácviku = zařazen ve skupině, pod 50 %'), `měsíc: poznámka s hranicí ${text.slice(-700)}`);
   const sumRow2 = await page.$$eval('#waView .ctr-tab tr.sum td', tds => tds.slice(1, 4).map(td => +td.textContent.trim()));
   check(JSON.stringify(sumRow2) === JSON.stringify([after.n, after.ok, after.tr]), `měsíc CELKEM s hranicí ${sumRow2}`);
   await page.screenshot({ path: path.join(shots, '07-hranice-mesic.png'), fullPage: true });
   await page.click(`#waView [data-wactpage="week:${x.week}"]`);
   await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
-  check((await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ').includes('aspoň 50 % dovedností skupiny (hranice zaškolení z nastavení Auditu)'), 'týden: poznámka s hranicí');
+  check((await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ').includes('aspoň 50 % dovedností skupiny (hranice zaškolení z nastavení KPI)'), 'týden: poznámka s hranicí');
   await page.click('#waView [data-wactpage="dev"]');
   await page.waitForSelector('#waView .ctr-paper[data-ctrpage="dev"]');
-  check((await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ').includes('aspoň 50 % (hranice zaškolení z nastavení Auditu)'), 'vývoj: poznámka s hranicí');
+  check((await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ').includes('aspoň 50 % (hranice zaškolení z nastavení KPI)'), 'vývoj: poznámka s hranicí');
   const pdf2 = await download(page, '[data-wactpdf]', 'kapacity-hranice.pdf');
   const pages2 = pdfText(pdf2.path);
   if (pages2) check(pages2.join(' ').replace(/\s+/g, ' ').includes('aspoň 50 %'), 'PDF: poznámky s hranicí 50 %');
@@ -336,7 +336,7 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
     const r = waCtRange(), t = capTimeline(r.from, r.to);
     return { note: sum.slice(0, 4).map(r => r[0]).join(' '), ok: tot[sum[hdr].indexOf('Zkušení')], exp: t.end.tot.ok };
   }, fs.readFileSync(xl2.path).toString('base64'));
-  check(book2.note.includes('aspoň 50 % (hranice zaškolení z nastavení Auditu') && book2.ok === book2.exp, `Excel s hranicí: ${JSON.stringify(book2)}`);
+  check(book2.note.includes('aspoň 50 % (hranice zaškolení z nastavení KPI') && book2.ok === book2.exp, `Excel s hranicí: ${JSON.stringify(book2)}`);
   // prázdné pole = zpátky podle Matice
   await page.click('#waTabs [data-watab="nastaveni"]');
   await page.fill('#waTrainPct', '');

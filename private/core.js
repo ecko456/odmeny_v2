@@ -480,7 +480,7 @@ function toMinutes(v,unit,frac){
 }
 /* Výchozí sloupce evidence práce (bez hlavičky): jméno C, datum D, kusy E. */
 const PROD_DEFAULT={header:-1,name:2,date:3,ks:4,spent:null,norm:null,unit:"min",normPer:"row",item:null,iname:null,op:null};
-const PROD_FIELDS=[["name","Zaměstnanec (jméno nebo ID)"],["date","Datum"],["ks","Kusy"],["spent","Strávený čas"],["norm","Norma (min)"],["item","EAN / položka"],["iname","Název položky"],["op","Operace (pro Audit)"]];
+const PROD_FIELDS=[["name","Zaměstnanec (jméno nebo ID)"],["date","Datum"],["ks","Kusy"],["spent","Strávený čas"],["norm","Norma (min)"],["item","EAN / položka"],["iname","Název položky"],["op","Operace (pro KPI)"]];
 const PROD_WORDS={
   name:["jmeno","pracovnik","zamestnanec","operator","osoba","prijmeni","id zamestnance","id pracovnika","osobni cislo","cislo zamestnance","os. c","os.c","id"],
   date:["datum","den","date","dne"],
@@ -490,7 +490,7 @@ const PROD_WORDS={
   /* položka pro Top 5 nejméně efektivních (verze 2.2) */
   item:["ean","polozka","cislo polozky","kod polozky","id polozky","cislo dilu","kod dilu","dil","cislo vyrobku","kod vyrobku","vyrobek","artikl","produkt"],
   iname:["nazev polozky","nazev dilu","nazev vyrobku","nazev artiklu","popis polozky","popis dilu","nazev","popis"],
-  /* operace pro kusy v Auditu (verze 2.35): stejný soubor pak stačí nahrát jednou */
+  /* operace pro kusy v KPI (verze 2.35): stejný soubor pak stačí nahrát jednou */
   op:["operace","nazev operace","pracovni operace","cinnost","ukon"]
 };
 function colLetter(i){let s="";i++;while(i>0){const r=(i-1)%26;s=String.fromCharCode(65+r)+s;i=Math.floor((i-1)/26);}return s;}
@@ -1061,7 +1061,7 @@ function workDays(weekId){
    s ranní, odpolední = stálá odpolední + druhá skupina; týden = den × pracovní dny.
    Lidé bez směny, nemocní, vyřazení a vedoucí se nepočítají. Bez zapnuté kapacity null.
    S thr (2.23) navíc ok a tr: totéž jen za schopné (průměr dovedností aspoň thr) a za lidi
-   v zaškolování; celkové am/pm/day/week zůstávají (počítá s nimi úvod a Audit). */
+   v zaškolování; celkové am/pm/day/week zůstávají (počítá s nimi úvod a KPI). */
 function groupPlan(p,v,days,thr){
   if(!p||!p.plan||!(+p.plan.v>0))return null;
   const all=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&e.positionId===p.id);
@@ -1301,7 +1301,7 @@ function planRealitySheets(weekId){
 }
 
 /* ---------- kapacity a zaškolení v čase (2.30) ----------
-   Export „od–do“ v Auditu podle vzoru uživatele (měsíční souhrn zaškolenosti a týdenní souhrn
+   Export „od–do“ v KPI podle vzoru uživatele (měsíční souhrn zaškolenosti a týdenní souhrn
    s požadavkem). Počítají se jen pracovní dny (víkend a svátek ne, jako Plán a skutečnost).
    - Vykázáno: den, kdy má v Docházce aspoň jeden člověk hodiny nebo kód. V plánu je každý,
      kdo má v docházce toho měsíce řádek a v ten den je ve skupině Matice dovedností (historie
@@ -1313,7 +1313,7 @@ function planRealitySheets(weekId){
      U vykázaných dnů a stavů v minulosti platí procento z historie (e.hist, zapisuje se při každé
      změně hodnocení); před prvním zápisem nejbližší známé (odhad), bez historie dnešní.
      U plánovaných dnů dnešní hodnocení.
-   - Požadavek lidí na den z Auditu: pevný z Nastavení, u vykázaných dnů jinak plán z obsazenosti.
+   - Požadavek lidí na den z KPI: pevný z Nastavení, u vykázaných dnů jinak plán z obsazenosti.
    - Výkon (měsíce): normohodiny z evidence práce ÷ odpracované hodiny z docházky, jen lidé ve
      skupinách; index = celkem prvního měsíce s výkonem v období = 100.
    Na směně = lidé ze skupin Matice dovedností; kdo není v žádné skupině, se nepočítá. */
@@ -1343,8 +1343,8 @@ function ctPctAt(e,pos,ts){
   if(best)return {pct:best.pct,src:"hist"};
   return {pct:skillPct(e,pos),src:"now"};
 }
-/* Hranice zaškolení pro celý Audit (2.33): procento dovedností skupiny, od kterého je pracovník
-   zaškolený (pod ní v zácviku). Bez vlastní hodnoty v Nastavení Auditu platí úroveň
+/* Hranice zaškolení pro celé KPI (2.33): procento dovedností skupiny, od kterého je pracovník
+   zaškolený (pod ní v zácviku). Bez vlastní hodnoty v Nastavení KPI platí úroveň
    „Kdo se počítá jako zkušený pracovník“ z Matice × 25 %. */
 function waTrain(){
   const thr=clamp(Math.round(+(S.capReport||blankCapReport()).thr||3),1,4),own=S.workAudit&&S.workAudit.trainPct||null;
@@ -1532,7 +1532,7 @@ function ctFill(c){return c.rPlanH>0?c.realH/c.rPlanH:null;}
 const CT_KIND={real:"vykázáno",plan:"plánováno",mix:"vykázáno a plán"};
 
 /* odkud je hranice zaškolení (text do poznámek reportu) */
-function ctTrainSrc(x){return x.okOwn?"hranice zaškolení z nastavení Auditu":"úroveň "+x.thr+" z Matice dovedností";}
+function ctTrainSrc(x){return x.okOwn?"hranice zaškolení z nastavení KPI":"úroveň "+x.thr+" z Matice dovedností";}
 /* Excel kapacit a zaškolení: Souhrn, Po dnech, Po týdnech, Po měsících, Vývoj zaškolení. */
 function capTimelineSheets(x){
   if(!x)return [];
@@ -1541,7 +1541,7 @@ function capTimelineSheets(x){
   const head=[["Kapacity a zaškolení – "+dayText(x.from)+" – "+dayText(x.to)],
     ["Vykázáno = pracovní dny s nahranou docházkou"+(x.lastReal?" (poslední "+dayText(x.lastReal)+")":"")+", plánováno = ostatní pracovní dny podle dnešního zařazení, směn a střídání skupin 1 a 2. Víkendy a svátky se nepočítají."],
     ["Zkušený pracovník = procento dovedností skupiny aspoň "+x.okPct+" % ("+ctTrainSrc(x)+"; u vykázaných dnů a stavů v minulosti podle historie hodnocení k danému dni, u plánu dnešní hodnocení). Ostatní ve skupině jsou pracovníci v zácviku; Ø zaškolení = jejich procento ÷ cíl ("+x.okPct+" %)."],
-    ["Na směně = lidé ze skupin Matice dovedností v práci (vykázáno: hodiny bez kódu nepřítomnosti), nebo podle plánu (bez nemocných, vyřazených a vedoucích). Požadavek z Auditu; v normě = na směně aspoň požadavek."],
+    ["Na směně = lidé ze skupin Matice dovedností v práci (vykázáno: hodiny bez kódu nepřítomnosti), nebo podle plánu (bez nemocných, vyřazených a vedoucích). Požadavek z KPI; v normě = na směně aspoň požadavek."],
     ...(x.pastPlan.length?[["Docházka chybí pro "+x.pastPlan.length+" pracovních dní v minulosti (např. "+x.pastPlan.slice(0,3).map(iso=>dayText(iso)).join(", ")+"), počítají se jako plán."]]:[]),
     ...x.missing.map(m=>["V docházce za "+monthLabel(m.month)+" chybí "+m.keys.length+" lidí ze skupin (jiné jméno, nebo tehdy nepracovali), do vykázaných dnů se nepočítají."]),
     ...(x.est||x.noHist?[["Historie hodnocení: u "+x.est+" lidí odhad podle nejbližšího zápisu, u "+x.noHist+" bez zápisu dnešní hodnocení."]]:[]),
@@ -1573,7 +1573,7 @@ function capTimelineSheets(x){
   /* Po dnech */
   const dHead=["Datum","Týden","Stav","Oddělení","Skupina","Lidí v plánu","Zkušení v plánu","V zácviku v plánu","Nemoc (mimo plán)","Na směně","Zkušení na směně","V zácviku na směně",
     "Podíl zkušených %","Ø zaškolení v zácviku %","Ranní","Odpolední","Skupina 1/2 (bez střídání)","Bez směny","Plán h","Odpracováno h","Plnění hodin %","Omluveno","Neomluveno / chybí",
-    "Požadavek","V normě","Obsazenost (Audit)","Mimo skupiny h"];
+    "Požadavek","V normě","Obsazenost (KPI)","Mimo skupiny h"];
   const dRows=[...head,dHead];
   const cellRow=(d,g,c,tot)=>[dl(d.iso),weekName(d.week),CT_KIND[d.kind],gDept(g),gName(g),c.planN,c.planOk,c.planTr,c.sick,c.on,c.onOk,c.onTr,pc(ctShare(c)),c.onTr?pc(c.onTrS/c.onTr):"",
     c.am,c.pm,c.rot,c.noshift,Math.round(c.planH*100)/100,d.kind==="real"?Math.round(c.realH*100)/100:"",pc(ctFill(c)),d.kind==="real"?c.excused:"",d.kind==="real"?c.miss:"",
@@ -1665,7 +1665,7 @@ function capWeekReport(weekId,opts){
   }).filter(r=>r.plan>0||r.on>0);
   let plan=0,on=0,ok=0;
   x.days.forEach(d=>{d.cells.forEach(c=>{plan+=plan2(d,c);});on+=d.tot.on;ok+=d.tot.onOk;});
-  // den v normě: s požadavkem z Auditu na směně aspoň požadavek, bez něj aspoň plán skupin
+  // den v normě: s požadavkem z KPI na směně aspoň požadavek, bez něj aspoň plán skupin
   const planOf=d=>d.cells.reduce((s,c)=>s+plan2(d,c),0),inNorm=d=>d.req?!!d.met:d.tot.on>=planOf(d)-1e-9;
   const reqDays=x.days.filter(d=>d.req).length,met=x.days.filter(inNorm).length;
   const reqs=[...new Set(x.days.filter(d=>d.req).map(d=>d.req))];
@@ -2392,7 +2392,7 @@ function sanitizeState(input){
     s1am:weekById(cr.s1am)?String(cr.s1am):"",...(cr.detail==="all"||cr.detail==="none"?{detail:cr.detail}:{})};
   /* Protokoly – provozní deníky strojů (2.16): starší data je nemají, začínají prázdné */
   out.logbooks=cleanLogbooks(o.logbooks);
-  /* Audit – lidé v práci a zpracované kusy (2.17): starší data ho nemají, začíná prázdný */
+  /* KPI – lidé v práci a zpracované kusy (2.17): starší data ho nemají, začíná prázdný */
   out.workAudit=cleanWorkAudit(o.workAudit);
   /* Servis – odeslání zařízení na servis (2.21): starší data ho nemají, začíná prázdný */
   out.service=cleanService(o.service);
@@ -3573,7 +3573,7 @@ function cleanEff(input){
    nesplněno; výsledek se ukáže v jeho kartě (Lidé, Profil). */
 const AUD_DEFAULTS={pct:25};
 /* Režim výběru (2.37): week = plán na týden dopředu, day = každý den jen z lidí, kteří podle
-   nahraných příchodů (Audit, docházka a výkony) ten den přišli. */
+   nahraných příchodů (KPI, docházka a výkony) ten den přišli. */
 const AUD_MODES={week:"Na týden dopředu",day:"Každý den podle příchodů"};
 const AUD_STATES={plan:"Naplánováno",done:"Provedeno",skip:"Neproběhlo"};
 function blankAudit(){return {tasks:{},plans:{},settings:{...AUD_DEFAULTS}};}
@@ -4133,7 +4133,7 @@ function cleanWorkAudit(o){
     const seen=new Set();
     out.groups=o.groups.filter(g=>g&&typeof g==="object"&&/^[A-Za-z0-9_]{1,20}$/.test(String(g.id||""))).filter(g=>!seen.has(g.id)&&seen.add(g.id)).slice(0,20)
       .map(g=>({id:String(g.id),name:str(g.name,80)||String(g.id),am:waLetter(g.am),pm:waLetter(g.pm),unprod:!!g.unprod,noIs:!!g.noIs,
-        /* skupiny Matice, jejichž lidé se počítají do skupiny Auditu (2.42, soubor docházky a výkonů) */
+        /* skupiny Matice, jejichž lidé se počítají do skupiny KPI (2.42, soubor docházky a výkonů) */
         mg:[...new Set((Array.isArray(g.mg)?g.mg:[]).filter(x=>typeof x==="string"&&SAFE_ID.test(x)))].slice(0,40)}));
   }
   const gids=new Set(out.groups.map(g=>g.id));
@@ -4258,8 +4258,8 @@ function waParseWork(sheets,cols){
   const isos=Object.keys(byDay).sort();
   return {byDay,ops,rows,skipped,from:isos[0]||"",to:isos[isos.length-1]||""};
 }
-/* Kusy pro Audit z evidence práce ve Výrobě (2.35): stejné řádky, sloupce podle mapování Výroby
-   (datum, operace, kusy), počítá se jako import výkazu práce v Auditu. Bez operace nebo kusů null. */
+/* Kusy pro KPI z evidence práce ve Výrobě (2.35): stejné řádky, sloupce podle mapování Výroby
+   (datum, operace, kusy), počítá se jako import výkazu práce v KPI. Bez operace nebo kusů null. */
 function waParseProd(aoa,map){
   if(!map||map.op==null||map.ks==null||map.date==null||map.op<0||map.ks<0||map.date<0)return null;
   const rows=(aoa||[]).slice(Math.max(0,(+map.header||0)+1));
@@ -4717,22 +4717,22 @@ function waChanges(A,B,add){
   const gname=(st,id)=>{const g=st.groups.find(x=>x.id===id);return g?g.name:"—";};
   B.groups.forEach(g=>{
     const o=ga.get(g.id);
-    if(!o){add("workaudit","Audit: nová skupina „"+g.name+"“",{m:"wag:"+g.id});return;}
-    if(o.name!==g.name)add("workaudit","",{m:"wan:"+g.id,p:"Audit – skupina přejmenována: ",v0:"„"+o.name+"“",v1:"„"+g.name+"“"});
-    if(o.unprod!==g.unprod)add("workaudit","",{m:"wau:"+g.id,p:"Audit – "+g.name+", neproduktivní pozice: ",v0:o.unprod?"ano":"ne",v1:g.unprod?"ano":"ne"});
-    if(o.noIs!==g.noIs)add("workaudit","",{m:"wai:"+g.id,p:"Audit – "+g.name+", projekt není evidován v IS: ",v0:o.noIs?"ano":"ne",v1:g.noIs?"ano":"ne"});
+    if(!o){add("workaudit","KPI: nová skupina „"+g.name+"“",{m:"wag:"+g.id});return;}
+    if(o.name!==g.name)add("workaudit","",{m:"wan:"+g.id,p:"KPI – skupina přejmenována: ",v0:"„"+o.name+"“",v1:"„"+g.name+"“"});
+    if(o.unprod!==g.unprod)add("workaudit","",{m:"wau:"+g.id,p:"KPI – "+g.name+", neproduktivní pozice: ",v0:o.unprod?"ano":"ne",v1:g.unprod?"ano":"ne"});
+    if(o.noIs!==g.noIs)add("workaudit","",{m:"wai:"+g.id,p:"KPI – "+g.name+", projekt není evidován v IS: ",v0:o.noIs?"ano":"ne",v1:g.noIs?"ano":"ne"});
     if((o.mg||[]).join()!==(g.mg||[]).join()){const nm=l=>(l||[]).map(id=>{const p=S.positions.find(x=>x.id===id);return p?p.name:id;}).join(", ")||"podle názvu";
-      add("workaudit","",{m:"wam:"+g.id,p:"Audit – "+g.name+", skupiny Matice: ",v0:nm(o.mg),v1:nm(g.mg)});}
-    if(o.am!==g.am||o.pm!==g.pm)add("workaudit","",{m:"wac:"+g.id,p:"Audit – "+g.name+", sloupce ranní/odpolední: ",v0:(o.am||"—")+"/"+(o.pm||"—"),v1:(g.am||"—")+"/"+(g.pm||"—")});
+      add("workaudit","",{m:"wam:"+g.id,p:"KPI – "+g.name+", skupiny Matice: ",v0:nm(o.mg),v1:nm(g.mg)});}
+    if(o.am!==g.am||o.pm!==g.pm)add("workaudit","",{m:"wac:"+g.id,p:"KPI – "+g.name+", sloupce ranní/odpolední: ",v0:(o.am||"—")+"/"+(o.pm||"—"),v1:(g.am||"—")+"/"+(g.pm||"—")});
   });
-  A.groups.forEach(g=>{if(!B.groups.some(x=>x.id===g.id))add("workaudit","Audit: smazána skupina „"+g.name+"“",{m:"wag:"+g.id});});
+  A.groups.forEach(g=>{if(!B.groups.some(x=>x.id===g.id))add("workaudit","KPI: smazána skupina „"+g.name+"“",{m:"wag:"+g.id});});
   B.ops.forEach(x=>{
     const o=opa.get(x.id);if(!o)return;   // nové operace přicházejí s importem
-    if(o.group!==x.group)add("workaudit","",{m:"wao:"+x.id,p:"Audit – operace „"+x.name+"“, skupina: ",v0:o.group?gname(A,o.group):"bez skupiny",v1:x.group?gname(B,x.group):"bez skupiny"});
-    if(o.on!==x.on)add("workaudit","",{m:"waon:"+x.id,p:"Audit – operace „"+x.name+"“: ",v0:o.on?"započítává se":"nezapočítává se",v1:x.on?"započítává se":"nezapočítává se"});
+    if(o.group!==x.group)add("workaudit","",{m:"wao:"+x.id,p:"KPI – operace „"+x.name+"“, skupina: ",v0:o.group?gname(A,o.group):"bez skupiny",v1:x.group?gname(B,x.group):"bez skupiny"});
+    if(o.on!==x.on)add("workaudit","",{m:"waon:"+x.id,p:"KPI – operace „"+x.name+"“: ",v0:o.on?"započítává se":"nezapočítává se",v1:x.on?"započítává se":"nezapočítává se"});
   });
-  if(JSON.stringify(A.cols)!==JSON.stringify(B.cols))add("workaudit","Audit: změněny sloupce souborů",{m:"wacols"});
-  if((A.target||null)!==(B.target||null))add("workaudit","",{m:"watarget",p:"Audit – požadavek lidí na pracovní den: ",v0:A.target?String(A.target):"podle plánu v souboru",v1:B.target?String(B.target):"podle plánu v souboru"});
+  if(JSON.stringify(A.cols)!==JSON.stringify(B.cols))add("workaudit","KPI: změněny sloupce souborů",{m:"wacols"});
+  if((A.target||null)!==(B.target||null))add("workaudit","",{m:"watarget",p:"KPI – požadavek lidí na pracovní den: ",v0:A.target?String(A.target):"podle plánu v souboru",v1:B.target?String(B.target):"podle plánu v souboru"});
   const qa=A.drep||blankDrep(),qb=B.drep||blankDrep();
   const rgT=g=>g.depts.length?g.depts.join(", "):"bez oddělení";
   qb.groups.forEach(g=>{
@@ -4746,28 +4746,28 @@ function waChanges(A,B,add){
     if((qa.marks[iso]||"")!==(qb.marks[iso]||""))add("workaudit","",{m:"wadrm:"+iso,p:"Report docházky "+dayText(iso)+": ",v0:DR_MARK[qa.marks[iso]]||"počítá se do normy",v1:DR_MARK[qb.marks[iso]]||"počítá se do normy"});
   });
   const da=A.dv||blankDv(),db=B.dv||blankDv();
-  if(JSON.stringify(da.cols)!==JSON.stringify(db.cols)||da.unit!==db.unit||JSON.stringify(da.sheets||{})!==JSON.stringify(db.sheets||{}))add("workaudit","Audit: změněny sloupce souboru docházky a výkonů",{m:"wadvcols"});
-  if((A.trainPct||null)!==(B.trainPct||null))add("workaudit","",{m:"watrain",p:"Audit – hranice zaškolení: ",v0:A.trainPct?"od "+A.trainPct+" %":"podle Matice dovedností",v1:B.trainPct?"od "+B.trainPct+" %":"podle Matice dovedností"});
+  if(JSON.stringify(da.cols)!==JSON.stringify(db.cols)||da.unit!==db.unit||JSON.stringify(da.sheets||{})!==JSON.stringify(db.sheets||{}))add("workaudit","KPI: změněny sloupce souboru docházky a výkonů",{m:"wadvcols"});
+  if((A.trainPct||null)!==(B.trainPct||null))add("workaudit","",{m:"watrain",p:"KPI – hranice zaškolení: ",v0:A.trainPct?"od "+A.trainPct+" %":"podle Matice dovedností",v1:B.trainPct?"od "+B.trainPct+" %":"podle Matice dovedností"});
   const ra=A.rep||{},rb=B.rep||{};
-  if((ra.place||"")!==(rb.place||"")||(ra.firm||"")!==(rb.firm||""))add("workaudit","",{m:"warep",p:"Audit – záhlaví reportů: ",v0:[ra.place,ra.firm].filter(Boolean).join(" · ")||"bez názvu",v1:[rb.place,rb.firm].filter(Boolean).join(" · ")||"bez názvu"});
+  if((ra.place||"")!==(rb.place||"")||(ra.firm||"")!==(rb.firm||""))add("workaudit","",{m:"warep",p:"KPI – záhlaví reportů: ",v0:[ra.place,ra.firm].filter(Boolean).join(" · ")||"bez názvu",v1:[rb.place,rb.firm].filter(Boolean).join(" · ")||"bez názvu"});
   const pa=A.plan||blankWaPlan(),pb=B.plan||blankWaPlan();
   const techText=p=>p.tech.words.join(", ")+(p.tech.mode==="contains"?" (kdekoli v textu)":"");
-  if(techText(pa)!==techText(pb))add("workaudit","",{m:"waptech",p:"Audit – výrobní plán, technologie: ",v0:techText(pa)||"vše",v1:techText(pb)||"vše"});
-  if(pa.cap.group!==pb.cap.group)add("workaudit","",{m:"wapgrp",p:"Audit – výrobní plán, kapacita skupiny: ",v0:pa.cap.group?gname(A,pa.cap.group):"žádná",v1:pb.cap.group?gname(B,pb.cap.group):"žádná"});
-  if(pa.cap.perShift!==pb.cap.perShift)add("workaudit","",{m:"wapper",p:"Audit – výrobní plán, kusů na směnu: ",v0:nf(pa.cap.perShift,1),v1:nf(pb.cap.perShift,1)});
-  if(JSON.stringify(pa.tpl)!==JSON.stringify(pb.tpl))add("workaudit",pb.tpl?"Audit: vzor výrobního plánu podle souboru "+(pb.tpl.file||"—"):"Audit: vzor výrobního plánu smazán",{m:"waptpl"});
+  if(techText(pa)!==techText(pb))add("workaudit","",{m:"waptech",p:"KPI – výrobní plán, technologie: ",v0:techText(pa)||"vše",v1:techText(pb)||"vše"});
+  if(pa.cap.group!==pb.cap.group)add("workaudit","",{m:"wapgrp",p:"KPI – výrobní plán, kapacita skupiny: ",v0:pa.cap.group?gname(A,pa.cap.group):"žádná",v1:pb.cap.group?gname(B,pb.cap.group):"žádná"});
+  if(pa.cap.perShift!==pb.cap.perShift)add("workaudit","",{m:"wapper",p:"KPI – výrobní plán, kusů na směnu: ",v0:nf(pa.cap.perShift,1),v1:nf(pb.cap.perShift,1)});
+  if(JSON.stringify(pa.tpl)!==JSON.stringify(pb.tpl))add("workaudit",pb.tpl?"KPI: vzor výrobního plánu podle souboru "+(pb.tpl.file||"—"):"KPI: vzor výrobního plánu smazán",{m:"waptpl"});
   const isos=new Set([...Object.keys(A.edits),...Object.keys(B.edits)]);
   const fmt=v=>v==null?"prázdné":nf(v,2);
   [...isos].sort().forEach(iso=>{
     const ea=A.edits[iso]||{},eb=B.edits[iso]||{};
     new Set([...Object.keys(ea),...Object.keys(eb)]).forEach(k=>{
       const x=ea[k],y=eb[k];
-      if(y&&(!x||x.v!==y.v||x.note!==y.note))add("workaudit","Audit "+dayText(iso)+" – "+waKeyLabel(B,k)+": "+fmt(y.was)+" → "+fmt(y.v)+(y.note?" ("+y.note+")":""),{m:"wae:"+iso+":"+k});
-      else if(x&&!y)add("workaudit","Audit "+dayText(iso)+" – "+waKeyLabel(A,k)+": úprava zrušena, platí "+fmt(waRaw(B,iso,k)),{m:"wae:"+iso+":"+k});
+      if(y&&(!x||x.v!==y.v||x.note!==y.note))add("workaudit","KPI "+dayText(iso)+" – "+waKeyLabel(B,k)+": "+fmt(y.was)+" → "+fmt(y.v)+(y.note?" ("+y.note+")":""),{m:"wae:"+iso+":"+k});
+      else if(x&&!y)add("workaudit","KPI "+dayText(iso)+" – "+waKeyLabel(A,k)+": úprava zrušena, platí "+fmt(waRaw(B,iso,k)),{m:"wae:"+iso+":"+k});
     });
   });
   new Set([...Object.keys(A.notes),...Object.keys(B.notes)]).forEach(iso=>{
-    if((A.notes[iso]||"")!==(B.notes[iso]||""))add("workaudit","Audit "+dayText(iso)+": "+(B.notes[iso]?"poznámka ke dni „"+B.notes[iso].slice(0,80)+"“":"poznámka smazána"),{m:"wanote:"+iso});
+    if((A.notes[iso]||"")!==(B.notes[iso]||""))add("workaudit","KPI "+dayText(iso)+": "+(B.notes[iso]?"poznámka ke dni „"+B.notes[iso].slice(0,80)+"“":"poznámka smazána"),{m:"wanote:"+iso});
   });
 }
 
@@ -4942,7 +4942,7 @@ function dvParseWork(sheet,c,unit){
 }
 /** Uloží docházku a výkony: dny ze souboru nahradí uložené dny (i den, kdy nikdo nepřišel),
     výkony nahradí celé měsíce ze souboru (bez data řádku = měsíc konce docházky). S audit
-    a datem u řádků se kusy podle operací zapíšou i do Auditu jako výkaz práce. */
+    a datem u řádků se kusy podle operací zapíšou i do KPI jako výkaz práce. */
 function dvApply(wa,p,meta,opts){
   opts=opts||{};meta=meta||{};
   const dv=wa.dv||(wa.dv=blankDv()),a=p.att&&p.att.ok?p.att:null,w=p.work&&p.work.ok?p.work:null;
@@ -4959,7 +4959,7 @@ function dvApply(wa,p,meta,opts){
     Object.values(by).forEach(pm=>Object.values(pm).forEach(q=>{Object.values(q.p).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));Object.values(q.o).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));}));
     Object.keys(by).sort().forEach(m=>{dv.perf[m]=by[m];months.push(m);});
     if(w.dated&&(opts.audit||w.recs.some(x=>dvOwns(x.iso)))){
-      /* kusy do Auditu: od listopadu 2026 vždy, dřív jen na přání (zaškrtnutí v dialogu) */
+      /* kusy do KPI: od listopadu 2026 vždy, dřív jen na přání (zaškrtnutí v dialogu) */
       const byDay={},ops={};let rows=0;
       w.recs.forEach(x=>{if(!x.iso||!x.op||!(opts.audit||dvOwns(x.iso)))return;const d=byDay[x.iso]||(byDay[x.iso]={});d[x.op]=(d[x.op]||0)+x.g;ops[x.op]=(ops[x.op]||0)+x.g;rows++;});
       const isos=Object.keys(byDay).sort();
@@ -4969,7 +4969,7 @@ function dvApply(wa,p,meta,opts){
   dv.files.push({name:String(meta.name||"").slice(0,160),at:meta.at||Date.now(),by:String(meta.by||"").slice(0,60),from:a?a.from:(w?w.from:""),to:a?a.to:(w?w.to:""),
     people:a?a.people:0,days:a?a.days:0,rows:w?w.rows:0,months:months.slice(0,24)});
   dv.files=dv.files.slice(-40);
-  /* od listopadu 2026 (2.42) jediný zdroj: docházka pro odměny, evidence práce a obsazenost v Auditu */
+  /* od listopadu 2026 (2.42) jediný zdroj: docházka pro odměny, evidence práce a obsazenost v KPI */
   const periods=a?dvToPeriods(a,meta):[];
   const prod=w?dvToProduction(w,meta,((a&&a.to)||w.to||todayIso(meta.at)).slice(0,7)):[];
   const occ=a?dvToAudit(wa,a.dates,a.abs):[];
@@ -5172,7 +5172,7 @@ function endAiSample(sheet,cols,employees){
 
 /* ---------- od listopadu 2026 jediný zdroj (2.42) ----------
    Soubor Docházka a výkony plní za měsíce od DV_FROM docházku pro odměny (S.periods), evidenci
-   práce místo Výroby (S.production) a obsazenost s kusy v Auditu. Říjen 2026 a dřív zůstává
+   práce místo Výroby (S.production) a obsazenost s kusy v KPI. Říjen 2026 a dřív zůstává
    ze starých souborů (přání uživatele: „tento měsíc říjen bude ještě docházka po staru“). */
 let DV_FROM="2026-11";   // let jen kvůli starším e2e testům se soubory za listopad (posunou hranici)
 /** Měsíc nebo den, který se plní ze souboru docházky a výkonů. */
@@ -5242,8 +5242,8 @@ function dvToProduction(w,meta,fallback){
     return {m,people:Object.keys(b.names).length,records:b.records};
   });
 }
-/** Skupina Matice → skupina Auditu: vybrané skupiny Matice, bez výběru podle názvu (stejný název
-    skupiny nebo oddělení). Skupina Matice patří nejvýš jedné skupině Auditu (první vyhrává). */
+/** Skupina Matice → skupina KPI: vybrané skupiny Matice, bez výběru podle názvu (stejný název
+    skupiny nebo oddělení). Skupina Matice patří nejvýš jedné skupině KPI (první vyhrává). */
 function dvAuditGroups(wa){
   const out=new Map(),mg=S.positions.filter(isGroup);
   (wa.groups||[]).forEach(g=>{
@@ -5252,7 +5252,7 @@ function dvAuditGroups(wa){
   });
   return out;
 }
-/** Obsazenost v Auditu za dny od DV_FROM z příchodů: ranní = příchod před 12:00 (bez příchodu
+/** Obsazenost v KPI za dny od DV_FROM z příchodů: ranní = příchod před 12:00 (bez příchodu
     podle směny), vedoucí se nepočítají, neznámé ID jen do celku. Absence = kódy ze souboru
     (bez kódů zůstane uložené číslo). Úpravy s důvodem zůstávají. */
 function dvToAudit(wa,isos,abs){
@@ -5277,7 +5277,7 @@ function dvToAudit(wa,isos,abs){
   });
   return out;
 }
-/** Po změně skupin Matice u skupiny Auditu přepočítá obsazenost ze souboru (dny od DV_FROM). */
+/** Po změně skupin Matice u skupiny KPI přepočítá obsazenost ze souboru (dny od DV_FROM). */
 function dvAuditRefresh(wa){return dvToAudit(wa,Object.keys((wa.dv&&wa.dv.pres)||{}).filter(dvOwns).filter(iso=>wa.days[iso]),null);}
 function cleanDv(o){
   const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
@@ -5414,8 +5414,8 @@ function staffNow(sd,slot,opts){
   return {day:sd.day,slots,depts,total:t,waitPm};
 }
 /* ================= Report docházky: plnění denního požadavku (2.40) =================
-   Z nahraných příchodů (Audit, docházka a výkony): kolik lidí ze skupin Matice přišlo proti
-   plánu skupiny a proti dennímu požadavku (Nastavení Auditu, požadavek lidí). Plán skupiny =
+   Z nahraných příchodů (KPI, docházka a výkony): kolik lidí ze skupin Matice přišlo proti
+   plánu skupiny a proti dennímu požadavku (Nastavení KPI, požadavek lidí). Plán skupiny =
    potřeba celkem z Plánu kapacit, jinak počet lidí ve skupině. Den v normě = dodáno ≥ požadavek;
    plnění normy za období = podíl pracovních dnů v normě (nic se nesčítá ani nedorovnává).
    Víkendy a svátky jsou mimo normu, budoucí dny (od zítřka) jsou plánovaná kapacita (plán bez
@@ -5661,13 +5661,89 @@ function dvPerson(key,from,to){
 }
 
 /* ==========================================================================
+   KPI: VÝKONNOST NA OSOBU (verze 2.44)
+   Za měsíc z evidence práce (S.production; od listopadu 2026 ji plní soubor Docházka a výkony)
+   a docházky (S.periods). Průměr na den = kusy ÷ odpracované dny z docházky (všední + víkendové,
+   stejně jako Ø ks/den v Přehledu). Lidé po odděleních (skupina k poslednímu dni měsíce podle
+   historie zařazení), bez vedoucích a vyřazených.
+   ========================================================================== */
+const KPI_SORT=[["ks","Ø ks na den"],["norm","Plnění normy"],["ph","Kusy za hodinu"],["h","Ø vykázané hodiny na den"],["use","Využití fondu"]];
+/** Měsíce s evidencí práce, nejnovější první. */
+function kpiMonths(){return Object.keys(S.production||{}).filter(m=>PERIOD_ID.test(m)).sort().reverse();}
+/** Výkonnost lidí za měsíc po odděleních. sort = klíč z KPI_SORT, dir = "best" | "worst". */
+function kpiPerf(month,opts){
+  opts=opts||{};
+  const sort=KPI_SORT.some(k=>k[0]===opts.sort)?opts.sort:"ks",dir=opts.dir==="worst"?"worst":"best";
+  const prod=S.production[month],per=S.periods[month]||null,today=todayIso(opts.now);
+  if(!prod)return {month,none:true,depts:[],people:[],sort,dir};
+  const last=month+"-"+String(new Date(+month.slice(0,4),+month.slice(5,7),0).getDate()).padStart(2,"0");
+  const endIso=last<today?last:today;
+  return withPeriod(month,()=>{
+    const idx=prodIndex(),time=!!prod.time,ord=dvGroupOrder();
+    const people=[];
+    Object.entries(idx).forEach(([key,pr])=>{
+      const e=S.employees[key];if(!e||e.excluded||isLead(e))return;
+      const att=per?attendance(per,key):null,days=workedDays(att&&att.found?att:null);
+      const g=dvGroupOf(e,endIso,today);
+      const q={key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",gid:g.id,group:g.name,dept:g.id==="-"?"Bez skupiny":(g.dept||"").trim()||g.name,
+        days,ks:pr.total,spent:time?pr.spent:null,norm:pr.nspent>0?pr.norm/pr.nspent*100:null,nm:pr.norm||0,ns:pr.nspent||0,
+        fund:att&&att.found?att.totalHours*60:0};
+      q.v={ks:days?q.ks/days:null,h:time&&days?pr.spent/60/days:null,ph:time&&pr.spent>0?q.ks/(pr.spent/60):null,
+        norm:q.norm,use:time&&att&&att.found&&att.totalHours>0?pr.spent/(att.totalHours*60)*100:null};
+      people.push(q);
+    });
+    const cmp=kpiCmp(sort,dir);
+    const byDept=new Map();
+    people.forEach(q=>{let d=byDept.get(q.dept);if(!d){d={name:q.dept,ord:ord(q.gid),people:[]};byDept.set(q.dept,d);}d.ord=Math.min(d.ord,ord(q.gid));d.people.push(q);});
+    const depts=[...byDept.values()].sort((a,b)=>a.ord-b.ord||a.name.localeCompare(b.name,"cs")).map(d=>{
+      d.people.sort(cmp);let r=0;d.people.forEach(q=>{q.rank=q.v[sort]==null?null:++r;});
+      d.avg=kpiAvg(d.people,time);
+      const vals=d.people.map(q=>q.v[sort]).filter(v=>v!=null);d.max=vals.length?Math.max(...vals):null;
+      return d;
+    });
+    const unmatched=Object.values(prod.names).filter(rec=>!prodKeyFor(rec.name)).length;
+    return {month,time,depts,people,tot:kpiAvg(people,time),unmatched,noAtt:!per,sort,dir};
+  });
+}
+/** Řazení: lepší výsledek nahoru (best) nebo dolů (worst); lidé bez hodnoty vždy na konci. */
+function kpiCmp(sort,dir){
+  return (a,b)=>{const x=a.v[sort],y=b.v[sort];
+    if(x==null||y==null)return x==null&&y==null?a.name.localeCompare(b.name,"cs"):x==null?1:-1;
+    return (dir==="worst"?x-y:y-x)||a.name.localeCompare(b.name,"cs");};
+}
+/** Průměr skupiny lidí: vážený součty (kusy ÷ dny, norma ÷ čas s normou, čas ÷ hodiny v práci),
+    ne průměr průměrů: člověk se dvěma dny neváží stejně jako člověk s dvaceti. */
+function kpiAvg(list,time){
+  const sum=f=>list.reduce((s,q)=>s+(f(q)||0),0);
+  const days=sum(q=>q.days),ks=sum(q=>q.ks),sp=time?sum(q=>q.spent):0;
+  const nm=sum(q=>q.nm),ns=sum(q=>q.ns);
+  const us=list.filter(q=>q.v.use!=null),usp=us.reduce((s,q)=>s+q.spent,0),uf=us.reduce((s,q)=>s+q.fund,0);
+  return {people:list.length,days,ks,
+    ks1:days?ks/days:null,h:time&&days?sp/60/days:null,ph:time&&sp>0?ks/(sp/60):null,
+    norm:ns>0?nm/ns*100:null,use:uf>0?usp/uf*100:null};
+}
+/** Excel: jeden list, oddělení pod sebou s pořadím a průměrem oddělení. */
+function kpiSheets(x){
+  const lab=Object.fromEntries(KPI_SORT);
+  const r1=v=>v==null?"":Math.round(v*10)/10;
+  const rows=[["Výkonnost na osobu · "+monthLabel(x.month)],["Řazeno: "+lab[x.sort]+(x.dir==="worst"?", od nejhorších":", od nejlepších")],[],
+    ["Oddělení","Pořadí","Příjmení a jméno","ID","Skupina","Odpracované dny","Kusy celkem","Ø ks na den","Ø vykázané h na den","Kusy za hodinu","Plnění normy %","Využití fondu %"]];
+  x.depts.forEach(d=>{
+    d.people.forEach(q=>rows.push([d.name,q.rank==null?"":q.rank,q.name,q.wid,q.group,q.days,q.ks,r1(q.v.ks),r1(q.v.h),r1(q.v.ph),r1(q.v.norm),r1(q.v.use)]));
+    rows.push([d.name,"","Průměr oddělení","","",d.avg.days,d.avg.ks,r1(d.avg.ks1),r1(d.avg.h),r1(d.avg.ph),r1(d.avg.norm),r1(d.avg.use)]);
+  });
+  rows.push(["Celkem","","","","",x.tot.days,x.tot.ks,r1(x.tot.ks1),r1(x.tot.h),r1(x.tot.ph),r1(x.tot.norm),r1(x.tot.use)]);
+  return [{name:"Výkonnost na osobu",rows}];
+}
+
+/* ==========================================================================
    PLÁN KAPACIT (verze 2.38)
    Ke každé skupině Matice (projektu) se nastaví, kolik lidí je potřeba celkem a kolik z nich
    aspoň na úrovni 2, 3 a 4. Úroveň člověka = procento dovedností skupiny: aspoň 50 % = úroveň 2,
    75 % = 3, 100 % = 4 (stejně jako „zkušený pracovník“ v reportu kapacit). Počty „aspoň“ se
    sčítají shora: kdo má úroveň 4, počítá se i do úrovně 3 a 2.
    S.capPlan = {groups: {idSkupiny: {n, l2, l3, l4}}, note, by, at}. Plán ukáže, jak jsme na
-   tom (lidé ve skupině, nemocní, v práci podle docházky z Auditu), koho doškolit (kandidáti
+   tom (lidé ve skupině, nemocní, v práci podle docházky z KPI), koho doškolit (kandidáti
    s nejvyšším procentem pod hranicí) a kolik lidí doplnit náborem.
    ========================================================================== */
 const CP_LEVELS=[2,3,4];
@@ -5704,7 +5780,7 @@ function setCapNeed(id,patch){
 }
 /* Úroveň člověka ve skupině z procenta dovedností (0–4, dolů: 74 % je ještě úroveň 2). */
 const cpLevel=pct=>pct==null?0:Math.floor((pct+1e-9)/25);
-/* Průměrný počet lidí skupiny v práci za posledních N pracovních dní s docházkou (Audit 2.37). */
+/* Průměrný počet lidí skupiny v práci za posledních N pracovních dní s docházkou (KPI 2.37). */
 function cpPresence(days,now){
   const dv=S.workAudit&&S.workAudit.dv;
   if(!dv)return null;

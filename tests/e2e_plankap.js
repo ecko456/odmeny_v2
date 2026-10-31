@@ -1,6 +1,6 @@
 // Prohlížečový průchod: Plán kapacit (verze 2.38). U skupin z Matice dovedností se zadá
 // potřeba lidí celkem a aspoň na úrovni 2, 3 a 4; plán ukáže, jak jsme na tom (lidé ve skupině,
-// nemocní, průměr v práci z docházky v Auditu), kolik doplnit a koho doškolit. Kontroluje
+// nemocní, průměr v práci z docházky v KPI), kolik doplnit a koho doškolit. Kontroluje
 // srovnání počtů (vyšší úroveň zvedne nižší), výpočet proti očekávání, kandidáty s odkazem do
 // profilu, poznámku, historii změn, PDF jako Kapacity a zaškolení (text přes pypdf, když je, graf,
 // bez jmen, krajní případy), Excel jen s ID, telefon a tmavý režim.
@@ -73,7 +73,7 @@ async function setNeed(page, group, key, value) {
     add(4, 'g_brus', [1, 1, 1, 1], { sick: '2026-10-28' }); add(5, 'g_brus', []);
     add(6, 'g_cnc', [4, 4]); add(7, 'g_cnc', [2, 2]); add(8, 'g_fre', [3, 3]); add(9, 'g_brus', [4, 4, 4, 4], { excluded: true });
     S = sanitizeState(st);
-    // docházka z Auditu: 26., 27. a 29. 10. v práci 5 z Brusu (bez nemocného Exnera), oba z CNC, Frézka jen 29.
+    // docházka z KPI: 26., 27. a 29. 10. v práci 5 z Brusu (bez nemocného Exnera), oba z CNC, Frézka jen 29.
     ['2026-10-26', '2026-10-27', '2026-10-29'].forEach(iso => {
       const day = {};
       ['100', '101', '102', '103', '105', '106', '107'].forEach(w => { day[w] = [360, 870]; });

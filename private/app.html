@@ -28,8 +28,7 @@
       <button type="button" data-view="shortage"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 8.5v5M12 16.6v.1"/></svg><span>Shortage</span></button>
       <button type="button" data-view="dochazka"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 13.5h2M14 13.5h2M8 17h2"/></svg><span>Docházka</span></button>
       <button type="button" data-view="konce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M10 15h7M14 12.5l3 2.5-3 2.5"/></svg><span>Konce trestů</span></button>
-      <button type="button" data-view="vyroba"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5.5 20.5V11l5 3V11l5 3V6.5h3v14"/></svg><span>Výroba</span></button>
-      <button type="button" data-view="audit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h11"/><path d="M6 16.5v-5M10 16.5V8"/><circle cx="16.5" cy="10.5" r="4"/><path d="m19.4 13.4 2.6 2.6"/><path d="M14.8 10.6l1.2 1.2 2.2-2.4"/></svg><span>Audit</span><em class="nav-badge" id="navWa" hidden></em></button>
+      <button type="button" data-view="audit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h11"/><path d="M6 16.5v-5M10 16.5V8"/><circle cx="16.5" cy="10.5" r="4"/><path d="m19.4 13.4 2.6 2.6"/><path d="M14.8 10.6l1.2 1.2 2.2-2.4"/></svg><span>KPI</span><em class="nav-badge" id="navWa" hidden></em></button>
       <button type="button" data-view="top5"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17"/><path d="M6.5 16.5v-9M11 16.5v-6M15.5 16.5v-3.5M20 16.5v-1.5"/><path d="m6.5 4 4 3.5 4.5 3 4.5 2"/></svg><span>Top 5</span><em class="nav-badge" id="navTop5" hidden></em></button>
       <button type="button" data-view="nastaveni"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Nastavení</span></button>
     </nav>
@@ -201,7 +200,7 @@
           <button class="btn danger" type="button" id="btnDelPeriod">Smazat vybrané období</button>
         </div>
       </header>
-      <div class="note i dv-src">Od listopadu 2026 se docházka pro odměny plní ze souboru <b>Docházka a výkony</b> v Auditu (příchody, odchody a kódy nepřítomnosti). Tady se nahrává už jen docházka za říjen 2026 a dřív. <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>
+      <div class="note i dv-src">Od listopadu 2026 se docházka pro odměny plní ze souboru <b>Docházka a výkony</b> v KPI (příchody, odchody a kódy nepřítomnosti). Tady se nahrává už jen docházka za říjen 2026 a dřív. <button class="link" type="button" data-go="audit">Otevřít KPI</button></div>
       <div class="drop" id="drop">
         <div class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3.5V8h4.5M12 17.5v-6M9.5 14 12 11.5l2.5 2.5"/></svg></div>
         <div class="drop-text">
@@ -248,12 +247,12 @@
           <p class="lede">Vyrobené kusy po lidech a průměr na odpracovaný den. Jen pro přehled, do tabáků se nezapočítávají.</p>
         </div>
       </header>
-      <div class="note i dv-src">Od listopadu 2026 se evidence práce plní ze souboru <b>Docházka a výkony</b> v Auditu (tlačítko Nahrát docházku a výkony). Tady se nahrává už jen evidence práce za říjen 2026 a dřív. <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>
+      <div class="note i dv-src">Od listopadu 2026 se evidence práce plní ze souboru <b>Docházka a výkony</b> v KPI (tlačítko Nahrát docházku a výkony). Tady se nahrává už jen evidence práce za říjen 2026 a dřív. <button class="link" type="button" data-go="audit">Otevřít KPI</button></div>
       <div class="drop" id="pdrop">
         <div class="drop-ico prod" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5.5 20.5V11l5 3V11l5 3V6.5h3v14"/></svg></div>
         <div class="drop-text">
           <h2>Přetáhni sem evidenci práce</h2>
-          <p>Zaměstnanec (jméno nebo ID z Nastavení), datum, kusy a volitelně strávený čas, norma v minutách a operace (kusy podle operací pak jdou i do Auditu). Sloupce vybereš při prvním importu, pak si je pamatuju.</p>
+          <p>Zaměstnanec (jméno nebo ID z Nastavení), datum, kusy a volitelně strávený čas, norma v minutách a operace (kusy podle operací pak jdou i do KPI). Sloupce vybereš při prvním importu, pak si je pamatuju.</p>
         </div>
         <button class="btn" type="button" id="pbtnPick">Vybrat soubor</button>
         <input type="file" id="pfile" accept=".xlsx,.xlsm,.xls,.csv,.txt" hidden>
@@ -385,9 +384,9 @@
     <section class="view" id="view-audit" aria-labelledby="waTitle">
       <header class="page-head">
         <div>
-          <p class="eyebrow">Lidé v práci a zpracované kusy</p>
-          <h1 id="waTitle">Audit</h1>
-          <p class="lede">Lidé v práci proti požadavku a zpracované kusy po týdnech. Od listopadu 2026 je všechno z jednoho souboru <b>Docházka a výkony</b>: obsazenost, kusy podle operací, denní obsazenost po projektech, produktivita každého člověka i docházka a evidence práce pro odměny. Výrobní plán porovná kusy k dodání s kapacitou brusičů. Dny s víkendy a svátky, opravy s důvodem a nastavení jsou v dalších záložkách.</p>
+          <p class="eyebrow">Ukazatele výroby a docházky</p>
+          <h1 id="waTitle">KPI</h1>
+          <p class="lede">Lidé v práci proti požadavku a zpracované kusy po týdnech. Od listopadu 2026 je všechno z jednoho souboru <b>Docházka a výkony</b>: obsazenost, kusy podle operací, denní obsazenost po projektech, produktivita každého člověka i docházka a evidence práce pro odměny. Výkonnost na osobu seřadí lidi v oddělení od nejlepších po nejhorší. Dny s víkendy a svátky a nastavení jsou v dalších záložkách.</p>
         </div>
         <div class="page-actions noprint">
           <button class="btn" type="button" id="waDv">Nahrát docházku a výkony</button>

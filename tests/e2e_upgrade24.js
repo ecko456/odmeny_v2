@@ -91,7 +91,7 @@ function compare(beforeJson, afterJson) {
     if (Array.isArray(c.cases)) c.cases = c.cases.map(x => { if (!('comments' in x)) return x; const y = { ...x }; same(y.comments, [], `komentáře ${y.no}`); delete y.comments; return y; });
     return c;
   };
-  // 2.35 přidá k uloženým sloupcům evidence práce prázdný sloupec Operace (pro Audit)
+  // 2.35 přidá k uloženým sloupcům evidence práce prázdný sloupec Operace (pro KPI)
   const setOld = st => {
     if (!st || !st.prodCols) return st;
     const { op, ...cols } = st.prodCols;
@@ -104,11 +104,11 @@ function compare(beforeJson, afterJson) {
   // 2.27 prázdný Shortage (seznamy chybějících dílů)
   if ('shortage' in b) same({ depts: [], lists: [], ...(a.shortage || {}) }, b.shortage, 'shortage');   // 2.32: prázdná oddělení
   // 2.10 přidá prázdný seznam dovedností vedoucích, 2.12 prázdné zpracované srážky za neproduktivitu,
-  // 2.16 prázdné Protokoly, 2.17 prázdný Audit
+  // 2.16 prázdné Protokoly, 2.17 prázdný KPI
   if ('leadSkills' in b) same(a.leadSkills || [], b.leadSkills, 'leadSkills');
   if ('normCutDone' in b) same(a.normCutDone || {}, b.normCutDone, 'normCutDone');
   if ('logbooks' in b) same(a.logbooks || [], b.logbooks, 'logbooks');
-  // 2.17 prázdný Audit (výchozí skupiny, žádné dny ani operace)
+  // 2.17 prázdný KPI (výchozí skupiny, žádné dny ani operace)
   if ('workAudit' in b) {
     if (a.workAudit) same(a.workAudit, b.workAudit, 'workAudit');
     else if (Object.keys(b.workAudit.days).length || b.workAudit.ops.length || b.workAudit.groups.length !== 7) out.push(`workAudit není prázdný: ${JSON.stringify(b.workAudit).slice(0, 160)}`);

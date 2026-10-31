@@ -405,7 +405,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.40 by zahodila skupiny reportu docházky a značky dnů z verze 2.41.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "35"})
         self.assertEqual(status, 426)
-        # Stránka verze 2.41 by zahodila skupiny Matice u skupin Auditu a sloupec normy z verze 2.42.
+        # Stránka verze 2.41 by zahodila skupiny Matice u skupin KPI a sloupec normy z verze 2.42.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "36"})
         self.assertEqual(status, 426)
         # Stránka verze 2.42.2 by zahodila zapamatované listy souboru docházky a výkonů z verze 2.42.3.
@@ -426,7 +426,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.43")
+        self.assertEqual(result["version"], "2.44")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

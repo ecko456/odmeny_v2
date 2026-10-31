@@ -2551,3 +2551,29 @@ tr.dv-click:hover td { background: var(--surface-2); }
 .hn-chip.miss { background: var(--crit-soft); color: var(--crit); }
 .hn-chip.extra { background: var(--surface-2); color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) { .hn-bar i, .hh-more .icon { transition: none; } }
+
+/* KPI: výkonnost na osobu (2.44) */
+.kp-bar { flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; }
+.kp-f { display: grid; gap: 4px; font-size: 12px; color: var(--ink-3); }
+.kp-f select { min-width: 150px; }
+.kp-dir button { padding: 0 12px; font: 600 13px/1 var(--body); min-height: 34px; }
+.kp-tab th.kp-on { color: var(--ink); }
+.kp-tab td.kp-on { min-width: 150px; font-weight: 700; color: var(--ink); }
+.kp-val { display: block; }
+.kp-track { display: block; height: 6px; margin-top: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.kp-fill { display: block; height: 100%; border-radius: 3px; background: var(--ink-3); }
+.kp-fill.up { background: var(--good); }
+.kp-fill.down { background: var(--warn); }
+.kp-rank { width: 44px; }
+.kp-mrank { display: none; }
+.kp-avg td { border-top: 2px solid var(--line); font-weight: 600; background: var(--surface-2); }
+@media screen and (max-width: 900px) {
+  .kp-bar .spacer { display: none; }
+  .kp-f { flex: 1 1 140px; }
+  .kp-f select { min-width: 0; width: 100%; }
+  .kp-tab td.kp-on { min-width: 0; }
+  .kp-tab td.kp-on .kp-track { width: 120px; margin-left: auto; }
+  .kp-avg td:empty { display: none; }
+  .kp-tab td.kp-rank { display: none; }
+  .kp-mrank { display: inline; font-weight: 700; color: var(--acc); }
+}

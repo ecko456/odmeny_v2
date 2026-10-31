@@ -1,4 +1,4 @@
-// Prohlížečový průchod modulem Audit (verze 2.17 až 2.18): nahrání obsazenosti a výkazu práce
+// Prohlížečový průchod modulem KPI (verze 2.17 až 2.18): nahrání obsazenosti a výkazu práce
 // (Excel vyrobený v prohlížeči z vymyšlených čísel, žádná skutečná data), přehled po týdnech
 // s grafy, obsazeností proti požadavku a výpadky lidí, dny s víkendy a svátky, úprava hodnoty
 // s důvodem, nastavení skupin a operací (kusy jen u operací se skupinou), úpravy, nové nahrání se
@@ -260,7 +260,7 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.waitForFunction(n => S.workAudit.files.length === n, 1);   // soubor se uloží až po zavření dialogu
   await saved(page);
   await page.unroute(slow);
-  check(await page.evaluate(() => S.log.some(x => /^Audit: nahrána obsazenost obsazenost-rijen\.xlsx/.test(x.text))), `import během ukládání v historii: ${await page.evaluate(() => JSON.stringify(S.log.slice(-3).map(x => x.text)))}`);
+  check(await page.evaluate(() => S.log.some(x => /^KPI: nahrána obsazenost obsazenost-rijen\.xlsx/.test(x.text))), `import během ukládání v historii: ${await page.evaluate(() => JSON.stringify(S.log.slice(-3).map(x => x.text)))}`);
   await page.evaluate(() => { delete S.workAudit.notes['2026-10-03']; save(); });
   await saved(page);
   let w = await wa(page);
@@ -480,7 +480,7 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.click('[data-wamode="month"]');
 
   // Úpravy: seznam a zrušení jedné.
-  await page.click('#waTabs [data-watab="upravy"]');
+  await page.evaluate(() => { ui.wa.tab = 'upravy'; renderWorkAudit(); });   // záložka je od 2.44 mimo menu
   const ed = await page.$$eval('table.wa-edits tbody tr', els => els.map(e => e.textContent.replace(/\s+/g, ' ').trim()));
   check(ed.length === 3 && ed.some(x => /Ranní, Brusiči\s*7\s*8\s*Brigádník/.test(x)), `seznam úprav: ${ed}`);
   check(/Návštěva zákazníka/.test(await page.textContent('.wa-notes')), 'poznámky ke dnům');
@@ -503,7 +503,7 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await saved(page);
   w = await wa(page);
   check(w.days['2026-10-01'].g.brus[0] === 9 && w.edits['2026-10-01']['g.brus.am'].v === 8 && w.edits['2026-10-01']['g.brus.am'].was === 7, 'úprava platí dál, původní hodnota ze zápisu zůstala');
-  await page.click('#waTabs [data-watab="upravy"]');
+  await page.evaluate(() => { ui.wa.tab = 'upravy'; renderWorkAudit(); });   // záložka je od 2.44 mimo menu
   check(/teď 9/.test(await page.textContent('table.wa-edits')), 'upozornění, že soubor má teď jinou hodnotu');
 
   // Další měsíc (listopad) do historie: přehled po týdnech.
@@ -645,7 +645,7 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
 
   // Výrobní plán (2.18): vzor ze souboru se dvěma listy, filtr technologie G2/G, duplicity podle
   // objednávky, indexu a EAN s nejpozdějším termínem, velký soubor a kapacita brusičů.
-  await page.click('#waTabs [data-watab="plan"]');
+  await page.evaluate(() => { ui.wa.tab = 'plan'; renderWorkAudit(); });   // záložka je od 2.44 mimo menu
   await page.waitForSelector('#waView .wa-start [data-waplantpl]');
   check(await page.$eval('[data-waplanpick]', e => e.disabled), 'bez vzoru nejde plán nahrát');
   check(/G2 nebo G/.test(await page.textContent('#waView')) && await page.inputValue('#waPlanWords') === 'G2, G', 'výchozí filtr G2 a G');
@@ -831,7 +831,7 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   });
   check(server.same && server.days === 41 && server.edits === 2, `stav na serveru: ${JSON.stringify(server)}`);
 
-  // Historie změn: filtr Audit.
+  // Historie změn: filtr KPI.
   await page.click('#logBtn');
   await page.waitForSelector('#dlg[open] [data-lf="workaudit"]');
   await page.click('[data-lf="workaudit"]');
@@ -839,20 +839,20 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   for (let i = 0; i < 20 && await page.locator('#logMore').count(); i += 1) await page.click('#logMore');
   const logN = await page.evaluate(() => S.log.filter(x => x.kind === 'workaudit').length);
   const log = await page.textContent('#logList');
-  check(/Audit: nahrána obsazenost obsazenost-rijen\.xlsx/.test(log) && /Audit: nahrán výkaz práce/.test(log), `importy v historii (${logN} záznamů Auditu): ${log.replace(/\s+/g, ' ').slice(0, 600)}`);
-  check(/Audit 1\. 10\. 2026 – Ranní, Brusiči: 7 → 8 \(Brigádník/.test(log), `úprava v historii: ${log.slice(0, 500)}`);
+  check(/KPI: nahrána obsazenost obsazenost-rijen\.xlsx/.test(log) && /KPI: nahrán výkaz práce/.test(log), `importy v historii (${logN} záznamů KPI): ${log.replace(/\s+/g, ' ').slice(0, 600)}`);
+  check(/KPI 1\. 10\. 2026 – Ranní, Brusiči: 7 → 8 \(Brigádník/.test(log), `úprava v historii: ${log.slice(0, 500)}`);
   check(/operace „Pískování - hala 2“, skupina: bez skupiny → Obsluha tryskací kabiny/.test(log), 'přiřazení skupiny v historii');
   check(!/operace „Údržba stroje“/.test(log) && !/Lepení a značení dílů, neproduktivní pozice/.test(log), 'změna a návrat zpět se v historii vyruší');
-  check(/Audit: smazána skupina „Expedice“/.test(log), 'smazaná skupina v historii');
-  check(/Audit: vzor výrobního plánu podle souboru plan-tyden-45\.xlsx/.test(log) && /Audit: zpracován výrobní plán plan-tyden-45\.xlsx \(7 řádků G2 nebo G, 5 nových položek/.test(log.replace(/\s+/g, ' '))
-    && /Audit: zpracován výrobní plán plan-tyden-46\.xlsx, plan-velky\.xlsx/.test(log), `výrobní plán v historii: ${log.slice(0, 900)}`);
+  check(/KPI: smazána skupina „Expedice“/.test(log), 'smazaná skupina v historii');
+  check(/KPI: vzor výrobního plánu podle souboru plan-tyden-45\.xlsx/.test(log) && /KPI: zpracován výrobní plán plan-tyden-45\.xlsx \(7 řádků G2 nebo G, 5 nových položek/.test(log.replace(/\s+/g, ' '))
+    && /KPI: zpracován výrobní plán plan-tyden-46\.xlsx, plan-velky\.xlsx/.test(log), `výrobní plán v historii: ${log.slice(0, 900)}`);
   await page.screenshot({ path: path.join(shots, '11-historie.png') });
   await page.click('#dlgCancel');
 
   // Telefon (šířka 390 px): bez přetečení na všech záložkách a v detailu dne.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { showView('audit'); });
-  for (const tab of ['prehled', 'plan', 'dny', 'upravy', 'nastaveni']) {
+  for (const tab of ['prehled', 'vykon', 'plan', 'dny', 'upravy', 'nastaveni']) {
     await page.evaluate(t => { ui.wa.tab = t; ui.wa.mode = 'month'; ui.wa.month = '2026-10'; renderWorkAudit(); }, tab);
     await page.waitForTimeout(150);
     check(await overflow(page) <= 0, `telefon ${tab}: přetečení ${await overflow(page)} px`);

@@ -1,13 +1,13 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
 // při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.41 → 2.42):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
-//      a historií, Kontroly s plánem, Audit s kusy a hranicí zaškolení) a uloží je;
+//      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení) a uloží je;
 //   2. nechá otevřenou starou stránku a spustí instalaci nové verze (UPGRADE_CMD);
 //   3. stará stránka už nesmí nic uložit (426, výzva k obnovení); s SAME_DATA (verze dat beze změny)
 //      se krok vynechá, stará stránka smí dál ukládat;
 //   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
 //   5. v nové verzi vylosuje Rychlou kontrolu (2.39), uloží ji do dnešních kontrol a založí skupinu
-//      vybere skupinu Matice u skupiny Auditu a sloupec normy (2.42); po novém přihlášení je vše
+//      vybere skupinu Matice u skupiny KPI a sloupec normy (2.42); po novém přihlášení je vše
 //      uložené a ostatní data stejná.
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
 //   git archive 48ad143 | tar -x -C $S/v241 && sudo bash $S/v241/deploy/install.sh
@@ -19,13 +19,13 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.41$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.43$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.44$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
 const ADDED = { 'workAudit.dv.cols.work.norm': '""', 'workAudit.dv.sheets': '({ att: "", work: "" })', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
-/* Verze dat se mění (2.42: skupiny Matice u skupin Auditu, sloupec normy): stará stránka dostane 426. */
+/* Verze dat se mění (2.42: skupiny Matice u skupin KPI, sloupec normy): stará stránka dostane 426. */
 const SAME_DATA = false;
 
 async function watch(page, label, allow426 = false) {
@@ -121,7 +121,7 @@ const STATE = added => `(() => {
   const beforeLog = await reread.evaluate(() => S.log.length);
   await ctx0.close();
   check(Object.keys(before.added).length === 0, `předchozí verze už má nová data: ${Object.keys(before.added)}`);
-  check(Object.keys(before.st.audit.plans).length === 1 && Object.keys(before.st.workAudit.pcs).length === 2 && before.st.workAudit.trainPct === 60, 'předchozí verze neuložila plán kontrol nebo Audit');
+  check(Object.keys(before.st.audit.plans).length === 1 && Object.keys(before.st.workAudit.pcs).length === 2 && before.st.workAudit.trainPct === 60, 'předchozí verze neuložila plán kontrol nebo KPI');
 
   // ---- 2. aktualizace, stará stránka zůstává otevřená ----
   execSync(process.env.UPGRADE_CMD || 'sudo bash deploy/install.sh', { stdio: 'inherit' });
@@ -167,7 +167,7 @@ const STATE = added => `(() => {
   check(drawn.length === Math.min(3, pool.length) && drawn.every(k => pool.includes(k)), `vylosováno: ${drawn}`);
   const work = await page.evaluate(() => audDays(isoWeek(todayIso()).id).includes(todayIso()));
   if (work) { await page.click('[data-qksave]'); await saved(page); }
-  // Audit (2.42): skupina Matice u skupiny Auditu a sloupec normy
+  // KPI (2.42): skupina Matice u skupiny KPI a sloupec normy
   await page.evaluate(() => { S.workAudit.groups[0].mg = ['g_brus']; S.workAudit.dv.cols.work.norm = 'K'; S.workAudit.dv.sheets = { att: 'List2', work: '' }; S.employees['adámek|aleš'].end = '2027-02-28'; save(); });
   await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
@@ -182,7 +182,7 @@ const STATE = added => `(() => {
     const its = ((final.st.audit.plans[week] || {}).items || []).filter(i => i.day === today && i.extra);
     check(its.length === drawn.length && its.every(i => drawn.includes(i.key)), `rychlá kontrola po novém přihlášení: ${JSON.stringify(its)}`);
   }
-  check(JSON.stringify(final.added['workAudit.groups.0.mg']) === '["g_brus"]' && final.added['workAudit.dv.cols.work.norm'] === 'K' && final.added['workAudit.dv.sheets'].att === 'List2', `Audit 2.42 po novém přihlášení: ${JSON.stringify(final.added)}`);
+  check(JSON.stringify(final.added['workAudit.groups.0.mg']) === '["g_brus"]' && final.added['workAudit.dv.cols.work.norm'] === 'K' && final.added['workAudit.dv.sheets'].att === 'List2', `KPI 2.42 po novém přihlášení: ${JSON.stringify(final.added)}`);
   check(final.st.employees['adámek|aleš'] && final.st.employees['adámek|aleš'].end === '2027-02-28', 'konec trestu (2.43) po novém přihlášení');
   if (final.st.employees['adámek|aleš']) delete final.st.employees['adámek|aleš'].end;
   const keep = JSON.parse(JSON.stringify(before.st));

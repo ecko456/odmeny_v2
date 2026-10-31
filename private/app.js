@@ -22,7 +22,7 @@ const ui = {
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
   sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null },
-  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '', dvMode: 'day', dvDay: '', dvMonth: '', dvSort: 'group' },
+  wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '', dvMode: 'day', dvDay: '', dvMonth: '', dvSort: 'group', kp: { month: '', sort: 'ks', dir: 'best', dept: '' } },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
 const store = { rev: 0, dirty: false, saving: false, timer: null, retry: null, firstDirty: 0, conflict: false, error: null, savedAt: null, base: null, note: null };
@@ -415,7 +415,7 @@ function showView(name) {
   if (name === 'rychla') renderQuick();
   if (name === 'konce') renderEnds();
   closeFab();
-  $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === name)));
+  $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === (name === 'vyroba' ? 'audit' : name))));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
   $('#main').dataset.view = name;
   document.body.dataset.view = name;
@@ -560,7 +560,7 @@ function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm'
 function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
 function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
 function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
-const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['vyroba', 'Výroba'], ['audit', 'Audit'], ['nastaveni', 'Nastavení']];
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['audit', 'KPI'], ['nastaveni', 'Nastavení']];
 
 function homeTileMeta(view, sd) {
   const p = curPeriod();
@@ -2444,7 +2444,7 @@ async function doImport(aoa, name, fy, fm, force = false) {
   if (!res.ok) { showImport(res, null); renderAttendance(); return; }
   const per = res.period;
   if (dvOwns(per.id)) {
-    showImport({ ok: false, err: `Docházka za ${periodName(per)} se nahrává v Auditu tlačítkem Nahrát docházku a výkony (od listopadu 2026 je to jediný zdroj docházky). Tady jde nahrát jen říjen 2026 a dřív.` }, null);
+    showImport({ ok: false, err: `Docházka za ${periodName(per)} se nahrává v KPI tlačítkem Nahrát docházku a výkony (od listopadu 2026 je to jediný zdroj docházky). Tady jde nahrát jen říjen 2026 a dřív.` }, null);
     return;
   }
   if (!force && !S.demo && S.periods[per.id]) {
@@ -2597,16 +2597,16 @@ function doProdImport(aoa, name, map) {
   const skip = Object.keys(res.buckets).filter(dvOwns).sort();   // od listopadu 2026 ze souboru docházky a výkonů
   skip.forEach(id => { delete res.buckets[id]; });
   const ids = Object.keys(res.buckets).sort();
-  if (!ids.length) { showProdMsg(`<div class="note e"><b>Nic se nenahrálo.</b> Evidence práce za ${esc(skip.map(monthLabel).join(', '))} se od listopadu 2026 nahrává v Auditu tlačítkem Nahrát docházku a výkony. <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>`); return; }
+  if (!ids.length) { showProdMsg(`<div class="note e"><b>Nic se nenahrálo.</b> Evidence práce za ${esc(skip.map(monthLabel).join(', '))} se od listopadu 2026 nahrává v KPI tlačítkem Nahrát docházku a výkony. <button class="link" type="button" data-go="audit">Otevřít KPI</button></div>`); return; }
   ids.forEach(id => { S.production[id] = res.buckets[id]; });
   const wa = prodToAudit(aoa, name, map);
-  if (wa && wa.added) Object.assign(ui.wa, { tab: 'nastaveni', opFilter: 'nogroup', opQ: '' });   // Otevřít Audit = rovnou přiřadit skupiny
+  if (wa && wa.added) Object.assign(ui.wa, { tab: 'nastaveni', opFilter: 'nogroup', opQ: '' });   // Otevřít KPI = rovnou přiřadit skupiny
   save();
   const current = S.current && res.buckets[S.current];
   const time = map && map.spent != null;
   const items = new Set(ids.flatMap(i => Object.keys(res.buckets[i].items || {}))).size;
-  showProdMsg((skip.length ? `<div class="note w">Evidence práce za ${esc(skip.map(monthLabel).join(', '))} se přeskočila: od listopadu 2026 se nahrává v Auditu (Nahrát docházku a výkony).</div>` : '') + `<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data, kusů nebo času.` : ''} ${time ? `Strávený čas${map.norm != null ? ' a norma' : ''} načteny.` : 'Bez stráveného času, plnění normy a využití fondu se nespočítá.'} ${map && map.item != null ? `Položky (EAN): ${items}, vyhodnocení je v části <button class="link" type="button" data-go="top5">Top 5</button>.` : ''} <button class="link" type="button" data-prodcols>Změnit sloupce</button></div>`
-    + (wa ? `<div class="note i"><b>Audit:</b> ${wa.text} <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>` : '')
+  showProdMsg((skip.length ? `<div class="note w">Evidence práce za ${esc(skip.map(monthLabel).join(', '))} se přeskočila: od listopadu 2026 se nahrává v KPI (Nahrát docházku a výkony).</div>` : '') + `<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data, kusů nebo času.` : ''} ${time ? `Strávený čas${map.norm != null ? ' a norma' : ''} načteny.` : 'Bez stráveného času, plnění normy a využití fondu se nespočítá.'} ${map && map.item != null ? `Položky (EAN): ${items}, vyhodnocení je v části <button class="link" type="button" data-go="top5">Top 5</button>.` : ''} <button class="link" type="button" data-prodcols>Změnit sloupce</button></div>`
+    + (wa ? `<div class="note i"><b>KPI:</b> ${wa.text} <button class="link" type="button" data-go="audit">Otevřít KPI</button></div>` : '')
     + (!S.current ? '<div class="note w">Zatím není nahraná žádná docházka. Hodnocený měsíc se vybírá podle ní, takže se výroba zobrazí až po nahrání docházky.</div>'
       : (!current ? `<div class="note w">Vybrané období je ${esc(monthLabel(S.current))} a pro něj soubor data nemá. Období zůstává beze změny.</div>` : '')));
   renderAll();
@@ -2614,8 +2614,8 @@ function doProdImport(aoa, name, map) {
   toast(un ? `Načteno, ${un} ${jmenW(un)} ${un >= 2 && un <= 4 ? 'čekají' : 'čeká'} na spárování.` : 'Evidence práce načtena.');
 }
 
-/* Stejný soubor pro Audit (2.35): se sloupcem Operace se kusy podle operací a dnů zapíšou i do
-   Auditu, jako by se tam nahrál výkaz práce (dny ze souboru se nahradí, úpravy zůstanou, nové
+/* Stejný soubor pro KPI (2.35): se sloupcem Operace se kusy podle operací a dnů zapíšou i do
+   KPI, jako by se tam nahrál výkaz práce (dny ze souboru se nahradí, úpravy zůstanou, nové
    operace čekají na skupinu). Vrací text pro hlášku, nebo null. */
 function prodToAudit(aoa, name, map) {
   const parsed = waParseProd(aoa, map);
@@ -2624,8 +2624,8 @@ function prodToAudit(aoa, name, map) {
   const r = waApplyWork(S.workAudit, parsed, { name, by: ui.me.label || '', at: Date.now() });
   const added = r.added.length;
   const range = `${dayText(parsed.from)} – ${dayText(parsed.to)}`;
-  store.note = { kind: 'workaudit', keep: true, text: `Audit: kusy podle operací z evidence práce ${name} (${r.days} ${denN(r.days)}, ${range}${added ? `, ${added} ${added === 1 ? 'nová operace' : added <= 4 ? 'nové operace' : 'nových operací'} bez skupiny` : ''})` };
-  return { days: r.days, added, text: `kusy podle operací doplněny za ${r.days} ${denN(r.days)} (${esc(range)}).${added ? ` <b>${added} ${added === 1 ? 'nová operace čeká' : added <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu</b> v Nastavení Auditu, do té doby se ${added === 1 ? 'její' : 'jejich'} kusy nepočítají.` : ''}` };
+  store.note = { kind: 'workaudit', keep: true, text: `KPI: kusy podle operací z evidence práce ${name} (${r.days} ${denN(r.days)}, ${range}${added ? `, ${added} ${added === 1 ? 'nová operace' : added <= 4 ? 'nové operace' : 'nových operací'} bez skupiny` : ''})` };
+  return { days: r.days, added, text: `kusy podle operací doplněny za ${r.days} ${denN(r.days)} (${esc(range)}).${added ? ` <b>${added} ${added === 1 ? 'nová operace čeká' : added <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu</b> v Nastavení KPI, do té doby se ${added === 1 ? 'její' : 'jejich'} kusy nepočítají.` : ''}` };
 }
 
 /* Výběr sloupců evidence práce. Uloží se pro všechny a další soubory se stejnou hlavičkou
@@ -2657,7 +2657,7 @@ async function chooseProdColumns(aoa, name, info) {
       + (map.spent != null ? ` Strávený čas celkem ${nf(spent / 60, 1)} h.` : '')
       + (map.norm != null ? (nspent ? ` Plnění normy ${nf(normMin / nspent * 100, 1)} %.` : ' Norma: žádný řádek s časem i normou.') : '')
       + (map.item != null ? ` Položek (EAN): ${items.size}.` : ' Bez sloupce EAN se Top 5 z evidence nepředvyplní.')
-      + (map.op == null ? '' : map.ks == null ? ' Operace bez kusů do Auditu nepůjde.' : (w => (w && w.rows ? ` Audit: kusy podle operací za ${Object.keys(w.byDay).length} ${denN(Object.keys(w.byDay).length)} (${Object.keys(w.ops).length} ${operaceN(Object.keys(w.ops).length)}).` : ' Ve sloupci operace nejsou kusy pro Audit.'))(waParseProd(aoa, map)));
+      + (map.op == null ? '' : map.ks == null ? ' Operace bez kusů do KPI nepůjde.' : (w => (w && w.rows ? ` KPI: kusy podle operací za ${Object.keys(w.byDay).length} ${denN(Object.keys(w.byDay).length)} (${Object.keys(w.ops).length} ${operaceN(Object.keys(w.ops).length)}).` : ' Ve sloupci operace nejsou kusy pro KPI.'))(waParseProd(aoa, map)));
   };
   const result = await dialog({
     title: 'Sloupce evidence práce', ok: 'Načíst', wide: true,
@@ -2669,9 +2669,9 @@ async function chooseProdColumns(aoa, name, info) {
         ${field('norm', 'Norma', true, 'v minutách')}
         <label class="field"><span>Norma platí</span><select name="normPer"><option value="row"${start.normPer !== 'piece' ? ' selected' : ''}>za celý řádek</option><option value="piece"${start.normPer === 'piece' ? ' selected' : ''}>za 1 kus (× kusy)</option></select></label>
         ${field('item', 'EAN / položka', true, 'pro Top 5')}${field('iname', 'Název položky', true)}
-        ${field('op', 'Operace', true, 'kusy i do Auditu')}
+        ${field('op', 'Operace', true, 'kusy i do KPI')}
       </div>
-      <p class="tiny muted">Se sloupcem Operace se kusy podle operací a dnů zapíšou i do Auditu, výkaz práce tam pak nemusíš nahrávat znovu. Čas ve tvaru 1:30 nebo v časovém formátu Excelu se pozná sám. Plnění normy = norma ÷ strávený čas (jen řádky, kde je obojí), využití fondu = strávený čas ÷ hodiny v práci podle docházky.</p>
+      <p class="tiny muted">Se sloupcem Operace se kusy podle operací a dnů zapíšou i do KPI, výkaz práce tam pak nemusíš nahrávat znovu. Čas ve tvaru 1:30 nebo v časovém formátu Excelu se pozná sám. Plnění normy = norma ÷ strávený čas (jen řádky, kde je obojí), využití fondu = strávený čas ÷ hodiny v práci podle docházky.</p>
       <div id="prodColsPreview" class="note i" role="status"></div>`,
     onOpen: () => { const form = $('#dlgForm'); preview(form); $$('#dlgBody select').forEach(sel => { sel.onchange = () => preview(form); }); },
     validate: form => { const m = read(form); if (m.name == null || m.date == null) return 'Vyber sloupec se zaměstnancem (jméno nebo ID) a s datem.'; if (m.ks == null && m.spent == null) return 'Vyber aspoň kusy, nebo strávený čas.'; return buildProduction(aoa, name, m).ok ? null : 'S tímhle výběrem nejde načíst žádný řádek.'; },
@@ -3266,7 +3266,7 @@ const LOG_FILTERS = [
   ['eff', 'Top 5', ['eff']],
   ['audit', 'Kontroly', ['audit']],
   ['logbook', 'Protokoly', ['logbook']],
-  ['workaudit', 'Audit', ['workaudit']],
+  ['workaudit', 'KPI', ['workaudit']],
   ['service', 'Servis', ['service']],
   ['shortage', 'Shortage', ['shortage']],
   ['capplan', 'Plán kapacit', ['capplan']],
@@ -5551,7 +5551,7 @@ async function newPdf(orientation = 'portrait', opts = {}) {
 
 /** Sada kreslicích funkcí nad jsPDF. k.dry = jen měří výšku (bez kreslení a bez zalomení stránky). */
 function pdfKit(doc) {
-  const land = doc.internal.pageSize.getWidth() > doc.internal.pageSize.getHeight();   // A4 na šířku (Audit)
+  const land = doc.internal.pageSize.getWidth() > doc.internal.pageSize.getHeight();   // A4 na šířku (KPI)
   const k = { doc, W: land ? 297 : 210, H: land ? 210 : 297, M: 16, y: 16, dry: false, onPage: null };
   k.CW = k.W - 2 * k.M;
   k.BOTTOM = k.H - 20;
@@ -7496,7 +7496,7 @@ async function ktDayChecks() {
   save(); renderKontroly();
   toast(ktDayText(r));
 }
-/* Soubor s příchody v Kontrolách: uloží jen docházku (stejná jako v Auditu) a v režimu podle
+/* Soubor s příchody v Kontrolách: uloží jen docházku (stejná jako v KPI) a v režimu podle
    příchodů rovnou vylosuje dnešní kontroly, když ještě nejsou. */
 async function ktPresImport(file) {
   const out = await dvImport(file, { attOnly: true });
@@ -7914,7 +7914,7 @@ async function ktSettings() {
     title: 'Nastavení kontrol', ok: 'Uložit',
     html: `<label class="field"><span>Kolik lidí z každého oddělení týdně kontrolovat (%)</span><input type="number" name="pct" value="${st.pct}" min="5" max="100" step="1"></label>
       <p class="tiny muted">Počet se zaokrouhlí nahoru, z každého oddělení aspoň jeden. Při 25 % se všichni vystřídají za 4 týdny. Změna platí pro nově generované plány.</p>
-      <fieldset class="field kt-mode"><legend>Výběr lidí</legend>${Object.entries(AUD_MODES).map(([k, l]) => `<label class="check"><input type="radio" name="mode" value="${k}"${st.mode === k ? ' checked' : ''}><span><b>${esc(l)}</b><br><small class="muted">${k === 'day' ? 'Každý pracovní den si kontroly vyžádají soubor s dnešními příchody (stejný jako docházka v Auditu) a vylosují se jen z lidí, kteří přišli.' : 'Plán se vygeneruje na celý týden dopředu ze všech lidí oddělení.'}</small></span></label>`).join('')}</fieldset>`,
+      <fieldset class="field kt-mode"><legend>Výběr lidí</legend>${Object.entries(AUD_MODES).map(([k, l]) => `<label class="check"><input type="radio" name="mode" value="${k}"${st.mode === k ? ' checked' : ''}><span><b>${esc(l)}</b><br><small class="muted">${k === 'day' ? 'Každý pracovní den si kontroly vyžádají soubor s dnešními příchody (stejný jako docházka v KPI) a vylosují se jen z lidí, kteří přišli.' : 'Plán se vygeneruje na celý týden dopředu ze všech lidí oddělení.'}</small></span></label>`).join('')}</fieldset>`,
   });
   if (result.value !== 'ok') return;
   const n = Number(result.form.elements.namedItem('pct').value);
@@ -9043,7 +9043,7 @@ function shPasteRecs(rows) {
 }
 
 /* ---------- Poddíly z výrobního plánu (2.29) ----------
-   Čte se 2. list plánu proudem jako výrobní plán v Auditu (waZip, waXlsxSst, waXlsxCells), jen
+   Čte se 2. list plánu proudem jako výrobní plán v KPI (waZip, waXlsxSst, waXlsxCells), jen
    sloupce A, E, H, M a AM. Odkaz u EANu poddílu (E) je v <hyperlinks> na konci listu a cíl
    v rels listu (2.29.1 i pro řádky s jinou operací: čekající poddíly přidá poslední záznam
    podle kódu). Jiné soubory (xls, ods) přečte SheetJS.
@@ -9951,7 +9951,10 @@ async function exportShortagePdf(id, button = null, split = false) {
    záložky, nahrání obou souborů, úpravy hodnot s důvodem, nastavení skupin a operací,
    PDF a Excel pro auditora.
    ========================================================================== */
-const WA_TABS = [['prehled', 'Přehled'], ['lide', 'Lidé v práci'], ['report', 'Report docházky'], ['kapacity', 'Kapacity a zaškolení'], ['plan', 'Výrobní plán'], ['dny', 'Dny'], ['upravy', 'Úpravy'], ['nastaveni', 'Nastavení']];
+const WA_TABS = [['prehled', 'Přehled'], ['lide', 'Lidé v práci'], ['report', 'Report docházky'], ['kapacity', 'Kapacity a zaškolení'], ['vykon', 'Výkonnost na osobu'], ['dny', 'Dny'], ['nastaveni', 'Nastavení']];
+/* Výrobní plán a Úpravy jsou od 2.44 pryč z KPI (přání uživatele). Uložená data i kód zůstávají,
+   záložky už nejdou otevřít z rozhraní. */
+const WA_OLD_TABS = ['plan', 'upravy'];
 const WA_MODES = [['month', 'Měsíc'], ['week', 'Týden'], ['custom', 'Vlastní']];
 const WA_HIST = [[13, '13 týdnů'], [26, '26 týdnů'], [52, '52 týdnů'], [0, 'Vše']];
 const waN = (v, d = 0) => (v == null ? '—' : nf(v, d));
@@ -10007,15 +10010,16 @@ function renderWorkAudit() {
   const view = $('#waView');
   if (!view || !S) return;
   renderWaBadge();
-  const tab = WA_TABS.some(t => t[0] === ui.wa.tab) ? ui.wa.tab : 'prehled';
+  const tab = WA_TABS.some(t => t[0] === ui.wa.tab) || WA_OLD_TABS.includes(ui.wa.tab) ? ui.wa.tab : 'prehled';
   $('#waTabs').innerHTML = WA_TABS.map(([k, t]) => `<button type="button" class="chip${k === tab ? ' on' : ''}" data-watab="${k}" aria-pressed="${k === tab}">${t}</button>`).join('');
   showActiveChip($('#waTabs'));
   const has = !!waSpan(S.workAudit);
   if (tab === 'nastaveni') { view.innerHTML = waSettingsHtml(); return; }
   if (tab === 'plan') { view.innerHTML = waPlanHtml(); setWidths(view); return; }
-  if (tab === 'kapacity') { view.innerHTML = waCtHtml(); setWidths(view); return; }   // nepotřebuje data Auditu
+  if (tab === 'kapacity') { view.innerHTML = waCtHtml(); setWidths(view); return; }   // nepotřebuje data KPI
   if (tab === 'lide') { view.innerHTML = dvHtml(); setWidths(view); return; }   // docházka a výkony z jednoho souboru (2.37)
   if (tab === 'report') { view.innerHTML = drHtml(); drPaint(view); return; }   // report docházky po vzoru (2.40)
+  if (tab === 'vykon') { view.innerHTML = kpHtml(); setWidths(view); return; }   // výkonnost na osobu (2.44)
   if (!has) { view.innerHTML = waStartHtml(); return; }
   if (tab === 'prehled') { view.innerHTML = waHistHtml(); setWidths(view); return; }
   const r = waRange();
@@ -10291,7 +10295,7 @@ function waCheckHtml(days) {
   if (is.mismatch.length) items.push(['w', `<b>Součet skupin nesedí s počtem lidí na směně:</b> ${is.mismatch.slice(0, 6).map(x => `<button class="link" type="button" data-waday="${x.iso}">${esc(ktDay(x.iso))} ${x.shift === 'am' ? 'ranní' : 'odpolední'} ${x.diff > 0 ? '+' : ''}${nf(x.diff, 2)}</button>`).join(', ')}${is.mismatch.length > 6 ? ` a ${is.mismatch.length - 6} dalších` : ''}`]);
   if (skip.length) items.push(['i', `<b>Nepočítá se ${skip.length} ${operaceN(skip.length)} bez skupiny</b> (${waN(skip.reduce((x, o) => x + o.ks, 0))} ks): ${skip.slice(0, 4).map(o => esc(o.name)).join(', ')}${skip.length > 4 ? '…' : ''} <button class="link" type="button" data-watabgo="nastaveni">Nastavení</button>`]);
   if (is.offWorked.length) items.push(['i', `<b>Práce o víkendu nebo ve svátek:</b> ${is.offWorked.slice(0, 6).map(x => `<button class="link" type="button" data-waday="${x.iso}">${esc(ktDay(x.iso))}${x.hol ? ` (${esc(x.hol)})` : ''}</button>`).join(', ')}${is.offWorked.length > 6 ? ` a ${is.offWorked.length - 6} dalších` : ''}`]);
-  if (t.edits) items.push(['i', `<b>${t.edits} ${t.edits === 1 ? 'ručně upravená hodnota' : t.edits <= 4 ? 'ručně upravené hodnoty' : 'ručně upravených hodnot'}</b> s důvodem. <button class="link" type="button" data-watabgo="upravy">Seznam úprav</button>`]);
+  if (t.edits) items.push(['i', `<b>${t.edits} ${t.edits === 1 ? 'ručně upravená hodnota' : t.edits <= 4 ? 'ručně upravené hodnoty' : 'ručně upravených hodnot'}</b> s důvodem (vidíš je v detailu dne).`]);
   return `<div class="card wa-check"><h3>${items.some(x => x[0] === 'w') ? I.warn : I.check}Ke kontrole</h3>${items.length
     ? `<ul class="wa-issues">${items.map(([k, h]) => `<li class="${k}">${h}</li>`).join('')}</ul>`
     : '<p class="small">Všechny pracovní dny mají obsazenost i výkaz a součty skupin sedí.</p>'}</div>`;
@@ -11212,7 +11216,7 @@ function waEditsHtml(r) {
 }
 
 /* ---------- nastavení ---------- */
-/* Jeden soubor pro Výrobu i Audit (2.35): jak je to nastavené */
+/* Jeden soubor pro Výrobu i KPI (2.35): jak je to nastavené */
 function waOneFileText() {
   const pc = S.settings.prodCols;
   if (pc && pc.op != null && pc.ks != null) return `<b>Stačí nahrát jednou.</b> Výroba bere i operaci (sloupec ${esc(colLetter(pc.op))}), takže evidence práce nahraná ve Výrobě doplní kusy i sem. A výkaz nahraný tady se nabídne nahrát i do Výroby.`;
@@ -11221,9 +11225,9 @@ function waOneFileText() {
 /* hranice zaškolení slovy (Nastavení a Kapacity) */
 function waTrainText() {
   const tr = waTrain();
-  return `Zaškolený od ${tr.pct} % dovedností skupiny, pod ${tr.pct} % v zaškolení${tr.own ? ' (nastaveno v Auditu)' : ` (podle Matice dovedností, úroveň ${tr.thr})`}.`;
+  return `Zaškolený od ${tr.pct} % dovedností skupiny, pod ${tr.pct} % v zaškolení${tr.own ? ' (nastaveno v KPI)' : ` (podle Matice dovedností, úroveň ${tr.thr})`}.`;
 }
-/* Skupiny Matice ke skupině Auditu (2.42): rozbalovací výběr, bez výběru podle názvu. */
+/* Skupiny Matice ke skupině KPI (2.42): rozbalovací výběr, bez výběru podle názvu. */
 function waMgHtml(g, mgOf) {
   const all = S.positions.filter(isGroup);
   if (!all.length) return '';
@@ -11281,7 +11285,7 @@ function waSettingsHtml() {
         : '<p class="small">Operace se objeví po nahrání prvního výkazu práce.</p>'}</div>
     <div class="grid-2 wa-target-grid"><div class="card wa-target-card"><h3>Požadavek lidí na pracovní den</h3><p class="small muted">Pevný požadavek pro všechny pracovní dny, výchozí je ${WA_TARGET} lidí. Den má požadavek splněný, když je v práci aspoň tolik lidí; z toho se počítá obsazenost proti plánu a výpadky. Prázdné pole = požadavek podle souboru obsazenosti (mělo dorazit + požadavek), den po dni.</p>
       <label class="field wa-target"><span>Pevný požadavek (lidí)</span><input id="waTarget" inputmode="numeric" maxlength="5" autocomplete="off" value="${wa.target == null ? '' : wa.target}" placeholder="podle souboru"></label></div>
-    <div class="card wa-target-card" id="waTrainCard"><h3>Hranice zaškolení</h3><p class="small muted">Platí pro celý Audit (Kapacity a zaškolení v aplikaci, PDF i Excelu). Pracovník, který má v Matici dovedností <b>pod</b> tímto procentem dovedností své skupiny, je <b>v zaškolení</b>; od hranice výš je zaškolený. Prázdné pole = podle Matice dovedností (úroveň ${tr.thr} = ${tr.thr * 25} %).</p>
+    <div class="card wa-target-card" id="waTrainCard"><h3>Hranice zaškolení</h3><p class="small muted">Platí pro celé KPI (Kapacity a zaškolení v aplikaci, PDF i Excelu). Pracovník, který má v Matici dovedností <b>pod</b> tímto procentem dovedností své skupiny, je <b>v zaškolení</b>; od hranice výš je zaškolený. Prázdné pole = podle Matice dovedností (úroveň ${tr.thr} = ${tr.thr * 25} %).</p>
       <label class="field wa-target"><span>V zaškolení pod (%)</span><input id="waTrainPct" inputmode="numeric" maxlength="3" autocomplete="off" value="${wa.trainPct == null ? '' : wa.trainPct}" placeholder="${tr.thr * 25}"></label>
       <p class="small">${waTrainText()}</p></div></div>
     ${dvSettingsHtml()}
@@ -11449,7 +11453,7 @@ function renderCapPlan() {
     statTile('Doškolit', String(t.trainN), t.trainN ? `${lidiAcc(t.trainN)} na vyšší úroveň` : 'zkušenosti stačí', t.trainN ? 'warn' : all.setN ? 'good' : ''),
     statTile('Skupiny v pořádku', `${all.okN}<em>/ ${all.setN}</em>`, all.setN ? 'potřeba pokrytá lidmi i zkušenostmi' : 'zatím bez plánu', all.setN && all.okN === all.setN ? 'good' : ''),
   ].join('')}</div>`;
-  const head = `<thead><tr><th rowspan="2">Skupina</th><th colspan="4" class="c cp-need-h">Potřeba</th><th colspan="4" class="c">Máme</th>${pres ? '<th rowspan="2" class="r" title="Průměrný počet lidí skupiny v práci podle docházky z Auditu">Ø v práci</th>' : ''}<th rowspan="2" class="r">Doplnit</th><th rowspan="2" class="r">Doškolit</th><th rowspan="2">Stav</th></tr>
+  const head = `<thead><tr><th rowspan="2">Skupina</th><th colspan="4" class="c cp-need-h">Potřeba</th><th colspan="4" class="c">Máme</th>${pres ? '<th rowspan="2" class="r" title="Průměrný počet lidí skupiny v práci podle docházky z KPI">Ø v práci</th>' : ''}<th rowspan="2" class="r">Doplnit</th><th rowspan="2" class="r">Doškolit</th><th rowspan="2">Stav</th></tr>
     <tr>${CP_COLS.map(c => `<th class="r cp-need-h" title="${esc(c[2])}">${c[1]}</th>`).join('')}${CP_COLS.map(c => `<th class="r" title="${esc(c[2])}">${c[1]}</th>`).join('')}</tr></thead>`;
   const row = g => {
     const id = g.p.id;
@@ -11474,13 +11478,13 @@ function renderCapPlan() {
   }).join('');
   box.innerHTML = `${tiles}
     ${all.setN ? '' : '<div class="note i"><b>Začni potřebou:</b> u skupiny vyplň, kolik lidí potřebuješ celkem a kolik z nich aspoň na úrovni 2, 3 a 4. Hned uvidíš, kolik lidí doplnit a koho doškolit.</div>'}
-    <p class="hint cp-legend">Úroveň člověka je procento dovedností jeho skupiny v Matici: <b>2</b> ${esc(cpLvName(2))} = aspoň 50 %, <b>3</b> ${esc(cpLvName(3))} = aspoň 75 %, <b>4</b> ${esc(cpLvName(4))} = 100 %. Počty se sčítají shora (kdo má 4, je i ve 3+ a 2+). Doškolit jde jen lidi skupiny pod úrovní; navrženi jsou ti, kdo mají k cíli nejblíž.${pres ? ` Ø v práci je průměr z docházky v Auditu za ${pres.days} ${pres.days === 1 ? 'pracovní den' : pres.days <= 4 ? 'pracovní dny' : 'pracovních dní'} (${esc(dayText(pres.from))} – ${esc(dayText(pres.to))}).` : ''}</p>
+    <p class="hint cp-legend">Úroveň člověka je procento dovedností jeho skupiny v Matici: <b>2</b> ${esc(cpLvName(2))} = aspoň 50 %, <b>3</b> ${esc(cpLvName(3))} = aspoň 75 %, <b>4</b> ${esc(cpLvName(4))} = 100 %. Počty se sčítají shora (kdo má 4, je i ve 3+ a 2+). Doškolit jde jen lidi skupiny pod úrovní; navrženi jsou ti, kdo mají k cíli nejblíž.${pres ? ` Ø v práci je průměr z docházky v KPI za ${pres.days} ${pres.days === 1 ? 'pracovní den' : pres.days <= 4 ? 'pracovní dny' : 'pracovních dní'} (${esc(dayText(pres.from))} – ${esc(dayText(pres.to))}).` : ''}</p>
     ${depts}
     <div class="card"><h3>Poznámka k plánu</h3><p class="small muted">Uloží se a vytiskne s plánem (např. termíny náboru a zaškolení).</p>
       <textarea id="cpNote" rows="3" maxlength="4000" placeholder="např. Nábor 2 brusičů do konce listopadu, zaučit Nováka na Seřízení.">${esc(S.capPlan.note)}</textarea></div>`;
 }
 /* PDF plánu: souhrn, tabulka po odděleních a doporučení (A4 na šířku). */
-/* ---------- PDF plánu kapacit (2.39.1): stejný papír a kreslení jako Kapacity a zaškolení v Auditu ---------- */
+/* ---------- PDF plánu kapacit (2.39.1): stejný papír a kreslení jako Kapacity a zaškolení v KPI ---------- */
 /* Úrovně ve sloupci odspodu: 4, 3, 2, pod 2; potřeba čárkovaně v barvě úrovně (celkem zeleně),
    takže vršek každého dílu jde rovnou porovnat s potřebou. */
 const CP_LV = [['l4', '#0F2F5A', '4'], ['l3', '#1F4E8C', '3+'], ['l2', '#7C9CC8', '2+'], ['n', '#F2C77E', 'pod 2']];
@@ -11854,7 +11858,7 @@ function drView(r) {
       mk('ot').length ? `Přesčas (mimo normu): ${mkT(mk('ot'))}.` : '', mk('hol').length ? `Práce ve svátek (mimo normu): ${mkT(mk('hol'))}.` : '',
       r.weekend ? `Docházka o víkendu nebo ve svátek: ${r.weekend} ${dniN(r.weekend)} (přesčas, mimo normu).` : ''].filter(Boolean);
   }
-  v.foot = `Plnění normy = podíl pracovních dní, kdy celkový počet lidí v práci dosáhl denního požadavku ${req}${r.reqOwn ? ' (Audit, Nastavení)' : ' (součet plánů skupin)'}. Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině. Víkendy, svátky a dny označené jako přesčas nebo práce ve svátek jsou mimo normu, budoucí dny jsou plánovaná kapacita a do plnění se nepočítají. Lidé jen s ID. Vygenerováno ${dayText(todayIso())}.`;
+  v.foot = `Plnění normy = podíl pracovních dní, kdy celkový počet lidí v práci dosáhl denního požadavku ${req}${r.reqOwn ? ' (KPI, Nastavení)' : ' (součet plánů skupin)'}. Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině. Víkendy, svátky a dny označené jako přesčas nebo práce ve svátek jsou mimo normu, budoucí dny jsou plánovaná kapacita a do plnění se nepočítají. Lidé jen s ID. Vygenerováno ${dayText(todayIso())}.`;
   return v;
 }
 
@@ -12405,13 +12409,13 @@ async function dvImport(file, opts = {}) {
       <ul class="wa-imp">${repDays ? `<li><b>${repDays} ${repDays === 1 ? 'den už je nahraný' : repDays <= 4 ? 'dny už jsou nahrané' : 'dní už je nahraných'}</b>, nahradí se daty ze souboru.</li>` : ''}
         ${a.codes ? `<li>${a.codes} ${a.codes === 1 ? 'buňka' : a.codes <= 4 ? 'buňky' : 'buněk'} bez času (kódy jako D, N) ${attNew.length ? 'jde do docházky pro odměny jako nepřítomnost' : 'se přeskočí'}.</li>` : ''}</ul>`
     : `<p class="small muted">${esc(p.att ? p.att.err : 'List s docházkou v souboru není.')}</p>`;
-  const workHtml = opts.attOnly ? '<p class="small muted">Výkony z listu vykázané práce se tady nenahrávají, nahraješ je v Auditu (Lidé v práci).</p>'
+  const workHtml = opts.attOnly ? '<p class="small muted">Výkony z listu vykázané práce se tady nenahrávají, nahraješ je v KPI (Lidé v práci).</p>'
     : w ? `<p>${w.rows} ${zaznamN(w.rows)}, ${w.people} ${lidiN(w.people)}: <b>${dvH(w.t)}</b> vykázaného času, ${nf(w.g, 0)} ks dokončeno z ${nf(w.f, 0)} v zakázkách.</p>
       <ul class="wa-imp"><li>${w.dated ? `Datum ze sloupce ${esc(w.dateCol)} (${esc(dayText(w.from))} – ${esc(dayText(w.to))}).` : `Řádky nemají datum, výkony se uloží za ${esc(monthLabel(fallback))}.`}</li>
         ${repMonths.length ? `<li><b>Výkony za ${esc(repMonths.map(monthLabel).join(', '))} už jsou nahrané</b>, nahradí se celým měsícem ze souboru.</li>` : ''}
         ${w.skipped ? `<li>${w.skipped} ${radekN(w.skipped)} bez dílu, operace, kusů i času se přeskočí.</li>` : ''}</ul>
       <label class="field"><span>Strávený čas (sloupec ${esc(c.work.time)}) je v</span><select name="unit">${[['auto', `najít sám (teď ${DV_UNIT_TEXT[w.unit]})`], ['min', 'minutách'], ['h', 'hodinách']].map(([k, l]) => `<option value="${k}"${dv.unit === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-      ${pcsDays.length ? `<label class="check"><input type="checkbox" name="toAudit"${pcsOld || owns ? '' : ' checked'}><span><b>${owns ? 'Kusy za dny do 31. 10. 2026 zapsat i do Auditu' : 'Kusy podle operací zapsat i do Auditu'}</b> (${pcsDays.length} ${denN(pcsDays.length)}, dokončené množství ze sloupce ${esc(c.work.done)}).${pcsOld ? ` ${pcsOld} ${denN(pcsOld)} už ${pcsOld === 1 ? 'má' : 'mají'} kusy z výkazu práce, nahradily by se.` : ''}</span></label>` : ''}`
+      ${pcsDays.length ? `<label class="check"><input type="checkbox" name="toAudit"${pcsOld || owns ? '' : ' checked'}><span><b>${owns ? 'Kusy za dny do 31. 10. 2026 zapsat i do KPI' : 'Kusy podle operací zapsat i do KPI'}</b> (${pcsDays.length} ${denN(pcsDays.length)}, dokončené množství ze sloupce ${esc(c.work.done)}).${pcsOld ? ` ${pcsOld} ${denN(pcsOld)} už ${pcsOld === 1 ? 'má' : 'mají'} kusy z výkazu práce, nahradily by se.` : ''}</span></label>` : ''}`
       : `<p class="small muted">${esc(p.work ? p.work.err : 'Druhý list s vykázanou prací v souboru není, nahraje se jen docházka.')}</p>`;
   const res = await dialog({
     title: opts.attOnly ? 'Nahrát příchody' : 'Nahrát docházku a výkony', ok: 'Nahrát', wide: true,
@@ -12421,10 +12425,10 @@ async function dvImport(file, opts = {}) {
       ${unknown.length ? `<div class="note w"><b>${unknown.length} ID není u nikoho v Lidech:</b> ${unknown.slice(0, 12).map(esc).join(', ')}${unknown.length > 12 ? '…' : ''}. Uloží se a přiřadí, jakmile ID doplníš v kartě člověka.</div>` : ''}
       ${owns ? `<div class="note i dv-owns"><b>Od listopadu 2026 je tenhle soubor jediný zdroj:</b><ul class="wa-imp">
         ${attNew.length ? `<li>docházka pro odměny za ${esc(attNew.map(monthLabel).join(', '))}: hodiny z příchodu a odchodu (bez 30 min přestávky), buňka s kódem = nepřítomnost${noWid ? `; ${noWid} ${noWid === 1 ? 'člověk bez ID v Lidech se nezapíše' : 'lidí bez ID v Lidech se nezapíše'}` : ''},</li>` : ''}
-        ${attNew.length ? '<li>obsazenost v Auditu (ranní = příchod před 12:00, skupiny podle skupin Matice v Nastavení),</li>' : ''}
+        ${attNew.length ? '<li>obsazenost v KPI (ranní = příchod před 12:00, skupiny podle skupin Matice v Nastavení),</li>' : ''}
         ${prodNew.length ? `<li>evidence práce místo Výroby za ${esc(prodNew.map(monthLabel).join(', '))} (kusy, strávený čas${w && w.norm ? ', norma' : ', bez normy'}),</li>` : ''}
-        ${pcsNew ? `<li>kusy podle operací do Auditu (${pcsNew} ${denN(pcsNew)}).</li>` : ''}</ul></div>` : ''}
-      <p class="tiny muted">${owns ? 'Říjen 2026 a dřív zůstává ze starých souborů. ' : 'Docházka pro odměny a Výroba za říjen 2026 a dřív se nemění. '}Sloupce změníš v Nastavení Auditu.</p>
+        ${pcsNew ? `<li>kusy podle operací do KPI (${pcsNew} ${denN(pcsNew)}).</li>` : ''}</ul></div>` : ''}
+      <p class="tiny muted">${owns ? 'Říjen 2026 a dřív zůstává ze starých souborů. ' : 'Docházka pro odměny a Výroba za říjen 2026 a dřív se nemění. '}Sloupce změníš v Nastavení KPI.</p>
       <div class="row gap dv-aibar"><span class="small muted">Nesedí čísla nebo lidé?</span><button class="btn sec small" type="submit" value="map" formnovalidate>Zpět k načtení sloupců</button></div>`,
   });
   if (res.value === 'map') return dvImport(file, { ...opts, noAi: true });
@@ -12440,14 +12444,14 @@ async function dvImport(file, opts = {}) {
   const toAudit = !!(f.namedItem('toAudit') && f.namedItem('toAudit').checked);
   const meta = { name: file.name, by: ui.me.label || '', at: Date.now() };
   const r = dvApply(wa, p, meta, { audit: toAudit });
-  const parts = [a ? `docházka ${dayText(a.from)} – ${dayText(a.to)} (${a.people} ${lidiN(a.people)})` : '', w ? `výkony za ${r.months.map(monthLabel).join(', ')}` : '', r.audit ? `kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : '',
+  const parts = [a ? `docházka ${dayText(a.from)} – ${dayText(a.to)} (${a.people} ${lidiN(a.people)})` : '', w ? `výkony za ${r.months.map(monthLabel).join(', ')}` : '', r.audit ? `kusy do KPI za ${r.audit.days} ${denN(r.audit.days)}` : '',
     r.periods.length ? `docházka pro odměny za ${r.periods.map(x => monthLabel(x.m)).join(', ')}` : '', r.prod.length ? `evidence práce za ${r.prod.map(x => monthLabel(x.m)).join(', ')}` : ''].filter(Boolean);
-  store.note = { kind: 'workaudit', text: `Audit: nahrán soubor ${file.name}: ${parts.join(', ')}`, keep: true };
+  store.note = { kind: 'workaudit', text: `KPI: nahrán soubor ${file.name}: ${parts.join(', ')}`, keep: true };
   save();
   if (r.periods.length || r.prod.length) renderAll();   // docházka a evidence práce pro odměny
   return { a, w, r, unknown };
 }
-/* Nahrání v Auditu: po uložení záložka Lidé v práci na dnešku (nebo posledním dni souboru). */
+/* Nahrání v KPI: po uložení záložka Lidé v práci na dnešku (nebo posledním dni souboru). */
 async function dvImportAudit(file) {
   const out = await dvImport(file);
   if (!out) return;
@@ -12460,7 +12464,7 @@ async function dvImportAudit(file) {
   if (r.audit && r.audit.added.length) Object.assign(ui.wa, { opFilter: 'nogroup', opQ: '' });
   renderWorkAudit();
   const ng = r.audit ? r.audit.added.length : 0;
-  toast(`Nahráno: ${a ? `docházka za ${r.days} ${denN(r.days)}` : 'bez docházky'}${w ? `, výkony za ${r.months.map(monthLabel).join(', ')}` : ''}${r.audit ? `, kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : ''}${r.periods.length ? `, docházka pro odměny za ${r.periods.map(x => monthLabel(x.m)).join(', ')}` : ''}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu v Nastavení.` : ''}`);
+  toast(`Nahráno: ${a ? `docházka za ${r.days} ${denN(r.days)}` : 'bez docházky'}${w ? `, výkony za ${r.months.map(monthLabel).join(', ')}` : ''}${r.audit ? `, kusy do KPI za ${r.audit.days} ${denN(r.audit.days)}` : ''}${r.periods.length ? `, docházka pro odměny za ${r.periods.map(x => monthLabel(x.m)).join(', ')}` : ''}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu v Nastavení.` : ''}`);
 }
 
 /* ---------- denní report (PDF) a měsíc do Excelu ---------- */
@@ -12473,7 +12477,7 @@ async function exportDvPdf(button) {
     doc.setProperties({ title: `Lidé v práci · ${dayText(iso)}`, creator: EXPORT_NAME });
     const k = pdfKit(doc);
     const C = k.C;
-    k.header({ eyebrow: `${EXPORT_NAME} · AUDIT · LIDÉ V PRÁCI`, right: `Stav k ${tsText(Date.now())}`, title: 'Obsazenost po projektech', sub: `${ktDay(iso, true)} ${iso.slice(0, 4)}`,
+    k.header({ eyebrow: `${EXPORT_NAME} · KPI · LIDÉ V PRÁCI`, right: `Stav k ${tsText(Date.now())}`, title: 'Obsazenost po projektech', sub: `${ktDay(iso, true)} ${iso.slice(0, 4)}`,
       meta: 'Podle příchodů a odchodů ze souboru docházky. Projekt je skupina v Matici dovedností, kam člověk patří.' });
     k.tiles([
       ['Přišlo do práce', String(d.n), `${d.groups.filter(g => !dvSpecial(g)).length} projektů`],
@@ -12552,6 +12556,87 @@ async function exportDvXlsx() {
   } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
 }
 
+/* ---------- výkonnost na osobu (2.44) ----------
+   Lidé po odděleních, průměr na den z evidence práce a docházky (kpiPerf v core.js), řazení
+   podle zvoleného ukazatele od nejlepších nebo od nejhorších. Pruh = hodnota proti nejlepšímu
+   v oddělení, barva podle průměru oddělení. */
+const KP_FMT = { ks: v => `${nf(v, 1)} ks`, norm: v => `${nf(v, 1)} %`, ph: v => `${nf(v, 1)} ks/h`, h: v => `${nf(v, 1)} h`, use: v => `${nf(v, 1)} %` };
+const KP_COLS = [['ks', 'Ø ks/den'], ['h', 'Ø h/den'], ['ph', 'Ks/h'], ['norm', 'Plnění normy'], ['use', 'Využití fondu']];
+function kpPick() {
+  const months = kpiMonths();
+  const kp = ui.wa.kp;
+  if (!months.includes(kp.month)) kp.month = months[0] || '';
+  return months;
+}
+function kpVal(k, v) { return v == null ? '<span class="muted">—</span>' : KP_FMT[k](v); }
+function kpHtml() {
+  const months = kpPick();
+  const kp = ui.wa.kp;
+  if (!kp.month) {
+    return emptyState('Zatím žádná evidence práce', 'Výkonnost na osobu se počítá z vykázané práce a docházky. Nahraj soubor tlačítkem <b>Nahrát docházku a výkony</b> nahoře.');
+  }
+  const x = kpiPerf(kp.month, { sort: kp.sort, dir: kp.dir });
+  const lab = Object.fromEntries(KPI_SORT);
+  const depts = x.depts.filter(d => !kp.dept || d.name === kp.dept);
+  if (kp.dept && !depts.length) kp.dept = '';
+  const shown = kp.dept ? depts : x.depts;
+  const bar = `<div class="t5-weekbar kp-bar">
+    <label class="kp-f"><span>Měsíc</span><select id="kpMonth">${months.map(m => `<option value="${m}"${m === kp.month ? ' selected' : ''}>${esc(monthLabel(m))}</option>`).join('')}</select></label>
+    <label class="kp-f"><span>Oddělení</span><select id="kpDept"><option value="">Všechna</option>${x.depts.map(d => `<option value="${esc(d.name)}"${d.name === kp.dept ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}</select></label>
+    <label class="kp-f"><span>Řadit podle</span><select id="kpSort">${KPI_SORT.map(([k, l]) => `<option value="${k}"${k === x.sort ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <div class="seg kp-dir" role="group" aria-label="Pořadí">${[['best', 'Od nejlepších'], ['worst', 'Od nejhorších']].map(([k, l]) => `<button type="button" data-kpdir="${k}" aria-pressed="${k === x.dir}" class="${k === x.dir ? 'on' : ''}">${l}</button>`).join('')}</div>
+    <span class="spacer"></span><button class="btn sec" type="button" data-kpxlsx>Excel</button></div>`;
+  const t = x.tot;
+  const tiles = `<div class="stats">${[
+    statTile('Lidí', String(t.people), `${shown.length === 1 ? '1 oddělení' : `${x.depts.length} oddělení`}`),
+    statTile('Ø ks na den', t.ks1 != null ? nf(t.ks1, 1) : '—', `${nf(t.ks, 0)} ks za ${t.days} ${denN(t.days)} v práci`),
+    statTile('Kusy za hodinu', t.ph != null ? nf(t.ph, 1) : '—', x.time ? 'kusy ÷ vykázaný čas' : 'evidence bez času'),
+    statTile('Plnění normy', t.norm != null ? `${nf(t.norm, 1)} %` : '—', t.norm != null ? 'norma ÷ čas u řádků s normou' : 'norma v evidenci není'),
+  ].join('')}</div>`;
+  const notes = [];
+  if (x.noAtt) notes.push('Za měsíc chybí docházka: průměr na den nejde spočítat (jen kusy za hodinu a plnění normy).');
+  if (x.unmatched) notes.push(`${x.unmatched} ${x.unmatched === 1 ? 'záznam' : x.unmatched <= 4 ? 'záznamy' : 'záznamů'} z evidence práce nejde přiřadit nikomu z Lidí (chybí ID), ve výsledcích nejsou.`);
+  const head = `<th class="r kp-rank">#</th><th>Zaměstnanec</th><th>Skupina</th><th class="r">Dny</th>${KP_COLS.map(([k, l]) => `<th class="r${k === x.sort ? ' kp-on' : ''}">${l}</th>`).join('')}`;
+  const cards = depts.map(d => {
+    const avg = d.avg[x.sort === 'ks' ? 'ks1' : x.sort];
+    const rows = d.people.map(q => {
+      const v = q.v[x.sort];
+      const w = v != null && d.max > 0 ? Math.max(2, Math.round(v / d.max * 100)) : 0;
+      const tone = v == null || avg == null ? '' : v >= avg ? ' up' : ' down';
+      return `<tr data-dvperson="${esc(q.key)}" tabindex="0" class="dv-click">
+        <td class="r num kp-rank" data-label="Pořadí">${q.rank == null ? '<span class="muted">–</span>' : `<b>${q.rank}.</b>`}</td>
+        <td class="name" data-label="Zaměstnanec">${q.rank != null ? `<span class="kp-mrank">${q.rank}.</span> ` : ''}<b>${esc(q.name)}</b>${q.wid ? ` <small class="muted num">ID ${esc(q.wid)}</small>` : ''}</td>
+        <td data-label="Skupina">${esc(q.group)}</td><td class="r num" data-label="Dny">${q.days || '<span class="muted">0</span>'}</td>
+        ${KP_COLS.map(([k, l]) => k === x.sort
+          ? `<td class="r num kp-on" data-label="${l}"><span class="kp-val">${kpVal(k, q.v[k])}</span>${v != null ? `<span class="kp-track"><i class="kp-fill${tone}" data-w="${w}"></i></span>` : ''}</td>`
+          : `<td class="r num" data-label="${l}">${kpVal(k, q.v[k])}</td>`).join('')}</tr>`;
+    }).join('');
+    return `<div class="card kp-dept" data-kpdept="${esc(d.name)}"><div class="card-head"><div><h3>${esc(d.name)}</h3>
+      <p class="small muted">${d.people.length} ${d.people.length === 1 ? 'člověk' : d.people.length <= 4 ? 'lidé' : 'lidí'} · průměr oddělení ${avg != null ? `<b>${KP_FMT[x.sort](avg)}</b>` : '—'} · ${lab[x.sort]}</p></div></div>
+      <div class="table-card flat"><table class="stack kp-tab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>
+      <tfoot><tr class="kp-avg"><td></td><td class="name" data-label="">Průměr oddělení</td><td></td><td class="r num" data-label="Dny">${d.avg.days}</td>${KP_COLS.map(([k, l]) => `<td class="r num${k === x.sort ? ' kp-on' : ''}" data-label="${l}">${kpVal(k, d.avg[k === 'ks' ? 'ks1' : k])}</td>`).join('')}</tr></tfoot></table></div></div>`;
+  }).join('');
+  return `${bar}${tiles}${notes.length ? `<div class="note i">${notes.map(esc).join(' ')}</div>` : ''}
+    ${cards || '<p class="small muted">Za měsíc nikdo s vykázanou prací.</p>'}
+    <p class="hint">Ø ks na den = dokončené kusy ÷ odpracované dny z docházky. Ø h na den = vykázaný čas ÷ odpracované dny. Kusy za hodinu = kusy ÷ vykázaný čas. Plnění normy = norma ÷ čas u řádků s normou. Využití fondu = vykázaný čas ÷ hodiny v práci. Průměr oddělení je vážený (součty, ne průměr průměrů). Vedoucí a vyřazení se nepočítají, oddělení podle skupiny v Matici ke konci měsíce. Klik na člověka otevře profil.</p>`;
+}
+async function exportKpXlsx() {
+  kpPick();
+  const kp = ui.wa.kp;
+  if (!kp.month) return;
+  const x = kpiPerf(kp.month, { sort: kp.sort, dir: kp.dir });
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    kpiSheets(x).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = [18, 7, 26, 10, 16, 10, 10, 10, 12, 10, 12, 12].map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`vykonnost-na-osobu-${kp.month}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
 /* ---------- profil: produktivita a koláč dílů ---------- */
 /* Koláč: nejvýš 6 dílů v barvách ověřených validátorem palet, zbytek šedě jako Ostatní.
    Mezi výsečemi 2 px barvy plochy, u každé výseče popisek při najetí; legenda s čísly
@@ -12586,7 +12671,7 @@ function dvPieHtml(parts, total, byTime) {
 function dvPersonCard(key, from, to) {
   if (!dvHas()) return '';
   const p = dvPerson(key, from, to);
-  const head = `<div class="card-head"><div><h3>Produktivita z vykázané práce</h3><p class="small muted">Z docházky a výkonů nahraných v Auditu${p.wid ? ` · ID ${esc(p.wid)}` : ''}. Využití = vykázaný čas ÷ čas v práci podle příchodů a odchodů.</p></div></div>`;
+  const head = `<div class="card-head"><div><h3>Produktivita z vykázané práce</h3><p class="small muted">Z docházky a výkonů nahraných v KPI${p.wid ? ` · ID ${esc(p.wid)}` : ''}. Využití = vykázaný čas ÷ čas v práci podle příchodů a odchodů.</p></div></div>`;
   if (p.noId) return `<div class="card pf-dv">${head}<p class="small muted">Člověk nemá vyplněné ID zaměstnance, proto se k němu docházka a výkony nepřiřadí. Doplň ho v Upravit zařazení.</p></div>`;
   if (!p.has) return `<div class="card pf-dv">${head}<p class="small muted">V tomto období bez docházky i vykázané práce.</p></div>`;
   const byTime = p.t > 0;
@@ -12673,7 +12758,7 @@ async function waImport(kind, file) {
   const r = att ? waApplyAttendance(wa, parsed, meta) : waApplyWork(wa, parsed, meta);
   const toProd = !!(prod && res.form && res.form.elements.namedItem('toProd') && res.form.elements.namedItem('toProd').checked);
   if (toProd) prod.ids.forEach(id => { S.production[id] = prod.res.buckets[id]; });
-  store.note = { kind: 'workaudit', text: `Audit: nahrán${att ? 'a obsazenost' : ' výkaz práce'} ${file.name} (${r.days} ${denN(r.days)}, ${dayText(parsed.from)} – ${dayText(parsed.to)}${!att && r.added.length ? `, ${r.added.length} ${r.added.length === 1 ? 'nová operace' : r.added.length <= 4 ? 'nové operace' : 'nových operací'}` : ''})${toProd ? `; i do Výroby (evidence práce za ${prod.ids.map(monthLabel).join(', ')})` : ''}`, keep: toProd };
+  store.note = { kind: 'workaudit', text: `KPI: nahrán${att ? 'a obsazenost' : ' výkaz práce'} ${file.name} (${r.days} ${denN(r.days)}, ${dayText(parsed.from)} – ${dayText(parsed.to)}${!att && r.added.length ? `, ${r.added.length} ${r.added.length === 1 ? 'nová operace' : r.added.length <= 4 ? 'nové operace' : 'nových operací'}` : ''})${toProd ? `; i do Výroby (evidence práce za ${prod.ids.map(monthLabel).join(', ')})` : ''}`, keep: toProd };
   save();
   Object.assign(ui.wa, { mode: 'month', month: parsed.to.slice(0, 7) });
   // Nové operace čekají na skupinu: rovnou Nastavení s filtrem bez skupiny.
@@ -12703,7 +12788,7 @@ function waDropOwned(parsed, field) {
   return true;
 }
 /* Evidence práce pro Výrobu ze souboru výkazu práce (2.35): jen když list sedí na sloupce
-   uložené ve Výrobě (stejná hlavička), jinak null a Audit nabídne nastavit je tam. */
+   uložené ve Výrobě (stejná hlavička), jinak null a KPI nabídne nastavit je tam. */
 function waProdFrom(sheets, name) {
   const saved = S.settings.prodCols;
   if (!saved) return null;
@@ -12762,7 +12847,7 @@ async function waClearRange() {
   if (!isos.length) { toast('Ve vybraném období nejsou žádná data.'); return; }
   if (!await confirmBox('Smazat data auditu?', `Za ${r.label} se smaže obsazenost, kusy, ruční úpravy a poznámky (${isos.length} ${denN(isos.length)}). Skupiny a operace zůstanou. Předchozí stav najdeš v historii verzí v Nastavení.`, 'Smazat', true)) return;
   isos.forEach(i => { delete wa.days[i]; delete wa.pcs[i]; delete wa.edits[i]; delete wa.notes[i]; });
-  store.note = { kind: 'workaudit', text: `Audit: smazána data za ${r.label} (${isos.length} ${denN(isos.length)})` };
+  store.note = { kind: 'workaudit', text: `KPI: smazána data za ${r.label} (${isos.length} ${denN(isos.length)})` };
   save();
   renderWorkAudit();
 }
@@ -12842,6 +12927,9 @@ function bindWorkAudit() {
     if (dvgo) { Object.assign(ui.wa, { dvMode: 'day', dvDay: dvgo.dataset.dvgo }); renderWorkAudit(); window.scrollTo({ top: 0, behavior: 'instant' }); return; }
     const dvp = t.closest('[data-dvperson]');
     if (dvp) { openProfile(dvp.dataset.dvperson); return; }
+    const kpd = t.closest('[data-kpdir]');
+    if (kpd) { ui.wa.kp.dir = kpd.dataset.kpdir; renderWorkAudit(); return; }
+    if (t.closest('[data-kpxlsx]')) { exportKpXlsx(); return; }
     const dvs = t.closest('[data-dvsort]');
     if (dvs) { ui.wa.dvSort = dvs.dataset.dvsort; renderWorkAudit(); return; }
     const dvpdf = t.closest('[data-dvpdf]');
@@ -13027,6 +13115,9 @@ function bindWorkAudit() {
     }
     if (t.id === 'dvDaySel') { ui.wa.dvDay = t.value; renderWorkAudit(); return; }
     if (t.id === 'dvMonthSel') { ui.wa.dvMonth = t.value; renderWorkAudit(); return; }
+    if (t.id === 'kpMonth') { ui.wa.kp.month = t.value; renderWorkAudit(); return; }
+    if (t.id === 'kpSort') { ui.wa.kp.sort = t.value; renderWorkAudit(); return; }
+    if (t.id === 'kpDept') { ui.wa.kp.dept = t.value; renderWorkAudit(); return; }
     if (t.id === 'dvUnit') { S.workAudit.dv.unit = DV_UNITS.includes(t.value) ? t.value : 'auto'; save(); renderWorkAudit(); return; }
     if (t.dataset.dvcol) {
       const [kind, key] = t.dataset.dvcol.split('.');
@@ -13602,7 +13693,7 @@ async function waPlanProcess() {
     ok.forEach(f => p.files.push({ name: f.name.slice(0, 160), at, by, rows: f.rows, matched: f.matched, dupes: f.dupes, added: 0, moved: 0, items: map.size }));
     p.files = p.files.slice(-40);
     const names = ok.slice(0, 3).map(f => f.name).join(', ') + (ok.length > 3 ? ` a ${ok.length - 3} dalších` : '');
-    store.note = { kind: 'workaudit', text: `Audit: zpracován výrobní plán ${names} (${nf(sum('matched'))} ${radekN(sum('matched'))}${words ? ` ${words}` : ''}, ${nf(st.added)} nových ${polozkaN(st.added)}, ${nf(st.moved)} s posunutým termínem; v plánu ${nf(map.size)} ${polozkaN(map.size)})` };
+    store.note = { kind: 'workaudit', text: `KPI: zpracován výrobní plán ${names} (${nf(sum('matched'))} ${radekN(sum('matched'))}${words ? ` ${words}` : ''}, ${nf(st.added)} nových ${polozkaN(st.added)}, ${nf(st.moved)} s posunutým termínem; v plánu ${nf(map.size)} ${polozkaN(map.size)})` };
     save();
     await prog.step('Ukládám…', 1, true);
     const saved = await waWaitSaved();
@@ -13634,7 +13725,7 @@ async function waPlanClear() {
   const old = p.chunks.slice();
   const n = p.items;
   Object.assign(p, { chunks: [], weeks: {}, items: 0, files: [], at: Date.now(), by: ui.me.label || '' });
-  store.note = { kind: 'workaudit', text: `Audit: smazán výrobní plán (${nf(n)} ${polozkaN(n)})` };
+  store.note = { kind: 'workaudit', text: `KPI: smazán výrobní plán (${nf(n)} ${polozkaN(n)})` };
   save();
   renderWorkAudit();
   if (await waWaitSaved()) old.forEach(id => Vault.deleteFile(id).catch(() => {}));

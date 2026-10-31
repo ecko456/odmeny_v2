@@ -1,5 +1,5 @@
 // Prohlížečový průchod 2.42: od listopadu 2026 je soubor Docházka a výkony jediný zdroj
-// (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v Auditu), říjen zůstává.
+// (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v KPI), říjen zůstává.
 // Hodiny stránky stojí na úterý 3. 11. 2026. Všechna data jsou vymyšlená.
 // Spuštění stejně jako e2e_dochazka.js; snímky v $S/oshots-zdroj.
 const { chromium } = require(process.env.PW);
@@ -102,9 +102,9 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   const file = { name: 'dochazka-vykony-listopad.xlsx', mimeType: XLSX_TYPE,
     buffer: await makeXlsx(page, [{ name: 'vykázaná práce', rows: work, dateCol: 1 }, { name: 'Docházka', rows: att }]) };
 
-  // 1) Audit: v hlavičce jen Nahrát docházku a výkony
+  // 1) KPI: v hlavičce jen Nahrát docházku a výkony
   await page.click('#nav [data-view="audit"]');
-  check(await page.locator('#waAtt, #waWork').count() === 0 && await page.isVisible('#waDv'), 'v hlavičce Auditu jen jedno nahrání');
+  check(await page.locator('#waAtt, #waWork').count() === 0 && await page.isVisible('#waDv'), 'v hlavičce KPI jen jedno nahrání');
   await page.setInputFiles('#waDvFile', file);
   // 2.42.3: nejdřív Jak se soubor načte (vzor prvního člověka), pak souhrn
   await page.waitForSelector('#dlg[open] .dv-map');
@@ -121,7 +121,7 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   await page.waitForSelector('#dlg[open] .dv-imp');
   const d1 = await text(page, '#dlgBody');
   check(/jediný zdroj/.test(d1) && /docházka pro odměny za listopad 2026/.test(d1) && /evidence práce místo Výroby za listopad 2026 \(kusy, strávený čas, norma\)/.test(d1), `dialog: ${d1}`);
-  check(/kusy podle operací do Auditu \(2 dny\)/.test(d1) && /Říjen 2026 a dřív zůstává ze starých souborů/.test(d1), `dialog kusy: ${d1}`);
+  check(/kusy podle operací do KPI \(2 dny\)/.test(d1) && /Říjen 2026 a dřív zůstává ze starých souborů/.test(d1), `dialog kusy: ${d1}`);
   await page.screenshot({ path: path.join(shots, '01-dialog.png') });
   await confirm(page);
   await saved(page);
@@ -142,7 +142,7 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   check(JSON.stringify(r.hA) === JSON.stringify([0, 8, 7.5]) && JSON.stringify(r.cG) === JSON.stringify([null, null, 'D']), `hodiny a kódy: ${JSON.stringify([r.hA, r.cG])}`);
   check(JSON.stringify(r.a) === '[15.5,1]' && JSON.stringify(r.pr) === '[70,320,106.3]', `odměny: ${JSON.stringify([r.a, r.pr])}`);
   check(JSON.stringify(r.prodMonths) === '["2026-11"]' && r.oct === octBefore, `říjen beze změny, evidence jen listopad: ${JSON.stringify(r.prodMonths)}`);
-  check(JSON.stringify(r.n2) === '[3,1,0,[1,1],[2,0]]' && JSON.stringify(r.n3) === '[2,1,1,[1,1],[1,0]]' && r.o31 === null, `obsazenost v Auditu: ${JSON.stringify([r.n2, r.n3, r.o31])}`);
+  check(JSON.stringify(r.n2) === '[3,1,0,[1,1],[2,0]]' && JSON.stringify(r.n3) === '[2,1,1,[1,1],[1,0]]' && r.o31 === null, `obsazenost v KPI: ${JSON.stringify([r.n2, r.n3, r.o31])}`);
   check(JSON.stringify(r.pcs) === '["2026-11-02","2026-11-03"]', `kusy: ${r.pcs}`);
   check(/docházka pro odměny za listopad 2026/.test(r.log) && /evidence práce za listopad 2026/.test(r.log), `historie: ${r.log}`);
 
@@ -161,7 +161,7 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   await page.screenshot({ path: path.join(shots, '01b-report.png') });
   await page.evaluate(() => { delete S.workAudit.dv.pres['2026-11-03']['555']; S.employees['fiala|filip'].positionId = 'g_cnc'; renderWorkAudit(); });
 
-  // 2) Nastavení: skupiny Matice u skupin Auditu, starší soubory schované
+  // 2) Nastavení: skupiny Matice u skupin KPI, starší soubory schované
   await page.click('#waTabs [data-watab="nastaveni"]');
   await page.waitForSelector('#waView .wa-mg');
   check(/Skupiny Matice: Brus/.test(await text(page, '[data-wag="brus"] .wa-mg summary')) && /podle názvu/.test(await text(page, '[data-wag="frez"] .wa-mg summary')), 'výběr skupin Matice a podle názvu');
@@ -182,7 +182,7 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   // 3) Docházka a Výroba: pruh se zdrojem, starý import listopadu odmítnut
   await page.click('#nav [data-view="dochazka"]');
   check(/Od listopadu 2026 se docházka pro odměny plní ze souboru Docházka a výkony/.test(await text(page, '#view-dochazka .dv-src')), 'pruh v Docházce');
-  await page.click('#nav [data-view="vyroba"]');
+  await page.evaluate(() => showView('vyroba'));   // Výroba je od 2.44 mimo menu (odkaz z KPI)
   check(/Od listopadu 2026 se evidence práce plní/.test(await text(page, '#view-vyroba .dv-src')), 'pruh ve Výrobě');
   await page.screenshot({ path: path.join(shots, '03-vyroba.png') });
   await page.click('#nav [data-view="prehled"]');

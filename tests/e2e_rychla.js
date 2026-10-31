@@ -238,7 +238,7 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
   // Rozbalovací Teď v práci (2.43): oddělení s pruhem, kdo z plánu nedorazil
   check(await page.isHidden('#homeNow'), 'rozpad je sbalený');
   await page.click('.hh-nowbox > summary');
-  await page.waitForSelector('#homeNow .hn-dept');
+  await page.waitForFunction(() => ui.homeNowOpen === true && document.querySelector('#homeNow .hn-dept'));   // událost toggle přijde až po kliknutí
   const hn = await page.evaluate(() => {
     const x = staffNow(staffDay(), ui.homeShift);
     return { ui: [...document.querySelectorAll('#homeNow .hn-dept')].map(d => [d.querySelector('.hn-head b').textContent, d.querySelector('.hn-head .num').textContent.replace(/\s+/g, ''), d.querySelectorAll('.hn-chip.miss').length]),

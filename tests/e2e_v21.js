@@ -129,7 +129,7 @@ async function nav(page, view) {
   // Evidence práce: první import se zeptá na sloupce, druhý stejného formátu už ne.
   const xlsxFile = path.join(S, 'v21-evidence.xlsx');
   productionXlsx(xlsxFile);
-  await page.click('#nav [data-view="vyroba"]');
+  await page.evaluate(() => showView('vyroba'));   // Výroba je od 2.44 mimo menu (odkaz z KPI)
   await page.setInputFiles('#pfile', xlsxFile);
   await page.waitForSelector('#dlg[open] #prodColsPreview');
   const picked = await page.evaluate(() => ['name', 'date', 'ks', 'spent', 'norm'].map(n => document.querySelector(`#dlg [name="${n}"]`).value));
@@ -217,7 +217,7 @@ async function nav(page, view) {
   // Soubor s jinou hlavičkou se zeptá znovu.
   const other = path.join(S, 'v21-evidence-2.xlsx');
   productionXlsx(other, true);
-  await page.click('#nav [data-view="vyroba"]');
+  await page.evaluate(() => showView('vyroba'));   // Výroba je od 2.44 mimo menu (odkaz z KPI)
   await page.setInputFiles('#pfile', other);
   await page.waitForSelector('#dlg[open] #prodColsPreview');
   await page.click('#dlgCancel');

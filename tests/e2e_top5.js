@@ -387,7 +387,7 @@ async function markDone(page, id, date) {
   // Předvyplnění z evidence práce: týden bez zápisu ukáže výpočet a jde převzít.
   const csv = path.join(S, 'top5-evidence.csv');
   fs.writeFileSync(csv, productionCsv());
-  await page.click('#nav [data-view="vyroba"]');
+  await page.evaluate(() => showView('vyroba'));   // Výroba je od 2.44 mimo menu (odkaz z KPI)
   await page.setInputFiles('#pfile', csv);
   await page.waitForSelector('#dlg[open] #prodColsPreview');
   const picked = await page.evaluate(() => ['name', 'date', 'item', 'iname', 'ks', 'spent', 'norm'].map(n => document.querySelector(`#dlg [name="${n}"]`).value));

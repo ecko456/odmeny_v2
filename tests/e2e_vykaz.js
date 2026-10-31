@@ -1,6 +1,6 @@
-// Prohlížečový průchod: jeden výkaz práce pro Výrobu i Audit (verze 2.35). Stejný soubor z IS
+// Prohlížečový průchod: jeden výkaz práce pro Výrobu i KPI (verze 2.35). Stejný soubor z IS
 // (datum, pracovník = ID zaměstnance, operace, kusy, norma, strávený čas) se nahraje jednou:
-// ve Výrobě se sloupcem Operace se kusy podle operací zapíšou i do Auditu, v Auditu se výkaz
+// ve Výrobě se sloupcem Operace se kusy podle operací zapíšou i do KPI, v KPI se výkaz
 // nabídne nahrát i do Výroby (když sedí na sloupce uložené ve Výrobě). Kontroluje odhad sloupce
 // Operace, kusy proti samostatnému výpočtu, evidenci po lidech, odškrtnutou volbu, soubor
 // s jinou hlavičkou, historii změn a vzhled dialogů. Všechna data jsou vymyšlená.
@@ -40,7 +40,7 @@ const OPS = [['Broušení ruční', 40], ['Frézování CNC', 12], ['Pískován�
 const HEAD = ['Datum', 'Středisko', 'Zakázka', 'Díl', 'Pracovník', 'Od', 'Do', 'Operace', 'Norma', 'Kusy', 'Strávený čas'];
 
 /* Řádky výkazu za měsíc: pracovní dny, každá operace dvakrát (dva lidé), řádek bez pracovníka
-   (kusy se do Auditu počítají, do Výroby ne) a souhrn na konci. Očekávané kusy po dnech zvlášť. */
+   (kusy se do KPI počítají, do Výroby ne) a souhrn na konci. Očekávané kusy po dnech zvlášť. */
 function monthRows(month, days) {
   const rows = [], byDay = {}, people = {};
   days.forEach(day => {
@@ -115,8 +115,8 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
     dec: { name: 'vykaz-prosinec.xlsx', mimeType: XLSX_TYPE, buffer: await makeXlsx(page, HEAD.map(h => (h === 'Zakázka' ? 'Číslo zakázky' : h)), dec.rows) },
   };
 
-  // 1) Výroba: sloupec Operace se odhadne z hlavičky, kusy podle operací jdou i do Auditu.
-  await page.click('#nav [data-view="vyroba"]');
+  // 1) Výroba: sloupec Operace se odhadne z hlavičky, kusy podle operací jdou i do KPI.
+  await page.evaluate(() => showView('vyroba'));   // Výroba je od 2.44 mimo menu (odkaz z KPI)
   await page.setInputFiles('#pfile', files.oct);
   await page.waitForSelector('#dlg[open] #prodColsPreview');
   const picked = await page.evaluate(() => ['name', 'date', 'ks', 'norm', 'op'].map(n => document.querySelector(`#dlg [name="${n}"]`).value));
@@ -124,15 +124,15 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.selectOption('#dlg [name="spent"]', '10');
   await page.waitForTimeout(100);
   const pv = await page.textContent('#prodColsPreview');
-  check(/Audit: kusy podle operací za 5 dní \(3 operace\)/.test(pv), `náhled sloupců s Auditem: ${pv}`);
-  check(/kusy i do Auditu/.test(await page.textContent('#dlgBody')), 'popis pole Operace');
+  check(/KPI: kusy podle operací za 5 dní \(3 operace\)/.test(pv), `náhled sloupců s Auditem: ${pv}`);
+  check(/kusy i do KPI/.test(await page.textContent('#dlgBody')), 'popis pole Operace');
   await page.locator('#dlg [name="op"]').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(shots, '01-vyroba-sloupce.png') });
   await page.click('#dlgOk');
   await page.waitForSelector('#prodMsg .note.i');
   await saved(page);
   const msg = (await page.textContent('#prodMsg')).replace(/\s+/g, ' ');
-  check(/Audit: kusy podle operací doplněny za 5 dní \(1\. 10\. 2026 – 7\. 10\. 2026\)\. 3 nové operace čekají na skupinu v Nastavení Auditu/.test(msg), `hláška Výroby: ${msg}`);
+  check(/KPI: kusy podle operací doplněny za 5 dní \(1\. 10\. 2026 – 7\. 10\. 2026\)\. 3 nové operace čekají na skupinu v Nastavení KPI/.test(msg), `hláška Výroby: ${msg}`);
   const a1 = await page.evaluate(() => {
     const wa = S.workAudit, name = id => wa.ops.find(o => o.id === id).name;
     const byDay = {};
@@ -141,25 +141,25 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
     return { byDay, ops: wa.ops.map(o => [o.name, o.group]), files: wa.files.map(f => [f.kind, f.name, f.days]), op: S.settings.prodCols.op,
       prod: pp && [pp.records, pp.time, Object.fromEntries(Object.values(pp.names).map(r => [r.name, r.total]))], tab: ui.wa.tab, filter: ui.wa.opFilter, un: Object.values(pp.names).filter(r => !prodKeyFor(r.name)).map(r => r.name) };
   });
-  check(JSON.stringify(a1.byDay) === JSON.stringify(oct.byDay), `kusy v Auditu po dnech a operacích: ${JSON.stringify(a1.byDay).slice(0, 300)}`);
+  check(JSON.stringify(a1.byDay) === JSON.stringify(oct.byDay), `kusy v KPI po dnech a operacích: ${JSON.stringify(a1.byDay).slice(0, 300)}`);
   check(JSON.stringify(a1.ops) === JSON.stringify(OPS.map(o => [o[0], '']).sort((x, y) => x[0].localeCompare(y[0], 'cs'))), `nové operace bez skupiny: ${JSON.stringify(a1.ops)}`);
-  check(JSON.stringify(a1.files) === JSON.stringify([['work', 'vykaz-rijen.xlsx', 5]]), `soubor v Auditu: ${JSON.stringify(a1.files)}`);
+  check(JSON.stringify(a1.files) === JSON.stringify([['work', 'vykaz-rijen.xlsx', 5]]), `soubor v KPI: ${JSON.stringify(a1.files)}`);
   check(a1.op === 7 && a1.prod && a1.prod[0] === oct.records && a1.prod[1] === true && JSON.stringify(a1.prod[2]) === JSON.stringify(oct.people), `Výroba po lidech: ${JSON.stringify(a1.prod)} ≠ ${JSON.stringify(oct.people)}`);
-  check(a1.tab === 'nastaveni' && a1.filter === 'nogroup' && JSON.stringify(a1.un) === '["109"]', `Audit čeká na skupiny, ID 109 ke spárování: ${JSON.stringify([a1.tab, a1.filter, a1.un])}`);
+  check(a1.tab === 'nastaveni' && a1.filter === 'nogroup' && JSON.stringify(a1.un) === '["109"]', `KPI čeká na skupiny, ID 109 ke spárování: ${JSON.stringify([a1.tab, a1.filter, a1.un])}`);
   await page.screenshot({ path: path.join(shots, '02-vyroba-hlaska.png'), fullPage: false });
 
-  // „Otevřít Audit“ vede rovnou na operace bez skupiny; Nastavení vysvětlí jedno nahrání.
+  // „Otevřít KPI“ vede rovnou na operace bez skupiny; Nastavení vysvětlí jedno nahrání.
   await page.click('#prodMsg [data-go="audit"]');
   await page.waitForSelector('#view-audit.on .wa-old');
   await page.click('#waView .wa-old summary');   // starší soubory jsou od 2.42 sbalené
   await page.waitForSelector('#view-audit.on .wa-onefile');
-  check(await page.locator('#waView [data-waopf="nogroup"][aria-pressed="true"]').count() === 1, 'Audit: filtr operací bez skupiny');
+  check(await page.locator('#waView [data-waopf="nogroup"][aria-pressed="true"]').count() === 1, 'KPI: filtr operací bez skupiny');
   const one = (await page.textContent('#waView .wa-onefile')).replace(/\s+/g, ' ');
-  check(/Stačí nahrát jednou\. Výroba bere i operaci \(sloupec H\)/.test(one), `Nastavení Auditu: ${one}`);
+  check(/Stačí nahrát jednou\. Výroba bere i operaci \(sloupec H\)/.test(one), `Nastavení KPI: ${one}`);
   await page.locator('#waView .wa-onefile').scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(shots, '03-audit-nastaveni.png'), fullPage: false });
 
-  // 2) Audit: výkaz za listopad se nabídne nahrát i do Výroby (sloupce Výroby sedí).
+  // 2) KPI: výkaz za listopad se nabídne nahrát i do Výroby (sloupce Výroby sedí).
   await page.setInputFiles('#waWorkFile', files.nov);
   await page.waitForSelector('#dlg[open] .wa-prev');
   check(await page.isChecked('#dlg [name="toProd"]'), 'Nahrát i do Výroby je zaškrtnuté');
@@ -168,10 +168,10 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.screenshot({ path: path.join(shots, '04-audit-dialog.png') });
   await page.click('#dlgOk');
   await page.waitForFunction(() => !document.querySelector('#dlg[open]') && S.production['2026-11']);
-  check(/Výkaz práce nahrán: 3 dny\. Výroba doplněna \(listopad 2026\), 1 jméno ve Výrobě čeká na spárování\./.test(await page.textContent('#toast')), `hláška Auditu: ${await page.textContent('#toast')}`);
+  check(/Výkaz práce nahrán: 3 dny\. Výroba doplněna \(listopad 2026\), 1 jméno ve Výrobě čeká na spárování\./.test(await page.textContent('#toast')), `hláška KPI: ${await page.textContent('#toast')}`);
   await saved(page);
   const a2 = await page.evaluate(() => { const pp = S.production['2026-11']; return { at: pp.at, rec: pp.records, time: pp.time, people: Object.fromEntries(Object.values(pp.names).map(r => [r.name, r.total])), days: Object.keys(S.workAudit.pcs).filter(i => i.startsWith('2026-11')).length }; });
-  check(a2.rec === nov.records && a2.time && JSON.stringify(a2.people) === JSON.stringify(nov.people) && a2.days === 3, `listopad ve Výrobě i Auditu: ${JSON.stringify(a2)}`);
+  check(a2.rec === nov.records && a2.time && JSON.stringify(a2.people) === JSON.stringify(nov.people) && a2.days === 3, `listopad ve Výrobě i KPI: ${JSON.stringify(a2)}`);
 
   // Znovu, ale bez Výroby: evidence za listopad zůstane, jak byla.
   await page.setInputFiles('#waWorkFile', files.nov);
@@ -185,7 +185,7 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   check(await page.evaluate(at => S.production['2026-11'].at === at, a2.at), 'bez zaškrtnutí se Výroba nezměnila');
   check(!/Výroba doplněna/.test(await page.textContent('#toast')), 'hláška bez Výroby');
 
-  // 3) Jiná hlavička: do Výroby se nenabídne, Audit se nahraje.
+  // 3) Jiná hlavička: do Výroby se nenabídne, KPI se nahraje.
   await page.setInputFiles('#waWorkFile', files.dec);
   await page.waitForSelector('#dlg[open] .wa-prev');
   check(await page.locator('#dlg [name="toProd"]').count() === 0, 'bez volby Výroby u jiné hlavičky');
@@ -194,13 +194,13 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await confirm(page);
   await page.waitForFunction(n => S.workAudit.files.length === n + 2, nFiles);
   await saved(page);
-  check(await page.evaluate(() => !S.production['2026-12'] && Object.keys(S.workAudit.pcs).some(i => i.startsWith('2026-12'))), 'prosinec jen v Auditu');
+  check(await page.evaluate(() => !S.production['2026-12'] && Object.keys(S.workAudit.pcs).some(i => i.startsWith('2026-12'))), 'prosinec jen v KPI');
 
-  // Historie změn: kusy z Výroby, evidence z Auditu.
+  // Historie změn: kusy z Výroby, evidence z KPI.
   const log = await page.evaluate(() => S.log.map(x => x.text));
-  check(log.some(t => /^Audit: kusy podle operací z evidence práce vykaz-rijen\.xlsx \(5 dní, 1\. 10\. 2026 – 7\. 10\. 2026, 3 nové operace bez skupiny\)$/.test(t)), `historie: kusy z Výroby (${log.slice(0, 8).join(' | ')})`);
+  check(log.some(t => /^KPI: kusy podle operací z evidence práce vykaz-rijen\.xlsx \(5 dní, 1\. 10\. 2026 – 7\. 10\. 2026, 3 nové operace bez skupiny\)$/.test(t)), `historie: kusy z Výroby (${log.slice(0, 8).join(' | ')})`);
   check(log.some(t => /^Nahrána evidence práce za říjen 2026/.test(t)) && log.some(t => /^Nahrána evidence práce za listopad 2026/.test(t)), 'historie: evidence práce za říjen a listopad');
-  check(log.some(t => /^Audit: nahrán výkaz práce vykaz-listopad\.xlsx \(3 dny, .*\); i do Výroby \(evidence práce za listopad 2026\)$/.test(t)), 'historie: výkaz v Auditu i do Výroby');
+  check(log.some(t => /^KPI: nahrán výkaz práce vykaz-listopad\.xlsx \(3 dny, .*\); i do Výroby \(evidence práce za listopad 2026\)$/.test(t)), 'historie: výkaz v KPI i do Výroby');
 
   // Telefon: dialog s volbou Výroby se vejde.
   await page.setViewportSize({ width: 390, height: 844 });
