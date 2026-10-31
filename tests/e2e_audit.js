@@ -222,6 +222,8 @@ const tiles = page => page.$$eval('#waView .stat', els => els.map(e => `${e.quer
   await page.waitForSelector('#skip');
   await page.click('#skip');
   await page.waitForSelector('#view-prehled.on');
+  // Starší soubory (2.42): testovací data mají i listopad a prosinec, hranici souboru docházky a výkonů posuneme.
+  await page.evaluate(() => { DV_FROM = '2099-01'; });
 
   // Prázdný modul: co nahrát a z jakých sloupců.
   await page.click('#nav [data-view="audit"]');

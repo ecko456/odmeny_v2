@@ -2397,6 +2397,10 @@ async function doImport(aoa, name, fy, fm, force = false) {
   const res = buildPeriod(aoa, name, fy, fm);
   if (!res.ok) { showImport(res, null); renderAttendance(); return; }
   const per = res.period;
+  if (dvOwns(per.id)) {
+    showImport({ ok: false, err: `Docházka za ${periodName(per)} se nahrává v Auditu tlačítkem Nahrát docházku a výkony (od listopadu 2026 je to jediný zdroj docházky). Tady jde nahrát jen říjen 2026 a dřív.` }, null);
+    return;
+  }
   if (!force && !S.demo && S.periods[per.id]) {
     if (!(await confirmBox('Přepsat docházku?', `Docházka za ${periodName(per)} už je nahraná. Nový soubor ji nahradí; zařazení, sankce, ruční úpravy a výdeje zůstanou.`, 'Přepsat'))) return;
   }
@@ -2544,7 +2548,10 @@ function showProdMsg(html) { $('#prodMsg').innerHTML = html; }
 function doProdImport(aoa, name, map) {
   const res = buildProduction(aoa, name, map);
   if (!res.ok) { showProdMsg(`<div class="note e"><b>Import selhal.</b> ${esc(res.err)} <button class="link" type="button" data-prodcols>Vybrat sloupce</button></div>`); return; }
+  const skip = Object.keys(res.buckets).filter(dvOwns).sort();   // od listopadu 2026 ze souboru docházky a výkonů
+  skip.forEach(id => { delete res.buckets[id]; });
   const ids = Object.keys(res.buckets).sort();
+  if (!ids.length) { showProdMsg(`<div class="note e"><b>Nic se nenahrálo.</b> Evidence práce za ${esc(skip.map(monthLabel).join(', '))} se od listopadu 2026 nahrává v Auditu tlačítkem Nahrát docházku a výkony. <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>`); return; }
   ids.forEach(id => { S.production[id] = res.buckets[id]; });
   const wa = prodToAudit(aoa, name, map);
   if (wa && wa.added) Object.assign(ui.wa, { tab: 'nastaveni', opFilter: 'nogroup', opQ: '' });   // Otevřít Audit = rovnou přiřadit skupiny
@@ -2552,7 +2559,7 @@ function doProdImport(aoa, name, map) {
   const current = S.current && res.buckets[S.current];
   const time = map && map.spent != null;
   const items = new Set(ids.flatMap(i => Object.keys(res.buckets[i].items || {}))).size;
-  showProdMsg(`<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data, kusů nebo času.` : ''} ${time ? `Strávený čas${map.norm != null ? ' a norma' : ''} načteny.` : 'Bez stráveného času, plnění normy a využití fondu se nespočítá.'} ${map && map.item != null ? `Položky (EAN): ${items}, vyhodnocení je v části <button class="link" type="button" data-go="top5">Top 5</button>.` : ''} <button class="link" type="button" data-prodcols>Změnit sloupce</button></div>`
+  showProdMsg((skip.length ? `<div class="note w">Evidence práce za ${esc(skip.map(monthLabel).join(', '))} se přeskočila: od listopadu 2026 se nahrává v Auditu (Nahrát docházku a výkony).</div>` : '') + `<div class="note i"><b>Načteno:</b> ${esc(name)}: ${res.used} řádků, měsíce: ${ids.map(i => `${esc(monthLabel(i))} (${res.buckets[i].records})`).join(', ')}.${res.skipped ? ` Přeskočeno ${res.skipped} řádků bez data, kusů nebo času.` : ''} ${time ? `Strávený čas${map.norm != null ? ' a norma' : ''} načteny.` : 'Bez stráveného času, plnění normy a využití fondu se nespočítá.'} ${map && map.item != null ? `Položky (EAN): ${items}, vyhodnocení je v části <button class="link" type="button" data-go="top5">Top 5</button>.` : ''} <button class="link" type="button" data-prodcols>Změnit sloupce</button></div>`
     + (wa ? `<div class="note i"><b>Audit:</b> ${wa.text} <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>` : '')
     + (!S.current ? '<div class="note w">Zatím není nahraná žádná docházka. Hodnocený měsíc se vybírá podle ní, takže se výroba zobrazí až po nahrání docházky.</div>'
       : (!current ? `<div class="note w">Vybrané období je ${esc(monthLabel(S.current))} a pro něj soubor data nemá. Období zůstává beze změny.</div>` : '')));
@@ -2567,6 +2574,7 @@ function doProdImport(aoa, name, map) {
 function prodToAudit(aoa, name, map) {
   const parsed = waParseProd(aoa, map);
   if (!parsed || !parsed.rows) return null;
+  if (!waDropOwned(parsed, 'byDay')) return null;
   const r = waApplyWork(S.workAudit, parsed, { name, by: ui.me.label || '', at: Date.now() });
   const added = r.added.length;
   const range = `${dayText(parsed.from)} – ${dayText(parsed.to)}`;
@@ -10992,11 +11000,24 @@ function waTrainText() {
   const tr = waTrain();
   return `Zaškolený od ${tr.pct} % dovedností skupiny, pod ${tr.pct} % v zaškolení${tr.own ? ' (nastaveno v Auditu)' : ` (podle Matice dovedností, úroveň ${tr.thr})`}.`;
 }
+/* Skupiny Matice ke skupině Auditu (2.42): rozbalovací výběr, bez výběru podle názvu. */
+function waMgHtml(g, mgOf) {
+  const all = S.positions.filter(isGroup);
+  if (!all.length) return '';
+  const own = all.filter(p => mgOf.get(p.id) === g.id);
+  const auto = !(g.mg && g.mg.length);
+  const label = own.length ? own.map(p => p.name).join(', ') : 'žádná';
+  return `<details class="wa-mg"${ui.wa.mgOpen === g.id ? ' open' : ''} data-wamg="${esc(g.id)}"><summary><span class="small muted">Skupiny Matice${auto ? ' (podle názvu)' : ''}:</span> <b>${esc(label)}</b></summary>
+    <div class="wa-mglist">${all.map(p => { const other = mgOf.get(p.id); const busy = other && other !== g.id;
+      return `<label class="check"><input type="checkbox" data-wagmg="${esc(p.id)}"${!auto && g.mg.includes(p.id) ? ' checked' : ''}${busy ? ' disabled' : ''}><span>${esc(p.name)}${p.dept ? ` <small class="muted">${esc(p.dept)}</small>` : ''}${busy ? ` <small class="muted">· ${esc(waGroupName(other))}</small>` : ''}</span></label>`; }).join('')}</div>
+    ${auto ? '<p class="tiny muted">Nic není vybrané, takže se berou skupiny Matice se stejným názvem skupiny nebo oddělení.</p>' : ''}</details>`;
+}
 function waSettingsHtml() {
   const wa = S.workAudit;
   const tr = waTrain();
   const tot = new Map();
   Object.values(wa.pcs).forEach(day => Object.entries(day).forEach(([id, n]) => tot.set(id, (tot.get(id) || 0) + n)));
+  const mgOf = dvAuditGroups(wa);
   const gOpts = sel => `<option value="">— nepočítat —</option>${wa.groups.map(g => `<option value="${esc(g.id)}"${g.id === sel ? ' selected' : ''}>${esc(g.name)}</option>`).join('')}`;
   const groups = wa.groups.map(g => `<div class="wa-grp-row" data-wag="${esc(g.id)}">
       <label class="field wa-gname"><span>Název skupiny</span><input value="${esc(g.name)}" maxlength="80" data-wagf="name"></label>
@@ -11007,6 +11028,7 @@ function waSettingsHtml() {
         <label class="check"><input type="checkbox" data-wagf="noIs"${g.noIs ? ' checked' : ''}><span>Tento projekt není evidován v IS</span></label>
       </div>
       <button class="icon-btn" type="button" data-wagdel="${esc(g.id)}" aria-label="Smazat skupinu ${esc(g.name)}" title="Smazat skupinu">${I.x}</button>
+      ${waMgHtml(g, mgOf)}
     </div>`).join('');
   const q = norm(ui.wa.opQ || '');
   const f = ui.wa.opFilter || 'all';
@@ -11025,7 +11047,7 @@ function waSettingsHtml() {
   }).join('');
   const cols = (kind, keys) => keys.map(k => `<label class="field wa-letter"><span>${esc(WA_COL_LABEL[k])}</span><input value="${esc(wa.cols[kind][k])}" maxlength="3" data-wacol="${kind}.${k}" placeholder="—" autocapitalize="characters"></label>`).join('');
   const files = wa.files.slice().reverse();
-  return `<div class="card"><div class="card-head"><div><h3>Skupiny (oddělení)</h3><p class="small muted">Každá skupina má sloupec v souboru obsazenosti pro ranní a odpolední směnu (prázdné = skupina na směně není). <b>Neproduktivní pozice</b> se počítají do lidí v práci, ale ne do kusů na osobosměnu. <b>Projekt mimo IS</b> se ve výkazu práce neobjeví, takže se jeho lidé do výkonu nepočítají a nekazí ho.</p></div>
+  return `<div class="card"><div class="card-head"><div><h3>Skupiny (oddělení)</h3><p class="small muted">Od listopadu 2026 se lidé ve skupině počítají ze souboru docházky a výkonů podle <b>skupin Matice</b>, které ke skupině vybereš (bez výběru podle stejného názvu skupiny nebo oddělení). Sloupce ranní a odpolední platí jen pro starší soubory obsazenosti (do října 2026). <b>Neproduktivní pozice</b> se počítají do lidí v práci, ale ne do kusů na osobosměnu. <b>Projekt mimo IS</b> se ve výkazu práce neobjeví, takže se jeho lidé do výkonu nepočítají a nekazí ho.</p></div>
       <button class="btn sec small" type="button" data-wagadd>Přidat skupinu</button></div>
       <div class="wa-grp-list">${groups || '<p class="small muted">Žádná skupina.</p>'}</div></div>
     <div class="card"><div class="card-head"><div><h3>Operace z výkazu práce</h3><p class="small muted"><b>Kusy se počítají jen u operací přiřazených ke skupině.</b> Skupina určuje, ke kterému oddělení kusy patří (třeba Pískování – hala 2 → Obsluha tryskací kabiny). Nová operace z dalšího výkazu přijde bez skupiny a nepočítá se, dokud ji nepřiřadíš. Návrh podle názvu se použije až po klepnutí.</p></div>
@@ -11039,13 +11061,15 @@ function waSettingsHtml() {
     <div class="card wa-target-card" id="waTrainCard"><h3>Hranice zaškolení</h3><p class="small muted">Platí pro celý Audit (Kapacity a zaškolení v aplikaci, PDF i Excelu). Pracovník, který má v Matici dovedností <b>pod</b> tímto procentem dovedností své skupiny, je <b>v zaškolení</b>; od hranice výš je zaškolený. Prázdné pole = podle Matice dovedností (úroveň ${tr.thr} = ${tr.thr * 25} %).</p>
       <label class="field wa-target"><span>V zaškolení pod (%)</span><input id="waTrainPct" inputmode="numeric" maxlength="3" autocomplete="off" value="${wa.trainPct == null ? '' : wa.trainPct}" placeholder="${tr.thr * 25}"></label>
       <p class="small">${waTrainText()}</p></div></div>
-    <div class="grid-2">
-      <div class="card"><h3>Sloupce souboru obsazenosti</h3><p class="small muted">Písmena sloupců jako v Excelu. Sloupce skupin jsou nahoře u skupin.</p><div class="wa-colgrid">${cols('att', Object.keys(WA_COLS.att))}</div></div>
-      <div class="card"><h3>Sloupce výkazu práce</h3><p class="small muted">Datum, název operace a počet kusů.</p><div class="wa-colgrid">${cols('work', Object.keys(WA_COLS.work))}</div>
+    ${dvSettingsHtml()}
+    <details class="card wa-old"${ui.wa.oldOpen ? ' open' : ''}><summary><h3>Starší soubory (do října 2026)</h3><span class="small muted">Obsazenost od vedoucích a výkaz práce zvlášť. Dny od 1. 11. 2026 se z nich nenahrají.</span></summary>
+      <div class="row gap wa-oldbtns"><button class="btn sec small" type="button" data-wapick="att">Nahrát obsazenost</button><button class="btn sec small" type="button" data-wapick="work">Nahrát výkaz práce</button><button class="btn ghost small" type="button" data-go="vyroba">Výroba (evidence práce do října)</button></div>
+      <div class="grid-2">
+      <div><h4>Sloupce souboru obsazenosti</h4><p class="small muted">Písmena sloupců jako v Excelu. Sloupce skupin jsou nahoře u skupin.</p><div class="wa-colgrid">${cols('att', Object.keys(WA_COLS.att))}</div></div>
+      <div><h4>Sloupce výkazu práce</h4><p class="small muted">Datum, název operace a počet kusů.</p><div class="wa-colgrid">${cols('work', Object.keys(WA_COLS.work))}</div>
         <p class="small wa-onefile">${waOneFileText()}</p>
         <button class="btn ghost small" type="button" data-wacolreset>Vrátit výchozí sloupce</button></div>
-    </div>
-    ${dvSettingsHtml()}
+    </div></details>
     <div class="card"><h3>Nahrané soubory</h3>${files.length ? `<div class="table-card flat"><table class="stack wa-files"><thead><tr><th>Soubor</th><th>Obsah</th><th>Období</th><th class="r">Dní</th><th class="r">Řádků</th><th>Nahrál</th></tr></thead><tbody>${files.map(x => `<tr>
         <td class="wrap name" data-label="Soubor"><b>${esc(x.name || '—')}</b></td><td data-label="Obsah">${x.kind === 'work' ? 'výkaz práce' : 'obsazenost'}</td>
         <td data-label="Období" class="num">${x.from ? `${esc(dayText(x.from))} – ${esc(dayText(x.to))}` : '—'}</td><td class="r num" data-label="Dní">${x.days}</td><td class="r num" data-label="Řádků">${x.rows}</td>
@@ -11420,7 +11444,7 @@ const DV_UNIT_TEXT = { min: 'minuty', h: 'hodiny', frac: 'čas z Excelu (h:mm)' 
 const DV_SORTS = [['group', 'Podle projektu'], ['util', 'Využití'], ['perHour', 'Ks za hodinu'], ['t', 'Vykázaný čas']];
 const DV_SET_COLS = [['att', 'id', 'Docházka: ID zaměstnance'], ['att', 'first', 'Docházka: první den (příchod)'], ['work', 'id', 'Práce: ID zaměstnance'],
   ['work', 'part', 'Práce: název dílu'], ['work', 'op', 'Práce: operace'], ['work', 'order', 'Práce: množství v zakázce'], ['work', 'done', 'Práce: dokončené množství'],
-  ['work', 'time', 'Práce: strávený čas'], ['work', 'date', 'Práce: datum (prázdné = najde se samo)']];
+  ['work', 'time', 'Práce: strávený čas'], ['work', 'date', 'Práce: datum (prázdné = najde se samo)'], ['work', 'norm', 'Práce: norma (prázdné = není)']];
 const dvClockText = m => (m == null ? '—' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
 const dvH = (min, d = 1) => `${nf((+min || 0) / 60, d)} h`;
 const dvPct = v => (v == null ? '—' : `${nf(v * 100, 0)} %`);
@@ -12025,11 +12049,17 @@ async function dvImport(file, opts = {}) {
   const fallback = ((a && a.to) || (w && w.to) || today).slice(0, 7);
   const wMonths = w ? [...new Set(w.recs.map(x => (x.iso && w.dated ? x.iso.slice(0, 7) : fallback)))].sort() : [];
   const repMonths = wMonths.filter(m => dv.perf[m]);
-  const pcsDays = w && w.dated ? [...new Set(w.recs.filter(x => x.iso && x.op).map(x => x.iso))] : [];
+  const pcsAll = w && w.dated ? [...new Set(w.recs.filter(x => x.iso && x.op).map(x => x.iso))] : [];
+  const pcsDays = pcsAll.filter(iso => !dvOwns(iso));   // starší dny jen na přání, od listopadu vždy
+  const pcsNew = pcsAll.length - pcsDays.length;
+  const attNew = a ? [...new Set(a.dates.filter(dvOwns).map(iso => iso.slice(0, 7)))] : [];
+  const prodNew = w ? wMonths.filter(dvOwns) : [];
+  const owns = attNew.length || prodNew.length || pcsNew;
+  const noWid = a ? a.ids.filter(x => !map.has(x)).length : 0;
   const pcsOld = pcsDays.filter(iso => wa.pcs[iso]).length;
   const attHtml = a ? `<p>${a.dates.length} ${denN(a.dates.length)} (${esc(dayText(a.from))} – ${esc(dayText(a.to))}), ${a.people} ${lidiN(a.people)} s příchodem nebo odchodem${a.dates.includes(today) ? `, <b>dnes ${Object.keys(a.pres[today] || {}).length}</b>` : ''}.</p>
       <ul class="wa-imp">${repDays ? `<li><b>${repDays} ${repDays === 1 ? 'den už je nahraný' : repDays <= 4 ? 'dny už jsou nahrané' : 'dní už je nahraných'}</b>, nahradí se daty ze souboru.</li>` : ''}
-        ${a.codes ? `<li>${a.codes} ${a.codes === 1 ? 'buňka' : a.codes <= 4 ? 'buňky' : 'buněk'} bez času (kódy jako D, N) se přeskočí.</li>` : ''}</ul>`
+        ${a.codes ? `<li>${a.codes} ${a.codes === 1 ? 'buňka' : a.codes <= 4 ? 'buňky' : 'buněk'} bez času (kódy jako D, N) ${attNew.length ? 'jde do docházky pro odměny jako nepřítomnost' : 'se přeskočí'}.</li>` : ''}</ul>`
     : `<p class="small muted">${esc(p.att ? p.att.err : 'List s docházkou v souboru není.')}</p>`;
   const workHtml = opts.attOnly ? '<p class="small muted">Výkony z listu vykázané práce se tady nenahrávají, nahraješ je v Auditu (Lidé v práci).</p>'
     : w ? `<p>${w.rows} ${zaznamN(w.rows)}, ${w.people} ${lidiN(w.people)}: <b>${dvH(w.t)}</b> vykázaného času, ${nf(w.g, 0)} ks dokončeno z ${nf(w.f, 0)} v zakázkách.</p>
@@ -12037,7 +12067,7 @@ async function dvImport(file, opts = {}) {
         ${repMonths.length ? `<li><b>Výkony za ${esc(repMonths.map(monthLabel).join(', '))} už jsou nahrané</b>, nahradí se celým měsícem ze souboru.</li>` : ''}
         ${w.skipped ? `<li>${w.skipped} ${radekN(w.skipped)} bez dílu, operace, kusů i času se přeskočí.</li>` : ''}</ul>
       <label class="field"><span>Strávený čas (sloupec ${esc(c.work.time)}) je v</span><select name="unit">${[['auto', `najít sám (teď ${DV_UNIT_TEXT[w.unit]})`], ['min', 'minutách'], ['h', 'hodinách']].map(([k, l]) => `<option value="${k}"${dv.unit === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
-      ${pcsDays.length ? `<label class="check"><input type="checkbox" name="toAudit"${pcsOld ? '' : ' checked'}><span><b>Kusy podle operací zapsat i do Auditu</b> (${pcsDays.length} ${denN(pcsDays.length)}, dokončené množství ze sloupce ${esc(c.work.done)}).${pcsOld ? ` ${pcsOld} ${denN(pcsOld)} už ${pcsOld === 1 ? 'má' : 'mají'} kusy z výkazu práce, nahradily by se.` : ''}</span></label>` : ''}`
+      ${pcsDays.length ? `<label class="check"><input type="checkbox" name="toAudit"${pcsOld || owns ? '' : ' checked'}><span><b>${owns ? 'Kusy za dny do 31. 10. 2026 zapsat i do Auditu' : 'Kusy podle operací zapsat i do Auditu'}</b> (${pcsDays.length} ${denN(pcsDays.length)}, dokončené množství ze sloupce ${esc(c.work.done)}).${pcsOld ? ` ${pcsOld} ${denN(pcsOld)} už ${pcsOld === 1 ? 'má' : 'mají'} kusy z výkazu práce, nahradily by se.` : ''}</span></label>` : ''}`
       : `<p class="small muted">${esc(p.work ? p.work.err : 'Druhý list s vykázanou prací v souboru není, nahraje se jen docházka.')}</p>`;
   const res = await dialog({
     title: opts.attOnly ? 'Nahrát příchody' : 'Nahrát docházku a výkony', ok: 'Nahrát', wide: true,
@@ -12045,7 +12075,12 @@ async function dvImport(file, opts = {}) {
       <div class="dv-imp"><div><h4>Docházka${a ? ` <small class="muted">list ${esc(a.name)}</small>` : ''}</h4>${attHtml}</div>
         <div><h4>Vykázaná práce${w && !opts.attOnly ? ` <small class="muted">list ${esc(w.name)}</small>` : ''}</h4>${workHtml}</div></div>
       ${unknown.length ? `<div class="note w"><b>${unknown.length} ID není u nikoho v Lidech:</b> ${unknown.slice(0, 12).map(esc).join(', ')}${unknown.length > 12 ? '…' : ''}. Uloží se a přiřadí, jakmile ID doplníš v kartě člověka.</div>` : ''}
-      <p class="tiny muted">Docházka pro odměny se nemění. Sloupce změníš v Nastavení Auditu.</p>`,
+      ${owns ? `<div class="note i dv-owns"><b>Od listopadu 2026 je tenhle soubor jediný zdroj:</b><ul class="wa-imp">
+        ${attNew.length ? `<li>docházka pro odměny za ${esc(attNew.map(monthLabel).join(', '))}: hodiny z příchodu a odchodu (nad 6 h bez 30 min přestávky), buňka s kódem = nepřítomnost${noWid ? `; ${noWid} ${noWid === 1 ? 'člověk bez ID v Lidech se nezapíše' : 'lidí bez ID v Lidech se nezapíše'}` : ''},</li>` : ''}
+        ${attNew.length ? '<li>obsazenost v Auditu (ranní = příchod před 12:00, skupiny podle skupin Matice v Nastavení),</li>' : ''}
+        ${prodNew.length ? `<li>evidence práce místo Výroby za ${esc(prodNew.map(monthLabel).join(', '))} (kusy, strávený čas${w && w.norm ? ', norma' : ', <b>bez normy</b>: sloupec normy nastavíš v Nastavení Auditu'}),</li>` : ''}
+        ${pcsNew ? `<li>kusy podle operací do Auditu (${pcsNew} ${denN(pcsNew)}).</li>` : ''}</ul></div>` : ''}
+      <p class="tiny muted">${owns ? 'Říjen 2026 a dřív zůstává ze starých souborů. ' : 'Docházka pro odměny a Výroba za říjen 2026 a dřív se nemění. '}Sloupce změníš v Nastavení Auditu.</p>`,
   });
   if (res.value !== 'ok') return null;
   const f = res.form.elements;
@@ -12059,9 +12094,11 @@ async function dvImport(file, opts = {}) {
   const toAudit = !!(f.namedItem('toAudit') && f.namedItem('toAudit').checked);
   const meta = { name: file.name, by: ui.me.label || '', at: Date.now() };
   const r = dvApply(wa, p, meta, { audit: toAudit });
-  const parts = [a ? `docházka ${dayText(a.from)} – ${dayText(a.to)} (${a.people} ${lidiN(a.people)})` : '', w ? `výkony za ${r.months.map(monthLabel).join(', ')}` : '', r.audit ? `kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : ''].filter(Boolean);
+  const parts = [a ? `docházka ${dayText(a.from)} – ${dayText(a.to)} (${a.people} ${lidiN(a.people)})` : '', w ? `výkony za ${r.months.map(monthLabel).join(', ')}` : '', r.audit ? `kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : '',
+    r.periods.length ? `docházka pro odměny za ${r.periods.map(x => monthLabel(x.m)).join(', ')}` : '', r.prod.length ? `evidence práce za ${r.prod.map(x => monthLabel(x.m)).join(', ')}` : ''].filter(Boolean);
   store.note = { kind: 'workaudit', text: `Audit: nahrán soubor ${file.name}: ${parts.join(', ')}`, keep: true };
   save();
+  if (r.periods.length || r.prod.length) renderAll();   // docházka a evidence práce pro odměny
   return { a, w, r, unknown };
 }
 /* Nahrání v Auditu: po uložení záložka Lidé v práci na dnešku (nebo posledním dni souboru). */
@@ -12074,7 +12111,7 @@ async function dvImportAudit(file) {
   if (r.audit && r.audit.added.length) Object.assign(ui.wa, { opFilter: 'nogroup', opQ: '' });
   renderWorkAudit();
   const ng = r.audit ? r.audit.added.length : 0;
-  toast(`Nahráno: ${a ? `docházka za ${r.days} ${denN(r.days)}` : 'bez docházky'}${w ? `, výkony za ${r.months.map(monthLabel).join(', ')}` : ''}${r.audit ? `, kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : ''}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu v Nastavení.` : ''}`);
+  toast(`Nahráno: ${a ? `docházka za ${r.days} ${denN(r.days)}` : 'bez docházky'}${w ? `, výkony za ${r.months.map(monthLabel).join(', ')}` : ''}${r.audit ? `, kusy do Auditu za ${r.audit.days} ${denN(r.audit.days)}` : ''}${r.periods.length ? `, docházka pro odměny za ${r.periods.map(x => monthLabel(x.m)).join(', ')}` : ''}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu v Nastavení.` : ''}`);
 }
 
 /* ---------- denní report (PDF) a měsíc do Excelu ---------- */
@@ -12228,6 +12265,11 @@ async function waImport(kind, file) {
   try { sheets = await readTable(file); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
   const att = kind === 'att';
   const parsed = att ? waParseAttendance(sheets, wa.cols.att, wa.groups) : waParseWork(sheets, wa.cols.work);
+  const owned = Object.keys(att ? parsed.days : parsed.byDay).filter(dvOwns).length;
+  if (owned && !waDropOwned(parsed, att ? 'days' : 'byDay')) {
+    toast(`Dny od 1. 11. 2026 se nahrávají jen ze souboru docházky a výkonů (Nahrát docházku a výkony). V souboru jiné dny nejsou.`, true);
+    return;
+  }
   const isos = Object.keys(att ? parsed.days : parsed.byDay).sort();
   const c = att ? wa.cols.att : wa.cols.work;
   if (!isos.length) {
@@ -12261,13 +12303,15 @@ async function waImport(kind, file) {
   }
   const total = att ? null : Object.values(parsed.ops).reduce((a, b) => a + b, 0);
   // stejný soubor i do Výroby (2.35), když sedí na uložené sloupce evidence práce
-  const prod = att ? null : waProdFrom(sheets, file.name);
+  let prod = att ? null : waProdFrom(sheets, file.name);
+  if (prod) { prod.ids = prod.ids.filter(id => !dvOwns(id)); prod.old = prod.old.filter(id => !dvOwns(id)); if (!prod.ids.length) prod = null; }
   const prodHtml = att ? '' : prod ? `<label class="check wa-toprod"><input type="checkbox" name="toProd" checked><span><b>Nahrát i do Výroby</b> (evidence práce): ${prod.res.used} ${prod.res.used === 1 ? 'řádek' : prod.res.used <= 4 ? 'řádky' : 'řádků'} za ${esc(prod.ids.map(monthLabel).join(', '))}, zaměstnanec ze sloupce ${esc(colLetter(prod.map.name))}${prod.old.length ? `. Evidence za ${esc(prod.old.map(monthLabel).join(', '))} se nahradí` : ''}.</span></label>`
     : `<p class="tiny muted wa-noprod">Do Výroby se soubor nenahraje: ${S.settings.prodCols ? 'nesedí na sloupce evidence práce nastavené ve Výrobě' : 've Výrobě ještě nejsou nastavené sloupce evidence práce'}. Nahraj ho jednou ve Výrobě a vyber sloupce (zaměstnanec nebo ID, kusy, čas, norma i Operace), pak stačí nahrávat jen na jednom místě.</p>`;
   const res = await dialog({
     title: att ? 'Nahrát obsazenost' : 'Nahrát výkaz práce', ok: 'Nahrát', wide: true,
     html: `<p><b>${esc(file.name)}</b>: ${isos.length} ${denN(isos.length)} (${esc(dayText(parsed.from))} – ${esc(dayText(parsed.to))}), ${parsed.rows} ${parsed.rows === 1 ? 'řádek' : parsed.rows <= 4 ? 'řádky' : 'řádků'}${total != null ? `, ${waN(total)} ks, ${Object.keys(parsed.ops).length} ${operaceN(Object.keys(parsed.ops).length)}` : ''}.</p>
       <ul class="wa-imp">
+        ${owned ? `<li><b>${owned} ${denN(owned)} od 1. 11. 2026 se přeskočí</b>: ty se nahrávají ze souboru docházky a výkonů.</li>` : ''}
         ${off.length ? `<li>${off.length} ${denN(off.length)} ${off.length >= 2 && off.length <= 4 ? 'jsou' : 'je'} víkend nebo svátek (${off.slice(0, 4).map(i => esc(ktDay(i))).join(', ')}${off.length > 4 ? '…' : ''}).</li>` : ''}
         ${replace.length ? `<li><b>${replace.length} ${replace.length === 1 ? 'den už je nahraný' : replace.length <= 4 ? 'dny už jsou nahrané' : 'dní už je nahraných'}</b>, nahradí se daty ze souboru.${keepEdits ? ` Ruční úpravy (${keepEdits}) zůstanou a dál platí.` : ''}</li>` : ''}
         ${parsed.skipped ? `<li>Přeskočeno ${parsed.skipped} ${parsed.skipped === 1 ? 'řádek' : parsed.skipped <= 4 ? 'řádky' : 'řádků'} bez data${att ? ' nebo bez čísel' : ', operace nebo kusů'}.</li>` : ''}
@@ -12291,6 +12335,23 @@ async function waImport(kind, file) {
   // nespárovaná jména v nahraných měsících (prodUnmatched bere jen vybrané období)
   const un = toProd ? new Set(prod.ids.flatMap(id => Object.values(S.production[id].names).filter(rec => !prodKeyFor(rec.name)).map(rec => norm(rec.name)))).size : 0;
   toast(att ? `Obsazenost nahrána: ${r.days} ${denN(r.days)}.` : `Výkaz práce nahrán: ${r.days} ${denN(r.days)}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu.` : ''}${toProd ? ` Výroba doplněna (${prod.ids.map(monthLabel).join(', ')})${un ? `, ${un} ${jmenW(un)} ve Výrobě ${un >= 2 && un <= 4 ? 'čekají' : 'čeká'} na spárování` : ''}.` : ''}`);
+}
+/* Starší soubory (2.42): dny od listopadu 2026 se vyřadí (plní je soubor docházky a výkonů).
+   Upraví od–do a počet operací; vrací, jestli něco zbylo. */
+function waDropOwned(parsed, field) {
+  const all = Object.keys(parsed[field]);
+  const keep = all.filter(iso => !dvOwns(iso)).sort();
+  if (keep.length === all.length) return !!keep.length;
+  all.filter(dvOwns).forEach(iso => { delete parsed[field][iso]; });
+  if (!keep.length) return false;
+  parsed.from = keep[0];
+  parsed.to = keep[keep.length - 1];
+  if (field === 'byDay') {
+    const ops = {};
+    keep.forEach(iso => Object.entries(parsed.byDay[iso]).forEach(([n, ks]) => { ops[n] = (ops[n] || 0) + ks; }));
+    parsed.ops = ops;
+  }
+  return true;
 }
 /* Evidence práce pro Výrobu ze souboru výkazu práce (2.35): jen když list sedí na sloupce
    uložené ve Výrobě (stejná hlavička), jinak null a Audit nabídne nastavit je tam. */
@@ -12374,8 +12435,6 @@ function bindWorkAudit() {
     ui.wa.tab = b.dataset.watab;
     renderWorkAudit();
   });
-  $('#waAtt').onclick = () => $('#waAttFile').click();
-  $('#waWork').onclick = () => $('#waWorkFile').click();
   $('#waDv').onclick = () => $('#waDvFile').click();
   $('#waDvFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; dvImportAudit(f); };
   $('#waAttFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; waImport('att', f); };
@@ -12513,7 +12572,13 @@ function bindWorkAudit() {
     event.preventDefault();
     event.target.click();
   });
-  wv.addEventListener('toggle', event => { if (event.target.matches && event.target.matches('.dr-set')) ui.wa.drSet = event.target.open; }, true);
+  wv.addEventListener('toggle', event => {
+    const el = event.target;
+    if (!el.matches) return;
+    if (el.matches('.dr-set')) ui.wa.drSet = el.open;
+    else if (el.matches('.wa-old')) ui.wa.oldOpen = el.open;
+    else if (el.matches('.wa-mg')) { if (el.open) ui.wa.mgOpen = el.dataset.wamg; else if (ui.wa.mgOpen === el.dataset.wamg) ui.wa.mgOpen = ''; }
+  }, true);
   wv.addEventListener('change', event => {
     const rgn = event.target.closest('[data-drrgname]');
     if (rgn) { const g = S.workAudit.drep.groups.find(x => x.id === rgn.dataset.drrgname); if (g) { g.name = rgn.value.replace(/\s+/g, ' ').trim().slice(0, 60) || g.name; save(); renderWorkAudit(); } return; }
@@ -12574,6 +12639,19 @@ function bindWorkAudit() {
     }
     const gRow = t.closest('[data-wag]');
     if (gRow && t.dataset.wagf) { waSetGroup(gRow.dataset.wag, t.dataset.wagf, t.type === 'checkbox' ? t.checked : t.value); return; }
+    if (gRow && t.dataset.wagmg) {
+      const wa = S.workAudit;
+      const g = wa.groups.find(x => x.id === gRow.dataset.wag);
+      if (!g) return;
+      const set = new Set(g.mg || []);
+      if (t.checked) set.add(t.dataset.wagmg); else set.delete(t.dataset.wagmg);
+      g.mg = S.positions.filter(p => set.has(p.id)).map(p => p.id);
+      dvAuditRefresh(wa);   // dny od listopadu se přepočítají z příchodů
+      ui.wa.mgOpen = g.id;
+      save();
+      renderWorkAudit();
+      return;
+    }
     const oRow = t.closest('[data-wao]');
     if (oRow && t.dataset.waof) {
       const o = S.workAudit.ops.find(x => x.id === oRow.dataset.wao);
@@ -12591,7 +12669,7 @@ function bindWorkAudit() {
       const [kind, key] = t.dataset.dvcol.split('.');
       const v = waLetter(t.value);
       if (t.value.trim() && !v) { toast('Sloupec je písmeno jako v Excelu (A až ZZZ).', true); renderWorkAudit(); return; }
-      if (!v && key !== 'date') { toast('Tenhle sloupec musí být vyplněný.', true); renderWorkAudit(); return; }
+      if (!v && key !== 'date' && key !== 'norm') { toast('Tenhle sloupec musí být vyplněný.', true); renderWorkAudit(); return; }
       S.workAudit.dv.cols[kind][key] = v;
       save();
       renderWorkAudit();

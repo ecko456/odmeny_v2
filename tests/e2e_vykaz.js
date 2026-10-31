@@ -93,6 +93,8 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.waitForSelector('#skip');
   await page.click('#skip');
   await page.waitForSelector('#view-prehled.on');
+  // Starší soubory (2.42): testovací data mají i listopad a prosinec, hranici souboru docházky a výkonů posuneme.
+  await page.evaluate(() => { DV_FROM = '2099-01'; });
   await saved(page);
   await page.evaluate(people => {
     const st = blank();
@@ -148,6 +150,8 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 
   // „Otevřít Audit“ vede rovnou na operace bez skupiny; Nastavení vysvětlí jedno nahrání.
   await page.click('#prodMsg [data-go="audit"]');
+  await page.waitForSelector('#view-audit.on .wa-old');
+  await page.click('#waView .wa-old summary');   // starší soubory jsou od 2.42 sbalené
   await page.waitForSelector('#view-audit.on .wa-onefile');
   check(await page.locator('#waView [data-waopf="nogroup"][aria-pressed="true"]').count() === 1, 'Audit: filtr operací bez skupiny');
   const one = (await page.textContent('#waView .wa-onefile')).replace(/\s+/g, ' ');

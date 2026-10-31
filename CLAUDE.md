@@ -34,6 +34,32 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.42):
+
+- Uživatel: „celý modul Audit, ať funguje na ‚Nahrát docházku a výkon‘. Nahradí to i modul
+  Výroba a od listopadu se takto bude i evidovat docházka, tento měsíc říjen bude ještě docházka
+  po staru“.
+  - Core (za `dvApply`): `DV_FROM = "2026-11"`, `dvOwns(měsíc|den)`, `dvHours` (pobyt − 30 min nad
+    6 h, bez jednoho času `S.settings.shift`), `dvToPeriods` (S.periods měsíce: dny od 1. do
+    posledního nahraného, dny ze souboru nahradí, řádek pro každé ID listu spárované s Lidmi,
+    kód z buňky bez času `a.abs`), `dvToProduction` (S.production měsíce celý, jméno = ID,
+    `time: true`, norma z volitelného sloupce `dv.cols.work.norm`), `dvAuditGroups` (skupina
+    Matice → skupina Auditu: `wa.groups[].mg`, bez výběru podle názvu skupiny/oddělení),
+    `dvToAudit` (wa.days: ranní před `DV_PM_FROM`, vedoucí ne, absence = kódy), `dvAuditRefresh`.
+    `dvApply` vrací navíc `periods`, `prod`, `occ`; kusy do Auditu od listopadu vždy.
+    `dvParseAtt` vrací `abs` a `ids`. Historie `wam:` (skupiny Matice).
+  - UI: dialog nahrání vypíše, co se plní (`.dv-owns`); starší dny jen zaškrtnutím (výchozí
+    nezaškrtnuté, když soubor má listopad). `waDropOwned` vyřadí dny od listopadu ze starých
+    importů Auditu a z kusů z Výroby; `doImport` (Docházka) a `doProdImport` listopad odmítnou.
+    Nastavení: `waMgHtml` (`.wa-mg`, `[data-wagmg]`, `ui.wa.mgOpen`), starší soubory v
+    `<details class="wa-old">` (`ui.wa.oldOpen`); tlačítka obsazenosti a výkazu z hlavičky pryč.
+    Výroba zůstává v menu (říjen), Docházka i Výroba mají pruh `.dv-src`.
+  - Nejisté (neověřeno se skutečným souborem): přestávka 30 min, hodiny bez odchodu, jestli
+    soubor má sloupec normy. Uživateli řečeno.
+  - Verze dat 37, `ODM_VERSION` 2.42. Testy: core „Docházka a výkony jediný zdroj (2.42)“, nový
+    `tests/e2e_zdroj.js` (hodiny stránky 3. 11. 2026), `e2e_upgrade_prev` 2.41 → 2.42 (archiv
+    `48ad143`, `ADDED` mg a norm), `test_odmeny` (426 pro klienta 36).
+
 Stav k 31. 10. 2026 (verze 2.41):
 
 - Uživatel: „u Report docházky udělej možnost, že budu moct vytvořit skupiny a do těch skupin
@@ -1697,7 +1723,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.39.3 | `aca21b0` | úvod HALA 2 na telefonu podle dnešních příchodů (v práci po směnách a odděleních proti plánu, teď v práci, nahrát příchody) |
 | 2.40 | `abc9792` | Audit – Report docházky po vzoru (plnění denního požadavku z příchodů, Den / Týden / Měsíc / Rok, PDF a Excel) |
 | 2.40.1 | `16e5802` | úvod HALA 2 o víkendu a ve svátek podle dnešních příchodů, poslední nahrané příchody |
-| 2.41 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Report docházky – vlastní skupiny z oddělení, značka dne přesčas / práce ve svátek mimo normu (data verze 36) |
+| 2.41 | `48ad143` | Report docházky – vlastní skupiny z oddělení, značka dne přesčas / práce ve svátek mimo normu (data verze 36) |
+| 2.42 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: od listopadu 2026 soubor Docházka a výkony jediný zdroj (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v Auditu, skupiny Matice u skupin Auditu) (data verze 37) |
 
 Verze 2.1 přidala:
 
@@ -1809,7 +1836,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `36` (od 2.41):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `37` (od 2.42):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -2086,7 +2113,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 89 testů: proti původní aplikaci + opravy + 2.1 až 2.41
+node tests/test_core.js                 # 90 testů: proti původní aplikaci + opravy + 2.1 až 2.42
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -2149,6 +2176,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_plankap.js` (2.38): Plán kapacit (potřeba po úrovních, srovnání, máme, Ø v práci,
     doplnit, doškolit, kandidát do profilu, poznámka, historie, PDF přes pypdf, Excel, telefon);
   - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
+  - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
+    práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
   - `e2e_rychla.js` (2.39): Rychlá kontrola na telefonu (dlaždice, plovoucí menu, počet, směna,
     oddělení, jen lidé v práci, přednost, výměna, sdílení, uložení, zápis, tmavý režim, 320 px);
   - `e2e_upgrade_prev.js`: aktualizace z předchozí verze na aktuální na Apachi (data

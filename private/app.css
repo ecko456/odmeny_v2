@@ -2438,3 +2438,20 @@ tr.dv-click:hover td { background: var(--surface-2); }
 .dr-rg-head input { flex: 1 1 auto; min-width: 0; max-width: 360px; font-weight: 600; }
 .dr-rg .chip.other { opacity: .6; }
 .dr-rg .chip small { font-size: 11px; }
+
+/* Audit 2.42: skupiny Matice u skupiny Auditu, starší soubory, zdroj od listopadu */
+.wa-mg { grid-column: 1 / -1; }
+.wa-mg > summary { cursor: pointer; list-style: none; display: flex; gap: 6px; flex-wrap: wrap; align-items: baseline; }
+.wa-mg > summary::-webkit-details-marker { display: none; }
+.wa-mg > summary::before { content: "▸"; color: var(--ink-3); }
+.wa-mg[open] > summary::before { content: "▾"; }
+.wa-mglist { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px 16px; margin: 8px 0 4px; }
+.wa-old > summary { cursor: pointer; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.wa-old > summary::-webkit-details-marker { display: none; }
+.wa-old > summary h3 { margin: 0; }
+.wa-old > summary h3::before { content: "▸ "; color: var(--ink-3); }
+.wa-old[open] > summary h3::before { content: "▾ "; }
+.wa-oldbtns { flex-wrap: wrap; margin: 12px 0; }
+.wa-old h4 { margin: 8px 0 4px; }
+.dv-owns ul { margin: 6px 0 0; }
+.note.dv-src { margin-bottom: 12px; }

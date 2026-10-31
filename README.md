@@ -62,6 +62,26 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.42
+
+- **Od listopadu 2026 jeden soubor na všechno.** Audit → **Nahrát docházku a výkony** plní
+  za listopad 2026 a dál:
+  - **docházku pro odměny** (Kafe, fond, absence, víkendy, srážky): hodiny dne = odchod −
+    příchod, nad 6 h bez 30 min přestávky; bez odchodu se počítá délka směny; buňka s textem
+    místo času (D, NEM…) je kód nepřítomnosti, omluvený podle seznamu v Nastavení;
+  - **evidenci práce místo Výroby** (kusy a strávený čas podle ID zaměstnance, plnění normy
+    a využití fondu). Norma se počítá, jen když je v Nastavení Auditu vyplněný **sloupec normy**
+    (prázdný = soubor normu nemá a plnění normy se nespočítá);
+  - **obsazenost v Auditu** (ranní = příchod před 12:00) a kusy podle operací.
+- **Říjen 2026 a dřív zůstává po staru.** Docházka, Výroba a starší soubory Auditu se dál
+  nahrávají jako dřív, jen dny od 1. 11. 2026 přeskočí. V Docházce a Výrobě o tom je pruh.
+- **Skupiny Matice u skupin Auditu.** V Nastavení Auditu má každá skupina rozbalovací výběr
+  skupin Matice, jejichž lidé se do ní počítají. Bez výběru se berou skupiny Matice se stejným
+  názvem skupiny nebo oddělení. Po změně se listopadové dny přepočítají.
+- Tlačítka Nahrát obsazenost a Nahrát výkaz práce jsou v Nastavení Auditu ve sbaleném oddílu
+  **Starší soubory (do října 2026)**.
+- **Verze dat 37:** stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.41
 
 - **Report docházky: skupiny reportu.** V Auditu → Report docházky je nahoře rozbalovací

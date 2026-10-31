@@ -198,6 +198,7 @@
           <button class="btn danger" type="button" id="btnDelPeriod">Smazat vybrané období</button>
         </div>
       </header>
+      <div class="note i dv-src">Od listopadu 2026 se docházka pro odměny plní ze souboru <b>Docházka a výkony</b> v Auditu (příchody, odchody a kódy nepřítomnosti). Tady se nahrává už jen docházka za říjen 2026 a dřív. <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>
       <div class="drop" id="drop">
         <div class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3.5V8h4.5M12 17.5v-6M9.5 14 12 11.5l2.5 2.5"/></svg></div>
         <div class="drop-text">
@@ -229,6 +230,7 @@
           <p class="lede">Vyrobené kusy po lidech a průměr na odpracovaný den. Jen pro přehled, do tabáků se nezapočítávají.</p>
         </div>
       </header>
+      <div class="note i dv-src">Od listopadu 2026 se evidence práce plní ze souboru <b>Docházka a výkony</b> v Auditu (tlačítko Nahrát docházku a výkony). Tady se nahrává už jen evidence práce za říjen 2026 a dřív. <button class="link" type="button" data-go="audit">Otevřít Audit</button></div>
       <div class="drop" id="pdrop">
         <div class="drop-ico prod" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5.5 20.5V11l5 3V11l5 3V6.5h3v14"/></svg></div>
         <div class="drop-text">
@@ -367,12 +369,10 @@
         <div>
           <p class="eyebrow">Lidé v práci a zpracované kusy</p>
           <h1 id="waTitle">Audit</h1>
-          <p class="lede">Lidé v práci proti požadavku a zpracované kusy po týdnech, z obsazenosti směn od vedoucích a z výkazu práce v IS. Z docházky a výkonů v jednom souboru je denní obsazenost po projektech a produktivita každého člověka. Výrobní plán porovná kusy k dodání s kapacitou brusičů. Dny s víkendy a svátky, opravy s důvodem a nastavení jsou v dalších záložkách.</p>
+          <p class="lede">Lidé v práci proti požadavku a zpracované kusy po týdnech. Od listopadu 2026 je všechno z jednoho souboru <b>Docházka a výkony</b>: obsazenost, kusy podle operací, denní obsazenost po projektech, produktivita každého člověka i docházka a evidence práce pro odměny. Výrobní plán porovná kusy k dodání s kapacitou brusičů. Dny s víkendy a svátky, opravy s důvodem a nastavení jsou v dalších záložkách.</p>
         </div>
         <div class="page-actions noprint">
           <button class="btn" type="button" id="waDv">Nahrát docházku a výkony</button>
-          <button class="btn sec" type="button" id="waAtt">Nahrát obsazenost</button>
-          <button class="btn sec" type="button" id="waWork">Nahrát výkaz práce</button>
           <input type="file" id="waDvFile" accept=".xlsx,.xls,.xlsm,.csv" hidden>
           <input type="file" id="waAttFile" accept=".xlsx,.xls,.xlsm,.csv" hidden>
           <input type="file" id="waWorkFile" accept=".xlsx,.xls,.xlsm,.csv" hidden>
