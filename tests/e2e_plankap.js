@@ -2,8 +2,8 @@
 // potřeba lidí celkem a aspoň na úrovni 2, 3 a 4; plán ukáže, jak jsme na tom (lidé ve skupině,
 // nemocní, průměr v práci z docházky v KPI), kolik doplnit a koho doškolit. Kontroluje
 // srovnání počtů (vyšší úroveň zvedne nižší), výpočet proti očekávání, kandidáty s odkazem do
-// profilu, poznámku, historii změn, PDF jako Kapacity a zaškolení (text přes pypdf, když je, graf,
-// bez jmen, krajní případy), Excel jen s ID, telefon a tmavý režim.
+// profilu, poznámku, historii změn, PDF (2.44.2: list na oddělení, bez jmen i ID, konce trestů
+// po měsících; text přes pypdf, stránky přes PyMuPDF, když jsou), Excel jen s ID, telefon a tmavý režim.
 // Všechna data jsou vymyšlená. Hodiny stránky stojí na pátku 30. 10. 2026 v 10:00.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -72,6 +72,9 @@ async function setNeed(page, group, key, value) {
     add(0, 'g_brus', [4, 4, 4, 4]); add(1, 'g_brus', [3, 3, 3, 3]); add(2, 'g_brus', [3, 3, 2, 2]); add(3, 'g_brus', [2, 2, 2, 2]);
     add(4, 'g_brus', [1, 1, 1, 1], { sick: '2026-10-28' }); add(5, 'g_brus', []);
     add(6, 'g_cnc', [4, 4]); add(7, 'g_cnc', [2, 2]); add(8, 'g_fre', [3, 3]); add(9, 'g_brus', [4, 4, 4, 4], { excluded: true });
+    // konce trestů pro PDF (2.44.2): listopad, leden, po termínu, únor
+    st.employees['adámek|jan'].end = '2026-11-20'; st.employees['cibulka|jan'].end = '2027-01-15';
+    st.employees['dvořák|jan'].end = '2026-09-01'; st.employees['gregor|jan'].end = '2027-02-10';
     S = sanitizeState(st);
     // docházka z KPI: 26., 27. a 29. 10. v práci 5 z Brusu (bez nemocného Exnera), oba z CNC, Frézka jen 29.
     ['2026-10-26', '2026-10-27', '2026-10-29'].forEach(iso => {
@@ -141,8 +144,21 @@ async function setNeed(page, group, key, value) {
   check(dl.suggestedFilename() === 'plan-kapacit-2026-10-30.pdf' && fs.readFileSync(pdfPath).slice(0, 5).toString() === '%PDF-', `PDF: ${dl.suggestedFilename()}`);
   try {
     const txt = execFileSync('python3', ['-c', 'import sys,pypdf;print("\\n".join(p.extract_text() for p in pypdf.PdfReader(sys.argv[1]).pages))', pdfPath]).toString();
-    check(/Plán kapacit/.test(txt) && /Brus/.test(txt) && /ID 101 \(75 %\)/.test(txt) && !/Bednář|Cibulka|Exner|Havel/.test(txt) && /Nábor 2 brusičů/.test(txt) && /Bez plánu/.test(txt) && /Lepení \(Lepení\)\./.test(txt) && /Máme a potřebujeme po skupinách/.test(txt), `text PDF: ${txt.slice(0, 300)}`);
-  } catch (error) { console.log('pypdf není, text PDF se nekontroluje'); }
+    // 2.44.2: jedno oddělení = jedna strana, bez jmen a bez ID
+    const pages = txt.split('\f');
+    check(/PLÁN KAPACIT/.test(txt) && /Skupiny podle zkušenosti/.test(txt) && /Kdy lidé končí/.test(txt) && /Kolik lidí zůstane/.test(txt) && !/Bednář|Cibulka|Exner|Havel|ID 10/.test(txt), `text PDF: ${txt.slice(0, 400)}`);
+    check(/DOPLNIT 2/.test(txt) && /1 \/ 2/.test(txt) && /2 \/ 2/.test(txt), `stav oddělení a strany: ${txt.slice(0, 600)}`);
+  } catch (error) { if (/pypdf/.test(String(error))) console.log('pypdf není, text PDF se nekontroluje'); else problems.push(`PDF: ${error.message}`); }
+  try {
+    execFileSync('python3', ['-c', `import sys
+try:
+    import pymupdf
+except ImportError:
+    print('pymupdf není, stránky PDF se nevykreslí'); sys.exit(0)
+d=pymupdf.open(sys.argv[1])
+assert d.page_count==2, d.page_count
+for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.5,1.5)).save(sys.argv[2]+'/pdf-%d.png'%(i+1))`, pdfPath, shots]);
+  } catch (error) { problems.push(`PDF stránky: ${String(error.stderr || error.message).slice(-300)}`); }
   const [dx] = await Promise.all([page.waitForEvent('download'), page.click('#cpXlsx')]);
   const xPath = path.join(shots, dx.suggestedFilename());
   await dx.saveAs(xPath);
@@ -156,18 +172,18 @@ async function setNeed(page, group, key, value) {
   check(!JSON.stringify(xl).includes('Bednář'), 'Excel bez jmen');
   check(JSON.stringify(xl.plan[1].slice(0, 11)) === JSON.stringify(['Brus', 'Brus', 8, 5, 3, 2, 6, 4, 2, 1, 1]), `Excel řádek Brus: ${JSON.stringify(xl.plan[1])}`);
 
-  // PDF bez plánu a s mnoha skupinami (jen model stránky a graf, nic se neukládá)
+  // konce trestů po měsících v oddělení (2.44.2) a PDF bez plánu (jen výpočet, nic se neukládá)
   const edge = await page.evaluate(() => {
+    const all = capPlanAll();
+    const brus = all.depts.find(d => d.dept === 'Brus');
+    const e = capPlanEnds(brus, '2026-10-30', 12);
     const keep = S.capPlan;
     S.capPlan = { ...keep, groups: {} };
-    const empty = cpPdfPage(capPlanAll());
+    const st = cpPdfDepts(capPlanAll()).map(d => cpDeptState(d)[0]);
     S.capPlan = keep;
-    const g = capPlanAll().groups[0];
-    const many = cpChart(Array.from({ length: 18 }, (_, i) => ({ ...g, p: { ...g.p, name: `Skupina s dlouhým názvem ${i + 1}` } })));
-    const bad = many.marks.some(m => Object.values(m).some(v => typeof v === 'number' && !Number.isFinite(v)));
-    return { charts: empty.charts.length, kpis: empty.kpis.length, banner: /BEZ PLÁNU/.test(empty.banner), rows: empty.table.rows.length, bad, cut: many.marks.some(m => m.t === 'text' && /…$/.test(m.v)) };
+    return { now: [e.nowN, e.now[4], e.now[3], e.now[2], e.now[0]], od: e.overdueN, m: e.months.slice(0, 4).map(x => [x.m, x.leaveN, x.remainN]), noEnd: e.noEnd, st };
   });
-  check(edge.charts === 0 && edge.kpis === 0 && edge.banner && edge.rows > 0 && !edge.bad && edge.cut, `PDF krajní případy: ${JSON.stringify(edge)}`);
+  check(JSON.stringify(edge.now) === '[6,1,1,2,2]' && edge.od === 1 && JSON.stringify(edge.m) === JSON.stringify([['2026-10', 0, 5], ['2026-11', 1, 4], ['2026-12', 0, 4], ['2027-01', 1, 3]]) && edge.noEnd === 3 && edge.st.every(x => x === 'BEZ PLÁNU'), `konce v Brusu: ${JSON.stringify(edge)}`);
 
   // vynulování potřeby skupinu z plánu odebere
   await setNeed(page, 'g_fre', 'n', 0);

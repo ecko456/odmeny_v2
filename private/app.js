@@ -11509,135 +11509,184 @@ function renderCapPlan() {
     <div class="card"><h3>Poznámka k plánu</h3><p class="small muted">Uloží se a vytiskne s plánem (např. termíny náboru a zaškolení).</p>
       <textarea id="cpNote" rows="3" maxlength="4000" placeholder="např. Nábor 2 brusičů do konce listopadu, zaučit Nováka na Seřízení.">${esc(S.capPlan.note)}</textarea></div>`;
 }
-/* PDF plánu: souhrn, tabulka po odděleních a doporučení (A4 na šířku). */
-/* ---------- PDF plánu kapacit (2.39.1): stejný papír a kreslení jako Kapacity a zaškolení v KPI ---------- */
-/* Úrovně ve sloupci odspodu: 4, 3, 2, pod 2; potřeba čárkovaně v barvě úrovně (celkem zeleně),
-   takže vršek každého dílu jde rovnou porovnat s potřebou. */
-const CP_LV = [['l4', '#0F2F5A', '4'], ['l3', '#1F4E8C', '3+'], ['l2', '#7C9CC8', '2+'], ['n', '#F2C77E', 'pod 2']];
-function cpChart(groups) {
-  const B = 220, T = 24, L = 44, R = 1120;
-  const ax = ctrAxis(Math.max(1, ...groups.map(g => Math.max(g.have.n, g.need.n))));
-  const y = v => B - (v / ax.D) * (B - T);
-  const band = (R - L) / groups.length;
-  const marks = [];
-  ctrGrid(marks, ax, y, L, R, 36);
-  const top = [];
-  const fit = (t, w, px) => { const n = Math.max(3, Math.floor(w / (px * 0.56))); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
-  groups.forEach((g, i) => {
-    const cx = L + band * (i + 0.5);
-    const bw = Math.min(84, band * 0.46);
-    const bx = cx - bw / 2;
-    let prev = 0;
-    CP_LV.forEach(([k, c]) => {
-      const v = g.have[k];
-      if (v > prev) marks.push({ t: 'rect', x: bx, y: y(v), w: bw, h: y(prev) - y(v), c });
-      prev = Math.max(prev, v);
-    });
-    // potřeba: celkem zeleně, úrovně v barvě dílu; kreslí se od nejširší, ať je vidět i při shodě
-    [['n', CTR.green], ['l2', CP_LV[2][1]], ['l3', CP_LV[1][1]], ['l4', CP_LV[0][1]]].forEach(([k, c], j) => {
-      if (!g.need[k]) return;
-      const ext = 14 - j * 3;
-      top.push({ t: 'line', x1: bx - ext, y1: y(g.need[k]), x2: bx + bw + ext, y2: y(g.need[k]), c, w: 2.4, dash: [6, 4] });
-    });
-    const short = g.have.n < g.need.n;
-    top.push({ t: 'text', x: cx, y: y(Math.max(g.have.n, g.need.n)) - 9, s: 13, b: true, c: short ? CTR.red : CTR.ink, a: 'middle', v: `${g.have.n} / ${g.need.n}` });
-    top.push({ t: 'text', x: cx, y: 244, s: 13, b: true, c: CTR.ink, a: 'middle', v: fit(g.p.name || '(bez názvu)', band - 8, 13) });
-    const wide = band >= 170;
-    const st = [g.hire ? (wide ? `doplnit ${g.hire}` : `+${g.hire}`) : '', g.trainN ? (wide ? `doškolit ${g.trainN}` : `š ${g.trainN}`) : ''].filter(Boolean);
-    if (!st.length) top.push({ t: 'text', x: cx, y: 264, s: 12, c: CTR.green, a: 'middle', v: wide ? 'v pořádku' : 'ok' });
-    else if (st.length === 1) top.push({ t: 'text', x: cx, y: 264, s: 12, b: true, c: g.hire ? CTR.red : CTR.amber, a: 'middle', v: st[0] });
-    else {
-      top.push({ t: 'text', x: cx - 4, y: 264, s: 12, b: true, c: CTR.red, a: 'end', v: st[0] });
-      top.push({ t: 'text', x: cx + 4, y: 264, s: 12, b: true, c: CTR.amber, v: st[1] });
+/* ---------- PDF plánu kapacit (2.44.2): jedno oddělení = jeden list A4 na výšku ----------
+   Bez jmen i ID, skoro bez textu: záhlaví se stavem, dlaždice (potřeba, máme, doplnit,
+   doškolit), skupiny jako pruhy podle zkušenosti proti potřebě, odchody po měsících (tečka =
+   člověk v barvě úrovně) a kolik lidí zůstane proti potřebě. Kreslí stejné ctrPdf jako KPI. */
+const CP_LV = [[4, '#0F2F5A', 'Úroveň 4'], [3, '#1F4E8C', '3'], [2, '#7C9CC8', '2'], [0, '#F2C77E', 'pod 2']];
+const CP_LV_INK = { 4: '#FFFFFF', 3: '#FFFFFF', 2: '#1A2330', 0: '#1A2330' };
+/* přesné počty podle úrovně z kumulativních „aspoň“ (n, l2, l3, l4) */
+const cpExact = x => ({ 4: x.l4, 3: x.l3 - x.l4, 2: x.l2 - x.l3, 0: x.n - x.l2 });
+/* oddělení do PDF: s lidmi nebo s plánem */
+function cpPdfDepts(all) { return all.depts.filter(d => d.groups.some(g => g.members.length || g.set)); }
+const CP_MON = ['led', 'úno', 'bře', 'dub', 'kvě', 'čvn', 'čvc', 'srp', 'zář', 'říj', 'lis', 'pro'];
+function cpMonthShort(id, first) {
+  const t = CP_MON[+id.slice(5, 7) - 1];
+  return { t, y: first || id.slice(5) === '01' ? id.slice(0, 4) : '' };
+}
+/* stav oddělení do štítku v záhlaví */
+function cpDeptState(d) {
+  const set = d.groups.some(g => g.set);
+  if (!set) return ['BEZ PLÁNU', 'plain'];
+  if (d.tot.hire) return [`DOPLNIT ${d.tot.hire}`, 'crit'];
+  if (d.tot.trainN) return [`DOŠKOLIT ${d.tot.trainN}`, 'warn'];
+  return ['V POŘÁDKU', 'ok'];
+}
+/* vodorovný pruh po úrovních: x, y, šířka na člověka, výška; čísla uvnitř, když se vejdou */
+function cpPdfStack(P, ex, x, y, unit, h, num) {
+  let cx = x;
+  CP_LV.forEach(([lv, c]) => {
+    const n = ex[lv] || 0;
+    if (n <= 0) return;
+    const w = n * unit;
+    P.box(cx, y, w, h, { fill: c });
+    if (num && w >= 26) P.text(String(n), cx + w / 2, y + h / 2 + 6, 16, { b: true, mono: true, c: CP_LV_INK[lv], a: 'middle' });
+    cx += w;
+  });
+  return cx;
+}
+function cpDeptPdf(P, d, today, page) {
+  const { doc } = P;
+  if (page > 1) doc.addPage('a4', 'portrait');
+  const X = 64;
+  const W = 1152;
+  const R = X + W;
+  const set = d.groups.some(g => g.set);
+  const t = d.tot;
+  // záhlaví
+  P.text(`${EXPORT_NAME} · PLÁN KAPACIT`, X, 78, 13, { b: true, c: 'faint', ls: 0.12 });
+  P.text(dayText(today), R, 78, 13, { c: 'faint', a: 'end', mono: true });
+  P.text(d.dept || 'Bez oddělení', X, 136, 44, { b: true });
+  const [st, tone] = cpDeptState(d);
+  const [bg, bd, , fg] = CTR_BOX[tone];
+  const sw = P.width(st, 16, { b: true, ls: 0.08 }) + 40;
+  P.box(R - sw, 100, sw, 46, { fill: bg, stroke: bd, r: 23, lw: 1.5 });
+  P.text(st, R - sw / 2, 129, 16, { b: true, c: fg, a: 'middle', ls: 0.08 });
+  P.line(X, 170, R, 170, 'line', 1.5);
+  // dlaždice
+  const TW = (W - 3 * 18) / 4;
+  const top = 196;
+  const scale = Math.max(1, t.need.n, t.have.n);
+  const tiles = [
+    { l: 'POTŘEBA', v: set ? String(t.need.n) : '—', ex: set ? cpExact(t.need) : null },
+    { l: 'MÁME', v: String(t.have.n), ex: cpExact(t.have), c: set && t.have.n < t.need.n ? 'red' : 'ink' },
+    { l: 'DOPLNIT', v: set ? (t.hire ? `+${t.hire}` : '0') : '—', c: !set ? 'faint' : t.hire ? 'red' : 'green' },
+    { l: 'DOŠKOLIT', v: set ? String(t.trainN) : '—', c: !set ? 'faint' : t.trainN ? 'amber' : 'green' },
+  ];
+  tiles.forEach((k, i) => {
+    const x = X + i * (TW + 18);
+    P.box(x, top, TW, 140, { fill: '#F7F9FC', stroke: 'line', r: 14 });
+    P.text(k.l, x + 22, top + 34, 13, { b: true, c: 'muted', ls: 0.1 });
+    P.text(k.v, x + 22, top + 92, 52, { b: true, mono: true, c: k.c || 'ink' });
+    if (k.ex) {
+      P.box(x + 22, top + 112, TW - 44, 10, { fill: 'track', r: 5 });
+      cpPdfStack(P, k.ex, x + 22, top + 112, (TW - 44) / scale, 10, false);
     }
   });
-  return { vb: [1128, 276], marks: marks.concat(top), aria: groups.map(g => `${g.p.name}: ${g.have.n} z ${g.need.n}`).join(', ') };
-}
-function cpPdfPage(all) {
-  const today = todayIso();
-  const t = all.tot;
-  const gs = all.groups;
-  const set = gs.filter(g => g.set);
-  const pres = all.pres;
-  const place = ctrRep().place;
-  const recText = g => [g.hire ? `doplnit ${g.hire} ${lidiAcc(g.hire)}${[4, 3, 2].some(k => g.hireLv[k] > 0) ? ` (z toho ${g.hireLv[[4, 3, 2].find(k => g.hireLv[k] > 0)]} aspoň na úrovni ${[4, 3, 2].find(k => g.hireLv[k] > 0)})` : ''}` : '',
-    g.cand.length ? `doškolit: ${[4, 3, 2].map(lv => [lv, g.cand.filter(c => c.to === lv)]).filter(z => z[1].length).map(([lv, l]) => `na úroveň ${lv} ${l.map(c => `${cpWho(c)} (${nf(c.pct || 0, 0)} %)`).join(', ')}`).join('; ')}` : ''].filter(Boolean).join('; ');
-  const ST_C = { ok: 'green', train: 'amber', hire: 'red', none: 'faint' };
-  const num = (v, short) => ({ v: String(v), c: short ? 'red' : undefined, b: !!short });
-  const row = (name, x, set2, state, sum) => ({ sum, cells: [
-    { v: name },
-    ...CP_COLS.map(([k]) => ({ v: set2 || sum ? String(x.need[k]) : '—', c: set2 || sum ? undefined : 'faint' })),
-    ...CP_COLS.map(([k]) => num(x.have[k], set2 && x.have[k] < x.need[k])),
-    ...(pres ? [{ v: x.pres == null ? '—' : nf(x.pres, 1) }] : []),
-    { v: x.hire ? `+${x.hire}` : '—', c: x.hire ? 'red' : 'faint', b: !!x.hire },
-    { v: x.trainN ? String(x.trainN) : '—', c: x.trainN ? 'amber' : 'faint', b: !!x.trainN },
-    state ? { v: CP_STATE[state][0], c: ST_C[state], b: true, sans: true } : { v: '' },
-  ] });
-  const shown = all.setN ? all.depts.filter(d => d.groups.some(g => g.set)) : all.depts;
-  const rest = all.depts.filter(d => !shown.includes(d));
-  const rows = [];
-  shown.forEach(d => {
-    d.groups.forEach(g => {
-      rows.push(row(g.p.name || '(bez názvu)', g, g.set, g.state, false));
-      const rec = recText(g);
-      if (rec && g.set) rows.push({ span: ['', rec] });
-    });
-    if (d.groups.length > 1) rows.push(row(`Celkem ${d.dept || 'bez oddělení'}`, d.tot, false, '', true));
+  // skupiny: pruh po úrovních, potřeba čárkovaně
+  let y = 392;
+  P.text('Skupiny podle zkušenosti', X, y, 20, { b: true });
+  const gs = d.groups;
+  const gmax = Math.max(1, ...gs.map(g => Math.max(g.have.n, g.need.n)));
+  const NX = X;
+  const BX = X + 250;
+  const BW = W - 250 - 110;
+  const rh = Math.max(36, Math.min(62, 400 / Math.max(1, gs.length)));
+  const bh = Math.min(30, rh - 14);
+  y += 28;
+  gs.forEach(g => {
+    const cy = y + rh / 2;
+    const name = P.split(g.p.name || '(bez názvu)', 17, 236, { b: true })[0];
+    P.text(name, NX, cy + 6, 17, { b: true });
+    P.box(BX, cy - bh / 2, BW, bh, { fill: '#F2F4F8', r: 4 });
+    cpPdfStack(P, cpExact(g.have), BX, cy - bh / 2, BW / gmax, bh, true);
+    if (g.set) {
+      const nx = BX + (g.need.n / gmax) * BW;
+      P.line(nx, cy - bh / 2 - 8, nx, cy + bh / 2 + 8, 'green', 4, [6, 4]);
+    }
+    const short = g.set && g.have.n < g.need.n;
+    P.text(g.set ? `${g.have.n}/${g.need.n}` : String(g.have.n), R, cy + 7, 20, { b: true, mono: true, a: 'end', c: short ? 'red' : g.set ? 'green' : 'ink' });
+    y += rh;
   });
-  if (shown.length > 1) {
-    const sum = { need: { n: 0, l2: 0, l3: 0, l4: 0 }, have: { n: 0, l2: 0, l3: 0, l4: 0 }, hire: 0, trainN: 0, pres: null };
-    shown.forEach(d => {
-      CP_COLS.forEach(([k]) => { sum.need[k] += d.tot.need[k]; sum.have[k] += d.tot.have[k]; });
-      sum.hire += d.tot.hire; sum.trainN += d.tot.trainN;
-      if (d.tot.pres != null) sum.pres = Math.round(((sum.pres || 0) + d.tot.pres) * 10) / 10;
+  // odchody po měsících: tečka = člověk v barvě úrovně
+  const ends = capPlanEnds(d, today, 12);
+  const cols = [...(ends.overdueN ? [{ k: 'od', lbl: { t: 'po', y: 'termínu' }, ex: ends.overdue, n: ends.overdueN }] : []),
+    ...ends.months.map((m, i) => ({ k: m.m, lbl: cpMonthShort(m.m, i === 0), ex: m.leave, n: m.leaveN }))];
+  y += 60;
+  P.text('Kdy lidé končí', X, y, 20, { b: true });
+  const maxN = Math.max(1, ...cols.map(c => c.n));
+  const CH = Math.max(110, Math.min(260, maxN * 26 + 50));
+  const base = y + 40 + CH;
+  const cw = W / cols.length;
+  const pitch = Math.min(26, (CH - 40) / maxN);
+  const r = Math.max(3, Math.min(10, pitch / 2 - 1.5));
+  P.line(X, base, R, base, 'axis', 1.5);
+  cols.forEach((c, i) => {
+    const cx = X + cw * (i + 0.5);
+    let k = 0;
+    CP_LV.forEach(([lv, col]) => {
+      for (let j = 0; j < (c.ex[lv] || 0); j += 1) { P.dot(cx, base - 4 - r - k * pitch, r, col); k += 1; }
     });
-    rows.push(row('CELKEM', sum, false, '', true));
+    if (c.n) P.text(String(c.n), cx, base - 14 - k * pitch, 16, { b: true, mono: true, c: c.k === 'od' ? 'red' : 'ink', a: 'middle' });
+    P.text(c.lbl.t, cx, base + 26, 14, { b: !!c.n, c: c.k === 'od' ? 'red' : c.n ? 'ink' : 'faint', a: 'middle' });
+    if (c.lbl.y) P.text(c.lbl.y, cx, base + 44, 11, { c: c.k === 'od' ? 'red' : 'faint', a: 'middle' });
+  });
+  // kolik zůstane: sloupec po úrovních, potřeba čárkovaně
+  y = base + 96;
+  P.text('Kolik lidí zůstane', X, y, 20, { b: true });
+  const rcols = [{ lbl: { t: 'teď', y: '' }, ex: ends.now, n: ends.nowN }, ...ends.months.map((m, i) => ({ lbl: cpMonthShort(m.m, i === 0), ex: m.remain, n: m.remainN }))];
+  const RH = Math.max(220, Math.min(460, P.PH - 150 - (y + 50) - 92));
+  const rbase = y + 50 + RH;
+  const rmax = Math.max(1, ends.nowN, set ? t.need.n : 0);
+  const unit = (RH - 30) / rmax;
+  const rw = W / rcols.length;
+  const bw = Math.min(56, rw * 0.62);
+  P.line(X, rbase, R, rbase, 'axis', 1.5);
+  rcols.forEach((c, i) => {
+    const cx = X + rw * (i + 0.5);
+    let yy = rbase;
+    CP_LV.forEach(([lv, col]) => {
+      const n = c.ex[lv] || 0;
+      if (!n) return;
+      P.box(cx - bw / 2, yy - n * unit, bw, n * unit, { fill: col });
+      yy -= n * unit;
+    });
+    const short = set && c.n < t.need.n;
+    P.text(String(c.n), cx, yy - 10, 16, { b: true, mono: true, c: short ? 'red' : 'ink', a: 'middle' });
+    P.text(c.lbl.t, cx, rbase + 26, 14, { b: i === 0, c: i === 0 ? 'ink' : 'faint', a: 'middle' });
+    if (c.lbl.y) P.text(c.lbl.y, cx, rbase + 44, 11, { c: 'faint', a: 'middle' });
+  });
+  if (set) {
+    const ny = rbase - t.need.n * unit;
+    P.line(X, ny, R, ny, 'green', 3, [10, 6]);
   }
-  if (rest.length) rows.push({ span: ['Bez plánu', `${rest.map(d => `${d.dept || 'Bez oddělení'} (${d.groups.map(g => g.p.name).join(', ')})`).join('; ')}.`] });
-  const cols = [{ h: 'SKUPINA', a: 'l' }, ...CP_COLS.map(([, l]) => ({ h: `POTŘEBA ${l.toUpperCase()}`, a: 'r' })), ...CP_COLS.map(([, l]) => ({ h: `MÁME ${l.toUpperCase()}`, a: 'r' })),
-    ...(pres ? [{ h: 'Ø V PRÁCI', a: 'r' }] : []), { h: 'DOPLNIT', a: 'r' }, { h: 'DOŠKOLIT', a: 'r' }, { h: 'STAV', a: 'l', sans: true }];
-  const cover = t.need.n ? Math.min(t.have.n, t.need.n) / t.need.n : null;
-  const lvShort = CP_COLS.slice(1).map(([k, l]) => (t.have[k] < t.need[k] ? `${l} chybí ${t.need[k] - t.have[k]}` : '')).filter(Boolean);
-  return {
-    kind: 'cap',
-    head: { title: `Plán kapacit${place ? ` — ${place}` : ''}`, sub: ctrSub('potřeba lidí a zkušeností'), h2: `Stav k ${dayText(today)}`,
-      range: `${all.setN} z ${gs.length} ${gs.length === 1 ? 'skupiny' : 'skupin'} s plánem${pres ? ` · Ø v práci z docházky za ${pres.days} ${pres.days === 1 ? 'pracovní den' : pres.days <= 4 ? 'pracovní dny' : 'pracovních dní'}` : ''}` },
-    kpis: all.setN ? [
-      { label: 'SKUPINY V POŘÁDKU', value: `${all.okN}/${all.setN}`, sub: 'potřeba pokrytá lidmi i zkušenostmi', tone: all.okN === all.setN ? 'ok' : t.hire ? 'crit' : 'warn' },
-      { label: 'LIDÍ PROTI POTŘEBĚ', value: ctrPct(cover), sub: `${t.have.n} z ${t.need.n} ${lidiN(t.need.n)}`, tone: 'blue' },
-    ] : [],
-    banner: all.setN ? '' : 'BEZ PLÁNU · potřeba lidí zatím není zadaná u žádné skupiny; zadej ji v aplikaci v části Plán kapacit',
-    tiles: [
-      { v: String(t.need.n), label: 'Potřeba', sub: `2+ ${t.need.l2} · 3+ ${t.need.l3} · 4 ${t.need.l4}` },
-      { v: String(t.have.n), c: 'blue', label: 'Máme', sub: `2+ ${t.have.l2} · 3+ ${t.have.l3} · 4 ${t.have.l4}${t.sick ? ` · nemocní ${t.sick}` : ''}` },
-      ...(pres ? [{ v: nf(t.pres || 0, 1), label: 'Ø v práci', sub: 'lidí ze skupin s plánem' }] : []),
-      { v: String(t.hire), c: t.hire ? 'red' : 'green', label: 'Doplnit', sub: t.hire ? `${lidiAcc(t.hire)} náborem` : 'nábor není potřeba' },
-      { v: String(t.trainN), c: t.trainN ? 'amber' : 'green', label: 'Doškolit', sub: t.trainN ? `${lidiAcc(t.trainN)} na vyšší úroveň` : (lvShort.length ? lvShort.join(', ') : 'zkušenosti stačí') },
-    ],
-    charts: set.length ? [{ title: 'Máme a potřebujeme po skupinách — podle úrovně', legendRight: false,
-      legend: [['Úroveň 4', CP_LV[0][1], 'sq'], ['3', CP_LV[1][1], 'sq'], ['2', CP_LV[2][1], 'sq'], ['Pod 2', CP_LV[3][1], 'sq'], ['Potřeba celkem', 'green', 'dash'], ['Potřeba úrovně', CP_LV[1][1], 'dash']], ...cpChart(set) }] : [],
-    table: { title: 'Po skupinách', cols, rows },
-    notes: [
-      ['Úroveň', ' — procento dovedností skupiny v matici dovedností: 2 = aspoň 50 %, 3 = aspoň 75 %, 4 = 100 %. Počty se sčítají shora (kdo má 4, je i ve 3+ a 2+). V grafu čísla nad sloupcem: máme / potřeba celkem.'],
-      ['Doplnit a doškolit', ` — doplnit = potřeba celkem minus lidé ve skupině (nábor). Doškolit = lidé skupiny pod potřebnou úrovní, navrženi ti nejblíž k cíli; lidé jen s ID z evidence práce. Vygenerováno ${dayText(today)}.`],
-      ...(S.capPlan.note ? [['Poznámka', ` — ${S.capPlan.note}`]] : []),
-    ],
-  };
+  // legenda
+  let lx = X;
+  const ly = rbase + 92;
+  CP_LV.forEach(([, c, l]) => {
+    P.box(lx, ly - 14, 18, 18, { fill: c, r: 4 });
+    P.text(l, lx + 26, ly, 14, { c: 'muted' });
+    lx += 26 + P.width(l, 14) + 30;
+  });
+  P.line(lx, ly - 5, lx + 34, ly - 5, 'green', 3, [8, 5]);
+  P.text('potřeba', lx + 44, ly, 14, { c: 'muted' });
 }
 async function exportCapPlanPdf(button) {
   const all = capPlanAll();
-  if (!all.groups.length) { toast('Nejdřív založ skupiny v Matici dovedností.', true); return; }
+  const depts = cpPdfDepts(all);
+  if (!depts.length) { toast('Nejdřív založ skupiny v Matici dovedností a zařaď do nich lidi.', true); return; }
+  const today = todayIso();
   await withPdf(button, doc => {
     doc.setProperties({ title: 'Plán kapacit', creator: EXPORT_NAME });
     const P = ctrPdf(doc);
-    pdfCtrPage(P, cpPdfPage(all), true);
+    depts.forEach((d, i) => cpDeptPdf(P, d, today, i + 1));
     const n = doc.getNumberOfPages();
     for (let i = 1; i <= n; i += 1) {
       doc.setPage(i);
-      P.text(`${EXPORT_NAME} · Plán kapacit · ${dayText(todayIso())}`, 56, P.PH - 22, 11, { c: 'faint' });
-      P.text(`Strana ${i} / ${n}`, 1224, P.PH - 22, 11, { c: 'faint', a: 'end' });
+      P.text(`${EXPORT_NAME} · Plán kapacit`, 64, P.PH - 30, 11, { c: 'faint' });
+      P.text(`${i} / ${n}`, 1216, P.PH - 30, 11, { c: 'faint', a: 'end' });
     }
-    downloadFile(`plan-kapacit-${todayIso()}.pdf`, doc.output('blob'), 'application/pdf');
+    downloadFile(`plan-kapacit-${today}.pdf`, doc.output('blob'), 'application/pdf');
   }, 'portrait', { mono: true });
 }
 async function exportCapPlanXlsx() {

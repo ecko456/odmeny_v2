@@ -5848,6 +5848,28 @@ function capPlanAll(opts){
   const set=groups.filter(g=>g.set);
   return {depts,groups,pres,tot:sum(set),setN:set.length,okN:set.filter(g=>g.state==="ok").length};
 }
+/* Konce trestů v oddělení pro PDF plánu kapacit (2.44.2): po měsících kolik lidí odejde a kolik
+   zůstane, vždy rozdělené podle úrovně (4, 3, 2, 0 = pod 2). d = oddělení z capPlanAll.
+   Po termínu = konec trestu už minul (v Lidech jsou pořád); zůstanou bez nich. */
+function capPlanEnds(d,today,n){
+  today=today||todayIso();n=n||12;
+  const ids=[];let y=+today.slice(0,4),m=+today.slice(5,7);
+  for(let i=0;i<n;i++){ids.push(y+"-"+String(m).padStart(2,"0"));m++;if(m>12){m=1;y++;}}
+  const L=v=>v>=4?4:v>=3?3:v>=2?2:0;
+  const ppl=d.groups.flatMap(g=>g.members.map(x=>({lv:L(x.lvl),end:(x.e&&x.e.end)||""})));
+  const blank=()=>({4:0,3:0,2:0,0:0}),cnt=list=>{const o=blank();list.forEach(p=>{o[p.lv]++;});return o;};
+  const tot=o=>o[4]+o[3]+o[2]+o[0];
+  const months=ids.map(id=>{
+    const first=id+"-01",last=id+"-"+String(new Date(+id.slice(0,4),+id.slice(5,7),0).getDate()).padStart(2,"0");
+    const leave=cnt(ppl.filter(p=>p.end&&p.end>=today&&p.end>=first&&p.end<=last));
+    const remain=cnt(ppl.filter(p=>!p.end||p.end>last));
+    return {m:id,leave,remain,leaveN:tot(leave),remainN:tot(remain)};
+  });
+  const overdue=cnt(ppl.filter(p=>p.end&&p.end<today));
+  const end=ids.length?ids[ids.length-1]:today;
+  return {now:cnt(ppl),nowN:ppl.length,overdue,overdueN:tot(overdue),months,
+    later:ppl.filter(p=>p.end&&p.end.slice(0,7)>end).length,noEnd:ppl.filter(p=>!p.end).length};
+}
 /* Historie plánu kapacit: potřeba skupiny „původně → teď“ (opakovaná úprava do 10 minut se
    sloučí podle klíče cp:skupina) a poznámka. */
 function cpChanges(A,B,add,st){

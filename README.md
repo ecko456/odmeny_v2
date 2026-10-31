@@ -62,6 +62,18 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.44.2
+
+- **Plán kapacit: nové PDF.** Každé oddělení má jeden list A4, bez jmen i ID a skoro bez
+  textu:
+  - záhlaví se stavem oddělení (V pořádku / Doplnit N / Doškolit N / Bez plánu);
+  - dlaždice Potřeba, Máme, Doplnit a Doškolit, pod potřebou a stavem proužek podle úrovní;
+  - skupiny jako pruhy podle zkušenosti (úroveň 4, 3, 2, pod 2) s čárkovanou potřebou;
+  - **Kdy lidé končí**: odchody po měsících na rok dopředu (tečka = člověk v barvě jeho úrovně),
+    zvlášť ti po termínu;
+  - **Kolik lidí zůstane**: měsíc po měsíci podle úrovní proti potřebě.
+- Data beze změny (verze 39).
+
 ## Co je nového ve verzi 2.44.1
 
 - **Nahrát konce trestů a směnnost: lidé, kteří v souboru nejsou.** Po zapsání se ukáže tabulka

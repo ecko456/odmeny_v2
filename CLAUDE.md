@@ -34,6 +34,20 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.44.2):
+
+- Uživatel: „Přepracuj ‚Plán kapacit‘ PDF … divočina nepřehledná … neuváděj ani ID … souhrn
+  na každé oddělení na jeden list a zakomponuj přehled kdy kdo bude končit a jak zkušený.
+  Vše graficky bez extra textů“.
+  - Core: `capPlanEnds(d, today, n)` (oddělení z `capPlanAll`: `now`, `overdue` (konec už
+    minul), `months[{m, leave, remain, leaveN, remainN}]` po úrovních 4/3/2/0, `later`, `noEnd`).
+  - UI: `cpPdfDepts` (oddělení s lidmi nebo plánem), `cpDeptPdf(P, d, today, page)` přes `ctrPdf`
+    (A4 na výšku: záhlaví se štítkem `cpDeptState`, 4 dlaždice s proužkem `cpExact`/`cpPdfStack`,
+    skupiny jako pruhy, tečky odchodů, sloupce zůstane s čárkovanou potřebou, legenda `CP_LV`),
+    `CP_MON` (zkratky měsíců, čvn/čvc). Staré `cpPdfPage` a `cpChart` pryč. Excel beze změny.
+  - Testy: `e2e_plankap` (text bez jmen a ID, stav, strany, `capPlanEnds` v Brusu, snímky stran
+    `pdf-N.png` přes PyMuPDF, když je). `ODM_VERSION` 2.44.2, data beze změny (39).
+
 Stav k 31. 10. 2026 (verze 2.44.1):
 
 - Uživatel: „do ‚Nahrát konce trestů a směnnost‘ pokud budeme mít v systému člověka, který
@@ -1863,7 +1877,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.42.4 | `fa9101b` | docházka podle vzoru – datum v hlavičce bez roku („01.10. Čt“), WPA kód, součty na konci |
 | 2.43 | `accd6f4` | Konce trestů (import se směnností a kontrolou, AI kontrola, přehled po měsících a odděleních), rozbalovací Teď v práci na telefonu (data verze 39) |
 | 2.44 | `ee9fee7` | Audit přejmenovaný na KPI, Výroba pryč z menu, KPI bez Výrobního plánu a Úprav, nová záložka Výkonnost na osobu (po odděleních, průměr na den, řazení od nejlepších i nejhorších, Excel) |
-| 2.44.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Nahrát konce trestů a směnnost – tabulka lidí, kteří v souboru nejsou, s volbou vyřadit ze seznamu |
+| 2.44.1 | `2bcc414` | Nahrát konce trestů a směnnost – tabulka lidí, kteří v souboru nejsou, s volbou vyřadit ze seznamu |
+| 2.44.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit – list na oddělení, bez jmen a ID, skupiny podle zkušenosti, kdy lidé končí a kolik zůstane |
 
 Verze 2.1 přidala:
 
