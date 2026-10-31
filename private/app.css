@@ -2455,3 +2455,9 @@ tr.dv-click:hover td { background: var(--surface-2); }
 .wa-old h4 { margin: 8px 0 4px; }
 .dv-owns ul { margin: 6px 0 0; }
 .note.dv-src { margin-bottom: 12px; }
+
+/* Rychlá kontrola 2.42.1: klepnutí na člověka otevře body kontroly */
+.qk-row button.qk-open { margin: -6px 0; padding: 6px 8px; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.qk-row button.qk-open:hover { background: rgba(127, 127, 127, .1); }
+.qk-row button.qk-open:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.dr-check { margin: 0 0 12px; }

@@ -149,26 +149,43 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
   const names = await page.evaluate(k => k.map(x => audName(S.employees[x])), keys);
   check(/^Kontrola · pátek 30\. října/.test(clip) && names.every((n, i) => clip.includes(`${i + 1}. ${n} (`)), `schránka: ${clip}`);
 
+  // Klepnutí na člověka v seznamu (2.42.1): body kontroly, splněno / nesplněno, rovnou do dnešních kontrol.
+  const k0 = keys[0];
+  await page.click(`#qkResult [data-qkopen="${k0}"]`);
+  await page.waitForSelector('#dlg[open] .kt-points');
+  const pts = await page.locator('#dlg .kt-point').count();
+  check(pts >= 1 && /Kontrola · /.test(await text(page, '#dlgTitle')), `body kontroly v dialogu: ${pts}`);
+  await page.screenshot({ path: path.join(shots, '02b-body.png') });
+  await page.click('#ktAllOk');
+  await page.locator('#dlg .kt-point').first().locator('label.no').click();
+  await page.click('#dlgOk');
+  await page.waitForSelector(`#qkResult .qk-row.qk-done[data-qkkey="${k0}"]`);
+  await saved(page);
+  const one = await page.evaluate(k => audPlan('2026-W44').items.filter(i => i.key === k).map(i => [i.state, i.extra, i.results.filter(r => !r.ok).length]), k0);
+  check(JSON.stringify(one) === '[["done",true,1]]', `zapsáno z vylosovaného seznamu: ${JSON.stringify(one)}`);
+  check(new RegExp(`^${pts - 1}/${pts}$`).test(await text(page, `#qkResult .qk-row[data-qkkey="${k0}"] .t5-state`)) && await page.isHidden(`#qkResult [data-qkswap="${k0}"]`), 'výsledek v řádku, vyměnit už nejde');
+  await page.screenshot({ path: path.join(shots, '02c-zapsano.png'), fullPage: true });
+
   // Uložení do dnešních kontrol.
   await page.click('[data-qksave]');
   await saved(page);
   const plan = await page.evaluate(() => audPlan('2026-W44').items.filter(i => i.day === '2026-10-30').map(i => [i.key, i.state, i.extra]));
-  check(plan.length === 3 && plan.every(p => keys.includes(p[0]) && p[1] === 'plan' && p[2]), `plán dne: ${JSON.stringify(plan)}`);
+  check(plan.length === 3 && plan.every(p => keys.includes(p[0]) && p[1] === (p[0] === k0 ? 'done' : 'plan') && p[2]), `plán dne: ${JSON.stringify(plan)}`);
   check(await page.isHidden('#qkResult'), 'po uložení se vylosovaný seznam zavře');
-  check(/Dnes ke kontrole\s*0 \/ 3/.test(await text(page, '.qk-today')), `dnešní kontroly: ${await text(page, '.qk-today')}`);
+  check(/Dnes ke kontrole\s*1 \/ 3/.test(await text(page, '.qk-today')), `dnešní kontroly: ${await text(page, '.qk-today')}`);
   const pool2 = await page.evaluate(() => quickPool(qkOpt()).list.map(x => x.key));
   check(pool2.length === 12 && !pool2.some(k => keys.includes(k)), 'uložení už se znovu nelosují');
 
   // Zápis kontroly z rychlé kontroly.
-  await page.click('.qk-today [data-qkcheck]');
+  await page.click('.qk-today .qk-plan [data-qkcheck]');
   await page.waitForSelector('#dlg[open] .kt-points');
   await page.click('#ktAllOk');
   await page.click('#dlgOk');
-  await page.waitForSelector('.qk-today .qk-done');
+  await page.waitForFunction(() => document.querySelectorAll('.qk-today .qk-done').length === 2);
   await saved(page);
-  check(/1 \/ 3/.test(await text(page, '.qk-prog')), `postup po zápisu: ${await text(page, '.qk-prog')}`);
-  check(/1\s*zapsáno$/.test(await text(page, '.qk-kpi')), `KPI po zápisu: ${await text(page, '.qk-kpi')}`);
-  check(await page.evaluate(() => audPlan('2026-W44').items.filter(i => i.state === 'done').length) === 1, 'kontrola zapsaná v plánu');
+  check(/2 \/ 3/.test(await text(page, '.qk-prog')), `postup po zápisu: ${await text(page, '.qk-prog')}`);
+  check(/2\s*zapsáno$/.test(await text(page, '.qk-kpi')), `KPI po zápisu: ${await text(page, '.qk-kpi')}`);
+  check(await page.evaluate(() => audPlan('2026-W44').items.filter(i => i.state === 'done').length) === 2, 'kontrola zapsaná v plánu');
   await page.screenshot({ path: path.join(shots, '03-dnes.png'), fullPage: true });
 
   // Jen lidé v práci podle příchodů: v práci 3 z Brusu a 1 z Lepení, jeden z nich už v plánu.

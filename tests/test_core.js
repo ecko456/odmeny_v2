@@ -3551,6 +3551,32 @@ test('Docházka a výkony jediný zdroj od listopadu 2026 (2.42): docházka pro 
   assert.deepStrictEqual(out.clean, ['g1']);
   return null;
 });
+test('Report docházky (2.42.1): párování ID podle číslic, skupina bez historie, přehled párování', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    const grp = (id, name) => { const g = mkPos(id, name, []); g.skillset = [{ id: 'k' + id, name: 'X', desc: '', scale: null }]; g.maxTab = 8; g.tiers = []; return g; };
+    st.positions = [grp('g1', 'Brus')];
+    st.employees['a|a'] = { key: 'a|a', last: 'Adamec', first: 'Adam', positionId: 'g1', shift: 'R', note: '', wid: '0123' };
+    st.employees['b|b'] = { key: 'b|b', last: 'Bartoš', first: 'Bořek', positionId: 'g1', shift: 'R', note: '', wid: '77',
+      hist: [{ at: 0, pos: null, lvl: null }, { at: Date.UTC(2026, 10, 20), pos: 'g1', lvl: null }] };
+    st.employees['c|c'] = { key: 'c|c', last: 'Cibulka', first: 'Cyril', positionId: null, note: '', wid: '88' };
+    st.employees['d|d'] = { key: 'd|d', last: 'Dvořák', first: 'Dan', positionId: 'g1', note: '', wid: 'x-5' };
+    st.employees['e|e'] = { key: 'e|e', last: 'Eliáš', first: 'Emil', positionId: 'g1', note: '', wid: 'y-5' };
+    S = sanitizeState(st);
+    S.workAudit.dv.pres['2026-11-02'] = { 'h-0123': [360, 870], 77: [360, 870], 88: [360, 870], 5: [360, 870], 999: [360, null] };
+    const m = dvWidMap();
+    const ctx = drCtx({ now: Date.UTC(2026, 10, 25, 9) });
+    const d = drDay('2026-11-02', ctx);
+    const pr = drPairing(['2026-11-01', '2026-11-02'], ctx);
+    return JSON.stringify({ map: [m.get('h-0123') && m.get('h-0123').key, m.get('123') && m.get('123').key, m.has('77'), m.get('5') || null, m.get('1') || null],
+      rows: d.rows.map(r => [r.name, r.plan, r.done]), pr });
+  })()`));
+  assert.deepStrictEqual(out.map, ['a|a', 'a|a', true, null, null], 'číslice ID jen když vedou na jednoho člověka (5 je dvakrát), jedna číslice nestačí');
+  assert.deepStrictEqual(out.rows, [['Brus', 4, 2], ['Neznámé ID', 0, 2], ['Bez skupiny', 0, 1]], 'Bartoš bez skupiny v historii jde do dnešní skupiny');
+  assert.deepStrictEqual(out.pr, { days: 1, came: 2, unknown: ['5', '999'], noGroup: [{ key: 'c|c', name: 'Cibulka Cyril', wid: '88' }] });
+  return null;
+});
 test('Audit (2.37): docházka a výkony z jednoho souboru – čtení, uložení, obsazenost po projektech, produktivita', () => {
   const core = loadCore();
   const out = JSON.parse(run(core, `(() => {

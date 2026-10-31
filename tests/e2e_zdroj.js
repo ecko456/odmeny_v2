@@ -131,6 +131,21 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   check(JSON.stringify(r.pcs) === '["2026-11-02","2026-11-03"]', `kusy: ${r.pcs}`);
   check(/docházka pro odměny za listopad 2026/.test(r.log) && /evidence práce za listopad 2026/.test(r.log), `historie: ${r.log}`);
 
+  // Report docházky (2.42.1): ukáže nahraný den, všichni spárovaní; den bez příchodů nabídne poslední den
+  await page.click('#waTabs [data-watab="report"]');
+  await page.waitForSelector('#waView .dr-bar');
+  check(await page.evaluate(() => ui.wa.dr.ref) === '2026-11-03' && await page.locator('#waView .dr-check').count() === 0, 'report na nahraném dni bez upozornění');
+  await page.evaluate(() => { ui.wa.dr.ref = '2026-10-29'; renderWorkAudit(); });
+  check(/nejsou nahrané žádné příchody/.test(await text(page, '#waView .dr-check')), 'den bez příchodů: upozornění');
+  await page.click('#waView [data-drgo]');
+  const lastRef = await page.evaluate(() => ui.wa.dr.ref);
+  check(lastRef === '2026-11-03', `tlačítko na poslední den s příchody: ${lastRef}`);
+  await page.evaluate(() => { S.workAudit.dv.pres['2026-11-03']['555'] = [360, null]; S.employees['fiala|filip'].positionId = null; ui.wa.dr.ref = '2026-11-03'; renderWorkAudit(); });
+  const chk = await text(page, '#waView');
+  check(/1 ID ze souboru není u nikoho v Lidech.*555/.test(chk) && /1 člověk s příchodem nemá skupinu v Matici.*Fiala Filip/.test(chk), `upozornění na párování: ${chk.slice(0, 200)}`);
+  await page.screenshot({ path: path.join(shots, '01b-report.png') });
+  await page.evaluate(() => { delete S.workAudit.dv.pres['2026-11-03']['555']; S.employees['fiala|filip'].positionId = 'g_cnc'; renderWorkAudit(); });
+
   // 2) Nastavení: skupiny Matice u skupin Auditu, starší soubory schované
   await page.click('#waTabs [data-watab="nastaveni"]');
   await page.waitForSelector('#waView .wa-mg');

@@ -62,6 +62,18 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.42.1
+
+- **Report docházky po nahrání.** Report se přepne na nahraný den. Nad reportem je vidět,
+  proč někdo chybí: den bez příchodů (s tlačítkem na poslední den s příchody), ID ze souboru,
+  které u nikoho v Lidech není, a lidé s příchodem bez skupiny v Matici.
+- **Párování ID:** když ID ze souboru přesně nesedí, zkusí se jen číslice bez úvodních nul
+  (H-0123 = 123), pokud to vede na jediného člověka. Kdo dřív neměl skupinu a dnes ji má,
+  počítá se i za starší dny do dnešní skupiny.
+- **Rychlá kontrola:** klepnutím na člověka ve vylosovaném seznamu se otevřou body kontroly
+  jeho oddělení a u každého se označí splněno, nebo nesplněno. Člověk se tím přidá do dnešních
+  kontrol a v řádku je pak výsledek (třeba 1/2), klepnutím jde upravit.
+
 ## Co je nového ve verzi 2.42
 
 - **Od listopadu 2026 jeden soubor na všechno.** Audit → **Nahrát docházku a výkony** plní

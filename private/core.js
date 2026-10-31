@@ -5093,12 +5093,23 @@ function cleanDv(o){
   return out;
 }
 /** ID → člověk (jedna mapa na výpočet). */
-function dvWidMap(){const m=new Map();Object.values(S.employees||{}).forEach(e=>{const w=widKey(e.wid);if(w&&!m.has(w))m.set(w,e);});return m;}
+/** ID → člověk (jedna mapa na výpočet). Když ID ze souboru přesně nesedí, zkusí se jen číslice
+    bez úvodních nul (H-0123 = 123), pokud to vede na jediného člověka (2.42.1). */
+function dvWidMap(){
+  const m=new Map(),dig=new Map(),only=w=>{const d=String(w||"").replace(/\D+/g,"").replace(/^0+(?=\d)/,"");return d.length>=2?d:"";};
+  Object.values(S.employees||{}).forEach(e=>{const w=widKey(e.wid);if(!w)return;if(!m.has(w))m.set(w,e);const d=only(w);if(d)dig.set(d,dig.has(d)&&dig.get(d)!==e?null:e);});
+  const get=Map.prototype.get.bind(m),has=Map.prototype.has.bind(m);
+  m.get=w=>{const e=get(w);if(e)return e;const d=only(w),x=d?dig.get(d):null;return x||undefined;};
+  m.has=w=>has(w)||!!m.get(w);
+  return m;
+}
 /** Projekt = skupina Matice, kam člověk ten den patřil (minulost podle historie zařazení). */
 function dvGroupOf(e,iso,today){
   if(!e)return {id:"?",name:"Neznámé ID",dept:""};
   if(isLead(e))return {id:"lead",name:"Vedoucí",dept:""};
-  const posId=iso<today?levelAt(e,ctDayEnd(iso)).pos:e.positionId;
+  /* minulost podle historie zařazení; bez skupiny v historii platí dnešní skupina (2.42.1: lidé
+     zařazení až po nahrání docházky by jinak byli „Bez skupiny“) */
+  const posId=(iso<today?levelAt(e,ctDayEnd(iso)).pos:null)||e.positionId;
   const p=posId?S.positions.find(x=>x.id===posId&&isGroup(x)):null;
   return p?{id:p.id,name:p.name,dept:p.dept||""}:{id:"-",name:"Bez skupiny",dept:""};
 }
@@ -5238,6 +5249,26 @@ function drDay(iso,ctx){
   const plan=rows.filter(r=>!r.extra).reduce((x,r)=>x+r.plan,0),done=rows.reduce((x,r)=>x+r.done,0);
   const mark=ctx.marks[iso]||"";
   return {iso,day,work:day.work,mark,norm:day.work&&!mark,kind,rows,plan,done,req:ctx.req,met:done>=ctx.req};
+}
+/** Párování příchodů pro report (2.42.1): kolik lidí s příchodem jde do skupin, kdo má ID, které
+    v Lidech není, a kdo je bez skupiny. */
+function drPairing(dates,ctx){
+  ctx=ctx||drCtx();
+  const unknown=new Set(),noGroup=new Map();let came=0,days=0;
+  dates.forEach(iso=>{
+    const pres=ctx.dv.pres[iso];if(!pres)return;
+    let any=false;
+    Object.entries(pres).forEach(([wid,v])=>{
+      if(v[0]==null&&v[1]==null)return;any=true;
+      const e=ctx.map.get(wid)||null;
+      if(!e){unknown.add(wid);return;}
+      if(isLead(e))return;
+      const g=dvGroupOf(e,iso,ctx.today);
+      if(g.id==="-")noGroup.set(e.key,{key:e.key,name:(e.last+" "+e.first).trim(),wid});else came++;
+    });
+    if(any)days++;
+  });
+  return {days,came,unknown:[...unknown].sort(widCmp),noGroup:[...noGroup.values()].sort((a,b)=>norm(a.name).localeCompare(norm(b.name),"cs"))};
 }
 function drDates(mode,ref){
   const [y,m]=ref.split("-").map(Number),out=[];

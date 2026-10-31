@@ -34,6 +34,22 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.42.1):
+
+- Uživatel: „Norma zatím nebude uváděna. Přestávka je vždy 30 minut“ (`dvHours`: pobyt − 30 min
+  vždy), pak „Při importu mi stále nepropisuje lidi do Reportu docházky“ a „u rychlých kontrol …
+  nemám možnost rozkliknout člověka, abych viděl body co mám kontrolovat a označit splněno“.
+  - Příčinu u Reportu jsme bez souboru nezjistili (s ID v Lidech funguje). Doplněno: `dvWidMap`
+    s náhradou podle číslic ID (jen jednoznačně, aspoň 2 číslice), `dvGroupOf` bez skupiny
+    v historii bere dnešní skupinu, `drPairing` + `drCheckHtml` (`.dr-check`, `[data-drgo]`)
+    vysvětlí den bez příchodů, neznámá ID a lidi bez skupiny; `dvImportAudit` nastaví report
+    na nahraný den (a v Reportu zůstane). Když se to bude opakovat, chtít text upozornění.
+  - Rychlá kontrola: `qkItemOf`, `qkOpen` (přidá do dnešního plánu přes `quickSave`, pak
+    `ktCheckForm`), řádek `button.qk-open[data-qkopen]`, hotový řádek s výsledkem; v Dnes ke
+    kontrole je jméno `[data-qkcheck]` (i úprava hotové).
+  - Testy: core „Report docházky (2.42.1)“, `e2e_zdroj` (report po nahrání, upozornění),
+    `e2e_rychla` (zápis z vylosovaného seznamu). `ODM_VERSION` 2.42.1, data 37.
+
 Stav k 31. 10. 2026 (verze 2.42):
 
 - Uživatel: „celý modul Audit, ať funguje na ‚Nahrát docházku a výkon‘. Nahradí to i modul
@@ -1725,7 +1741,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.40 | `abc9792` | Audit – Report docházky po vzoru (plnění denního požadavku z příchodů, Den / Týden / Měsíc / Rok, PDF a Excel) |
 | 2.40.1 | `16e5802` | úvod HALA 2 o víkendu a ve svátek podle dnešních příchodů, poslední nahrané příchody |
 | 2.41 | `48ad143` | Report docházky – vlastní skupiny z oddělení, značka dne přesčas / práce ve svátek mimo normu (data verze 36) |
-| 2.42 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: od listopadu 2026 soubor Docházka a výkony jediný zdroj (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v Auditu, skupiny Matice u skupin Auditu) (data verze 37) |
+| 2.42 | `351e34c` | od listopadu 2026 soubor Docházka a výkony jediný zdroj (docházka pro odměny, evidence práce místo Výroby, obsazenost a kusy v Auditu, skupiny Matice u skupin Auditu) (data verze 37) |
+| 2.42.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Report docházky – nahraný den, upozornění na párování, ID podle číslic; Rychlá kontrola – klepnutím na člověka body kontroly a zápis |
 
 Verze 2.1 přidala:
 
@@ -2114,7 +2131,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 90 testů: proti původní aplikaci + opravy + 2.1 až 2.42
+node tests/test_core.js                 # 91 testů: proti původní aplikaci + opravy + 2.1 až 2.42
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

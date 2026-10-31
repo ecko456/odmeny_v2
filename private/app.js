@@ -7047,23 +7047,54 @@ function qkOpt() {
 }
 const qkSlotText = s => (s === 'am' ? 'ranní' : s === 'pm' ? 'odpolední' : s === 'rot' ? 'směnnost' : 'bez směny');
 const qkLastText = d => (d ? `naposledy ${dayText(d, false)}` : 'zatím bez kontroly');
+/* Dnešní položka plánu kontrol pro člověka (2.42.1), bez zrušených. */
+function qkItemOf(key) {
+  const today = todayIso();
+  const p = audPlan(isoWeek(today).id);
+  return p ? p.items.find(i => i.key === key && i.day === today && i.state !== 'skip') || null : null;
+}
 function qkWho(x, i, cls = '') {
   const e = S.employees[x.key];
-  return `<li class="qk-row${cls}" data-qkkey="${esc(x.key)}">
-    <span class="qk-i num">${i + 1}</span><span class="ps-av">${esc(initials(e || { last: x.name }))}</span>
-    <span class="nm"><b>${esc(x.name)}</b><span>${esc([x.dept, qkSlotText(x.slot), x.wid ? `ID ${x.wid}` : ''].filter(Boolean).join(' · '))}</span><small class="${x.last ? '' : 'qk-new'}">${esc(qkLastText(x.last))}</small></span>
-    <button type="button" class="icon-btn qk-swap" data-qkswap="${esc(x.key)}" title="Vyměnit za jiného" aria-label="Vyměnit: ${esc(x.name)}">${I.swap}</button>
+  const it = qkItemOf(x.key);
+  const sc = it && it.state === 'done' ? checkScore(it) : null;
+  const tasks = audTasks(x.dept).length;
+  // klepnutí na člověka otevře body kontroly (2.42.1); hotová kontrola ukáže výsledek, vyměnit už nejde
+  const right = sc ? `<span class="t5-state ${sc.ok === sc.n ? 's-ok' : 's-fail'}">${sc.ok}/${sc.n}</span>`
+    : `<button type="button" class="icon-btn qk-swap" data-qkswap="${esc(x.key)}" title="Vyměnit za jiného" aria-label="Vyměnit: ${esc(x.name)}"${it ? ' hidden' : ''}>${I.swap}</button>`;
+  return `<li class="qk-row${cls}${sc ? ' qk-done' : ''}" data-qkkey="${esc(x.key)}">
+    <span class="qk-i num">${i + 1}</span><span class="ps-av">${sc ? I.check : esc(initials(e || { last: x.name }))}</span>
+    <button type="button" class="nm qk-open" data-qkopen="${esc(x.key)}" aria-label="${esc(`${tasks ? (sc ? 'Upravit kontrolu' : 'Zkontrolovat') : 'Bez nutných úkonů'}: ${x.name}`)}"><b>${esc(x.name)}</b><span>${esc([x.dept, qkSlotText(x.slot), x.wid ? `ID ${x.wid}` : ''].filter(Boolean).join(' · '))}</span><small class="${x.last ? '' : 'qk-new'}">${esc(tasks ? (sc ? 'zkontrolováno, klepni pro úpravu' : `${qkLastText(x.last)} · klepni a zkontroluj ${tasks} ${tasks === 1 ? 'bod' : tasks <= 4 ? 'body' : 'bodů'}`) : 'oddělení nemá nutné úkony')}</small></button>
+    ${right}
   </li>`;
+}
+/* Otevře body kontroly člověka z vylosovaného seznamu: kdo ještě není v dnešním plánu, přidá se. */
+async function qkOpen(key) {
+  const x = (ui.qk.list || []).find(y => y.key === key);
+  const e = S.employees[key];
+  if (!e) return;
+  const dept = x ? x.dept : empDept(e);
+  if (!audTasks(dept).length) { toast(`Oddělení ${dept} nemá nutné úkony. Doplníš je v Kontrolách, záložka Nutné úkony.`, true); return; }
+  const week = isoWeek(todayIso()).id;
+  let it = qkItemOf(key);
+  if (!it) {
+    try { quickSave([key], ktMeta()); } catch (error) { toast(error.message, true); return; }
+    it = qkItemOf(key);
+    if (!it) { toast('Člověka se nepodařilo přidat do dnešních kontrol.', true); return; }
+    save(); renderKtBadge();
+  }
+  await ktCheckForm(week, it);
+  renderQuick();
 }
 function qkTodayRow(it, today) {
   const tasks = audTasks(it.dept).length;
   const sc = it.state === 'done' ? checkScore(it) : null;
   const right = it.state === 'done' ? `<span class="t5-state ${sc.ok === sc.n ? 's-ok' : 's-fail'}">${sc.ok}/${sc.n}</span>`
     : it.state === 'skip' ? '<span class="t5-state s-zrus">neproběhlo</span>'
-    : tasks ? `<button class="btn small" type="button" data-qkcheck="${esc(it.id)}">Zapsat</button>` : '<span class="tiny warn-t">bez úkonů</span>';
+    : tasks ? `<button class="btn small" type="button" data-qkcheck="${esc(it.id)}">Zkontrolovat</button>` : '<span class="tiny warn-t">bez úkonů</span>';
   const e = S.employees[it.key];
+  const nm = `<b>${esc(it.name)}</b><span>${esc(it.dept)}${ktAway(it) ? ' · podle příchodů nepřišel' : ''}</span>`;
   return `<li class="qk-row qk-${it.state}"><span class="ps-av">${it.state === 'done' ? I.check : esc(initials(e || { last: it.name }))}</span>
-    <span class="nm"><b>${esc(it.name)}</b><span>${esc(it.dept)}${ktAway(it) ? ' · podle příchodů nepřišel' : ''}</span></span>${right}</li>`;
+    ${tasks && it.state !== 'skip' ? `<button type="button" class="nm qk-open" data-qkcheck="${esc(it.id)}" aria-label="${esc(`${it.state === 'done' ? 'Upravit kontrolu' : 'Zkontrolovat'}: ${it.name}`)}">${nm}</button>` : `<span class="nm">${nm}</span>`}${right}</li>`;
 }
 
 function renderQuick() {
@@ -7128,7 +7159,7 @@ function renderQuick() {
         <button type="button" class="btn sec" data-qkgo>Vylosovat znovu</button>
         ${list.length ? `<button type="button" class="btn ghost" data-qkshare>${I.share}Sdílet seznam</button>` : ''}
       </div>
-      ${work ? `<p class="tiny muted">Po uložení se lidé objeví v plánu kontrol na dnešek a u každého půjde zapsat výsledek.${noTasks.length ? ` Oddělení bez nutných úkonů (${esc(noTasks.join(', '))}) zapsat nejde.` : ''}</p>` : '<p class="tiny muted">Dnes není pracovní den, seznam jde jen sdílet. Do plánu kontrol se uloží v pracovní den.</p>'}
+      ${work ? `<p class="tiny muted">Klepnutím na člověka otevřeš body kontroly a u každého označíš splněno, nebo nesplněno (člověk se tím přidá do dnešních kontrol). Uložit do dnešních kontrol přidá celý seznam najednou.${noTasks.length ? ` Oddělení bez nutných úkonů (${esc(noTasks.join(', '))}) zapsat nejde.` : ''}</p>` : '<p class="tiny muted">Dnes není pracovní den, seznam jde jen sdílet. Do plánu kontrol se uloží v pracovní den.</p>'}
     </section>` : ''}
     ${todays.length ? `<section class="card qk-card qk-today">
       <div class="qk-rhead"><h2 class="qk-h">Dnes ke kontrole</h2><span class="qk-prog num">${done} / ${live.length}</span></div>
@@ -7193,6 +7224,7 @@ function bindQuick() {
     if (t.closest('[data-qkgo]')) { qkDraw(); return; }
     if (t.closest('[data-qksave]')) { qkSave(); return; }
     if (t.closest('[data-qkshare]')) { qkShare(); return; }
+    if ((b = t.closest('[data-qkopen]'))) { qkOpen(b.dataset.qkopen); return; }
     if ((b = t.closest('[data-qkswap]'))) {
       const keys = (q.list || []).map(x => x.key);
       const x = quickSwap(qkOpt(), keys, b.dataset.qkswap);
@@ -11678,7 +11710,21 @@ function drHtml() {
   const markBar = st.mode === 'day' ? `<div class="dr-mark"><span>Den v plnění normy:</span><div class="chips" role="group" aria-label="Den v plnění normy">${[['', r.d.work ? 'Počítá se' : 'Víkend / svátek'], ['ot', 'Přesčas'], ['hol', 'Práce ve svátek']].map(([k, l]) => `<button type="button" class="chip${dm === k ? ' on' : ''}" data-drmark="${k}" aria-pressed="${dm === k}">${l}</button>`).join('')}</div>
       <small class="muted">${dm ? `Den se do týdenního, měsíčního a ročního plnění normy nepočítá (${DR_MARK[dm]}).` : r.d.work ? 'Pracovní den, počítá se do plnění normy.' : 'Víkend a svátek jsou mimo normu vždy.'}</small></div>` : '';
   const hint = dvHas() ? '' : `<div class="note w">Zatím nejsou nahrané příchody. Report ukáže skutečnost po nahrání souboru s docházkou (záložka Lidé v práci). <button class="btn small" type="button" data-dvpick>Nahrát docházku</button></div>`;
-  return `${bar}${markBar}${drSetHtml()}${hint}${drPaperHtml(drView(r))}`;
+  return `${bar}${markBar}${drSetHtml()}${hint || drCheckHtml(st)}${drPaperHtml(drView(r))}`;
+}
+/* Proč report nemusí ukazovat lidi (2.42.1): den bez příchodů, ID mimo Lidi, lidé bez skupiny. */
+function drCheckHtml(st) {
+  const today = todayIso();
+  const dates = drDates(st.mode, st.ref).filter(iso => iso <= today);
+  const p = drPairing(dates);
+  const out = [];
+  if (!p.days) {
+    const last = dvLastPres(dates.length ? dates[dates.length - 1] : today) || dvLastPres('9999-12-31');
+    out.push(`<div class="note w dr-check"><b>${st.mode === 'day' ? 'Na tento den' : 'V tomto období'} nejsou nahrané žádné příchody</b>, report ukazuje jen plán.${last ? ` Poslední den s příchody je ${esc(dayText(last))}. <button class="btn small" type="button" data-drgo="${esc(last)}">Zobrazit ${esc(dayText(last))}</button>` : ''}</div>`);
+  }
+  if (p.unknown.length) out.push(`<div class="note e dr-check"><b>${p.unknown.length} ${p.unknown.length === 1 ? 'ID ze souboru není' : 'ID ze souboru nejsou'} u nikoho v Lidech</b>, ${p.unknown.length === 1 ? 'tenhle člověk se' : 'tihle lidé se'} do skupin nepočítají: ${p.unknown.slice(0, 15).map(esc).join(', ')}${p.unknown.length > 15 ? '…' : ''}. Doplň ID v kartě člověka (Lidé), nebo hromadně v Nastavení (ID zaměstnanců). <button class="link" type="button" data-go="lide">Otevřít Lidi</button></div>`);
+  if (p.noGroup.length) out.push(`<div class="note w dr-check"><b>${p.noGroup.length} ${p.noGroup.length === 1 ? 'člověk s příchodem nemá' : 'lidí s příchodem nemá'} skupinu v Matici</b>, v reportu ${p.noGroup.length === 1 ? 'je' : 'jsou'} jen v řádku Bez skupiny: ${p.noGroup.slice(0, 10).map(x => esc(x.name)).join(', ')}${p.noGroup.length > 10 ? '…' : ''}. <button class="link" type="button" data-go="lide">Zařadit v Lidech</button></div>`);
+  return out.join('');
 }
 /* Skupiny reportu (2.41): název a oddělení z Matice; oddělení patří nejvýš jedné skupině. */
 function drSetHtml() {
@@ -12107,7 +12153,10 @@ async function dvImportAudit(file) {
   if (!out) return;
   const { a, w, r } = out;
   const today = todayIso();
-  Object.assign(ui.wa, { tab: 'lide', dvMode: a ? 'day' : 'month', dvDay: a ? (a.dates.includes(today) ? today : a.to) : ui.wa.dvDay, dvMonth: r.months.length ? r.months[r.months.length - 1] : (a ? a.to.slice(0, 7) : ui.wa.dvMonth) });
+  // Report docházky ukáže nahraný den (2.42.1); kdo nahrával z Reportu, v Reportu zůstane.
+  if (a) Object.assign(drRef(), { mode: 'day', ref: a.dates.includes(today) ? today : a.to });
+  const stay = ui.wa.tab === 'report' && a;
+  Object.assign(ui.wa, { tab: stay ? 'report' : 'lide', dvMode: a ? 'day' : 'month', dvDay: a ? (a.dates.includes(today) ? today : a.to) : ui.wa.dvDay, dvMonth: r.months.length ? r.months[r.months.length - 1] : (a ? a.to.slice(0, 7) : ui.wa.dvMonth) });
   if (r.audit && r.audit.added.length) Object.assign(ui.wa, { opFilter: 'nogroup', opQ: '' });
   renderWorkAudit();
   const ng = r.audit ? r.audit.added.length : 0;
@@ -12453,6 +12502,8 @@ function bindWorkAudit() {
     if (drm) { drRef().mode = drm.dataset.drmode; renderWorkAudit(); return; }
     const drs = t.closest('[data-drshift]');
     if (drs) { drShift(+drs.dataset.drshift); renderWorkAudit(); return; }
+    const drgo = t.closest('[data-drgo]');
+    if (drgo) { drRef().ref = drgo.dataset.drgo; drRef().mode = 'day'; renderWorkAudit(); return; }
     if (t.closest('[data-drtoday]')) { drRef().ref = todayIso(); renderWorkAudit(); return; }
     if (t.closest('[data-drapply]')) { const v = $('#drDate').value; if (WA_ISO.test(v)) { drRef().ref = v; renderWorkAudit(); } return; }
     const drmk = t.closest('[data-drmark]');
