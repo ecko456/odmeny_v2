@@ -2097,7 +2097,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=35;
+const DATA_VERSION=36;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -4114,7 +4114,7 @@ const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
 /* Požadavek lidí na pracovní den (2.18.1): pevně 100 lidí, null = podle plánu v souboru obsazenosti. */
 const WA_TARGET=100;
-function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null,dv:blankDv()};}
+function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null,dv:blankDv(),drep:blankDrep()};}
 /* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
    jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
 function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}
@@ -4174,6 +4174,8 @@ function cleanWorkAudit(o){
   const tp=cnt(o.trainPct);out.trainPct=tp!=null&&tp>=1&&tp<=100?Math.round(tp):null;
   /* docházka a výkony z jednoho souboru (2.37) */
   out.dv=cleanDv(o.dv);
+  /* report docházky (2.41): vlastní skupiny z oddělení a značky dnů (přesčas, práce ve svátek) */
+  out.drep=cleanDrep(o.drep);
   return out;
 }
 const WA_PLAN_FIELDS=["order","ean","ks","index","due","tech"];
@@ -4724,6 +4726,18 @@ function waChanges(A,B,add){
   });
   if(JSON.stringify(A.cols)!==JSON.stringify(B.cols))add("workaudit","Audit: změněny sloupce souborů",{m:"wacols"});
   if((A.target||null)!==(B.target||null))add("workaudit","",{m:"watarget",p:"Audit – požadavek lidí na pracovní den: ",v0:A.target?String(A.target):"podle plánu v souboru",v1:B.target?String(B.target):"podle plánu v souboru"});
+  const qa=A.drep||blankDrep(),qb=B.drep||blankDrep();
+  const rgT=g=>g.depts.length?g.depts.join(", "):"bez oddělení";
+  qb.groups.forEach(g=>{
+    const o=qa.groups.find(x=>x.id===g.id);
+    if(!o){add("workaudit","Report docházky: nová skupina „"+g.name+"“ ("+rgT(g)+")",{m:"wadrg:"+g.id});return;}
+    if(o.name!==g.name)add("workaudit","",{m:"wadrn:"+g.id,p:"Report docházky – skupina přejmenována: ",v0:"„"+o.name+"“",v1:"„"+g.name+"“"});
+    if(o.depts.join("|")!==g.depts.join("|"))add("workaudit","",{m:"wadrd:"+g.id,p:"Report docházky – "+g.name+", oddělení: ",v0:rgT(o),v1:rgT(g)});
+  });
+  qa.groups.forEach(g=>{if(!qb.groups.some(x=>x.id===g.id))add("workaudit","Report docházky: smazána skupina „"+g.name+"“",{m:"wadrg:"+g.id});});
+  new Set([...Object.keys(qa.marks),...Object.keys(qb.marks)]).forEach(iso=>{
+    if((qa.marks[iso]||"")!==(qb.marks[iso]||""))add("workaudit","",{m:"wadrm:"+iso,p:"Report docházky "+dayText(iso)+": ",v0:DR_MARK[qa.marks[iso]]||"počítá se do normy",v1:DR_MARK[qb.marks[iso]]||"počítá se do normy"});
+  });
   const da=A.dv||blankDv(),db=B.dv||blankDv();
   if(JSON.stringify(da.cols)!==JSON.stringify(db.cols)||da.unit!==db.unit)add("workaudit","Audit: změněny sloupce souboru docházky a výkonů",{m:"wadvcols"});
   if((A.trainPct||null)!==(B.trainPct||null))add("workaudit","",{m:"watrain",p:"Audit – hranice zaškolení: ",v0:A.trainPct?"od "+A.trainPct+" %":"podle Matice dovedností",v1:B.trainPct?"od "+B.trainPct+" %":"podle Matice dovedností"});
@@ -5018,15 +5032,47 @@ function staffReal(iso,mg,opts){
    Víkendy a svátky jsou mimo normu, budoucí dny (od zítřka) jsou plánovaná kapacita (plán bez
    nemocných) a do plnění se nepočítají. Lidé se v reportu uvádějí jen s ID. */
 const DR_MODES=["day","week","month","year"];
+/* Skupiny reportu (2.41): uživatel si složí skupiny z oddělení Matice; oddělení je nejvýš
+   v jedné skupině, skupiny Matice z nepřiřazených oddělení zůstanou v reportu samostatně.
+   Značka dne: přesčas nebo práce ve svátek = den mimo normu (jako víkend). */
+const DR_MARK={ot:"přesčas",hol:"práce ve svátek"};
+function blankDrep(){return {groups:[],marks:{}};}
+function cleanDrep(o){
+  const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const str=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g,"").replace(/\s+/g," ").trim().slice(0,max);
+  o=obj(o);
+  const out=blankDrep(),ids=new Set(),used=new Set();
+  (Array.isArray(o.groups)?o.groups:[]).forEach(g=>{
+    if(!g||typeof g!=="object"||out.groups.length>=20)return;
+    const id=String(g.id||"");
+    if(!/^rg[A-Za-z0-9]{1,24}$/.test(id)||ids.has(id))return;
+    ids.add(id);
+    const depts=[];
+    (Array.isArray(g.depts)?g.depts:[]).forEach(d=>{const t=str(d,80);if(t&&!used.has(t)&&depts.length<50){used.add(t);depts.push(t);}});
+    out.groups.push({id,name:str(g.name,60)||"Skupina",depts});
+  });
+  Object.entries(obj(o.marks)).slice(0,3000).forEach(([iso,v])=>{if(WA_ISO.test(iso)&&(v==="ot"||v==="hol"))out.marks[iso]=v;});
+  return out;
+}
 function drCtx(opts){
   opts=opts||{};
-  const groups=S.positions.filter(isGroup).map(p=>{
+  const mg=S.positions.filter(isGroup).map(p=>{
     const need=(S.capPlan&&S.capPlan.groups[p.id])||null;
     const members=Object.values(S.employees).filter(e=>e.positionId===p.id&&!e.excluded&&!isLead(e));
-    return {id:p.id,name:p.name||"(bez názvu)",plan:need&&need.n?need.n:members.length,cap:!!(need&&need.n),members};
+    return {id:p.id,name:p.name||"(bez názvu)",dept:deptOf(p),plan:need&&need.n?need.n:members.length,cap:!!(need&&need.n),members};
   });
+  const drep=(S.workAudit&&S.workAudit.drep)||blankDrep();
+  const byDept=new Map();
+  drep.groups.forEach(rg=>rg.depts.forEach(d=>byDept.set(d,rg)));
+  const groups=[],rowOf=new Map();
+  drep.groups.forEach(rg=>{
+    const gs=mg.filter(g=>byDept.get(g.dept)===rg);
+    groups.push({id:rg.id,name:rg.name,plan:gs.reduce((x,g)=>x+g.plan,0),cap:gs.some(g=>g.cap),members:gs.flatMap(g=>g.members),rg:true,depts:rg.depts,parts:gs.map(g=>g.name)});
+    gs.forEach(g=>rowOf.set(g.id,rg.id));
+  });
+  mg.filter(g=>!rowOf.has(g.id)).forEach(g=>{groups.push(g);rowOf.set(g.id,g.id);});
   const t=S.workAudit&&S.workAudit.target;
-  return {today:todayIso(opts.now),dv:(S.workAudit&&S.workAudit.dv)||blankDv(),map:dvWidMap(),groups,
+  return {today:todayIso(opts.now),dv:(S.workAudit&&S.workAudit.dv)||blankDv(),map:dvWidMap(),groups,rowOf,marks:drep.marks,
     req:t!=null&&t>0?+t:groups.reduce((x,g)=>x+g.plan,0),reqOwn:t!=null&&t>0};
 }
 function drDay(iso,ctx){
@@ -5045,13 +5091,13 @@ function drDay(iso,ctx){
       if(e&&isLead(e))return;
       if(e)came.add(e.key);
       const g=dvGroupOf(e,iso,ctx.today);
-      let r=byId.get(g.id);
+      let r=byId.get(ctx.rowOf.get(g.id)||g.id);
       if(!r){r={id:g.id,name:g.id==="?"?"Neznámé ID":"Bez skupiny",plan:0,done:0,sick:0,miss:[],note:"",extra:true};byId.set(g.id,r);rows.push(r);}
       r.done++;
     });
     Object.values(S.employees).forEach(e=>{
       if(e.excluded||isLead(e)||came.has(e.key))return;
-      const r=byId.get(dvGroupOf(e,iso,ctx.today).id);
+      const gid=dvGroupOf(e,iso,ctx.today).id,r=byId.get(ctx.rowOf.get(gid)||gid);
       if(!r||r.extra)return;
       if(e.sick&&e.sick<=iso)r.sick++;else r.miss.push(e.wid||"");
     });
@@ -5069,7 +5115,8 @@ function drDay(iso,ctx){
     r.note=parts.join(" · ");
   });
   const plan=rows.filter(r=>!r.extra).reduce((x,r)=>x+r.plan,0),done=rows.reduce((x,r)=>x+r.done,0);
-  return {iso,day,work:day.work,kind,rows,plan,done,req:ctx.req,met:done>=ctx.req};
+  const mark=ctx.marks[iso]||"";
+  return {iso,day,work:day.work,mark,norm:day.work&&!mark,kind,rows,plan,done,req:ctx.req,met:done>=ctx.req};
 }
 function drDates(mode,ref){
   const [y,m]=ref.split("-").map(Number),out=[];
@@ -5086,7 +5133,7 @@ function drReport(mode,ref,opts){
   const ctx=drCtx(opts),dates=drDates(mode,ref);
   if(mode==="day")return {mode,ref,from:ref,to:ref,req:ctx.req,reqOwn:ctx.reqOwn,today:ctx.today,groups:ctx.groups,d:drDay(ref,ctx)};
   const all=dates.map(iso=>drDay(iso,ctx));
-  const work=all.filter(d=>d.work&&d.kind!=="none"),real=work.filter(d=>d.kind==="real"),fut=work.filter(d=>d.kind==="plan");
+  const work=all.filter(d=>d.norm&&d.kind!=="none"),real=work.filter(d=>d.kind==="real"),fut=work.filter(d=>d.kind==="plan");
   const n=real.length,met=real.filter(d=>d.met).length,nf=fut.length,futMet=fut.filter(d=>d.met).length;
   const agg=list=>{
     const m=new Map();
@@ -5109,8 +5156,9 @@ function drReport(mode,ref,opts){
   const worst=n?real.slice().sort((a,b)=>a.done-b.done||(a.iso<b.iso?-1:1))[0]:null;
   return {mode,ref,from:dates[0],to:dates[dates.length-1],req:ctx.req,reqOwn:ctx.reqOwn,today:ctx.today,groups:ctx.groups,days:all,
     n,met,pct:n?met/n*100:null,avg:n?real.reduce((x,d)=>x+d.done,0)/n:null,worst,nf,futMet,planPct:nf?futMet/nf*100:null,onlyPlan:!n&&nf>0,
-    noData:all.filter(d=>d.work&&d.kind==="none"&&d.iso<=ctx.today).length,
-    weekend:all.filter(d=>!d.work&&d.kind==="real").length,
+    noData:all.filter(d=>d.norm&&d.kind==="none"&&d.iso<=ctx.today).length,
+    weekend:all.filter(d=>!d.work&&!d.mark&&d.kind==="real").length,
+    marked:all.filter(d=>d.mark).map(d=>({iso:d.iso,mark:d.mark,done:d.kind==="real"?d.done:null})),
     groupsReal:agg(real),groupsPlan:agg(fut),trend};
 }
 /** Excel: přehled dní a skupiny za období. */
@@ -5121,9 +5169,9 @@ function drSheets(r){
   const dayRows=days.map(d=>{
     const by=new Map(d.rows.map(x=>[x.id,x]));
     const extra=d.rows.filter(x=>x.extra).reduce((s2,x)=>s2+x.done,0);
-    return [d.iso,["Ne","Po","Út","St","Čt","Pá","So"][d.day.dow],d.work?kindT[d.kind]:(d.kind==="real"?"víkend / svátek (mimo normu)":"víkend / svátek"),
+    return [d.iso,["Ne","Po","Út","St","Čt","Pá","So"][d.day.dow],d.mark?DR_MARK[d.mark]+" (mimo normu)":d.work?kindT[d.kind]:(d.kind==="real"?"víkend / svátek (mimo normu)":"víkend / svátek"),
       d.req,d.kind==="none"?"":d.plan,d.kind==="none"?"":d.done,d.kind==="none"?"":d.done-d.req,
-      !d.work||d.kind!=="real"?"":d.met?"ano":"ne",...r.groups.map(g=>d.kind==="none"?"":(by.get(g.id)||{done:0}).done),d.kind==="none"?"":extra];
+      !d.norm||d.kind!=="real"?"":d.met?"ano":"ne",...r.groups.map(g=>d.kind==="none"?"":(by.get(g.id)||{done:0}).done),d.kind==="none"?"":extra];
   });
   const sheets=[{name:"Přehled dní",cols:[12,5,26,10,8,8,8,9,...names.map(()=>10),12],
     rows:[["Datum","Den","Druh","Požadavek","Plán","Dodáno","Rozdíl","V normě",...names,"Bez skupiny / neznámé ID"],...dayRows]}];

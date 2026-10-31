@@ -1,6 +1,7 @@
 // Prohlížečový průchod: Report docházky v Auditu (verze 2.40), plnění denního požadavku z nahraných
 // příchodů po vzoru reportu uživatele: Den, Týden, Měsíc, Rok, výrok, ukazatel, dlaždice, graf,
-// tabulka po skupinách, PDF (A4 na výšku, text přes pypdf, když je), Excel, telefon a tmavý režim.
+// tabulka po skupinách, PDF (A4 na výšku, text přes pypdf, když je), Excel, telefon a tmavý režim;
+// 2.41: skupiny reportu z oddělení (přejmenování, přesun oddělení), značka dne přesčas mimo normu, historie.
 // Všechna data jsou vymyšlená (bez názvu organizace). Hodiny stránky stojí na pátku 30. 10. 2026 v 10:00.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -158,6 +159,43 @@ const pdfText = file => {
   check(JSON.stringify(xl.names) === '["Přehled dní","Skupiny"]' && xl.days.length === 8, `Excel: ${JSON.stringify([xl.names, xl.days.length])}`);
   check(JSON.stringify(xl.days[1].slice(0, 8)) === JSON.stringify(['2026-10-26', 'Po', 'skutečnost', 14, 17, 14, 0, 'ano']), `Excel pondělí: ${JSON.stringify(xl.days[1])}`);
   check(xl.days[3][2] === 'víkend / svátek (mimo normu)', `Excel svátek: ${xl.days[3]}`);
+
+  // Skupiny reportu (2.41): skupina „Výroba“ z oddělení Lepení a Obrobna, přejmenování, přesun oddělení.
+  await saved(page);
+  await page.click('[data-drmode="day"]');
+  await page.click('[data-drtoday]');
+  await page.click('.dr-set > summary');
+  await page.click('[data-drrgadd]');
+  await saved(page);
+  const rgId = await page.evaluate(() => S.workAudit.drep.groups[0].id);
+  await page.fill(`[data-drrgname="${rgId}"]`, 'Výroba');
+  await page.press(`[data-drrgname="${rgId}"]`, 'Tab');
+  await page.click(`[data-drrgdept="${rgId}"][data-dept="Lepení"]`);
+  await page.click(`[data-drrgdept="${rgId}"][data-dept="Obrobna"]`);
+  await saved(page);
+  check(await page.isVisible('.dr-set[open]'), 'nastavení skupin zůstane otevřené');
+  const rg = await page.evaluate(() => JSON.parse(JSON.stringify(S.workAudit.drep.groups)));
+  check(rg.length === 1 && rg[0].name === 'Výroba' && JSON.stringify(rg[0].depts) === '["Lepení","Obrobna"]', `skupina reportu: ${JSON.stringify(rg)}`);
+  const tab = await page.$$eval('.dr-tab tbody tr', rows => rows.map(r => [...r.cells].slice(0, 3).map(c => c.textContent.trim())));
+  check(JSON.stringify(tab.slice(0, 3)) === JSON.stringify([['Výroba', '7', '7'], ['Brus', '10', '6'], ['Neznámé ID', '0', '1']]), `tabulka po skupinách reportu: ${JSON.stringify(tab)}`);
+  // druhá skupina si vezme Lepení (přesun)
+  await page.click('[data-drrgadd]');
+  await saved(page);
+  const rg2 = await page.evaluate(() => S.workAudit.drep.groups[1].id);
+  await page.click(`[data-drrgdept="${rg2}"][data-dept="Lepení"]`);
+  await saved(page);
+  check(await page.evaluate(() => JSON.stringify(S.workAudit.drep.groups.map(g => g.depts))) === '[["Obrobna"],["Lepení"]]', 'oddělení se přesune do druhé skupiny');
+  // značka dne: 27. 10. přesčas → týden 2 z 3 dnů = 67 %
+  await page.click('[data-drshift="-1"]'); await page.click('[data-drshift="-1"]'); await page.click('[data-drshift="-1"]');
+  check(await page.evaluate(() => ui.wa.dr.ref) === '2026-10-27', 'den 27. 10.');
+  await page.click('[data-drmark="ot"]');
+  await saved(page);
+  check(/PŘESČAS/.test(await text(page, '.dr-verdict')) && /přesčas — mimo normu/i.test(await text(page, '.dr-verdict')), `27. 10. přesčas: ${await text(page, '.dr-verdict')}`);
+  await page.click('[data-drmode="week"]');
+  check(/67\s*%/.test(await text(page, '.dr-verdict')) && /Přesčas \(mimo normu\): Út 27\. 10\. \(12\)/.test(await text(page, '.dr-paper')), `týden s přesčasem: ${await text(page, '.dr-verdict')}`);
+  const log = await page.evaluate(() => S.log.map(x => x.text).filter(t => /Report docházky/.test(t)).join(' | '));
+  check(/Report docházky: nová skupina „Výroba“|Report docházky – skupina přejmenována/.test(log) && /Report docházky 27\. 10\. 2026/.test(log), `historie: ${log}`);
+  await page.screenshot({ path: path.join(shots, '07-skupiny.png'), fullPage: true });
 
   // tmavý režim: papír zůstane bílý
   await page.emulateMedia({ colorScheme: 'dark' });

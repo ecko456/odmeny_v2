@@ -1,13 +1,13 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.38 → 2.40.1):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.38 → 2.41):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, Audit s kusy a hranicí zaškolení) a uloží je;
 //   2. nechá otevřenou starou stránku a spustí instalaci nové verze (UPGRADE_CMD);
 //   3. stará stránka už nesmí nic uložit (426, výzva k obnovení); s SAME_DATA (verze dat beze změny)
 //      se krok vynechá, stará stránka smí dál ukládat;
 //   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
-//   5. v nové verzi vylosuje Rychlou kontrolu (2.39) a uloží ji do dnešních kontrol; po novém
-//      přihlášení je v plánu a ostatní data jsou pořád stejná.
+//   5. v nové verzi vylosuje Rychlou kontrolu (2.39), uloží ji do dnešních kontrol a založí skupinu
+//      reportu docházky se značkou dne (2.41); po novém přihlášení je vše uložené a ostatní data stejná.
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
 //   git archive 59470af | tar -x -C $S/v238 && sudo bash $S/v238/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
@@ -18,14 +18,14 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.38$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.40\\.1$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.41$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
-const ADDED = {};
-/* Verze dat se nemění (2.39 má stejný tvar dat jako 2.38): stará stránka smí dál ukládat. */
-const SAME_DATA = true;
+const ADDED = { 'workAudit.drep': 'blankDrep()' };
+/* Verze dat se mění (2.41: skupiny reportu a značky dnů): stará stránka dostane 426. */
+const SAME_DATA = false;
 
 async function watch(page, label, allow426 = false) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
@@ -166,6 +166,9 @@ const STATE = added => `(() => {
   check(drawn.length === Math.min(3, pool.length) && drawn.every(k => pool.includes(k)), `vylosováno: ${drawn}`);
   const work = await page.evaluate(() => audDays(isoWeek(todayIso()).id).includes(todayIso()));
   if (work) { await page.click('[data-qksave]'); await saved(page); }
+  // Report docházky (2.41): skupina reportu z oddělení a značka dne
+  await page.evaluate(() => { S.workAudit.drep.groups.push({ id: 'rgX', name: 'Výroba', depts: ['Brus', 'Obrobna'] }); S.workAudit.drep.marks['2026-10-20'] = 'ot'; save(); });
+  await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const again = await ctx3.newPage();
@@ -178,6 +181,8 @@ const STATE = added => `(() => {
     const its = ((final.st.audit.plans[week] || {}).items || []).filter(i => i.day === today && i.extra);
     check(its.length === drawn.length && its.every(i => drawn.includes(i.key)), `rychlá kontrola po novém přihlášení: ${JSON.stringify(its)}`);
   }
+  const dr = final.added['workAudit.drep'];
+  check(dr && JSON.stringify(dr.groups) === JSON.stringify([{ depts: ['Brus', 'Obrobna'], id: 'rgX', name: 'Výroba' }]) && dr.marks['2026-10-20'] === 'ot', `report docházky po novém přihlášení: ${JSON.stringify(dr)}`);
   const keep = JSON.parse(JSON.stringify(before.st));
   // přibyl jen plán tohoto týdne (rychlá kontrola) a záznam v historii; ostatní beze změny
   const logNow = new Set(final.st.log.map(x => JSON.stringify(x)));

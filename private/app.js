@@ -11518,7 +11518,8 @@ function drView(r) {
     const d = r.d;
     const planned = d.kind === 'plan';
     const exists = d.kind === 'real';
-    const wknd = !d.work;
+    const wknd = !d.norm;
+    const offT = d.mark ? DR_MARK[d.mark] : 'víkend / svátek';
     const rows = d.rows;
     const ok = d.done >= req;
     const shown = planned || exists;
@@ -11530,11 +11531,11 @@ function drView(r) {
     v.banner = planned ? 'Budoucí den — místo skutečné docházky je plánovaná kapacita: plán skupin bez lidí, kteří jsou dnes nemocní.' : '';
     v.verdict = {
       cls: planned ? (ok ? 'plan' : 'warn') : !exists ? 'warn' : wknd ? 'warn' : ok ? 'ok' : 'no',
-      lbl: `${planned ? 'Plánovaná kapacita · ' : ''}Denní požadavek (norma) ${req} ${lidiN(req)}${wknd ? ' · víkend / svátek — mimo normu' : ''}`,
-      head: planned ? (ok ? 'KAPACITA POKRYJE POŽADAVEK' : 'KAPACITA NESTAČÍ') : !exists ? 'BEZ DAT' : wknd ? (ok ? 'PŘESČAS – SPLNĚNO' : 'PŘESČAS') : ok ? 'SPLNĚNO' : 'NESPLNĚNO',
+      lbl: `${planned ? 'Plánovaná kapacita · ' : ''}Denní požadavek (norma) ${req} ${lidiN(req)}${wknd ? ` · ${offT} — mimo normu` : ''}`,
+      head: planned ? (ok ? 'KAPACITA POKRYJE POŽADAVEK' : 'KAPACITA NESTAČÍ') : !exists ? 'BEZ DAT' : wknd ? `${d.mark === 'hol' ? 'PRÁCE VE SVÁTEK' : 'PŘESČAS'}${ok ? ' – SPLNĚNO' : ''}` : ok ? 'SPLNĚNO' : 'NESPLNĚNO',
       sub: planned ? (ok ? `Rezerva ${diffMin} ${lidiN(diffMin)} nad požadavek` : `Chybí ${-diffMin} ${lidiAcc(-diffMin)} do denního požadavku`)
         : !exists ? 'Pro tento den nejsou nahrané příchody'
-        : wknd ? 'Víkend a svátek se do plnění normy nezapočítávají'
+        : wknd ? (d.mark ? `Den je označený jako ${offT}, do plnění normy se nezapočítává` : 'Víkend a svátek se do plnění normy nezapočítávají')
         : ok ? (diffMin > 0 ? `Rezerva ${diffMin} ${lidiN(diffMin)} nad požadavek` : 'Přesně na denním požadavku') : `Chybí ${-diffMin} ${lidiAcc(-diffMin)} do denního požadavku`,
       big: shown ? String(d.done) : '–', bigL: planned ? 'plánovaná kapacita' : 'reálně dodáno',
     };
@@ -11600,9 +11601,13 @@ function drView(r) {
       empty: !n && !nfu ? 'V období nejsou nahrané příchody ani plánované dny (bez víkendů).' : '',
       total: n ? { cells: ['CELKEM', nf(r.groupsReal.filter(g => !g.extra).reduce((x, g) => x + g.avgPlan, 0), 1), nf(r.avg, 1), `${met}/${n}`, [met === n ? 'good' : r.pct >= 80 ? 'warning' : 'critical', met === n ? 'SPLNĚNO' : 'NESPLNĚNO']] } : null,
     };
-    v.notes = [r.noData ? `Bez nahraných příchodů: ${r.noData} ${pracDnyN(r.noData)} (do plnění se nepočítají).` : '', r.weekend ? `Docházka o víkendu nebo ve svátek: ${r.weekend} ${dniN(r.weekend)} (přesčas, mimo normu).` : ''].filter(Boolean);
+    const mk = k => r.marked.filter(x => x.mark === k);
+    const mkT = list => list.map(x => `${DOW[mkDay(...x.iso.split('-').map(Number)).dow]} ${dayText(x.iso, false)}${x.done != null ? ` (${x.done})` : ''}`).join(', ');
+    v.notes = [r.noData ? `Bez nahraných příchodů: ${r.noData} ${pracDnyN(r.noData)} (do plnění se nepočítají).` : '',
+      mk('ot').length ? `Přesčas (mimo normu): ${mkT(mk('ot'))}.` : '', mk('hol').length ? `Práce ve svátek (mimo normu): ${mkT(mk('hol'))}.` : '',
+      r.weekend ? `Docházka o víkendu nebo ve svátek: ${r.weekend} ${dniN(r.weekend)} (přesčas, mimo normu).` : ''].filter(Boolean);
   }
-  v.foot = `Plnění normy = podíl pracovních dní, kdy celkový počet lidí v práci dosáhl denního požadavku ${req}${r.reqOwn ? ' (Audit, Nastavení)' : ' (součet plánů skupin)'}. Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině. Víkendy a svátky jsou mimo normu, budoucí dny jsou plánovaná kapacita a do plnění se nepočítají. Lidé jen s ID. Vygenerováno ${dayText(todayIso())}.`;
+  v.foot = `Plnění normy = podíl pracovních dní, kdy celkový počet lidí v práci dosáhl denního požadavku ${req}${r.reqOwn ? ' (Audit, Nastavení)' : ' (součet plánů skupin)'}. Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině. Víkendy, svátky a dny označené jako přesčas nebo práce ve svátek jsou mimo normu, budoucí dny jsou plánovaná kapacita a do plnění se nepočítají. Lidé jen s ID. Vygenerováno ${dayText(todayIso())}.`;
   return v;
 }
 
@@ -11645,8 +11650,29 @@ function drHtml() {
       <button class="btn sec" type="button" data-drxlsx>Excel</button>
       <button class="btn" type="button" data-drpdf>PDF</button>
     </div>`;
+  const dm = st.mode === 'day' ? (S.workAudit.drep.marks[st.ref] || '') : '';
+  const markBar = st.mode === 'day' ? `<div class="dr-mark"><span>Den v plnění normy:</span><div class="chips" role="group" aria-label="Den v plnění normy">${[['', r.d.work ? 'Počítá se' : 'Víkend / svátek'], ['ot', 'Přesčas'], ['hol', 'Práce ve svátek']].map(([k, l]) => `<button type="button" class="chip${dm === k ? ' on' : ''}" data-drmark="${k}" aria-pressed="${dm === k}">${l}</button>`).join('')}</div>
+      <small class="muted">${dm ? `Den se do týdenního, měsíčního a ročního plnění normy nepočítá (${DR_MARK[dm]}).` : r.d.work ? 'Pracovní den, počítá se do plnění normy.' : 'Víkend a svátek jsou mimo normu vždy.'}</small></div>` : '';
   const hint = dvHas() ? '' : `<div class="note w">Zatím nejsou nahrané příchody. Report ukáže skutečnost po nahrání souboru s docházkou (záložka Lidé v práci). <button class="btn small" type="button" data-dvpick>Nahrát docházku</button></div>`;
-  return `${bar}${hint}${drPaperHtml(drView(r))}`;
+  return `${bar}${markBar}${drSetHtml()}${hint}${drPaperHtml(drView(r))}`;
+}
+/* Skupiny reportu (2.41): název a oddělení z Matice; oddělení patří nejvýš jedné skupině. */
+function drSetHtml() {
+  const dr = S.workAudit.drep;
+  const depts = departments();
+  const owner = new Map();
+  dr.groups.forEach(g => g.depts.forEach(d => owner.set(d, g)));
+  const free = depts.filter(d => !owner.has(d));
+  const rows = dr.groups.map(g => `<div class="dr-rg" data-drrg="${esc(g.id)}">
+      <div class="dr-rg-head"><input type="text" maxlength="60" value="${esc(g.name)}" data-drrgname="${esc(g.id)}" aria-label="Název skupiny"><button type="button" class="icon-btn" data-drrgdel="${esc(g.id)}" title="Smazat skupinu" aria-label="Smazat skupinu ${esc(g.name)}">×</button></div>
+      <div class="chips">${[...new Set([...depts, ...g.depts])].map(d => {
+        const on = g.depts.includes(d), other = !on && owner.get(d);
+        return `<button type="button" class="chip${on ? ' on' : ''}${other ? ' other' : ''}" data-drrgdept="${esc(g.id)}" data-dept="${esc(d)}" aria-pressed="${on}"${other ? ` title="Teď ve skupině ${esc(other.name)}, klepnutím přesunete"` : ''}>${esc(d)}${depts.includes(d) ? '' : ' (už není)'}${other ? ` <small>· ${esc(other.name)}</small>` : ''}</button>`;
+      }).join('')}</div></div>`).join('');
+  return `<details class="card dr-set"${ui.wa.drSet ? ' open' : ''}><summary><b>Skupiny reportu</b><span class="muted small">${dr.groups.length ? `${dr.groups.length} ${dr.groups.length === 1 ? 'skupina' : dr.groups.length <= 4 ? 'skupiny' : 'skupin'}${free.length ? ` · bez skupiny: ${free.map(esc).join(', ')}` : ''}` : 'report je po skupinách Matice dovedností'}</span></summary>
+    <p class="small muted">Skupina reportu sečte skupiny Matice z vybraných oddělení (plán i lidi v práci). Oddělení může být jen v jedné skupině; oddělení bez skupiny zůstanou v reportu po skupinách Matice.</p>
+    ${rows || '<p class="small muted">Zatím žádná skupina.</p>'}
+    <button type="button" class="btn sec small" data-drrgadd>+ Přidat skupinu</button></details>`;
 }
 function drPaint(root) { $$('[data-c]', root).forEach(el => { const c = el.dataset.c; if (!c) return; if (el.classList.contains('kv')) el.style.color = c; else el.style.setProperty('--c', c); }); }
 
@@ -12370,6 +12396,19 @@ function bindWorkAudit() {
     if (drs) { drShift(+drs.dataset.drshift); renderWorkAudit(); return; }
     if (t.closest('[data-drtoday]')) { drRef().ref = todayIso(); renderWorkAudit(); return; }
     if (t.closest('[data-drapply]')) { const v = $('#drDate').value; if (WA_ISO.test(v)) { drRef().ref = v; renderWorkAudit(); } return; }
+    const drmk = t.closest('[data-drmark]');
+    if (drmk) { const iso = drRef().ref, m = S.workAudit.drep.marks; if (drmk.dataset.drmark) m[iso] = drmk.dataset.drmark; else delete m[iso]; save(); renderWorkAudit(); return; }
+    if (t.closest('[data-drrgadd]')) { const g = S.workAudit.drep; if (g.groups.length >= 20) { toast('Nejvýš 20 skupin.', true); return; } g.groups.push({ id: `rg${uid('').replace(/[^A-Za-z0-9]/g, '').slice(0, 20)}`, name: `Skupina ${g.groups.length + 1}`, depts: [] }); ui.wa.drSet = true; save(); renderWorkAudit(); return; }
+    const drd = t.closest('[data-drrgdel]');
+    if (drd) { const g = S.workAudit.drep.groups.find(x => x.id === drd.dataset.drrgdel); if (g && await confirmBox('Smazat skupinu?', `Skupina „${g.name}“ zmizí z reportu, její oddělení budou zase po skupinách Matice.`, 'Smazat', true)) { S.workAudit.drep.groups = S.workAudit.drep.groups.filter(x => x !== g); save(); renderWorkAudit(); } return; }
+    const drg = t.closest('[data-drrgdept]');
+    if (drg) {
+      const gs = S.workAudit.drep.groups, g = gs.find(x => x.id === drg.dataset.drrgdept), d = drg.dataset.dept;
+      if (!g) return;
+      if (g.depts.includes(d)) g.depts = g.depts.filter(x => x !== d);
+      else { gs.forEach(x => { x.depts = x.depts.filter(y => y !== d); }); g.depts.push(d); }
+      save(); renderWorkAudit(); return;
+    }
     const drp = t.closest('[data-drpdf]');
     if (drp) { exportDrPdf(drp); return; }
     if (t.closest('[data-drxlsx]')) { exportDrXlsx(); return; }
@@ -12474,7 +12513,10 @@ function bindWorkAudit() {
     event.preventDefault();
     event.target.click();
   });
+  wv.addEventListener('toggle', event => { if (event.target.matches && event.target.matches('.dr-set')) ui.wa.drSet = event.target.open; }, true);
   wv.addEventListener('change', event => {
+    const rgn = event.target.closest('[data-drrgname]');
+    if (rgn) { const g = S.workAudit.drep.groups.find(x => x.id === rgn.dataset.drrgname); if (g) { g.name = rgn.value.replace(/\s+/g, ' ').trim().slice(0, 60) || g.name; save(); renderWorkAudit(); } return; }
     const t = event.target;
     if (t.id === 'waMonth') { ui.wa.month = t.value; renderWorkAudit(); return; }
     if (t.id === 'waWeek') { ui.wa.week = t.value; renderWorkAudit(); return; }

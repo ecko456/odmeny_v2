@@ -2426,3 +2426,15 @@ tr.dv-click:hover td { background: var(--surface-2); }
   .dr-chart { overflow-x: auto; }
   .dr-chart svg { min-width: 560px; }
 }
+/* Report docházky (2.41): značka dne a skupiny reportu. */
+.dr-mark { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 0 12px; }
+.dr-mark > span { font-weight: 600; font-size: 13.5px; }
+.dr-mark small { flex-basis: 100%; }
+.dr-set { margin: 0 0 14px; padding: 12px 16px; }
+.dr-set > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; cursor: pointer; }
+.dr-set[open] > summary { margin-bottom: 8px; }
+.dr-rg { display: grid; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.dr-rg-head { display: flex; gap: 8px; align-items: center; }
+.dr-rg-head input { flex: 1 1 auto; min-width: 0; max-width: 360px; font-weight: 600; }
+.dr-rg .chip.other { opacity: .6; }
+.dr-rg .chip small { font-size: 11px; }

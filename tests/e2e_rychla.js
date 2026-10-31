@@ -174,8 +174,9 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
   // Jen lidé v práci podle příchodů: v práci 3 z Brusu a 1 z Lepení, jeden z nich už v plánu.
   await page.evaluate(k => {
     const wid = x => S.employees[x].wid;
+    // pátý příchozí: vylosovaný, který mezi čtyřmi není (jinak nemocný Exner, do nabídky nejde)
     const inn = ['cibulka|jan', 'dvořák|jan', 'havel|jan', 'malý|jan'];
-    S.workAudit.dv.pres['2026-10-30'] = Object.fromEntries([...inn, k[0]].map(x => [wid(x), [360, null]]));
+    S.workAudit.dv.pres['2026-10-30'] = Object.fromEntries([...inn, k.find(x => !inn.includes(x)) || 'exner|jan'].map(x => [wid(x), [360, null]]));
     save(); renderQuick();
   }, keys);
   await saved(page);

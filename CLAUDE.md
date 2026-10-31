@@ -34,6 +34,30 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.41):
+
+- Uživatel: „u Report docházky udělej možnost, že budu moct vytvořit skupiny a do těch skupin
+  budu moct přidělit oddělení … u každého dne zakliknout, zda jde o přesčas nebo práce ve
+  svátek, v takovém případě se dané dny nebudou v týdenním a měsíčním reportu počítat do
+  Plnění normy. Tam se počítají jen pracovní dny.“
+  - Data `S.workAudit.drep = {groups[≤ 20]: {id 'rg…', name, depts[] (názvy oddělení
+    `deptOf`, oddělení nejvýš v jedné skupině)}, marks{iso: 'ot' | 'hol'}}` (`blankDrep`,
+    `cleanDrep`, `DR_MARK`). Historie `waChanges`: `wadrg:` skupina, `wadrn:` název, `wadrd:`
+    oddělení, `wadrm:` značka dne.
+  - `drCtx`: řádky = skupiny reportu (součet plánů a členů skupin Matice z jejich oddělení,
+    `parts`) + skupiny Matice z nepřiřazených oddělení; `rowOf` (skupina Matice → řádek).
+    `drDay`: `mark`, `norm = work && !mark`; `drReport` počítá jen `norm` dny, `marked`
+    (seznam s počtem v práci), `weekend` jen neoznačené dny mimo pracovní.
+  - UI: `drSetHtml` (`<details class="dr-set">`, `ui.wa.drSet`, `[data-drrgadd]`,
+    `[data-drrgname]` na `change`, `[data-drrgdept]` přesun, `[data-drrgdel]`), lišta značky
+    dne `.dr-mark` `[data-drmark]` jen v režimu Den; výrok „PŘESČAS / PRÁCE VE SVÁTEK“,
+    poznámky v týdnu a měsíci.
+  - Verze dat 36 (`DATA_VERSION`, `CLIENT_VERSION`, `ODM_MIN_CLIENT`), `ODM_VERSION` 2.41.
+    Testy: core „Report docházky (2.41)“, `e2e_report` (skupiny, přesun oddělení, přesčas),
+    `test_odmeny` (426 pro klienta 35), `e2e_upgrade_prev` 2.38 → 2.41 (`ADDED` drep,
+    `SAME_DATA` false). `e2e_rychla`: pátý příchozí se vybírá mimo čtyři pevné (náhodný los
+    občas trefil stejného a test padal).
+
 Stav k 31. 10. 2026 (verze 2.40.1):
 
 - Uživatel (v sobotu): „v mobilní verzi po přihlášení nevidím aktuální stav. Ukazuje mi to plán
@@ -1672,7 +1696,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.39.2 | `b89b1c5` | PDF Plánu kapacit v grafickém podání jako Kapacity a zaškolení (rámečky, dlaždice, graf po úrovních proti potřebě, tabulka) |
 | 2.39.3 | `aca21b0` | úvod HALA 2 na telefonu podle dnešních příchodů (v práci po směnách a odděleních proti plánu, teď v práci, nahrát příchody) |
 | 2.40 | `abc9792` | Audit – Report docházky po vzoru (plnění denního požadavku z příchodů, Den / Týden / Měsíc / Rok, PDF a Excel) |
-| 2.40.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvod HALA 2 o víkendu a ve svátek podle dnešních příchodů, poslední nahrané příchody |
+| 2.40.1 | `16e5802` | úvod HALA 2 o víkendu a ve svátek podle dnešních příchodů, poslední nahrané příchody |
+| 2.41 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Report docházky – vlastní skupiny z oddělení, značka dne přesčas / práce ve svátek mimo normu (data verze 36) |
 
 Verze 2.1 přidala:
 
@@ -1784,7 +1809,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `30` (od 2.32):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `36` (od 2.41):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -1836,6 +1861,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `service` (2.21, 2.22): Servis, evidence zařízení, odeslání a vzory (viz níže);
   - `shortage` (2.27): Shortage, nahrané seznamy chybějících dílů (viz níže);
   - `workAudit.dv` (2.37): docházka a výkony z jednoho souboru (viz Audit);
+  - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
@@ -2060,7 +2086,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 28 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 88 testů: proti původní aplikaci + opravy + 2.1 až 2.40.1
+node tests/test_core.js                 # 89 testů: proti původní aplikaci + opravy + 2.1 až 2.41
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

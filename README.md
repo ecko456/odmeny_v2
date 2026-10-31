@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.41
+
+- **Report docházky: skupiny reportu.** V Auditu → Report docházky je nahoře rozbalovací
+  **Skupiny reportu**: přidáš skupinu, pojmenuješ ji a klepnutím na oddělení z Matice dovedností
+  je do ní zařadíš. Oddělení může být jen v jedné skupině (klepnutím ho přesuneš). Report pak
+  sčítá plán i lidi v práci po těchto skupinách; skupiny Matice z oddělení, která v žádné
+  skupině nejsou, zůstanou v reportu samostatně.
+- **Přesčas a práce ve svátek.** V režimu Den jde u každého dne zvolit **Počítá se /
+  Přesčas / Práce ve svátek**. Označený den se do týdenního, měsíčního ani ročního plnění
+  normy nepočítá (počítají se jen pracovní dny), v reportu je vyjmenovaný v poznámce
+  a v Excelu má druh „přesčas (mimo normu)“. Víkendy a státní svátky jsou mimo normu dál
+  samy.
+- Změny skupin i značek dnů jsou v historii změn. **Verze dat 36:** stránka otevřená ve
+  starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.40.1
 
 - **Úvod HALA 2 na telefonu o víkendu a ve svátek.** Když máš na dnešek nahrané příchody
@@ -1475,7 +1490,7 @@ UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
 Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
-upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.40.1:
+upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.41:
 
 ```bash
 rm -rf /tmp/v238 && mkdir /tmp/v238 && git archive 59470af | tar -x -C /tmp/v238
