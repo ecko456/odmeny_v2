@@ -34,6 +34,23 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 31. 10. 2026 (verze 2.39.2):
+
+- Uživatel: „Plán kapacit ať ukazuje jen ID zaměstnance a ne jména“ a „ten PDF export udělej
+  v grafickém podání, něco jako je v Audit sekce Kapacity a zaškolení“.
+  - 2.39.1 (`03b273c`): `cpWho(c)` („ID 101“ / „bez ID“) v `cpRecHtml` (odkaz `data-cpperson`
+    do profilu zůstal), v PDF a v Excelu (list Doškolit má sloupec ID zaměstnance místo jména).
+  - 2.39.2: PDF přes `ctrPdf` + `pdfCtrPage` (stejný stroj jako Kapacity a zaškolení, A4 na výšku,
+    `withPdf(…, 'portrait', {mono: true})`). Model stránky `cpPdfPage(all)` (`kind: 'cap'`,
+    záhlaví s `ctrRep().place` a `ctrSub`, rámečky, dlaždice, graf, tabulka se span řádky
+    doporučení, součty oddělení a CELKEM, Bez plánu, vysvětlivky s poznámkou). Graf `cpChart`
+    (vb 1128 × 276): sloupec po úrovních `CP_LV` (4 tmavě, 3+, 2+, pod 2 jantarově), potřeba
+    čárkovaně (celkem zeleně), nad sloupcem „máme / potřeba“, pod ním doplnit / doškolit,
+    dlouhé názvy se zkrátí „…“. Starý pdfKit kód plánu je pryč.
+  - Testy: `e2e_plankap` (bez jmen v aplikaci, PDF i Excelu, text PDF, krajní případy: bez
+    plánu, 18 skupin), aktualizace 2.38 → 2.39.2.
+  - `ODM_VERSION` 2.39.2, data beze změny (35).
+
 Stav k 30. 10. 2026 (verze 2.39):
 
 - Uživatel: „pro mobil udělej funkci na kontrolu, že nadefinuji kolik lidí chci zkontrolovat
@@ -1424,7 +1441,8 @@ s úrovní). Kandidáti: shora od K = 4 nejvyšší procenta pod K; kdo se škol
 pokryje i mezeru na 3. `capPlanAll()` = oddělení v pořadí skupin, součty jen ze skupin
 s plánem, `cpPresence` = Ø lidí skupiny v práci za posledních 20 pracovních dní s docházkou
 (`dvGroupOf`). UI v `app.js` (sekce „PLÁN KAPACIT“): `renderCapPlan`, `bindCapPlan`, PDF
-`exportCapPlanPdf` (na šířku), Excel `exportCapPlanXlsx`.
+`exportCapPlanPdf` (od 2.39.2 `cpPdfPage` + `cpChart` přes `pdfCtrPage`, A4 na výšku), Excel
+`exportCapPlanXlsx`; lidé jen s ID (`cpWho`, 2.39.1).
 
 ## Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, zatím nezačato)
 
@@ -1599,7 +1617,9 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.36 | `5dc3da0` | Shortage – Doplnit chybějící (znovu vložené urgenty přidají jen chybějící položky, odebrané se nevrátí) (data verze 33) |
 | 2.37 | `f6dacfb` | Audit – docházka a výkony z jednoho souboru, Lidé v práci (den, měsíc, PDF, Excel), produktivita a koláč dílů v profilu; Kontroly podle dnešních příchodů (data verze 34) |
 | 2.38 | `59470af` | Plán kapacit – potřeba lidí celkem a po úrovních 2, 3, 4 u skupin, jak jsme na tom, doplnit, doškolit s kandidáty, PDF, Excel (data verze 35) |
-| 2.39 | `6278dda` (větev `claude/elegant-clarke-vl5n7d`) | **aktuální**: Rychlá kontrola na telefonu – počet lidí, směna, oddělení, jen lidé v práci, seznam jmen, výměna, sdílení, uložení do dnešních kontrol a zápis (data verze 35) |
+| 2.39 | `6278dda` | Rychlá kontrola na telefonu – počet lidí, směna, oddělení, jen lidé v práci, seznam jmen, výměna, sdílení, uložení do dnešních kontrol a zápis (data verze 35) |
+| 2.39.1 | `03b273c` | Plán kapacit jen s ID zaměstnanců (aplikace, PDF, Excel) |
+| 2.39.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit v grafickém podání jako Kapacity a zaškolení (rámečky, dlaždice, graf po úrovních proti potřebě, tabulka) |
 
 Verze 2.1 přidala:
 

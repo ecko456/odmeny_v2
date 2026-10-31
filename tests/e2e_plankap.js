@@ -2,7 +2,8 @@
 // potřeba lidí celkem a aspoň na úrovni 2, 3 a 4; plán ukáže, jak jsme na tom (lidé ve skupině,
 // nemocní, průměr v práci z docházky v Auditu), kolik doplnit a koho doškolit. Kontroluje
 // srovnání počtů (vyšší úroveň zvedne nižší), výpočet proti očekávání, kandidáty s odkazem do
-// profilu, poznámku, historii změn, PDF (text přes pypdf, když je), Excel, telefon a tmavý režim.
+// profilu, poznámku, historii změn, PDF jako Kapacity a zaškolení (text přes pypdf, když je, graf,
+// bez jmen, krajní případy), Excel jen s ID, telefon a tmavý režim.
 // Všechna data jsou vymyšlená. Hodiny stránky stojí na pátku 30. 10. 2026 v 10:00.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
@@ -140,7 +141,7 @@ async function setNeed(page, group, key, value) {
   check(dl.suggestedFilename() === 'plan-kapacit-2026-10-30.pdf' && fs.readFileSync(pdfPath).slice(0, 5).toString() === '%PDF-', `PDF: ${dl.suggestedFilename()}`);
   try {
     const txt = execFileSync('python3', ['-c', 'import sys,pypdf;print("\\n".join(p.extract_text() for p in pypdf.PdfReader(sys.argv[1]).pages))', pdfPath]).toString();
-    check(/Plán kapacit/.test(txt) && /Brus/.test(txt) && /ID 101 \(75 %\)/.test(txt) && !/Bednář|Cibulka|Exner|Havel/.test(txt) && /Nábor 2 brusičů/.test(txt) && /Bez plánu: Lepení \(Lepení\)\./.test(txt), `text PDF: ${txt.slice(0, 300)}`);
+    check(/Plán kapacit/.test(txt) && /Brus/.test(txt) && /ID 101 \(75 %\)/.test(txt) && !/Bednář|Cibulka|Exner|Havel/.test(txt) && /Nábor 2 brusičů/.test(txt) && /Bez plánu/.test(txt) && /Lepení \(Lepení\)\./.test(txt) && /Máme a potřebujeme po skupinách/.test(txt), `text PDF: ${txt.slice(0, 300)}`);
   } catch (error) { console.log('pypdf není, text PDF se nekontroluje'); }
   const [dx] = await Promise.all([page.waitForEvent('download'), page.click('#cpXlsx')]);
   const xPath = path.join(shots, dx.suggestedFilename());
@@ -154,6 +155,19 @@ async function setNeed(page, group, key, value) {
   check(JSON.stringify(xl.cand[0]) === JSON.stringify(['Oddělení', 'Skupina', 'ID zaměstnance', 'Dovednosti (%)', 'Cílová úroveň', 'Chybí (%)']) && JSON.stringify(xl.cand[1].slice(0, 3)) === JSON.stringify(['Brus', 'Brus', '101']), `Excel Doškolit jen s ID: ${JSON.stringify(xl.cand.slice(0, 2))}`);
   check(!JSON.stringify(xl).includes('Bednář'), 'Excel bez jmen');
   check(JSON.stringify(xl.plan[1].slice(0, 11)) === JSON.stringify(['Brus', 'Brus', 8, 5, 3, 2, 6, 4, 2, 1, 1]), `Excel řádek Brus: ${JSON.stringify(xl.plan[1])}`);
+
+  // PDF bez plánu a s mnoha skupinami (jen model stránky a graf, nic se neukládá)
+  const edge = await page.evaluate(() => {
+    const keep = S.capPlan;
+    S.capPlan = { ...keep, groups: {} };
+    const empty = cpPdfPage(capPlanAll());
+    S.capPlan = keep;
+    const g = capPlanAll().groups[0];
+    const many = cpChart(Array.from({ length: 18 }, (_, i) => ({ ...g, p: { ...g.p, name: `Skupina s dlouhým názvem ${i + 1}` } })));
+    const bad = many.marks.some(m => Object.values(m).some(v => typeof v === 'number' && !Number.isFinite(v)));
+    return { charts: empty.charts.length, kpis: empty.kpis.length, banner: /BEZ PLÁNU/.test(empty.banner), rows: empty.table.rows.length, bad, cut: many.marks.some(m => m.t === 'text' && /…$/.test(m.v)) };
+  });
+  check(edge.charts === 0 && edge.kpis === 0 && edge.banner && edge.rows > 0 && !edge.bad && edge.cut, `PDF krajní případy: ${JSON.stringify(edge)}`);
 
   // vynulování potřeby skupinu z plánu odebere
   await setNeed(page, 'g_fre', 'n', 0);

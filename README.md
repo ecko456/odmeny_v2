@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.39.2
+
+- **Plán kapacit jen s ID zaměstnanců.** V doporučení „doškolit“ v aplikaci, v PDF i v Excelu
+  je místo jména ID z evidence práce (např. „ID 101 (75 %)“, bez ID „bez ID“). Klepnutím na ID
+  se v aplikaci pořád otevře profil člověka.
+- **PDF Plánu kapacit v grafickém podání** jako Kapacity a zaškolení v Auditu (A4 na výšku,
+  stejné písmo a barvy): záhlaví s rámečky (skupiny v pořádku, lidí proti potřebě), dlaždice
+  Potřeba, Máme, Ø v práci, Doplnit a Doškolit, graf **Máme a potřebujeme po skupinách**
+  (sloupec po úrovních 4, 3, 2 a pod 2, potřeba čárkovaně, nad sloupcem máme / potřeba, pod ním
+  doplnit a doškolit), tabulka po skupinách s doporučeními a součty oddělení a vysvětlivky
+  s poznámkou k plánu. Záhlaví bere název z Auditu (Kapacity a zaškolení, Název v nadpisu).
+- Data beze změny (verze dat 35).
+
 ## Co je nového ve verzi 2.39
 
 - **Rychlá kontrola** (hlavně pro telefon): zadáš, kolik lidí chceš zkontrolovat, a aplikace
@@ -1415,7 +1428,7 @@ UPGRADE_CMD='bash deploy/install.sh' node tests/e2e_upgrade24.js
 ```
 
 Aktualizace z předchozí verze na aktuální (od 2.37, test zůstává v repu a při další verzi se
-upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.39:
+upraví jen seznam toho, co nová verze přidá, `SAME_DATA` a krok 5): 2.38 → 2.39.2:
 
 ```bash
 rm -rf /tmp/v238 && mkdir /tmp/v238 && git archive 59470af | tar -x -C /tmp/v238
