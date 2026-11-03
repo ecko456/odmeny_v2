@@ -3067,8 +3067,8 @@ test('Kapacity a zaškolení (2.30): vykázáno z docházky, plán ze zařazení
     };
     S.periods['2026-09'] = { days, rows, codes: {}, file: 'dochazka.xlsx', at: 1 };
     S.prodMap = { 'prod a': 'a', 'prod b': 'b', 'prod c': 'c' };
-    const pr = (name, norm) => ({ name, total: 1, count: 1, days: {}, spent: norm, norm, nspent: norm });
-    S.production['2026-09'] = { id: '2026-09', time: true, names: { 'prod a': pr('Prod A', 7200), 'prod b': pr('Prod B', 4500), 'prod c': pr('Prod C', 3000) }, records: 3, total: 3, file: 'e.xlsx', at: 1 };
+    const pr = (name, norm, total) => ({ name, total, count: 1, days: {}, spent: norm, norm, nspent: norm });
+    S.production['2026-09'] = { id: '2026-09', time: true, names: { 'prod a': pr('Prod A', 7200, 26), 'prod b': pr('Prod B', 4500, 13), 'prod c': pr('Prod C', 3000, 13) }, records: 3, total: 52, file: 'e.xlsx', at: 1 };
     S = sanitizeState(S);
     const now = new Date(2026, 8, 20, 12, 0).getTime();
     const x = capTimeline('2026-09-14', '2026-10-02', { now });
@@ -3095,6 +3095,10 @@ test('Kapacity a zaškolení (2.30): vykázáno z docházky, plán ze zařazení
       missing: x.missing.map(m => [m.month, m.keys]), noGroup: x.noGroup, est: x.est, noHist: x.noHist,
       months: x.months.map(m => [m.id, m.kind, m.n, m.roster.iso]),
       perf: x.months[0].perf && [x.months[0].perf.tot.ok, x.months[0].perf.tot.tr, x.months[0].perf.tot.all, x.months[0].perf.idx.tot.all, x.months[0].perf.idx.tot.ok, x.months[0].perf.idx.tot.tr],
+      perfRaw: x.months[0].perf && [x.months[0].perf.tot.ks, x.months[0].perf.tot.days, x.months[0].perf.tot.nh.all, x.months[0].perf.src],
+      perfDv: (() => { S.workAudit.dv.perf['2026-09'] = { '011': { p: { Hridel: [30, 40, 100, 2], Kryt: [9, 10, 20, 1] }, o: {} }, '999': { p: { Kryt: [5, 5, 5, 1] }, o: {} } };
+        const y = capTimeline('2026-09-14', '2026-10-02', { now }).months[0].perf; delete S.workAudit.dv.perf['2026-09'];
+        return y && [y.tot.ks, y.tot.days, y.tot.ok, y.tot.tr, y.src]; })(),
       sheets: sh.map(s => s.name), excel: [tot[col('Lidí na konci')], tot[col('Zkušení')], tot[col('Odpracováno h')], tot[col('Výkon celkem (index)')]],
       wk: x.weeks.map(w => [w.id, w.kind, w.n, w.req, w.met]),
       week: (() => { const r = capWeekReport('2026-W38', { now }); return { g: r.groups.map(q => [q.g.id, q.plan, q.on, q.ok, q.met, q.state]), tot: [r.tot.met, r.tot.state, r.reqDays, r.n], days: r.days.map(d => [d.kind, d.on, d.ok]) }; })(),
@@ -3127,9 +3131,13 @@ test('Kapacity a zaškolení (2.30): vykázáno z docházky, plán ze zařazení
   assert.deepStrictEqual(out.missing, [['2026-09', ['h']]]);
   assert.deepStrictEqual([out.noGroup, out.est, out.noHist], [1, 0, 2], 'f bez skupiny; d a g bez historie (dnešní hodnocení)');
   assert.deepStrictEqual(out.months, [['2026-09', 'mix', 12, '2026-09-30'], ['2026-10', 'plan', 2, '2026-10-02']]);
-  // výkon září: zkušení a+b 195 h normy ÷ 195 h, v zácviku c 50 ÷ 97,5; celkem 245 ÷ 292,5 = index 100
-  assert.ok(Math.abs(out.perf[0] - 1) < 1e-9 && Math.abs(out.perf[1] - 50 / 97.5) < 1e-9 && Math.abs(out.perf[2] - 245 / 292.5) < 1e-9, `výkon ${out.perf}`);
-  assert.deepStrictEqual(out.perf.slice(3), [100, 119.4, 61.2]);
+  // výkon září (2.45.1): kusy ÷ odpracované dny; a 26 ks / 13 dní (18. 9. bez hodin), b 13 / 13 (15. 9. dovolená),
+  // zkušení a+b 39 ÷ 26 = 1,5, v zácviku c 13 ÷ 13 (14. 9. A) = 1; celkem 52 ÷ 39 = index 100
+  assert.ok(Math.abs(out.perf[0] - 1.5) < 1e-9 && Math.abs(out.perf[1] - 1) < 1e-9 && Math.abs(out.perf[2] - 52 / 39) < 1e-9, `výkon ${out.perf}`);
+  assert.deepStrictEqual(out.perf.slice(3), [100, 112.5, 75]);
+  assert.ok(out.perfRaw[0] === 52 && out.perfRaw[1] === 39 && Math.abs(out.perfRaw[2] - 245 / 292.5) < 1e-9 && out.perfRaw[3] === 'prod', `kusy, dny, normohodiny doplňkově ${out.perfRaw}`);
+  // s výkony ze souboru Docházka a výkony platí ty (ID 011 = a, 999 nikdo); b a c tam nejsou
+  assert.deepStrictEqual(out.perfDv, [39, 13, 3, null, 'dv'], 'výkony ze souboru Docházka a výkony mají přednost');
   assert.deepStrictEqual(out.sheets, ['Souhrn', 'Po dnech', 'Po týdnech', 'Po měsících', 'Vývoj zaškolení']);
   assert.deepStrictEqual(out.excel, [5, 4, 127.5, 100], 'Excel Souhrn: lidé a zkušení na konci, odpracováno 14.–18. 9. (Brus 97,5 + CNC 30), výkon');
   assert.deepStrictEqual(out.wk, [['2026-W38', 'real', 5, 5, 0], ['2026-W39', 'plan', 5, 5, 0], ['2026-W40', 'plan', 4, 4, 0]]);

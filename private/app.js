@@ -1425,7 +1425,10 @@ function renderPeople(opts = {}) {
   const rank = e => (isLead(e) ? 1 : e.excluded ? 2 : 0);
   const all = Object.values(S.employees).sort((a, b) => (rank(a) - rank(b)) || norm(a.last).localeCompare(norm(b.last), 'cs'));
   const scoped = all.filter(e => lideScope(e, F.g));
-  const match = e => lideState(e, F.st) && (!q || norm(`${e.last} ${e.first}`).includes(q));
+  // hledá podle jména i podle ID v evidenci práce (2.45.1); ID bez úvodních nul a mezer jako při párování
+  const qw = widKey(q);
+  const match = e => lideState(e, F.st) && (!q || norm(`${e.last} ${e.first}`).includes(q) || norm(`${e.first} ${e.last}`).includes(q)
+    || (e.wid != null && e.wid !== '' && (norm(String(e.wid)).includes(q) || (!!qw && widKey(e.wid).includes(qw)))));
   let list = scoped.filter(match);
   // po změně filtru se vybere první, kdo mu odpovídá; po úpravě člověka (třeba zařazení do
   // skupiny ve filtru Bez skupiny) zůstane v seznamu označený, dokud se nevybere někdo jiný
@@ -1453,7 +1456,7 @@ function renderPeople(opts = {}) {
     const L = ev.L;
     return `${sep}<button class="list-item${e.excluded ? ' out' : ''}${e === held ? ' held' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       ${L.pct != null || L.n ? `<span class="lvl l${L.n}" title="Průměrná úroveň dovedností">${L.n}</span>` : '<span class="lvl l0">?</span>'}
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${out}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${out}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}${q && e.wid ? ` · ID ${esc(String(e.wid))}` : ''}</span></span>
       ${e.excluded ? '<span class="tag">vyřazen</span>' : `<span class="num small list-val" title="Tabáky za vybraný měsíc">${nf(ev.total, 0)}</span>`}
     </button>`;
   }).join('') : filtered && all.length ? emptyState('Nikdo neodpovídá filtru', 'Zkus jiné oddělení nebo stav, nebo filtr zruš.') : emptyState('Nikdo tu není', 'Nahraj docházku, nebo přidej člověka ručně.');
@@ -10523,8 +10526,9 @@ function ctrGrid(marks, ax, y, L, R, lx) {
 
 /* ---------- grafy (značky v souřadnicích vzoru) ---------- */
 /* Lidé ve skupinách po měsících: 640 × 260, osa y = 220, zaškolení dole, v zácviku nahoře. */
-function ctrStackChart(r) {
-  const B = 220, T = 20, L = 40, R = 630;
+/* W = šířka viewBoxu: 640 vedle grafu výkonu, 1280 sám (PDF bez výkonu) */
+function ctrStackChart(r, W = 640) {
+  const B = 220, T = 20, L = 40, R = W - 10;
   const thisM = todayIso().slice(0, 7);
   const ms = r.ids.map((id, i) => ({ id, m: r.months[i] }));
   const ax = ctrAxis(Math.max(0, ...ms.map(o => (o.m ? o.m.roster.tot.n : 0))));
@@ -10552,9 +10556,9 @@ function ctrStackChart(r) {
     marks.push({ t: 'text', x: cx, y: 242, s: 13, b: cur, c: cur ? CTR.ink : CTR.muted, a: 'middle', v: ctrCap(ctrMon(o.id)) + (plan ? ' · plán' : '') });
   });
   const lab = ms.map(o => (o.m ? `${ctrMon(o.id)} ${o.m.roster.tot.n} (${o.m.roster.tot.ok} zaškolených)` : '')).filter(Boolean).join(', ');
-  return { vb: [640, 260], marks: marks.concat(tips), aria: `Počet lidí po měsících: ${lab}` };
+  return { vb: [W, 260], marks: marks.concat(tips), aria: `Počet lidí po měsících: ${lab}` };
 }
-/* Výkon na odpracovanou hodinu (index): tři čáry po měsících, popisky u posledního bodu. */
+/* Výkon na odpracovaný den (index): tři čáry po měsících, popisky u posledního bodu. */
 function ctrPerfChart(r) {
   const B = 220, T = 20, L = 40, R = 630;
   const SER = [['ok', CTR.blue, CTR.blue, 'zaškolení'], ['tr', CTR.amberL, CTR.amber, 'v zácviku'], ['all', CTR.ink, CTR.ink, 'celkem']];
@@ -10567,9 +10571,9 @@ function ctrPerfChart(r) {
   const xl = () => r.ids.forEach((id, i) => marks.push({ t: 'text', x: cx(i), y: 242, s: 13, b: id === r.month, c: id === r.month ? CTR.ink : CTR.muted, a: 'middle', v: ctrCap(ctrMon(id)) }));
   if (!all.length) {
     marks.push({ t: 'line', x1: L, y1: B, x2: R, y2: B, c: CTR.axis });
-    marks.push({ t: 'text', x: (L + R) / 2, y: 124, s: 13, c: CTR.faint, a: 'middle', v: 'Bez evidence práce za tyto měsíce, výkon se nepočítá.' });
+    marks.push({ t: 'text', x: (L + R) / 2, y: 124, s: 13, c: CTR.faint, a: 'middle', v: 'Bez výkonů za tyto měsíce (Nahrát docházku a výkony), výkon se nepočítá.' });
     xl();
-    return { vb: [640, 260], marks, aria: 'Výkon: bez evidence práce' };
+    return { vb: [640, 260], marks, aria: 'Výkon: bez výkonů' };
   }
   let lo = Math.min(...all);
   let hi = Math.max(...all);
@@ -10652,7 +10656,9 @@ function ctrDaysChart(r) {
 
 /* ---------- obsah stránek ---------- */
 /* Měsíční souhrn — zaškolenost a výkon (vybraný měsíc, v grafech i dva předchozí). */
-function ctrMonth(month) {
+/* opts.noPerf (2.45.1): stránka bez výkonu (PDF bez výkonu): bez dlaždic, grafu a sloupců výkonu */
+function ctrMonth(month, opts = {}) {
+  const noPerf = !!opts.noPerf;
   const r = capMonthReport(month);
   if (!r) return null;
   const today = todayIso();
@@ -10678,24 +10684,26 @@ function ctrMonth(month) {
     { v: String(T.n), label: 'Lidí ve skupinách', sub: vs(T.n, P && P.n) },
     { v: String(T.ok), c: 'blue', label: 'Zaškolení', sub: vs(T.ok, P && P.ok) },
     { v: String(T.tr), c: 'amber', label: 'V zácviku', sub: vs(T.tr, P && P.tr) },
-    { v: pIdx == null ? '—' : nf(pIdx, 0), label: 'Výkon na hodinu (index)',
-      sub: pIdx == null ? 'bez evidence práce za měsíc' : `${base} = 100${prevIdx != null ? ` · ${ctrSign(Math.round(pIdx) - Math.round(prevIdx))} b. proti ${prevN}` : ''}` },
-    { v: ratio == null ? '—' : `${nf(ratio, 1)}×`, label: 'Zaškolený proti zácviku', sub: 'výkon na odpracovanou hodinu' },
+    { v: pIdx == null ? '—' : nf(pIdx, 0), label: 'Výkon na den (index)',
+      sub: pIdx == null ? 'bez výkonů za měsíc' : `${base} = 100${prevIdx != null ? ` · ${ctrSign(Math.round(pIdx) - Math.round(prevIdx))} b. proti ${prevN}` : ''}` },
+    { v: ratio == null ? '—' : `${nf(ratio, 1)}×`, label: 'Zaškolený proti zácviku', sub: 'kusy na odpracovaný den' },
   ];
+  if (noPerf) tiles.splice(3, 2);
   const charts = [
-    { title: 'Lidé ve skupinách: zaškolení a v zácviku', legend: [['Zaškolení', 'blue', 'sq'], ['V zácviku', 'amberF', 'sq']], ...ctrStackChart(r) },
-    { title: `Výkon na odpracovanou hodinu (index, Ø ${base || ctrMon(r.ids[0])} = 100)`, legend: [['Zaškolení', 'blue', 'line'], ['V zácviku', 'amberL', 'line'], ['Celkem', 'ink', 'line']], ...ctrPerfChart(r) },
+    { title: 'Lidé ve skupinách: zaškolení a v zácviku', legend: [['Zaškolení', 'blue', 'sq'], ['V zácviku', 'amberF', 'sq']], ...ctrStackChart(r, noPerf ? 1280 : 640) },
+    { title: `Výkon na odpracovaný den (index, Ø ${base || ctrMon(r.ids[0])} = 100)`, legend: [['Zaškolení', 'blue', 'line'], ['V zácviku', 'amberL', 'line'], ['Celkem', 'ink', 'line']], ...ctrPerfChart(r) },
   ];
+  if (noPerf) charts.pop();
   const dash = v => (v == null ? { v: '—', c: 'faint' } : { v: nf(v, 0) });
   const row = (name, q, sum) => ({ sum, cells: [{ v: name }, { v: String(q.n) }, { v: String(q.ok), c: 'blue', b: true }, { v: String(q.tr), c: 'amber' }, { v: ctrPct(q.share) },
-    { v: q.dOk == null ? '—' : ctrSign(q.dOk) }, dash(q.perf && q.perf.ok), dash(q.perf && q.perf.tr), { ...dash(q.perf && q.perf.all), b: true }] });
+    { v: q.dOk == null ? '—' : ctrSign(q.dOk) }, dash(q.perf && q.perf.ok), dash(q.perf && q.perf.tr), { ...dash(q.perf && q.perf.all), b: true }].slice(0, noPerf ? 6 : 9) });
   const rows = r.groups.map(q => row(q.g.name || '(bez názvu)', q, false));
   const shown = new Set(r.groups.map(q => q.i));
   const empty = r.x.groups.filter((g, i) => !shown.has(i)).map(g => g.name || '(bez názvu)');
   if (empty.length) rows.push({ span: [empty.join(', '), 'zatím bez lidí v matici dovedností — doplnit'] });
   if (r.noGroup) rows.push({ span: ['Bez skupiny', `${r.noGroup} ${lidiN(r.noGroup)} se směnou bez skupiny v matici dovedností — doplnit`] });
   rows.push(row('CELKEM', T, true));
-  const cols = ['SKUPINA', 'LIDÍ', 'ZAŠKOLENÍ', 'V ZÁCVIKU', 'PODÍL ZAŠK.', `ZAŠK. PROTI ${(prevN || 'minulému').toUpperCase()}`, 'VÝKON ZAŠK.', 'VÝKON ZÁCVIK', 'VÝKON CELKEM'].map((h, i) => ({ h, a: i ? 'r' : 'l' }));
+  const cols = ['SKUPINA', 'LIDÍ', 'ZAŠKOLENÍ', 'V ZÁCVIKU', 'PODÍL ZAŠK.', `ZAŠK. PROTI ${(prevN || 'minulému').toUpperCase()}`, 'VÝKON ZAŠK.', 'VÝKON ZÁCVIK', 'VÝKON CELKEM'].slice(0, noPerf ? 6 : 9).map((h, i) => ({ h, a: i ? 'r' : 'l' }));
   const est = r.x.est + r.x.noHist;
   return {
     kind: 'month', id: month, x: r.x,
@@ -10705,8 +10713,9 @@ function ctrMonth(month) {
     table: { title: `Po skupinách — ${M}`, cols, rows },
     notes: [
       ['Zaškolený', ` — procento dovedností skupiny v matici dovedností aspoň ${r.okPct} % (${ctTrainSrc(r)}), snímek k poslednímu pracovnímu dni měsíce; u minulých měsíců podle historie hodnocení${est ? ` (u ${est} ${lidiN(est)} bez starší historie nejbližší známé hodnocení)` : ''}. V zácviku = zařazen ve skupině, pod ${r.okPct} %.`],
-      ['Výkon', ` — vykázané normohodiny ÷ odpracované hodiny (docházka + evidence práce), jen lidé ve skupinách. Index: průměr celé ${EXPORT_NAME} za ${r.baseMonth ? monthLabel(r.baseMonth) : 'první měsíc s výkonem'} = 100. Kusy ani normy na osobu se nezobrazují.`],
-      ['Výkon zaškolených / v zácviku', ` — stejný výpočet, lidé rozdělení podle stavu v matici k danému měsíci. Vygenerováno ${dayText(today)}.`],
+      ...(noPerf ? [['', `Vygenerováno ${dayText(today)}.`]] : [
+        ['Výkon', ` — dokončené kusy ze souboru Docházka a výkony (jinak z evidence práce) ÷ odpracované dny z docházky, jen lidé ve skupinách, kteří v měsíci něco vykázali. Index: průměr celé ${EXPORT_NAME} za ${r.baseMonth ? monthLabel(r.baseMonth) : 'první měsíc s výkonem'} = 100. Kusy na osobu se nezobrazují.`],
+        ['Výkon zaškolených / v zácviku', ` — stejný výpočet, lidé rozdělení podle stavu v matici k danému měsíci. Vygenerováno ${dayText(today)}.`]]),
     ],
   };
 }
@@ -10862,7 +10871,8 @@ function waCtHtml() {
       ${waDatesHtml('waCt', r)}
       <span class="spacer"></span>
       <button class="btn sec" type="button" data-wactxlsx${ok ? '' : ' disabled'}>Excel</button>
-      <button class="btn" type="button" data-wactpdf${ok ? '' : ' disabled'}>PDF</button>
+      <button class="btn sec" type="button" data-wactpdf="noperf"${ok ? '' : ' disabled'} title="Report bez dlaždic, grafu a sloupců výkonu">PDF bez výkonu</button>
+      <button class="btn" type="button" data-wactpdf${ok ? '' : ' disabled'}>PDF s výkonem</button>
     </div>`;
   if (!has) return `${bar}<div class="card">${emptyState('Matice dovedností nemá skupiny', 'Kapacity a zaškolení se počítají ze skupin Matice dovedností, z docházky a z historie hodnocení. Založ skupiny v části Skupiny a pravidla.')}</div>`;
   if (!pages.length) return `${bar}<div class="card">${emptyState('V období nejsou pracovní dny', 'Zvol delší období.')}</div>`;
@@ -11191,14 +11201,14 @@ function pdfCtrPage(P, pg, first) {
   parts.forEach((lines, i) => lines.forEach((ln, j) => ln.forEach(([wd, b, px]) => P.text(wd, X + i * (nw + 20) + px, y + 17 + j * 18 + 1.125 * 12, 12, { b, c: b ? 'ink' : 'muted' }))));
   y += nh;
 }
-async function exportCtPdf(button) {
+async function exportCtPdf(button, noPerf) {
   const r = waCtRange();
   const pages = S.positions.some(isGroup) ? capReportPages(r.from, r.to) : [];
   if (!pages.length) { toast('V období nejsou pracovní dny.', true); return; }
   await withPdf(button, doc => {
     doc.setProperties({ title: `Report docházky · ${ctrRange(r.from, r.to)}`, creator: EXPORT_NAME });
     const P = ctrPdf(doc);
-    const list = pages.map(p => (p.kind === 'month' ? ctrMonth(p.id) : ctrWeek(p.id)));
+    const list = pages.map(p => (p.kind === 'month' ? ctrMonth(p.id, { noPerf }) : ctrWeek(p.id)));
     list.push(ctrDev(r.from, r.to));
     list.filter(Boolean).forEach((pg, i) => {
       if (pg.kind === 'dev' && pg.table) pg.table.rows.sort((a, b) => (a.gi - b.gi) || (a.wid && b.wid ? widCmp(a.wid, b.wid) : 0));
@@ -11210,7 +11220,7 @@ async function exportCtPdf(button) {
       P.text(`${EXPORT_NAME} · Report docházky · ${ctrRange(r.from, r.to)}`, 56, P.PH - 22, 11, { c: 'faint' });
       P.text(`Strana ${i} / ${n}`, 1224, P.PH - 22, 11, { c: 'faint', a: 'end' });
     }
-    downloadFile(`kapacity-zaskoleni-${r.from}-${r.to}.pdf`, doc.output('blob'), 'application/pdf');
+    downloadFile(`kapacity-zaskoleni-${r.from}-${r.to}${noPerf ? '-bez-vykonu' : ''}.pdf`, doc.output('blob'), 'application/pdf');
   }, 'portrait', { mono: true });
 }
 async function exportCtXlsx() {
@@ -13117,7 +13127,7 @@ function bindWorkAudit() {
     if (ctPage) { ui.wa.ctPage = ctPage.dataset.wactpage; renderWorkAudit(); return; }
     if (t.closest('[data-wactxlsx]')) { exportCtXlsx(); return; }
     const ctPdf = t.closest('[data-wactpdf]');
-    if (ctPdf) { exportCtPdf(ctPdf); return; }
+    if (ctPdf) { exportCtPdf(ctPdf, ctPdf.dataset.wactpdf === 'noperf'); return; }
     const ogs = t.closest('[data-waogs]');
     if (ogs) {
       const o = S.workAudit.ops.find(x => x.id === ogs.closest('[data-wao]').dataset.wao);

@@ -111,6 +111,16 @@ const chips = page => page.$$eval('#lFilters [data-lst]', els => Object.fromEntr
   await page.click('#lFilters [data-lst="sick"]');
   await page.fill('#lSearch', 'dvo');
   check(JSON.stringify(await names(page)) === '["Dvořák Petr"]' && await page.evaluate(() => ui.selPerson === Object.values(S.employees).find(e => e.last === 'Dvořák').key), 'hledání vybere, koho najde');
+  // hledání podle ID v evidenci práce (2.45.1): i bez úvodních nul, ID je vidět v řádku
+  const oldWid = await page.evaluate(() => { const e = Object.values(S.employees).find(x => x.last === 'Dvořák'); const w = e.wid; e.wid = '00417'; return w === undefined ? null : w; });
+  for (const q of ['00417', '417', ' 0417 ']) {
+    await page.fill('#lSearch', q);
+    const got = await names(page);
+    check(JSON.stringify(got) === '["Dvořák Petr"]' && /ID 00417/.test(await page.textContent('#lList')), `hledání podle ID „${q}“: ${got}`);
+  }
+  await page.fill('#lSearch', '99999');
+  check((await names(page)).length === 0, 'neznámé ID nikoho nenajde');
+  await page.evaluate(w => { const e = Object.values(S.employees).find(x => x.last === 'Dvořák'); if (w == null) delete e.wid; else e.wid = w; }, oldWid);
   await page.fill('#lSearch', '');
   await page.click('#lFilters [data-lst="lead"]');
   check(/Nikdo neodpovídá filtru/.test(await page.textContent('#lList')), 'prázdný filtr');

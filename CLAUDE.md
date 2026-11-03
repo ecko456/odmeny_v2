@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 3. 11. 2026 (verze 2.45.1):
+
+- Uživatel: „V KPI v Report docházky mi stále neukazuje žádná data v ‚Výkon na odpracovanou hodinu
+  (index, Ø září = 100)‘ mělo by to načítat z ‚Nahrát docházku a výkony‘ … tisknout PDF s Výkonem
+  nebo bez výkonu. A výkon měř primárně na odpracovaný den“ a „v sekci lidí by měl fungovat
+  vyhledávač i podle ID“.
+  - Příčina: `capTimeline` → `perfOf` bral jen normohodiny (`rec.norm`) ÷ hodiny, soubor
+    Docházka a výkony normu nemá.
+  - Core: `perfOf` = kusy ÷ odpracované dny (`workedDays(attendance)`, ve `withPeriod`). Kusy
+    z `dv.perf[m]` (součet `p[díl][0]`, ID přes `dvWidMap`), bez nich z `S.production[m]`
+    (`prodKeyFor`). Počítá se jen člověk s kusy > 0 a dny > 0. Části `{ks, days, normH, workH}`,
+    `ctPerfFin` → `ok/tr/all` = ks/den, `nh` = normohodiny/h (doplňkově), `ks`, `days`, `src`
+    `dv|prod`. Excel Po měsících: Dokončené kusy, Odpracované dny lidí s výkonem, Ø ks na den.
+  - UI: `ctrMonth(month, {noPerf})` (bez dlaždic výkonu, grafu, sloupců a vysvětlivek;
+    `ctrStackChart(r, 1280)` přes celou šířku), tlačítka `[data-wactpdf=""]` (s výkonem)
+    a `[data-wactpdf="noperf"]`, `exportCtPdf(button, noPerf)`, soubor `…-bez-vykonu.pdf`.
+    Texty „Výkon na den (index)“, „Výkon na odpracovaný den (index, Ø … = 100)“.
+  - Lidé: `renderPeople` hledá i v `e.wid` (text i `widKey`, bez úvodních nul), při hledání
+    řádek ukáže „ID …“. Placeholder „Hledat jméno nebo ID…“.
+  - Testy: core „Kapacity a zaškolení (2.30)“ (kusy na den, přednost `dv.perf`), `e2e_kapacity`
+    (PDF bez výkonu), `e2e_lide` (hledání podle ID). `ODM_VERSION` 2.45.1, data beze změny (40).
+
 Stav k 3. 11. 2026 (verze 2.45):
 
 - Uživatel: „přidat tlačítko do ‚Poslední změny‘ Vrátit zpět? Vždy ať tam jsou poslední změny jen
@@ -1901,7 +1923,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.44 | `ee9fee7` | Audit přejmenovaný na KPI, Výroba pryč z menu, KPI bez Výrobního plánu a Úprav, nová záložka Výkonnost na osobu (po odděleních, průměr na den, řazení od nejlepších i nejhorších, Excel) |
 | 2.44.1 | `2bcc414` | Nahrát konce trestů a směnnost – tabulka lidí, kteří v souboru nejsou, s volbou vyřadit ze seznamu |
 | 2.44.2 | `457f6d5` | PDF Plánu kapacit – list na oddělení, bez jmen a ID, skupiny podle zkušenosti, kdy lidé končí a kolik zůstane |
-| 2.45 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Poslední změny za 3 dny s tlačítkem Vrátit zpět (jen ta změna, pozdější změny zůstanou) (data verze 40) |
+| 2.45 | `590779e` | Poslední změny za 3 dny s tlačítkem Vrátit zpět (jen ta změna, pozdější změny zůstanou) (data verze 40) |
+| 2.45.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: výkon v Kapacitách a zaškolení na odpracovaný den z Docházky a výkonů, PDF s výkonem i bez, hledání v Lidech podle ID |
 
 Verze 2.1 přidala:
 

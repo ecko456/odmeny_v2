@@ -1447,28 +1447,36 @@ function capTimeline(from,to,opts){
     const t={n:0,ok:0,tr:0,trS:0,sick:0};gs.forEach(g=>Object.keys(t).forEach(k=>{t[k]+=g[k];}));
     return {iso,past,groups:gs,tot:t};
   };
-  /* výkon za měsíc: normohodiny z evidence práce ÷ odpracované hodiny z docházky (všechny dny bez kódu) */
+  /* výkon za měsíc (2.45.1): primárně dokončené kusy na odpracovaný den (dny z docházky bez
+     kódu, i víkendové). Kusy ze souboru Docházka a výkony (dv.perf), jinak z evidence práce
+     (S.production). Normohodiny na odpracovanou hodinu zůstávají jen doplňkově (Excel).
+     Počítají se jen lidé, kteří v měsíci něco vykázali a mají odpracovaný den. */
   const perfOf=(m,snap)=>{
-    const pp=S.production&&S.production[m],p=S.periods&&S.periods[m];
-    if(!pp||!pp.names||!p||!p.rows)return null;
-    const norms={};
-    Object.values(pp.names).forEach(rec=>{const key=prodKeyFor(rec.name);if(key&&rec.norm>0)norms[key]=(norms[key]||0)+rec.norm;});
+    const p=S.periods&&S.periods[m],pp=S.production&&S.production[m],dvm=S.workAudit&&S.workAudit.dv&&S.workAudit.dv.perf[m];
+    if(!p||!p.rows||(!pp&&!dvm))return null;
+    const ks={},norms={};
+    if(dvm){const wm=dvWidMap();Object.entries(dvm).forEach(([id,q])=>{const e=wm.get(id);if(!e)return;
+      const n=Object.values(q.p||{}).reduce((s,v)=>s+(+v[0]||0),0);ks[e.key]=(ks[e.key]||0)+n;});}
+    if(pp&&pp.names)Object.values(pp.names).forEach(rec=>{const key=prodKeyFor(rec.name);if(!key)return;
+      if(!dvm)ks[key]=(ks[key]||0)+(+rec.total||0);
+      if(rec.norm>0)norms[key]=(norms[key]||0)+rec.norm;});
     const ts=snap.past?ctDayEnd(snap.iso):now;
-    const part=()=>({normH:0,workH:0}),gs=groups.map(()=>({ok:part(),tr:part(),all:part()})),tot={ok:part(),tr:part(),all:part()};
+    const part=()=>({ks:0,days:0,normH:0,workH:0}),gs=groups.map(()=>({ok:part(),tr:part(),all:part()})),tot={ok:part(),tr:part(),all:part()};
     let any=false;
-    Object.keys(norms).forEach(key=>{
+    withPeriod(m,()=>Object.keys(ks).forEach(key=>{
       const e=S.employees[key],row=p.rows[key];
-      if(!e||!row||isLead(e))return;
+      if(!e||!row||isLead(e)||!(ks[key]>0))return;
       const posId=snap.past?levelAt(e,ts).pos:e.positionId;
       if(!posId||!gIdx.has(posId))return;
       const gi=gIdx.get(posId),pos=groups[gi],pct=snap.past?pctPast(e,pos,ts):skillPct(e,pos),k=pct!=null&&pct>=lim?"ok":"tr";
+      const att=attendance(p,key),days=workedDays(att);
+      if(days<=0)return;
       const hours=(row.h||[]).reduce((s,h,i)=>s+(row.c&&row.c[i]?0:Math.max(0,+h||0)),0);
-      if(hours<=0)return;
-      const nh=norms[key]/60;any=true;
-      [gs[gi][k],gs[gi].all,tot[k],tot.all].forEach(x=>{x.normH+=nh;x.workH+=hours;});
-    });
+      const nh=(norms[key]||0)/60;any=true;
+      [gs[gi][k],gs[gi].all,tot[k],tot.all].forEach(x=>{x.ks+=ks[key];x.days+=days;if(nh>0){x.normH+=nh;x.workH+=hours;}});
+    }));
     if(!any)return null;
-    return {raw:{groups:gs,tot},groups:gs.map(ctPerfFin),tot:ctPerfFin(tot)};
+    return {raw:{groups:gs,tot},groups:gs.map(ctPerfFin),tot:ctPerfFin(tot),src:dvm?"dv":"prod"};
   };
   const months=[],byMonth=new Map();
   outDays.forEach(d=>{if(!byMonth.has(d.month)){byMonth.set(d.month,[]);months.push(d.month);}byMonth.get(d.month).push(d);});
@@ -1510,8 +1518,8 @@ function capTimeline(from,to,opts){
   const perfRaw=monthList.filter(m=>m.perf).map(m=>m.perf.raw);
   let perf=null;
   if(perfRaw.length){
-    const z=()=>({normH:0,workH:0}),acc=()=>({ok:z(),tr:z(),all:z()}),gs=groups.map(acc),tot=acc();
-    const add=(a,b)=>["ok","tr","all"].forEach(k=>{a[k].normH+=b[k].normH;a[k].workH+=b[k].workH;});
+    const z=()=>({ks:0,days:0,normH:0,workH:0}),acc=()=>({ok:z(),tr:z(),all:z()}),gs=groups.map(acc),tot=acc();
+    const add=(a,b)=>["ok","tr","all"].forEach(k=>Object.keys(a[k]).forEach(f=>{a[k][f]+=b[k][f];}));
     perfRaw.forEach(r=>{add(tot,r.tot);r.groups.forEach((g,i)=>add(gs[i],g));});
     const f=x=>({ok:idx(x.ok),tr:idx(x.tr),all:idx(x.all)});
     perf={groups:gs.map(ctPerfFin),tot:ctPerfFin(tot)};perf.idx={tot:f(perf.tot),groups:perf.groups.map(f)};
@@ -1526,7 +1534,9 @@ function capTimeline(from,to,opts){
 }
 /* Pomocné pro zobrazení: Ø na den, podíl zkušených na směně a Ø zaškolení pracovníků v zácviku. */
 function ctAvg(sum,n){return n>0?sum/n:null;}
-function ctPerfFin(g){const v=x=>x.workH>0?x.normH/x.workH:null;return {ok:v(g.ok),tr:v(g.tr),all:v(g.all),normH:Math.round(g.all.normH*10)/10,workH:Math.round(g.all.workH*10)/10};}
+/* výkon skupiny: ok/tr/all = kusy na odpracovaný den (2.45.1), nh = normohodiny na hodinu (doplňkově) */
+function ctPerfFin(g){const v=x=>x.days>0?x.ks/x.days:null,h=x=>x.workH>0?x.normH/x.workH:null,r=v=>Math.round(v*10)/10;
+  return {ok:v(g.ok),tr:v(g.tr),all:v(g.all),nh:{ok:h(g.ok),tr:h(g.tr),all:h(g.all)},ks:r(g.all.ks),days:g.all.days,normH:r(g.all.normH),workH:r(g.all.workH)};}
 function ctShare(c){return c.onOk+c.onTr>0?c.onOk/(c.onOk+c.onTr):null;}
 function ctFill(c){return c.rPlanH>0?c.realH/c.rPlanH:null;}
 const CT_KIND={real:"vykázáno",plan:"plánováno",mix:"vykázáno a plán"};
@@ -1588,18 +1598,18 @@ function capTimelineSheets(x){
   x.weeks.forEach(w=>{wRows.push(wRow(w,null,w.tot,true));w.groups.forEach((c,i)=>{if(c.planN||c.realH)wRows.push(wRow(w,x.groups[i],c,false));});wRows.push([]);});
   /* Po měsících */
   const mHead=["Měsíc","Stav","Stav skupin k","Oddělení","Skupina","Lidí ve skupině","Zkušení","V zácviku","Podíl zkušených %","Zkušení proti předchozímu","Ø zaškolení v zácviku %",
-    "Pracovní dny","Ø na směně","Ø zkušení na směně","Plnění hodin %","Výkon zkušení (index)","Výkon v zácviku (index)","Výkon celkem (index)","Normohodiny","Odpracované hodiny lidí s normou"];
+    "Pracovní dny","Ø na směně","Ø zkušení na směně","Plnění hodin %","Výkon zkušení (index)","Výkon v zácviku (index)","Výkon celkem (index)","Dokončené kusy","Odpracované dny lidí s výkonem","Ø ks na odpracovaný den","Normohodiny","Odpracované hodiny lidí s normou"];
   const mRows=[...head,mHead];
   x.months.forEach((m,j)=>{
     const prev=j?x.months[j-1].roster:x.start;
     const mRow=(g,i)=>{const r=i<0?m.roster.tot:m.roster.groups[i],p=i<0?prev.tot:prev.groups[i],c=i<0?m.tot:m.groups[i],pf=m.perf?(i<0?m.perf.idx.tot:m.perf.idx.groups[i]):null,raw=m.perf?(i<0?m.perf.tot:m.perf.groups[i]):null;
       return [monthLabel(m.id),CT_KIND[m.kind],dayText(m.roster.iso),gDept(g),gName(g),r.n,r.ok,r.tr,share(r),r.ok-p.ok,trA(r),m.n,n1(ctAvg(c.on,m.n)),n1(ctAvg(c.onOk,m.n)),pc(ctFill(c)),
-        pf?n1(pf.ok):"",pf?n1(pf.tr):"",pf?n1(pf.all):"",raw&&raw.normH?raw.normH:"",raw&&raw.workH?raw.workH:""];};
+        pf?n1(pf.ok):"",pf?n1(pf.tr):"",pf?n1(pf.all):"",raw?raw.ks:"",raw?raw.days:"",raw&&raw.all!=null?n1(raw.all):"",raw&&raw.normH?raw.normH:"",raw&&raw.workH?raw.workH:""];};
     mRows.push(mRow(null,-1));
     x.groups.forEach((g,i)=>{if(m.roster.groups[i].n||m.groups[i].planN)mRows.push(mRow(g,i));});
     mRows.push([]);
   });
-  if(x.perfBase)mRows.push(["Výkon = normohodiny z evidence práce ÷ odpracované hodiny z docházky; index: celkem za "+monthLabel(x.months.find(m=>m.perf).id)+" = 100."]);
+  if(x.perfBase)mRows.push(["Výkon = dokončené kusy (Docházka a výkony, jinak evidence práce) ÷ odpracované dny z docházky; index: celkem za "+monthLabel(x.months.find(m=>m.perf).id)+" = 100."]);
   /* Vývoj zaškolení */
   const vHead=["Příjmení","Jméno","ID v evidenci práce","Skupina na začátku","Na začátku %","Skupina na konci","Na konci %","Změna (body)","Na začátku","Na konci","Zkušený od","Změny hodnocení","Poznámka"];
   const vRows=[...head,vHead];

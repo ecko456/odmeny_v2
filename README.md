@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.45.1
+
+- **KPI → Kapacity a zaškolení (Report docházky): výkon na odpracovaný den.** Graf a dlaždice
+  výkonu dřív počítaly normohodiny ÷ hodiny. Soubor Docházka a výkony normu nemá, takže zůstávaly
+  prázdné. Teď je výkon **dokončené kusy ÷ odpracované dny** z docházky. Kusy se berou ze souboru
+  **Nahrát docházku a výkony**, u měsíců bez něj z evidence práce. Počítají se lidé ve skupinách,
+  kteří v měsíci něco vykázali. Index zůstává: první měsíc s výkonem = 100. Normohodiny zůstaly
+  jako doplňkový sloupec v Excelu.
+- **PDF s výkonem nebo bez výkonu.** V Kapacitách a zaškolení jsou tlačítka **PDF s výkonem**
+  a **PDF bez výkonu**. Varianta bez výkonu nemá dlaždice, graf, sloupce ani vysvětlivky výkonu
+  a graf lidí je přes celou šířku. Soubor má na konci `-bez-vykonu`.
+- **Lidé: hledání i podle ID.** Do hledání jde napsat ID z evidence práce, i bez úvodních nul
+  (`417` najde `00417`). Při hledání se ID ukáže v řádku člověka.
+- Data beze změny (verze 40).
+
 ## Co je nového ve verzi 2.45
 
 - **Poslední změny: Vrátit zpět.** U každé změny za poslední 3 dny je tlačítko **Vrátit zpět**.
