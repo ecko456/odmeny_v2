@@ -5269,7 +5269,10 @@ function attExport(p){
   const order=[...departments(),"Bez skupiny","Vedoucí","Není v Lidech"];
   const people=Object.keys(p.rows).map(k=>{const r=p.rows[k],e=S.employees[k],a=attendance(p,k);
     return {key:k,name:(r.last+" "+r.first).trim(),wid:e&&e.wid?String(e.wid):"",dept:e?endDeptOf(e):"Není v Lidech",group:e&&e.positionId?((S.positions.find(x=>x.id===e.positionId)||{}).name||""):"",
-      days:a.workDays,hours:a.workHours,wkDays:a.wkDays,wkHours:a.wkHours,total:a.totalHours,abs:a.missed,exc:a.excusedDays};});
+      days:a.workDays,hours:a.workHours,wkDays:a.wkDays,wkHours:a.wkHours,total:a.totalHours,abs:a.missed,exc:a.excusedDays,
+      /* po dnech (2.45.2): hodiny, kód nepřítomnosti (s hodinami „D (8 h)“), prázdné = nic; dh = odpracované hodiny dne */
+      cells:p.days.map((iso,i)=>{const h=Math.max(0,+((r.h||[])[i])||0),c=String((r.c||[])[i]||"").trim();return c?(h?c+" ("+nf(h,2)+" h)":c):h?h:"";}),
+      dh:p.days.map((iso,i)=>(r.c||[])[i]?0:Math.max(0,+((r.h||[])[i])||0))};});
   const rank=d=>{const i=order.indexOf(d);return i<0?order.length:i;};
   people.sort((x,y)=>rank(x.dept)-rank(y.dept)||x.dept.localeCompare(y.dept,"cs")||norm(x.name).localeCompare(norm(y.name),"cs"));
   const sum=list=>{const o={n:list.length,days:0,hours:0,wkDays:0,wkHours:0,total:0,abs:0,exc:0};list.forEach(x=>Object.keys(o).forEach(k=>{if(k!=="n")o[k]+=x[k];}));
@@ -5286,7 +5289,13 @@ function attExportSheets(x){
   x.depts.forEach(d=>{d.people.forEach(q=>rows.push(row(q)));rows.push(tot("Celkem "+d.name,d.tot));rows.push([]);});
   rows.push(tot("CELKEM",x.tot));
   const sum=[["Oddělení","Lidí","Hodiny v pracovní dny","Hodiny o víkendu","Hodiny celkem","Absence (dny)"],...x.depts.map(d=>[d.name,d.tot.n,d.tot.hours,d.tot.wkHours,d.tot.total,d.tot.abs]),["CELKEM",x.tot.n,x.tot.hours,x.tot.wkHours,x.tot.total,x.tot.abs]];
-  return [{name:"Docházka",rows,cols:[18,26,10,16,12,14,12,14,12,12,12]},{name:"Oddělení",rows:sum,cols:[20,8,16,14,12,12]}];
+  /* Po dnech: každý den jeden sloupec, za oddělení a celkem součet odpracovaných hodin dne */
+  const dl=x.meta.days.map(d=>d.d+"."+d.m+". "+DOW[d.dow]+(d.hol&&!d.weekend?" svátek":""));
+  const dSum=list=>x.meta.days.map((d,i)=>r2(list.reduce((t,q)=>t+q.dh[i],0)));
+  const byDay=[["Docházka po dnech – "+monthLabel(x.id)+" (číslo = odpracované hodiny, text = kód nepřítomnosti)"],[],["Oddělení","Příjmení a jméno","ID",...dl,"Hodiny celkem"]];
+  x.depts.forEach(d=>{d.people.forEach(q=>byDay.push([q.dept,q.name,q.wid,...q.cells,r2(q.total)]));byDay.push(["Celkem "+d.name,"","",...dSum(d.people),d.tot.total]);byDay.push([]);});
+  byDay.push(["CELKEM","","",...dSum(x.people),x.tot.total]);
+  return [{name:"Docházka",rows,cols:[18,26,10,16,12,14,12,14,12,12,12]},{name:"Po dnech",rows:byDay,cols:[18,26,10,...dl.map(()=>9),12]},{name:"Oddělení",rows:sum,cols:[20,8,16,14,12,12]}];
 }
 /** Přehled odchodů: po měsících a odděleních od tohoto měsíce na n měsíců. */
 function endDeptOf(e){return isLead(e)?"Vedoucí":empDept(e)||"Bez skupiny";}

@@ -52,7 +52,8 @@ Stav k 3. 11. 2026 (verze 2.45.2):
     celkovým součtem hodin a u každého ať je vidět i oddělení“. Core `attExport(p)` (lidé
     s `endDeptOf` nebo „Není v Lidech“, ID, skupina, `workDays/workHours/wkDays/wkHours/
     totalHours`, absence, omluveno; po odděleních v pořadí skupin; součty `tot`) a
-    `attExportSheets` (listy Docházka a Oddělení). UI: lišta `.att-bar` v `renderAttendance`
+    `attExportSheets` (listy Docházka, Po dnech a Oddělení; Po dnech z `cells`: hodiny, kód nebo
+    „D (8 h)“, součty dne z `dh` jen odpracovaných hodin). UI: lišta `.att-bar` v `renderAttendance`
     (`[data-attxlsx]`, `[data-attpdf]`), `exportAttXlsx`, `attPdf`/`exportAttPdf` přes `ctrPdf`
     (dlaždice, pruhy hodin po odděleních, tabulka s oddělením, součtem a CELKEM), soubory
     `dochazka-RRRR-MM.xlsx|pdf`. Test `tests/e2e_att_export.js` (ukázková data).

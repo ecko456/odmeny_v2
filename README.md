@@ -77,7 +77,8 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
 - **Docházka: export za měsíc.** V Docházce jsou nad tabulkou tlačítka **Excel za měsíc**
   a **PDF za měsíc** pro vybrané období. Lidé jsou po odděleních, u každého ID, pracovní dny,
   hodiny v pracovní dny, o víkendu a celkem. Za každé oddělení je součet, na konci celkový součet
-  hodin. Excel má navíc list Oddělení. Počítají se jen odpracované hodiny, ne hodiny u kódu
+  hodin. Excel má navíc list **Po dnech** (u každého člověka každý den: odpracované hodiny, nebo
+  kód nepřítomnosti, za oddělení a celkem součet dne) a list Oddělení. Počítají se jen odpracované hodiny, ne hodiny u kódu
   nepřítomnosti.
 
 ## Co je nového ve verzi 2.45.1

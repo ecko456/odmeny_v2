@@ -49,15 +49,24 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   const xl = await page.evaluate(async b64 => {
     const X = await xlsx();
     const wb = X.read(Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { type: 'array' });
-    return { names: wb.SheetNames, rows: X.utils.sheet_to_json(wb.Sheets['Docházka'], { header: 1 }), dep: X.utils.sheet_to_json(wb.Sheets['Oddělení'], { header: 1 }) };
+    return { names: wb.SheetNames, rows: X.utils.sheet_to_json(wb.Sheets['Docházka'], { header: 1 }), dep: X.utils.sheet_to_json(wb.Sheets['Oddělení'], { header: 1 }), days: X.utils.sheet_to_json(wb.Sheets['Po dnech'], { header: 1 }) };
   }, fs.readFileSync(xp).toString('base64'));
-  check(dx.suggestedFilename() === `dochazka-${exp.id}.xlsx` && JSON.stringify(xl.names) === '["Docházka","Oddělení"]', `Excel: ${dx.suggestedFilename()} ${xl.names}`);
+  check(dx.suggestedFilename() === `dochazka-${exp.id}.xlsx` && JSON.stringify(xl.names) === '["Docházka","Po dnech","Oddělení"]', `Excel: ${dx.suggestedFilename()} ${xl.names}`);
   const hdr = xl.rows[2];
   const last = xl.rows[xl.rows.length - 1];
   check(hdr[0] === 'Oddělení' && hdr.includes('ID') && hdr.includes('Hodiny celkem') && last[0] === 'CELKEM' && Math.abs(last[hdr.indexOf('Hodiny celkem')] - exp.total) < 0.01, `Excel řádky: ${JSON.stringify([hdr, last])}`);
   check(xl.rows.some(r => r[2] === '4711' && String(r[1]).startsWith(who) && r[0]), 'Excel: člověk s ID a oddělením');
   check(xl.rows.filter(r => String(r[0]).startsWith('Celkem ')).length === exp.depts.length, 'Excel: součet za každé oddělení');
   check(xl.dep.length === exp.depts.length + 2, `Excel list Oddělení: ${xl.dep.length}`);
+  // list Po dnech: den = sloupec, hodnoty proti uložené docházce
+  const ref = await page.evaluate(() => { const p = curPeriod(); const k = Object.keys(p.rows).find(x => S.employees[x] && S.employees[x].wid === '4711'); const r = p.rows[k];
+    return { n: p.days.length, h: r.h.map(v => +v || 0), c: r.c.map(v => v || ''), d0: p.days[0] }; });
+  const dh = xl.days[2];
+  const me = xl.days.find(r => r[2] === '4711');
+  const dlast = xl.days[xl.days.length - 1];
+  check(dh.length === ref.n + 4 && /^1\.\d+\. (Po|Út|St|Čt|Pá|So|Ne)/.test(dh[3]) && dh[dh.length - 1] === 'Hodiny celkem', `Po dnech hlavička: ${dh.slice(0, 6)}`);
+  check(me && ref.h.every((h, i) => (ref.c[i] ? String(me[3 + i]).startsWith(ref.c[i]) : h ? me[3 + i] === h : (me[3 + i] == null || me[3 + i] === ''))), `Po dnech člověk: ${JSON.stringify(me && me.slice(0, 12))}`);
+  check(dlast[0] === 'CELKEM' && Math.abs(dlast[dlast.length - 1] - exp.total) < 0.01 && Math.abs(dlast.slice(3, -1).reduce((t, v) => t + (+v || 0), 0) - exp.total) < 0.01, `Po dnech CELKEM: ${JSON.stringify(dlast.slice(-4))}`);
 
   // PDF
   const [dp] = await Promise.all([page.waitForEvent('download'), page.click('[data-attpdf]')]);
