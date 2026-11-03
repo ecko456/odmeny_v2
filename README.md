@@ -62,6 +62,24 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.45.2
+
+- **KPI → Kapacity a zaškolení: PDF jen za zvolenou stránku.** PDF obsahuje jen to, co je
+  právě vybrané: jeden měsíční souhrn, jeden týden, nebo vývoj zaškolení. Dřív stahovalo všechny
+  stránky období. Excel zůstává za celé období.
+- **Konce trestů bez vedoucích.** Vedoucí se nepočítají do přehledu, dlaždic, Excelu ani PDF.
+- **Konce trestů: zkušenost a PDF.** U každého člověka je vidět, jestli je zaškolený, nebo
+  v zácviku. Rozhoduje procento dovedností skupiny a hranice zaškolení z KPI, stejně jako
+  v Kapacitách. Excel má sloupce Zkušenost a Dovednosti %. Nové tlačítko **PDF** (A4 na výšku):
+  - 1. strana graficky: dlaždice, kdo odchází a kdo zůstane podle zkušenosti, odchody po
+    měsících, oddělení;
+  - další strany: seznam odchodů jen s ID, bez jmen.
+- **Docházka: export za měsíc.** V Docházce jsou nad tabulkou tlačítka **Excel za měsíc**
+  a **PDF za měsíc** pro vybrané období. Lidé jsou po odděleních, u každého ID, pracovní dny,
+  hodiny v pracovní dny, o víkendu a celkem. Za každé oddělení je součet, na konci celkový součet
+  hodin. Excel má navíc list Oddělení. Počítají se jen odpracované hodiny, ne hodiny u kódu
+  nepřítomnosti.
+
 ## Co je nového ve verzi 2.45.1
 
 - **KPI → Kapacity a zaškolení (Report docházky): výkon na odpracovaný den.** Graf a dlaždice

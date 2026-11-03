@@ -249,39 +249,54 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   check(LAST.some(n => text.includes(n)) && /ID 10\d\d/.test(text), 'vývoj v aplikaci se jmény a ID');
   await page.screenshot({ path: path.join(shots, '03-vyvoj.png'), fullPage: true });
 
-  // PDF: stránky podle vzoru (A4 na výšku), jen ID (bez jmen), písmo Plex Mono.
-  const pdf = await download(page, '[data-wactpdf=""]', 'kapacity.pdf');
-  check(pdf.head === '%PDF-' && /^kapacity-zaskoleni-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.pdf$/.test(pdf.name), `PDF ${pdf.name}`);
-  const raw = fs.readFileSync(pdf.path).toString('latin1');
+  // PDF jen zvolené stránky (2.45.2), A4 na výšku, jen ID (bez jmen), písmo Plex Mono.
+  const pdfOf = async (sel, name) => { const f = await download(page, sel, name); const pg = pdfText(f.path); return { f, pg, t: pg ? pg.join(' ').replace(/\s+/g, ' ') : null }; };
+  // vývoj zaškolení (zvolená stránka z kroku výš)
+  const dv = await pdfOf('[data-wactpdf=""]', 'kapacity-vyvoj.pdf');
+  check(dv.f.head === '%PDF-' && /^kapacity-zaskoleni-vyvoj-\d{4}-\d{2}-\d{2}-\d{4}-\d{2}-\d{2}\.pdf$/.test(dv.f.name), `PDF vývoje ${dv.f.name}`);
+  const raw = fs.readFileSync(dv.f.path).toString('latin1');
   check(/PlexMono/.test(raw) || /IBMPlexMono/.test(raw), 'PDF má písmo Plex Mono');
   check(/\/MediaBox \[0 0 595\.2\d* 841\.8\d*\]/.test(raw), 'PDF A4 na výšku');
-  const pages = pdfText(pdf.path);
-  if (pages) {
-    const t = pages.join(' ').replace(/\s+/g, ' ');
-    ['Report docházky — Provoz Sever', 'HALA 2 · Ukázková firma s.r.o.', 'Měsíční souhrn —', 'PODÍL ZAŠKOLENÝCH', 'Lidí ve skupinách', 'Zaškolený proti zácviku', 'Po skupinách —',
-      'Týdenní souhrn — Týden', 'NORMA SPLNĚNA', 'ZAŠKOLENÍ NA SMĚNĚ', 'Průměr po skupinách', 'Vývoj zaškolení —', 'ID 10', 'CELKEM', 'Vygenerováno', 'Strana 1 /']
-      .forEach(s => check(t.includes(s), `PDF obsahuje „${s}“`));
-    check(!LAST.some(n => t.includes(n)), 'PDF bez příjmení (jen ID)');
-    check(pages.length >= x.pages.length + 1, `PDF má ${pages.length} stran, stránek reportu ${x.pages.length + 1}`);
-    const firstMonth = pages.findIndex(p => /Měsíční souhrn —/.test(p));
-    // před prvním měsícem smí být jen týdny, které začínají v období a patří k předchozímu měsíci (podle čtvrtka)
-    check(firstMonth >= 0 && pages.slice(0, firstMonth).every(p => /Týdenní souhrn/.test(p)) && /Týdenní souhrn/.test(pages[firstMonth + 1]), `PDF: měsíc a za ním jeho týdny: ${firstMonth} · ${String(pages[firstMonth + 1]).replace(/\s+/g, ' ').slice(0, 160)}`);
+  if (dv.t) {
+    ['Report docházky — Provoz Sever', 'HALA 2 · Ukázková firma s.r.o.', 'Vývoj zaškolení —', 'ID 10', 'Strana 1 /'].forEach(s => check(dv.t.includes(s), `PDF vývoje obsahuje „${s}“`));
+    check(!/Měsíční souhrn —|Týdenní souhrn —/.test(dv.t), 'PDF vývoje bez měsíců a týdnů');
+    check(!LAST.some(n => dv.t.includes(n)), 'PDF bez příjmení (jen ID)');
   }
-  pdfPng(pdf.path, path.join(shots, 'pdf'));
-
-  // PDF bez výkonu (2.45.1): stejné stránky bez dlaždic, grafu, sloupců a vysvětlivek výkonu.
-  const pdfN = await download(page, '[data-wactpdf="noperf"]', 'kapacity-bez-vykonu.pdf');
-  check(/^kapacity-zaskoleni-.*-bez-vykonu\.pdf$/.test(pdfN.name), `PDF bez výkonu ${pdfN.name}`);
-  const pagesN = pdfText(pdfN.path);
-  if (pagesN) {
-    const t = pagesN.join(' ').replace(/\s+/g, ' ');
-    ['Měsíční souhrn —', 'PODÍL ZAŠKOLENÝCH', 'Lidí ve skupinách', 'Po skupinách —', 'Týdenní souhrn — Týden', 'Vývoj zaškolení —', 'CELKEM', 'Vygenerováno']
-      .forEach(s => check(t.includes(s), `PDF bez výkonu obsahuje „${s}“`));
-    ['Výkon na den', 'Výkon na odpracovaný den', 'VÝKON CELKEM', 'Zaškolený proti zácviku', 'Výkon zaškolených']
-      .forEach(s => check(!t.includes(s), `PDF bez výkonu nemá „${s}“`));
-    check(pagesN.length <= pages.length, `PDF bez výkonu: ${pagesN.length} stran`);
+  pdfPng(dv.f.path, path.join(shots, 'pdf-vyvoj'));
+  // minulý měsíc (má výkon z evidence práce): jen jeho měsíční souhrn
+  const PM = await page.evaluate(() => waMonthAdd(todayIso().slice(0, 7), -1));
+  const PMN = await page.evaluate(m => { const t = monthLabel(m); return t.charAt(0).toUpperCase() + t.slice(1); }, PM);
+  await page.click(`#waView .ctr-nav [data-wactpage="month:${PM}"]`);
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="month"]');
+  const pm = await pdfOf('[data-wactpdf=""]', 'kapacity-mesic.pdf');
+  check(pm.f.name === `kapacity-zaskoleni-${PM}.pdf`, `PDF měsíce ${pm.f.name}`);
+  if (pm.t) {
+    [`Měsíční souhrn — ${PMN}`, 'PODÍL ZAŠKOLENÝCH', 'Lidí ve skupinách', 'Výkon na den (index)', 'Zaškolený proti zácviku', 'Výkon na odpracovaný den', `Po skupinách — ${PMN}`, 'VÝKON CELKEM', 'CELKEM', 'Vygenerováno', 'Strana 1 / 1']
+      .forEach(s => check(pm.t.includes(s), `PDF měsíce obsahuje „${s}“`));
+    check(!/Týdenní souhrn —|Vývoj zaškolení —/.test(pm.t) && (pm.t.match(/Měsíční souhrn —/g) || []).length === 1, 'PDF měsíce jen ten měsíc');
+    check(!/bez výkonů za měsíc/.test(pm.t), 'PDF měsíce: výkon spočítaný');
   }
-  pdfPng(pdfN.path, path.join(shots, 'pdf-bez'));
+  pdfPng(pm.f.path, path.join(shots, 'pdf'));
+  // PDF bez výkonu (2.45.1): stejná stránka bez dlaždic, grafu, sloupců a vysvětlivek výkonu.
+  const pn = await pdfOf('[data-wactpdf="noperf"]', 'kapacity-bez-vykonu.pdf');
+  check(pn.f.name === `kapacity-zaskoleni-${PM}-bez-vykonu.pdf`, `PDF bez výkonu ${pn.f.name}`);
+  if (pn.t) {
+    [`Měsíční souhrn — ${PMN}`, 'PODÍL ZAŠKOLENÝCH', 'Lidí ve skupinách', 'Po skupinách —', 'CELKEM', 'Vygenerováno'].forEach(s => check(pn.t.includes(s), `PDF bez výkonu obsahuje „${s}“`));
+    ['Výkon na den', 'Výkon na odpracovaný den', 'VÝKON CELKEM', 'Zaškolený proti zácviku', 'Výkon zaškolených', 'Týdenní souhrn —']
+      .forEach(s => check(!pn.t.includes(s), `PDF bez výkonu nemá „${s}“`));
+  }
+  pdfPng(pn.f.path, path.join(shots, 'pdf-bez'));
+  // týden: jen jeho týdenní souhrn
+  await page.click(`#waView [data-wactpage="week:${x.week}"]`);
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
+  const pw = await pdfOf('[data-wactpdf=""]', 'kapacity-tyden.pdf');
+  check(pw.f.name === `kapacity-zaskoleni-${x.week}.pdf`, `PDF týdne ${pw.f.name}`);
+  if (pw.t) {
+    ['Týdenní souhrn — Týden', 'NORMA SPLNĚNA', 'ZAŠKOLENÍ NA SMĚNĚ', 'Průměr po skupinách', 'CELKEM'].forEach(s => check(pw.t.includes(s), `PDF týdne obsahuje „${s}“`));
+    check(!/Měsíční souhrn —|Vývoj zaškolení —/.test(pw.t) && (pw.t.match(/Týdenní souhrn —/g) || []).length === 1, 'PDF týdne jen ten týden');
+  }
+  await page.click('#waView [data-wactpage="dev"]');
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="dev"]');
 
   // Excel: listy a součty proti výpočtu.
   const xl = await download(page, '[data-wactxlsx]', 'kapacity.xlsx');

@@ -2409,13 +2409,98 @@ function bindGroupEditor() {
 /* ==========================================================================
    DOCHÁZKA
    ========================================================================== */
+/* Export docházky za měsíc (2.45.2): Excel a PDF, lidé po odděleních se součty hodin. */
+async function exportAttXlsx() {
+  const x = attExport(curPeriod());
+  if (!x) { toast('Docházka za tento měsíc není nahraná.', true); return; }
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    attExportSheets(x).forEach(sheet => { const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell))); ws['!cols'] = sheet.cols.map(wch => ({ wch })); X.utils.book_append_sheet(wb, ws, sheet.name); });
+    downloadFile(`dochazka-${x.id}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+function attPdf(P, x) {
+  const X = 64, W = 1152, R = X + W, BOT = P.PH - 90;
+  const C = [['ZAMĚSTNANEC', 0, 'l'], ['ID', 400, 'l'], ['DNY', 640, 'r'], ['HODINY', 780, 'r'], ['VÍKEND DNY', 900, 'r'], ['VÍKEND H', 1020, 'r'], ['CELKEM H', W, 'r']];
+  const month = ctrCap(monthLabel(x.id));
+  let y = 0;
+  const head = cont => {
+    P.text(`${EXPORT_NAME} · DOCHÁZKA`, X, 78, 13, { b: true, c: 'faint', ls: 0.12 });
+    P.text(cont ? `Docházka — ${month} (pokračování)` : `Docházka — ${month}`, X, 136, cont ? 30 : 44, { b: true });
+    y = cont ? 180 : 170;
+    if (!cont) {
+      P.text(`fond ${nf(x.meta.fund)} h · ${x.meta.work} pracovních dnů · jen odpracované hodiny (bez hodin u kódu nepřítomnosti)`, X, y, 15, { c: 'muted' });
+      const tiles = [['LIDÍ', String(x.tot.n)], ['HODINY CELKEM', nf(x.tot.total)], ['V PRACOVNÍ DNY', nf(x.tot.hours)], ['O VÍKENDU', nf(x.tot.wkHours)]];
+      const TW = (W - 3 * 16) / 4;
+      tiles.forEach(([l, v], i) => { const tx = X + i * (TW + 16); P.box(tx, 200, TW, 110, { fill: '#F7F9FC', stroke: 'line', r: 14 }); P.text(l, tx + 20, 232, 12, { b: true, c: 'muted', ls: 0.1 }); P.text(v, tx + 20, 288, 42, { b: true, mono: true, c: i === 1 ? 'blue' : 'ink' }); });
+      // hodiny po odděleních: pruhy
+      let by = 362;
+      P.text('Hodiny po odděleních', X, by, 20, { b: true });
+      by += 20;
+      const max = Math.max(1, ...x.depts.map(d => d.tot.total));
+      x.depts.forEach(d => {
+        P.text(P.split(d.name, 15, 230, { b: true })[0], X, by + 22, 15, { b: true });
+        const w = (d.tot.total / max) * (W - 250 - 230);
+        P.box(X + 250, by + 8, Math.max(2, w), 20, { fill: 'blue', r: 3 });
+        P.text(`${nf(d.tot.total)} h · ${d.tot.n} ${lidiN(d.tot.n)}`, R, by + 23, 15, { mono: true, a: 'end' });
+        by += 34;
+      });
+      y = by + 30;
+    }
+    C.forEach(([h, dx, a]) => P.text(h, X + dx, y, 12, { b: true, c: 'muted', ls: 0.08, a: a === 'r' ? 'end' : undefined }));
+    P.line(X, y + 12, R, y + 12, 'ink', 1.5);
+    y += 42;
+  };
+  const cells = (q, o = {}) => {
+    const v = [q.name, q.wid ? `ID ${q.wid}` : '', String(q.days), nf(q.hours), String(q.wkDays), nf(q.wkHours), nf(q.total)];
+    C.forEach(([, dx, a], i) => P.text(i === 0 ? P.split(v[0], 15, 390, o)[0] : v[i], X + dx, y, 15, { ...o, mono: i > 0, a: a === 'r' ? 'end' : undefined, c: i === 1 && !q.wid ? 'faint' : o.c }));
+  };
+  head(false);
+  x.depts.forEach(d => {
+    if (y + 34 + 32 * Math.min(2, d.people.length) > BOT) { P.doc.addPage('a4', 'portrait'); head(true); }
+    P.text(d.name, X, y, 17, { b: true, c: 'blue' });
+    y += 30;
+    d.people.forEach(q => {
+      if (y > BOT) { P.doc.addPage('a4', 'portrait'); head(true); P.text(`${d.name} — pokračování`, X, y, 17, { b: true, c: 'blue' }); y += 30; }
+      cells(q);
+      P.line(X, y + 11, R, y + 11, 'grid', 1);
+      y += 30;
+    });
+    if (y > BOT) { P.doc.addPage('a4', 'portrait'); head(true); }
+    P.box(X, y - 20, W, 30, { fill: '#F2F4F8' });
+    cells({ name: `Celkem ${d.name} (${d.tot.n})`, wid: '', ...d.tot }, { b: true });
+    y += 46;
+  });
+  if (y + 40 > BOT) { P.doc.addPage('a4', 'portrait'); head(true); }
+  P.line(X, y - 26, R, y - 26, 'ink', 1.5);
+  cells({ name: `CELKEM (${x.tot.n} ${lidiN(x.tot.n)})`, wid: '', ...x.tot }, { b: true });
+}
+async function exportAttPdf(button) {
+  const x = attExport(curPeriod());
+  if (!x) { toast('Docházka za tento měsíc není nahraná.', true); return; }
+  await withPdf(button, doc => {
+    doc.setProperties({ title: `Docházka · ${monthLabel(x.id)}`, creator: EXPORT_NAME });
+    const P = ctrPdf(doc);
+    attPdf(P, x);
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i += 1) {
+      doc.setPage(i);
+      P.text(`${EXPORT_NAME} · Docházka · ${monthLabel(x.id)}${x.file ? ` · ${x.file}` : ''}`.slice(0, 120), 64, P.PH - 30, 11, { c: 'faint' });
+      P.text(`${i} / ${n}`, 1216, P.PH - 30, 11, { c: 'faint', a: 'end' });
+    }
+    downloadFile(`dochazka-${x.id}.pdf`, doc.output('blob'), 'application/pdf');
+  }, 'portrait', { mono: true });
+}
 function renderAttendance() {
   const p = curPeriod();
   const box = $('#attView');
   if (!p) { box.innerHTML = `<div class="card">${emptyState('Zatím nic nahráno', 'Po nahrání tu uvidíš každého člověka po dnech.')}</div>`; return; }
   const meta = periodMeta(p);
   const rows = Object.keys(p.rows).map(k => ({ k, r: p.rows[k], a: attendance(p, k) })).sort((a, b) => norm(a.r.last).localeCompare(norm(b.r.last), 'cs'));
-  box.innerHTML = `<div class="stats">${[
+  const totH = rows.reduce((t, x) => t + x.a.totalHours, 0);
+  box.innerHTML = `<div class="t5-weekbar att-bar"><span class="small muted">${esc(ctrCap(monthLabel(p.id)))} · odpracováno celkem <b class="num">${nf(totH)} h</b></span><span class="spacer"></span><button class="btn sec" type="button" data-attxlsx>Excel za měsíc</button><button class="btn" type="button" data-attpdf>PDF za měsíc</button></div>
+  <div class="stats">${[
     statTile('Pracovních dnů', meta.work, `${nf(meta.fund)} h fondu`),
     statTile('Sobot', meta.sats, `víkendových dnů ${meta.sats + meta.suns}`),
     statTile('Lidí v souboru', rows.length, esc(p.file || '')),
@@ -7101,6 +7186,11 @@ function bindEvents() {
   bindMatrixEvents();
   bindGroupEditor();
 
+  $('#attView').addEventListener('click', event => {
+    if (event.target.closest('[data-attxlsx]')) { exportAttXlsx(); return; }
+    const b = event.target.closest('[data-attpdf]');
+    if (b) exportAttPdf(b);
+  });
   $('#btnDelPeriod').onclick = async () => {
     const p = curPeriod();
     if (!p) return;
@@ -7463,7 +7553,7 @@ async function endExcludeDialog(list, fileName) {
 }
 
 function endWhoHtml(x) {
-  return `<li class="end-person"><span class="end-d num">${esc(endDateText(x.end))}</span><span class="nm"><b>${esc(x.name)}</b><small>${esc([x.wid ? `ID ${x.wid}` : '', x.group, x.sick ? 'NEMOC' : shiftName(x.shift)].filter(Boolean).join(' · '))}</small></span>
+  return `<li class="end-person"><span class="end-d num">${esc(endDateText(x.end))}</span><span class="nm"><b>${esc(x.name)}</b><small>${esc([x.wid ? `ID ${x.wid}` : '', x.group, x.st !== 'none' ? `${END_ST[x.st].toLowerCase()}${x.pct != null ? ` ${nf(x.pct, 0)} %` : ''}` : '', x.sick ? 'NEMOC' : shiftName(x.shift)].filter(Boolean).join(' · '))}</small></span>
     <span class="end-in ${x.days != null && x.days < 0 ? 'neg' : x.days != null && x.days <= 30 ? 'soon' : ''}">${x.days == null ? '' : x.days < 0 ? `před ${-x.days} d` : x.days === 0 ? 'dnes' : `za ${x.days} d`}</span>
     <button class="icon-btn" type="button" data-endperson="${esc(x.key)}" title="Otevřít v Lidech" aria-label="Otevřít ${esc(x.name)} v Lidech">${I.back}</button></li>`;
 }
@@ -7475,7 +7565,7 @@ function renderEnds() {
   const cell = n => (n ? `<b>${n}</b>` : '<span class="muted">·</span>');
   const anyEnd = ov.head - ov.noEnd.length;
   box.innerHTML = `<div class="t5-weekbar end-bar"><div class="chips" role="group" aria-label="Období">${[[6, '6 měsíců'], [12, '12 měsíců'], [24, '24 měsíců']].map(([k, l]) => `<button type="button" class="chip${ui.end.n === k ? ' on' : ''}" data-endn="${k}" aria-pressed="${ui.end.n === k}">${l}</button>`).join('')}</div>
-      <span class="spacer"></span><button class="btn sec" type="button" data-endxlsx>Excel</button></div>
+      <span class="spacer"></span><button class="btn sec" type="button" data-endxlsx>Excel</button><button class="btn" type="button" data-endpdf${anyEnd ? '' : ' disabled'}>PDF</button></div>
     <div class="stats">${statTile('Teď lidí', String(ov.head), `${anyEnd} s datem konce`)}
       ${statTile('Odchází tento měsíc', String(ov.thisMonth), monthLabel(ov.months[0].m), ov.thisMonth ? 'warn' : '')}
       ${statTile('Do 3 měsíců', String(ov.next3), ov.months.slice(0, 3).map(x => `${monthLabel(x.m).split(' ')[0]} ${x.total}`).join(' · '))}
@@ -7502,6 +7592,151 @@ async function exportEndsXlsx() {
     downloadFile(`konce-trestu-${ov.today}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
 }
+/* ---------- PDF Konců trestů (2.45.2): A4 na výšku, graficky; bez jmen, jen ID ----------
+   1. strana: dlaždice, kdo odchází a kdo zůstane podle zkušenosti (zaškolení / v zácviku /
+   bez skupiny), odchody po měsících, oddělení. Další strany: seznam odchodů s ID. */
+const END_ST_C = [['ok', 'blue', 'Zaškolení'], ['tr', 'amberF', 'V zácviku'], ['none', '#C3CAD4', 'Bez skupiny']];
+const END_ST_INK = { ok: '#FFFFFF', tr: '#1A2330', none: '#1A2330' };
+function endPdfBar(P, st, x, y, w, h, unit) {
+  let cx = x;
+  END_ST_C.forEach(([k, c]) => {
+    const n = st[k] || 0;
+    if (!n) return;
+    const bw = n * unit;
+    P.box(cx, y, bw, h, { fill: c });
+    if (bw >= 30 && h >= 22) P.text(String(n), cx + bw / 2, y + h / 2 + 6, Math.min(17, h - 6), { b: true, mono: true, c: END_ST_INK[k], a: 'middle' });
+    cx += bw;
+  });
+}
+function endsPdf(P, ov) {
+  const X = 64, W = 1152, R = X + W;
+  const sum = o => o.ok + o.tr + o.none;
+  P.text(`${EXPORT_NAME} · KONCE TRESTŮ`, X, 78, 13, { b: true, c: 'faint', ls: 0.12 });
+  P.text(dayText(ov.today), R, 78, 13, { c: 'faint', a: 'end', mono: true });
+  P.text('Konce trestů', X, 136, 44, { b: true });
+  P.text(`odchody na ${ov.months.length} měsíců podle zkušenosti · zaškolený = aspoň ${ov.lim} % dovedností skupiny`, X, 170, 15, { c: 'muted' });
+  P.line(X, 194, R, 194, 'line', 1.5);
+  // dlaždice
+  const stay = ov.head - ov.overdue.length - ov.leaving;
+  const tiles = [
+    ['TEĎ LIDÍ', String(ov.head), 'ink'], ['TENTO MĚSÍC', String(ov.thisMonth), ov.thisMonth ? 'amber' : 'ink'],
+    ['DO 3 MĚSÍCŮ', String(ov.next3), 'ink'], [`ZA ${ov.months.length} MĚSÍCŮ`, String(ov.leaving), 'ink'],
+    ['PO TERMÍNU', String(ov.overdue.length), ov.overdue.length ? 'red' : 'green'],
+  ];
+  const TW = (W - 4 * 16) / 5, top = 218;
+  tiles.forEach(([l, v, c], i) => {
+    const x = X + i * (TW + 16);
+    P.box(x, top, TW, 116, { fill: '#F7F9FC', stroke: 'line', r: 14 });
+    P.text(l, x + 20, top + 32, 12, { b: true, c: 'muted', ls: 0.1 });
+    P.text(v, x + 20, top + 90, 46, { b: true, mono: true, c });
+  });
+  // kdo odchází a kdo zůstane: 100% pruhy
+  let y = 392;
+  P.text('Kdo odchází a kdo zůstane', X, y, 20, { b: true });
+  y += 22;
+  const rows = [['Odchází', ov.st.gone, `${sum(ov.st.gone)} ${lidiN(sum(ov.st.gone))} (i po termínu)`], ['Zůstane', ov.st.stay, `${stay} ${lidiN(stay)}`]];
+  const BX = X + 150, BW = W - 150 - 250;
+  rows.forEach(([l, st, sub]) => {
+    const n = sum(st);
+    P.text(l, X, y + 38, 18, { b: true });
+    P.box(BX, y + 12, BW, 40, { fill: 'track', r: 4 });
+    if (n) endPdfBar(P, st, BX, y + 12, BW, 40, BW / n);
+    const okShare = n ? Math.round((st.ok / n) * 100) : 0;
+    P.text(n ? `${okShare} % zaškolených` : '—', R, y + 32, 16, { b: true, a: 'end', c: n ? 'blue' : 'faint' });
+    P.text(sub, R, y + 52, 13, { a: 'end', c: 'muted' });
+    y += 68;
+  });
+  // legenda
+  let lx = X;
+  END_ST_C.forEach(([, c, l]) => { P.box(lx, y + 4, 18, 18, { fill: c, r: 4 }); P.text(l, lx + 26, y + 19, 14, { c: 'muted' }); lx += 26 + P.width(l, 14) + 30; });
+  y += 70;
+  // po měsících
+  P.text('Odchody po měsících', X, y, 20, { b: true });
+  const cols = [...(ov.overdue.length ? [{ t: 'po', y: 'termínu', st: ov.st.overdue, n: ov.overdue.length, od: true }] : []),
+    ...ov.months.map((m, i) => { const t = cpMonthShort(m.m, i === 0); return { t: t.t, y: t.y, st: m.st, n: m.total }; })];
+  const CH = 300, base = y + 50 + CH, cw = W / cols.length;
+  const maxN = Math.max(1, ...cols.map(c => c.n));
+  const unit = (CH - 34) / maxN, bw = Math.min(54, cw * 0.62);
+  for (let v = 0; v <= maxN; v += Math.max(1, Math.ceil(maxN / 4))) {
+    const gy = base - v * unit;
+    if (v) P.line(X, gy, R, gy, 'grid', 1);
+  }
+  P.line(X, base, R, base, 'axis', 1.5);
+  cols.forEach((c, i) => {
+    const cx = X + cw * (i + 0.5);
+    let yy = base;
+    END_ST_C.forEach(([k, col]) => { const n = c.st[k] || 0; if (!n) return; P.box(cx - bw / 2, yy - n * unit, bw, n * unit, { fill: col }); yy -= n * unit; });
+    if (c.n) P.text(String(c.n), cx, yy - 10, 16, { b: true, mono: true, c: c.od ? 'red' : 'ink', a: 'middle' });
+    P.text(c.t, cx, base + 26, 14, { b: !!c.n, c: c.od ? 'red' : c.n ? 'ink' : 'faint', a: 'middle' });
+    if (c.y) P.text(c.y, cx, base + 44, 11, { c: c.od ? 'red' : 'faint', a: 'middle' });
+  });
+  y = base + 100;
+  // oddělení: celý pruh = lidé teď, barevně odcházející, šedě kdo zůstane
+  P.text('Oddělení', X, y, 20, { b: true });
+  P.text('pruh = lidé teď · barevně odcházející podle zkušenosti', R, y, 13, { c: 'muted', a: 'end' });
+  y += 24;
+  const depts = ov.depts.filter(d => d.head);
+  const maxH = Math.max(1, ...depts.map(d => d.head));
+  const rh = Math.max(34, Math.min(56, (P.PH - 120 - y) / Math.max(1, depts.length)));
+  const bh = Math.min(28, rh - 12), DX = X + 250, DW = W - 250 - 200;
+  depts.forEach(d => {
+    const cy = y + rh / 2;
+    P.text(P.split(d.name, 17, 236, { b: true })[0], X, cy + 6, 17, { b: true });
+    P.box(DX, cy - bh / 2, d.head * (DW / maxH), bh, { fill: '#E6EAF0', r: 3 });
+    endPdfBar(P, d.goneSt, DX, cy - bh / 2, DW / maxH, bh, DW / maxH);
+    const g = sum(d.goneSt);
+    P.text(g ? `−${g} z ${d.head}` : `0 z ${d.head}`, R, cy, 17, { b: true, mono: true, a: 'end', c: g ? 'ink' : 'green' });
+    P.text(`zůstane ${d.remain[d.remain.length - 1]}`, R, cy + 18, 12, { a: 'end', c: 'muted' });
+    y += rh;
+  });
+  // seznam odchodů na dalších stranách: jen ID
+  const list = [...ov.overdue, ...ov.months.flatMap(m => m.people)];
+  if (!list.length) return;
+  const head = [['KONEC', 0], ['ID', 170], ['ODDĚLENÍ', 330], ['SKUPINA', 610], ['ZKUŠENOST', 870], ['ZA DNÍ', W]];
+  let yy = 0;
+  const page = first => {
+    P.doc.addPage('a4', 'portrait');
+    P.text(`${EXPORT_NAME} · KONCE TRESTŮ`, X, 78, 13, { b: true, c: 'faint', ls: 0.12 });
+    P.text(first ? 'Kdo odchází' : 'Kdo odchází — pokračování', X, 130, 30, { b: true });
+    yy = 180;
+    head.forEach(([h, dx], i) => P.text(h, X + dx, yy, 12, { b: true, c: 'muted', ls: 0.08, a: i === head.length - 1 ? 'end' : undefined }));
+    P.line(X, yy + 12, R, yy + 12, 'ink', 1.5);
+    yy += 44;
+  };
+  page(true);
+  let lastM = '';
+  list.forEach(x => {
+    const m = x.end < ov.today ? 'po termínu' : ctrCap(monthLabel(x.end.slice(0, 7)));
+    if (yy + (m !== lastM ? 70 : 36) > P.PH - 90) { page(false); lastM = ''; }
+    if (m !== lastM) { P.text(m, X, yy + 4, 16, { b: true, c: x.end < ov.today ? 'red' : 'ink' }); yy += 34; lastM = m; }
+    const [, c] = END_ST_C.find(([k]) => k === x.st);
+    P.text(endDateText(x.end), X, yy, 15, { mono: true });
+    P.text(x.wid ? `ID ${x.wid}` : 'bez ID', X + 170, yy, 15, { mono: true, c: x.wid ? 'ink' : 'faint' });
+    P.text(P.split(x.dept, 15, 260)[0], X + 330, yy, 15);
+    P.text(P.split(x.group || '—', 15, 240)[0], X + 610, yy, 15, { c: x.group ? 'ink' : 'faint' });
+    P.box(X + 870, yy - 13, 14, 14, { fill: c, r: 3 });
+    P.text(`${END_ST[x.st]}${x.pct != null ? ` · ${nf(x.pct, 0)} %` : ''}`, X + 894, yy, 15);
+    P.text(x.days < 0 ? `před ${-x.days}` : String(x.days), R, yy, 15, { mono: true, a: 'end', c: x.days < 0 ? 'red' : 'ink' });
+    P.line(X, yy + 12, R, yy + 12, 'grid', 1);
+    yy += 36;
+  });
+}
+async function exportEndsPdf(button) {
+  const ov = endsOverview(todayIso(), (ui.end && ui.end.n) || 12);
+  if (ov.head === ov.noEnd.length) { toast('Zatím nikdo nemá konec trestu.', true); return; }
+  await withPdf(button, doc => {
+    doc.setProperties({ title: 'Konce trestů', creator: EXPORT_NAME });
+    const P = ctrPdf(doc);
+    endsPdf(P, ov);
+    const n = doc.getNumberOfPages();
+    for (let i = 1; i <= n; i += 1) {
+      doc.setPage(i);
+      P.text(`${EXPORT_NAME} · Konce trestů · stav k ${dayText(ov.today)}`, 64, P.PH - 30, 11, { c: 'faint' });
+      P.text(`${i} / ${n}`, 1216, P.PH - 30, 11, { c: 'faint', a: 'end' });
+    }
+    downloadFile(`konce-trestu-${ov.today}.pdf`, doc.output('blob'), 'application/pdf');
+  }, 'portrait', { mono: true });
+}
 function bindEnds() {
   const pick = () => $('#endFile').click();
   $('#btnEnds').onclick = pick;
@@ -7512,6 +7747,7 @@ function bindEnds() {
     let b;
     if ((b = t.closest('[data-endn]'))) { ui.end.n = +b.dataset.endn; renderEnds(); return; }
     if (t.closest('[data-endxlsx]')) { exportEndsXlsx(); return; }
+    if ((b = t.closest('[data-endpdf]'))) { exportEndsPdf(b); return; }
     if ((b = t.closest('[data-endperson]'))) { ui.selPerson = b.dataset.endperson; ui.personOpen = true; ui.listY = 0; showView('lide'); renderPeople(); }
   });
 }
@@ -10880,7 +11116,7 @@ function waCtHtml() {
   const form = `<div class="ctr-rep">
       <label class="field"><span>Název v nadpisu</span><input id="waRepPlace" maxlength="60" value="${esc(rep.place)}" placeholder="Report docházky — …" autocomplete="off"></label>
       <label class="field"><span>Firma</span><input id="waRepFirm" maxlength="80" value="${esc(rep.firm)}" autocomplete="off"></label>
-      <p class="small muted">Záhlaví stránek jako ve vzoru: „Report docházky — název“, pod ním ${esc(EXPORT_NAME)} · firma. PDF obsahuje za každý měsíc období měsíční souhrn a týdenní souhrny jeho týdnů, na konci vývoj zaškolení.</p>
+      <p class="small muted">Záhlaví stránek jako ve vzoru: „Report docházky — název“, pod ním ${esc(EXPORT_NAME)} · firma. PDF obsahuje jen zvolenou stránku (měsíc, týden nebo vývoj zaškolení). Excel je za celé období.</p>
       <p class="small muted ctr-train">${waTrainText()} <button class="link" type="button" data-watabgo="nastaveni" data-wafocus="waTrainPct">Změnit v Nastavení</button></p>
     </div>`;
   const keys = [...pages.map(p => `${p.kind}:${p.id}`), 'dev'];
@@ -11201,26 +11437,28 @@ function pdfCtrPage(P, pg, first) {
   parts.forEach((lines, i) => lines.forEach((ln, j) => ln.forEach(([wd, b, px]) => P.text(wd, X + i * (nw + 20) + px, y + 17 + j * 18 + 1.125 * 12, 12, { b, c: b ? 'ink' : 'muted' }))));
   y += nh;
 }
+/* PDF jen zvolené stránky reportu (2.45.2): vybraný měsíc, týden, nebo vývoj zaškolení za období. */
 async function exportCtPdf(button, noPerf) {
   const r = waCtRange();
-  const pages = S.positions.some(isGroup) ? capReportPages(r.from, r.to) : [];
-  if (!pages.length) { toast('V období nejsou pracovní dny.', true); return; }
+  const cur = ui.wa.ctShown;
+  if (!cur || !S.positions.some(isGroup)) { toast('V období nejsou pracovní dny.', true); return; }
+  const [kind, id] = cur.split(':');
+  const label = kind === 'month' ? ctrCap(monthLabel(id)) : kind === 'week' ? weekLong(id) : `Vývoj zaškolení · ${ctrRange(r.from, r.to)}`;
+  const slug = kind === 'month' || kind === 'week' ? id : `vyvoj-${r.from}-${r.to}`;
   await withPdf(button, doc => {
-    doc.setProperties({ title: `Report docházky · ${ctrRange(r.from, r.to)}`, creator: EXPORT_NAME });
+    const pg = kind === 'month' ? ctrMonth(id, { noPerf }) : kind === 'week' ? ctrWeek(id) : ctrDev(r.from, r.to);
+    if (!pg) throw new Error('Stránku nejde spočítat, zvol jiné období.');
+    doc.setProperties({ title: `Report docházky · ${label}`, creator: EXPORT_NAME });
     const P = ctrPdf(doc);
-    const list = pages.map(p => (p.kind === 'month' ? ctrMonth(p.id, { noPerf }) : ctrWeek(p.id)));
-    list.push(ctrDev(r.from, r.to));
-    list.filter(Boolean).forEach((pg, i) => {
-      if (pg.kind === 'dev' && pg.table) pg.table.rows.sort((a, b) => (a.gi - b.gi) || (a.wid && b.wid ? widCmp(a.wid, b.wid) : 0));
-      pdfCtrPage(P, pg, i === 0);
-    });
+    if (pg.kind === 'dev' && pg.table) pg.table.rows.sort((a, b) => (a.gi - b.gi) || (a.wid && b.wid ? widCmp(a.wid, b.wid) : 0));
+    pdfCtrPage(P, pg, true);
     const n = doc.getNumberOfPages();
     for (let i = 1; i <= n; i += 1) {
       doc.setPage(i);
-      P.text(`${EXPORT_NAME} · Report docházky · ${ctrRange(r.from, r.to)}`, 56, P.PH - 22, 11, { c: 'faint' });
+      P.text(`${EXPORT_NAME} · Report docházky · ${label}`, 56, P.PH - 22, 11, { c: 'faint' });
       P.text(`Strana ${i} / ${n}`, 1224, P.PH - 22, 11, { c: 'faint', a: 'end' });
     }
-    downloadFile(`kapacity-zaskoleni-${r.from}-${r.to}${noPerf ? '-bez-vykonu' : ''}.pdf`, doc.output('blob'), 'application/pdf');
+    downloadFile(`kapacity-zaskoleni-${slug}${noPerf && kind === 'month' ? '-bez-vykonu' : ''}.pdf`, doc.output('blob'), 'application/pdf');
   }, 'portrait', { mono: true });
 }
 async function exportCtXlsx() {

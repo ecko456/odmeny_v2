@@ -34,6 +34,32 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 3. 11. 2026 (verze 2.45.2):
+
+- Uživatel: „v Kapacity a zaškolení to PDF stahuje se všemi daty, chtěl bych vždy export jen za
+  zvolené období“ a „v Konce trestů neukazuj ‚Vedoucí‘ a udělej možnost exportu do PDF … podíl
+  kdo končí, zda se jedná o zaškolené nebo v zaškolení“.
+  - Zvolené období = vybraná stránka reportu (`ui.wa.ctShown`). `exportCtPdf(button, noPerf)`
+    kreslí jen ji: soubor `kapacity-zaskoleni-RRRR-MM[-bez-vykonu].pdf`, `…-RRRR-Wtt.pdf`,
+    `…-vyvoj-OD-DO.pdf`. Excel zůstal za celé období.
+  - Core `endsOverview`: bez vedoucích (žádný řádek Vedoucí), `lim` = `waTrain().pct`, u člověka
+    `pct` a `st` `ok|tr|none` (`END_ST`), `months[].st`, `depts[].st/goneSt`,
+    `st{head, gone, stay, overdue}`. Excel Lidé má Zkušenost a Dovednosti %.
+  - UI: `[data-endpdf]` → `exportEndsPdf`, `endsPdf(P, ov)` přes `ctrPdf` (dlaždice, 100% pruhy
+    Odchází / Zůstane, sloupce po měsících po zkušenosti, oddělení, další strany seznam jen
+    s ID), `END_ST_C`, `endPdfBar`. V seznamu lidí je „zaškolený 100 %“ / „v zácviku …“.
+  - Uživatel pak: „v docházce udělej možnost exportu do excelu nebo do pdf za daný měsíc se
+    celkovým součtem hodin a u každého ať je vidět i oddělení“. Core `attExport(p)` (lidé
+    s `endDeptOf` nebo „Není v Lidech“, ID, skupina, `workDays/workHours/wkDays/wkHours/
+    totalHours`, absence, omluveno; po odděleních v pořadí skupin; součty `tot`) a
+    `attExportSheets` (listy Docházka a Oddělení). UI: lišta `.att-bar` v `renderAttendance`
+    (`[data-attxlsx]`, `[data-attpdf]`), `exportAttXlsx`, `attPdf`/`exportAttPdf` přes `ctrPdf`
+    (dlaždice, pruhy hodin po odděleních, tabulka s oddělením, součtem a CELKEM), soubory
+    `dochazka-RRRR-MM.xlsx|pdf`. Test `tests/e2e_att_export.js` (ukázková data).
+  - Testy: core „Konce trestů (2.45.2)“, `e2e_konce` (vedoucí skrytý, zkušenost, PDF),
+    `e2e_kapacity` (PDF měsíce, bez výkonu, týdne a vývoje). `ODM_VERSION` 2.45.2, data beze
+    změny (40).
+
 Stav k 3. 11. 2026 (verze 2.45.1):
 
 - Uživatel: „V KPI v Report docházky mi stále neukazuje žádná data v ‚Výkon na odpracovanou hodinu
@@ -1924,7 +1950,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.44.1 | `2bcc414` | Nahrát konce trestů a směnnost – tabulka lidí, kteří v souboru nejsou, s volbou vyřadit ze seznamu |
 | 2.44.2 | `457f6d5` | PDF Plánu kapacit – list na oddělení, bez jmen a ID, skupiny podle zkušenosti, kdy lidé končí a kolik zůstane |
 | 2.45 | `590779e` | Poslední změny za 3 dny s tlačítkem Vrátit zpět (jen ta změna, pozdější změny zůstanou) (data verze 40) |
-| 2.45.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: výkon v Kapacitách a zaškolení na odpracovaný den z Docházky a výkonů, PDF s výkonem i bez, hledání v Lidech podle ID |
+| 2.45.1 | `9b0dab2` | výkon v Kapacitách a zaškolení na odpracovaný den z Docházky a výkonů, PDF s výkonem i bez, hledání v Lidech podle ID |
+| 2.45.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Kapacit a zaškolení jen za zvolenou stránku, Konce trestů bez vedoucích, se zkušeností a PDF, export Docházky za měsíc (Excel, PDF) |
 
 Verze 2.1 přidala:
 
@@ -2381,9 +2408,10 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
+  - `e2e_att_export.js` (2.45.2): export docházky za měsíc (Excel, PDF, součty po odděleních, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);
   - `e2e_vykon.js` (2.44): KPI v menu, Výroba pryč, Výkonnost na osobu (pořadí, řazení, filtr, Excel, profil, telefon);
-  - `e2e_konce.js` (2.43): import konců trestů a směnnosti, kontroly řádků, Konce trestů, Excel, telefon;
+  - `e2e_konce.js` (2.43): import konců trestů a směnnosti, kontroly řádků, Konce trestů, Excel, PDF (2.45.2), telefon;
   - `e2e_rychla.js` (2.39): Rychlá kontrola na telefonu (dlaždice, plovoucí menu, počet, směna,
     oddělení, jen lidé v práci, přednost, výměna, sdílení, uložení, zápis, tmavý režim, 320 px);
   - `e2e_upgrade_prev.js`: aktualizace z předchozí verze na aktuální na Apachi (data

@@ -6,6 +6,7 @@
 // Spuštění stejně jako e2e_dochazka.js; snímky v $S/oshots-konce.
 const { chromium } = require(process.env.PW);
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1:8490/';
@@ -77,7 +78,7 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
     const grp = (id, name, dept) => { const p = mkPos(id, name, []); p.dept = dept; p.skillset = [{ id: `k${id}`, name: 'Obsluha', desc: '', scale: null }]; p.maxTab = 8; p.tiers = []; return p; };
     st.positions = [grp('g_brus', 'Brus', 'Broušení'), grp('g_cnc', 'CNC', 'Obrobna')];
     const emp = (last, first, g, wid, x) => { const key = `${norm(last)}|${norm(first)}`; st.employees[key] = { key, last, first, positionId: g, shift: 'R', note: '', wid, ...(x || {}) }; };
-    emp('Adámek', 'Aleš', 'g_brus', '101'); emp('Bednář', 'Boris', 'g_brus', '102', { sick: '2026-10-20' }); emp('Cibulka', 'Cyril', 'g_brus', '103');
+    emp('Adámek', 'Aleš', 'g_brus', '101', { rate: { kg_brus: 4 } }); emp('Ředitel', 'Radek', 'g_brus', '901', { lead: ['Broušení'], end: '2026-11-20' }); emp('Bednář', 'Boris', 'g_brus', '102', { sick: '2026-10-20' }); emp('Cibulka', 'Cyril', 'g_brus', '103');
     emp('Fiala', 'Filip', 'g_cnc', '201'); emp('Gregor', 'Gustav', 'g_cnc', '202'); emp('Havel', 'Hugo', 'g_cnc', '203', { end: '2026-10-20' });
     S = sanitizeState(st);
     save(); renderAll();
@@ -137,6 +138,9 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   check(JSON.stringify(grid[0].slice(0, 7)) === '["Broušení","3","0","·","1","·","2"]', `Broušení: ${grid[0]}`);
   check(grid[1][0] === 'Obrobna' && grid[1][3] === '1' && grid[1][5] === '1', `Obrobna: ${grid[1]}`);
   check(/listopad 2026/i.test(v) && /Adámek Aleš/.test(v) && /za 22 d/.test(v) && /Havel Hugo/.test(v) && /před 14 d/.test(v), `měsíce a lidé: ${v.slice(0, 900)}`);
+  // 2.45.2: vedoucí se v Koncích trestů neukazuje, u lidí je vidět zkušenost
+  check(!/Ředitel|Vedoucí/.test(v) && !grid.some(r => r[0] === 'Vedoucí'), `bez vedoucích: ${grid.map(r => r[0])}`);
+  check(/ID 101 · Brus · zaškolený 100 %/.test(v), `zkušenost u člověka: ${v.slice(0, 900)}`);
   await page.screenshot({ path: path.join(shots, '02-konce.png'), fullPage: true });
   await page.click('[data-endn="24"]');
   check(await page.locator('.end-grid thead th').count() === 2 + 1 + 24 + 2, 'období 24 měsíců');
@@ -145,6 +149,26 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await dl.saveAs(xp);
   const xl = await page.evaluate(async b64 => { const X = await xlsx(); const wb = X.read(Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { type: 'array' }); return wb.SheetNames.map(n => [n, X.utils.sheet_to_json(wb.Sheets[n], { header: 1 }).length]); }, fs.readFileSync(xp).toString('base64'));
   check(dl.suggestedFilename() === 'konce-trestu-2026-11-03.xlsx' && JSON.stringify(xl) === '[["Po měsících",7],["Lidé",8]]', `Excel: ${dl.suggestedFilename()} ${JSON.stringify(xl)}`);
+  // 2.45.2: PDF graficky, bez jmen (jen ID), bez vedoucích
+  const [dp] = await Promise.all([page.waitForEvent('download'), page.click('[data-endpdf]')]);
+  const pp = path.join(shots, dp.suggestedFilename());
+  await dp.saveAs(pp);
+  check(dp.suggestedFilename() === 'konce-trestu-2026-11-03.pdf' && fs.readFileSync(pp).slice(0, 5).toString() === '%PDF-', `PDF: ${dp.suggestedFilename()}`);
+  try {
+    const txt = execFileSync('python3', ['-c', 'import sys,pypdf;print("\\n".join(p.extract_text() for p in pypdf.PdfReader(sys.argv[1]).pages))', pp]).toString().replace(/\s+/g, ' ');
+    for (const t of ['KONCE TRESTŮ', 'Kdo odchází a kdo zůstane', 'Odchody po měsících', 'Oddělení', 'Zaškolení', 'V zácviku', 'Kdo odchází', 'ID 101', 'Zaškolený · 100 %', 'po termínu', 'Broušení', 'Obrobna', '1 / 2', '2 / 2'])
+      check(txt.includes(t), `PDF obsahuje „${t}“: ${txt.slice(0, 300)}`);
+    check(!/Adámek|Bednář|Havel|Fiala|Ředitel|Vedoucí|ID 901/.test(txt), `PDF bez jmen a vedoucích: ${txt.slice(0, 600)}`);
+  } catch (error) { if (/pypdf/.test(String(error))) console.log('pypdf není, text PDF se nekontroluje'); else problems.push(`PDF: ${error.message}`); }
+  try {
+    execFileSync('python3', ['-c', `import sys
+try:
+    import pymupdf
+except ImportError:
+    sys.exit(0)
+d=pymupdf.open(sys.argv[1])
+for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.5,1.5)).save(sys.argv[2]+'/pdf-%d.png'%(i+1))`, pp, shots]);
+  } catch (error) { problems.push(`PDF stránky: ${String(error.stderr || error.message).slice(-300)}`); }
   // přechod na člověka a konec trestu v detailu
   await page.click('[data-endperson="adamek|ales"]');
   await page.waitForSelector('#view-lide.on #pEnd');

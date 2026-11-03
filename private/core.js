@@ -5260,16 +5260,50 @@ function endApply(parsed,opts){
   (opts.exclude||[]).forEach(k=>{const e=S.employees[k];if(e&&can.has(k)&&!e.excluded&&!isLead(e)){e.excluded=true;out.excluded++;}});
   return out;
 }
+const END_ST={ok:"Zaškolený",tr:"V zácviku",none:"Bez skupiny"};
+/** Docházka za měsíc k exportu (2.45.2): každý člověk s oddělením, hodiny v pracovní dny,
+    o víkendu a celkem (jen odpracované, bez hodin u kódu nepřítomnosti), součty za oddělení
+    a celkem. Řazeno po odděleních (pořadí skupin), v oddělení podle příjmení. */
+function attExport(p){
+  if(!p||!p.rows)return null;
+  const order=[...departments(),"Bez skupiny","Vedoucí","Není v Lidech"];
+  const people=Object.keys(p.rows).map(k=>{const r=p.rows[k],e=S.employees[k],a=attendance(p,k);
+    return {key:k,name:(r.last+" "+r.first).trim(),wid:e&&e.wid?String(e.wid):"",dept:e?endDeptOf(e):"Není v Lidech",group:e&&e.positionId?((S.positions.find(x=>x.id===e.positionId)||{}).name||""):"",
+      days:a.workDays,hours:a.workHours,wkDays:a.wkDays,wkHours:a.wkHours,total:a.totalHours,abs:a.missed,exc:a.excusedDays};});
+  const rank=d=>{const i=order.indexOf(d);return i<0?order.length:i;};
+  people.sort((x,y)=>rank(x.dept)-rank(y.dept)||x.dept.localeCompare(y.dept,"cs")||norm(x.name).localeCompare(norm(y.name),"cs"));
+  const sum=list=>{const o={n:list.length,days:0,hours:0,wkDays:0,wkHours:0,total:0,abs:0,exc:0};list.forEach(x=>Object.keys(o).forEach(k=>{if(k!=="n")o[k]+=x[k];}));
+    ["hours","wkHours","total"].forEach(k=>{o[k]=Math.round(o[k]*100)/100;});return o;};
+  const depts=[...new Set(people.map(x=>x.dept))].map(d=>{const list=people.filter(x=>x.dept===d);return {name:d,people:list,tot:sum(list)};});
+  return {id:p.id,file:p.file||"",meta:periodMeta(p),depts,people,tot:sum(people)};
+}
+function attExportSheets(x){
+  const r2=v=>Math.round(v*100)/100;
+  const head=["Oddělení","Příjmení a jméno","ID","Skupina","Pracovní dny","Hodiny v pracovní dny","Víkendové dny","Hodiny o víkendu","Hodiny celkem","Absence (dny)","Omluveno (dny)"];
+  const row=q=>[q.dept,q.name,q.wid,q.group,q.days,r2(q.hours),q.wkDays,r2(q.wkHours),r2(q.total),q.abs,q.exc];
+  const tot=(l,t)=>[l,t.n+" "+(t.n===1?"člověk":t.n<5&&t.n>1?"lidé":"lidí"),"","",t.days,t.hours,t.wkDays,t.wkHours,t.total,t.abs,t.exc];
+  const rows=[["Docházka – "+monthLabel(x.id)+", fond "+x.meta.fund+" h ("+x.meta.work+" pracovních dnů)"],[],head];
+  x.depts.forEach(d=>{d.people.forEach(q=>rows.push(row(q)));rows.push(tot("Celkem "+d.name,d.tot));rows.push([]);});
+  rows.push(tot("CELKEM",x.tot));
+  const sum=[["Oddělení","Lidí","Hodiny v pracovní dny","Hodiny o víkendu","Hodiny celkem","Absence (dny)"],...x.depts.map(d=>[d.name,d.tot.n,d.tot.hours,d.tot.wkHours,d.tot.total,d.tot.abs]),["CELKEM",x.tot.n,x.tot.hours,x.tot.wkHours,x.tot.total,x.tot.abs]];
+  return [{name:"Docházka",rows,cols:[18,26,10,16,12,14,12,14,12,12,12]},{name:"Oddělení",rows:sum,cols:[20,8,16,14,12,12]}];
+}
 /** Přehled odchodů: po měsících a odděleních od tohoto měsíce na n měsíců. */
 function endDeptOf(e){return isLead(e)?"Vedoucí":empDept(e)||"Bez skupiny";}
 function endsOverview(today,n){
   today=today||todayIso();n=n||12;
   const months=[];let y=+today.slice(0,4),m=+today.slice(5,7);
   for(let i=0;i<n;i++){months.push(y+"-"+String(m).padStart(2,"0"));m++;if(m>12){m=1;y++;}}
-  const people=Object.values(S.employees).filter(e=>!e.excluded);
-  const order=[...departments(),"Bez skupiny","Vedoucí"];
-  const item=e=>{const p=e.positionId?S.positions.find(x=>x.id===e.positionId):null;
-    return {key:e.key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",dept:endDeptOf(e),group:p?p.name:"",shift:e.shift||"",sick:!!e.sick,end:e.end||"",days:e.end?daysBetween(today,e.end):null};};
+  /* vedoucí se nepočítají (2.45.2, přání uživatele) */
+  const people=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e));
+  const order=[...departments(),"Bez skupiny"];
+  /* zkušenost (2.45.2): zaškolený = procento dovedností skupiny aspoň hranice zaškolení z KPI
+     (waTrain, stejně jako Kapacity a zaškolení), v zácviku = pod ní, none = bez skupiny */
+  const lim=waTrain().pct;
+  const item=e=>{const p=e.positionId?S.positions.find(x=>x.id===e.positionId):null,pct=p&&isGroup(p)?skillPct(e,p):null;
+    return {key:e.key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",dept:endDeptOf(e),group:p?p.name:"",shift:e.shift||"",sick:!!e.sick,end:e.end||"",days:e.end?daysBetween(today,e.end):null,
+      pct,st:pct==null?"none":pct>=lim?"ok":"tr"};};
+  const stOf=list=>{const o={ok:0,tr:0,none:0};list.forEach(x=>{o[x.st]++;});return o;};
   const all=people.map(item);
   const deptNames=order.filter(d=>all.some(x=>x.dept===d));
   all.forEach(x=>{if(!deptNames.includes(x.dept))deptNames.push(x.dept);});
@@ -5278,13 +5312,16 @@ function endsOverview(today,n){
   const last=months[months.length-1];
   const later=all.filter(x=>x.end&&x.end.slice(0,7)>last).sort(byEnd);
   const mo=months.map(id=>{const list=all.filter(x=>x.end&&x.end>=today&&x.end.slice(0,7)===id).sort(byEnd);
-    return {m:id,total:list.length,people:list,byDept:Object.fromEntries(deptNames.map(d=>[d,list.filter(x=>x.dept===d)]))};});
+    return {m:id,total:list.length,people:list,st:stOf(list),byDept:Object.fromEntries(deptNames.map(d=>[d,list.filter(x=>x.dept===d)]))};});
   const depts=deptNames.map(d=>{
     const head=all.filter(x=>x.dept===d).length,od=overdue.filter(x=>x.dept===d).length;
     let left=od;const leave=mo.map(x=>x.byDept[d].length),remain=leave.map(c=>{left+=c;return head-left;});
-    return {name:d,head,overdue:od,leave,remain,later:later.filter(x=>x.dept===d).length,noEnd:noEnd.filter(x=>x.dept===d).length};
+    const mine=all.filter(x=>x.dept===d),gone=[...overdue,...mo.flatMap(x=>x.people)].filter(x=>x.dept===d);
+    return {name:d,head,overdue:od,leave,remain,later:later.filter(x=>x.dept===d).length,noEnd:noEnd.filter(x=>x.dept===d).length,st:stOf(mine),goneSt:stOf(gone)};
   });
-  return {today,months:mo,depts,overdue,noEnd,later,head:all.length,
+  const gone=[...overdue,...mo.flatMap(x=>x.people)],goneKeys=new Set(gone.map(x=>x.key));
+  return {today,months:mo,depts,overdue,noEnd,later,head:all.length,lim,
+    st:{head:stOf(all),gone:stOf(gone),stay:stOf(all.filter(x=>!goneKeys.has(x.key))),overdue:stOf(overdue)},
     next3:mo.slice(0,3).reduce((s,x)=>s+x.total,0),thisMonth:mo[0]?mo[0].total:0,leaving:mo.reduce((s,x)=>s+x.total,0)};
 }
 /** Excel: oddělení × měsíce a seznam lidí. */
@@ -5294,8 +5331,8 @@ function endsSheets(ov){
   const tot=["Celkem",ov.head,ov.overdue.length,...ov.months.map(x=>x.total),ov.later.length,ov.noEnd.length,ov.depts.reduce((s,d)=>s+d.remain[d.remain.length-1],0)];
   const list=[...ov.overdue,...ov.months.flatMap(x=>x.people),...ov.later,...ov.noEnd];
   return [{name:"Po měsících",rows:[["Konce trestů – odchody po měsících a odděleních, stav k "+endDateText(ov.today)],[],head,...rows,tot]},
-    {name:"Lidé",rows:[["Příjmení a jméno","ID","Oddělení","Skupina","Směna","Konec trestu","Za dní"],
-      ...list.map(x=>[x.name,x.wid,x.dept,x.group,x.sick?"NEMOC":shiftName(x.shift),x.end?endDateText(x.end):"",x.days==null?"":x.days])]}];
+    {name:"Lidé",rows:[["Příjmení a jméno","ID","Oddělení","Skupina","Zkušenost","Dovednosti %","Směna","Konec trestu","Za dní"],
+      ...list.map(x=>[x.name,x.wid,x.dept,x.group,END_ST[x.st],x.pct==null?"":Math.round(x.pct),x.sick?"NEMOC":shiftName(x.shift),x.end?endDateText(x.end):"",x.days==null?"":x.days])]}];
 }
 /** Ukázka pro AI (2.43): jen nadpisy, typy buněk a texty sloupce směnnosti (jen když je to
     výčet do 20 hodnot, ať neodejdou jména). Konce trestů ani jména se neposílají. */

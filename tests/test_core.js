@@ -4243,6 +4243,38 @@ test('Konce trestů (2.44.1): lidé, kteří v souboru nejsou, jdou vyřadit', (
   return null;
 });
 
+test('Konce trestů (2.45.2): bez vedoucích, zkušenost podle hranice zaškolení, odchází a zůstane', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    st.positions = [mkPos('g1', 'Brus', [])]; st.positions[0].dept = 'Broušení';
+    st.positions[0].skillset = [{ id: 'k1', name: 'Obsluha', desc: '', scale: null }, { id: 'k2', name: 'Kontrola', desc: '', scale: null }]; st.positions[0].maxTab = 8;
+    const add = (k, x) => { st.employees[k] = { key: k, last: k, first: 'Jan', positionId: 'g1', shift: 'R', note: '', ...(x || {}) }; };
+    add('a', { rate: { k1: 4, k2: 4 }, end: '2026-11-20' });       // 100 % zaškolený, odchází
+    add('b', { rate: { k1: 2, k2: 2 }, end: '2026-12-10' });       // 50 % v zácviku, odchází
+    add('c', { rate: { k1: 4, k2: 2 }, end: '2026-10-01' });       // 75 % zaškolený, po termínu
+    add('d', { rate: { k1: 4, k2: 4 } });                          // zůstane
+    add('v', { lead: ['Broušení'], end: '2026-11-15' });             // vedoucí: nikde
+    st.employees['n'] = { key: 'n', last: 'n', first: 'Jan', positionId: null, shift: 'R', note: '', end: '2026-11-30' };
+    S = sanitizeState(st);
+    const o = endsOverview('2026-11-03', 6);
+    S.workAudit.trainPct = 80;
+    const o2 = endsOverview('2026-11-03', 6);
+    const sh = endsSheets(o)[1].rows;
+    return JSON.stringify({ head: o.head, depts: o.depts.map(d => [d.name, d.head, d.goneSt]), st: o.st, m0: o.months[0].st, lim: [o.lim, o2.lim], c2: o2.st.overdue,
+      lead: [...o.months.flatMap(m => m.people), ...o.overdue].some(x => x.key === 'v'), xl: [sh[0][4], sh.find(r => r[0] === 'a Jan')[4], sh.find(r => r[0] === 'b Jan')[5]] });
+  })()`));
+  assert.strictEqual(out.head, 5, 'vedoucí se nepočítá');
+  assert.strictEqual(out.lead, false);
+  assert.deepStrictEqual(out.depts, [['Broušení', 4, { ok: 2, tr: 1, none: 0 }], ['Bez skupiny', 1, { ok: 0, tr: 0, none: 1 }]], 'bez řádku Vedoucí');
+  assert.deepStrictEqual(out.st, { head: { ok: 3, tr: 1, none: 1 }, gone: { ok: 2, tr: 1, none: 1 }, stay: { ok: 1, tr: 0, none: 0 }, overdue: { ok: 1, tr: 0, none: 0 } });
+  assert.deepStrictEqual(out.m0, { ok: 1, tr: 0, none: 1 }, 'listopad: a zaškolený, n bez skupiny');
+  assert.deepStrictEqual(out.lim, [75, 80], 'hranice zaškolení z KPI');
+  assert.deepStrictEqual(out.c2, { ok: 0, tr: 1, none: 0 }, 's hranicí 80 % je 75 % v zácviku');
+  assert.deepStrictEqual(out.xl, ['Zkušenost', 'Zaškolený', 50], 'Excel: zkušenost a procento');
+  return null;
+});
+
 test('Vrátit zpět (2.45): jen změněné hodnoty, pozdější změny zůstanou, smazání a přidání, 3 dny, čištění', () => {
   const core = loadCore();
   const out = JSON.parse(run(core, `(() => {
