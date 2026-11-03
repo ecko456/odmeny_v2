@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 3. 11. 2026 (verze 2.45):
+
+- Uživatel: „přidat tlačítko do ‚Poslední změny‘ Vrátit zpět? Vždy ať tam jsou poslední změny jen
+  za poslední 3 dny.“
+  - Data: `S.undo[≤ 400] = {id 'u…', at, by, card, ch[{p (cesta), b (hodnota před) | d: 1 (předtím
+    nebylo), h (otisk po změně, „-“ = smazáno)}], size}` (`cleanUndo`), záznam historie má `u`
+    (ids uložení, slučování v `appendLog` je sjednotí) a `un {at, by}` (vráceno). Verze dat 40.
+  - Core (před `applyHist`): `undoCanon`/`undoHash` (kanonický JSON, pořadí klíčů nevadí),
+    `undoEq`, `undoDiff` (objekty po klíčích, pole celé; bez `log`, `undo`, `v`), `undoRecord`
+    (nad `UNDO_PATCH_MAX` 1 MB → `{big}`, bez vrácení), `undoPrune` (3 dny `UNDO_DAYS`, celkem
+    `UNDO_TOTAL_MAX` 2,5 MB), `undoable(entry)`, `undoApply(st, ids, meta)` (od nejnovějšího,
+    jen cesty se sedícím otiskem; přeskočené zůstanou v `S.undo`, `un` jen záznamy, jejichž
+    všechna uložení se vracela).
+  - UI: `flushSave` k uložení se záznamy přidá `undoRecord(store.base, shared)` a `u` do záznamů;
+    `openLog` jen poslední 3 dny, `logListHtml(…, withUndo)` (`.log-acts`, `[data-logundo]`
+    = `at|ids`, štítek vráceno), `undoChange(ref)` (potvrzení s `.log-undolist`, `sanitizeState`,
+    jeden záznam „Vráceno zpět: …“ přes `store.note` bez `keep`, aby se neslučoval), `I.undo`.
+  - Test `test_core` „srážky ze mzdy … (2.12)“ závisel na měsíci ukázkových dat (od listopadu
+    padal i bez změn): teď bere měsíc a pásmo, ne pevné 84,9 % a září.
+  - Testy: core „Vrátit zpět (2.45)“, nový `tests/e2e_undo.js`, `test_odmeny` (426 pro 39),
+    `e2e_upgrade_prev` 2.41 → 2.45 (`ADDED` undo). `ODM_VERSION` 2.45.
+
 Stav k 31. 10. 2026 (verze 2.44.2):
 
 - Uživatel: „Přepracuj ‚Plán kapacit‘ PDF … divočina nepřehledná … neuváděj ani ID … souhrn
@@ -1878,7 +1900,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.43 | `accd6f4` | Konce trestů (import se směnností a kontrolou, AI kontrola, přehled po měsících a odděleních), rozbalovací Teď v práci na telefonu (data verze 39) |
 | 2.44 | `ee9fee7` | Audit přejmenovaný na KPI, Výroba pryč z menu, KPI bez Výrobního plánu a Úprav, nová záložka Výkonnost na osobu (po odděleních, průměr na den, řazení od nejlepších i nejhorších, Excel) |
 | 2.44.1 | `2bcc414` | Nahrát konce trestů a směnnost – tabulka lidí, kteří v souboru nejsou, s volbou vyřadit ze seznamu |
-| 2.44.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit – list na oddělení, bez jmen a ID, skupiny podle zkušenosti, kdy lidé končí a kolik zůstane |
+| 2.44.2 | `457f6d5` | PDF Plánu kapacit – list na oddělení, bez jmen a ID, skupiny podle zkušenosti, kdy lidé končí a kolik zůstane |
+| 2.45 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Poslední změny za 3 dny s tlačítkem Vrátit zpět (jen ta změna, pozdější změny zůstanou) (data verze 40) |
 
 Verze 2.1 přidala:
 
@@ -1990,7 +2013,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `39` (od 2.43):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `40` (od 2.45):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -2044,6 +2067,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `workAudit.dv` (2.37): docházka a výkony z jednoho souboru (viz Audit);
   - `workAudit.dv.sheets` (2.42.3): zapamatované listy souboru docházky a výkonů;
   - `employees[].end` (2.43): konec trestu;
+  - `undo` (2.45): uložené změny za 3 dny pro Vrátit zpět, `log[].u`/`log[].un`;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
   - `eff`: Top 5 nejméně efektivně (viz níže);
@@ -2334,6 +2358,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
+  - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);
   - `e2e_vykon.js` (2.44): KPI v menu, Výroba pryč, Výkonnost na osobu (pořadí, řazení, filtr, Excel, profil, telefon);
   - `e2e_konce.js` (2.43): import konců trestů a směnnosti, kontroly řádků, Konce trestů, Excel, telefon;
   - `e2e_rychla.js` (2.39): Rychlá kontrola na telefonu (dlaždice, plovoucí menu, počet, směna,

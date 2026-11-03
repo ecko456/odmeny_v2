@@ -62,6 +62,18 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.45
+
+- **Poslední změny: Vrátit zpět.** U každé změny za poslední 3 dny je tlačítko **Vrátit zpět**.
+  Vrátí jen tu změnu: hodnoty, které se od té doby změnily znovu, zůstanou, jak jsou (aplikace
+  řekne kolik). Když se jedním uložením změnilo víc věcí, potvrzení je vypíše všechny. Vrácená
+  změna má štítek „vráceno“, vrácení se zapíše do historie a jde ho zase vrátit.
+- **Poslední změny ukazují jen poslední 3 dny.** Starší záznamy se nemažou (zůstávají u lidí
+  v profilu), jen se v okně neukazují.
+- Velké hromadné změny (třeba nahrání velkého souboru, které přepíše hodně dat) se vrátit
+  nedají, na ty dál slouží Historie verzí v Nastavení.
+- **Verze dat 40:** stránka otevřená ve starší verzi nic neuloží a vyzve k obnovení.
+
 ## Co je nového ve verzi 2.44.2
 
 - **Plán kapacit: nové PDF.** Každé oddělení má jeden list A4, bez jmen i ID a skoro bez

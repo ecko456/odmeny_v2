@@ -114,6 +114,7 @@ function setWidths(root = document) { $$('[data-w]', root).forEach(element => { 
 /* Název v exportech (PDF, záloha): uživatel chce „HALA 2“ místo názvu aplikace (2.13). */
 const EXPORT_NAME = 'HALA 2';
 const I = {
+  undo: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   tab: '<svg class="icon tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8.5c0-2 1.6-3.5 3.5-3.5h5C16.4 5 18 6.5 18 8.5V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19z"/><path d="M6 10h12M10 14.5c1.3-1 2.7-1 4 0"/></svg>',
   kafe: '<svg class="icon kafe-ico-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 9.5h12v5a5 5 0 0 1-5 5h-2a5 5 0 0 1-5-5z"/><path d="M16.5 11h1.5a2.5 2.5 0 0 1 0 5h-1.8M8 3.5c-.8 1 .8 2 0 3M12 3.5c-.8 1 .8 2 0 3"/></svg>',
   check: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
@@ -236,6 +237,10 @@ async function flushSave() {
   else if (note) changes.entries = [{ ...meta, kind: note.kind || 'data', text: note.text }];
   else changes = describeChanges(store.base, shared, meta);
   applyHist(shared, changes.hist);
+  // Vrátit zpět (2.45): co přesně se změnilo, s hodnotami před změnou; záznamy historie na to odkazují
+  const urec = changes.entries.length && store.base ? undoRecord(store.base, shared, meta) : null;
+  if (urec && !urec.big) { shared.undo = undoPrune([...(shared.undo || []), urec], meta.at); changes.entries.forEach(x => { x.u = [urec.id]; }); }
+  else shared.undo = undoPrune(shared.undo, meta.at);
   shared.log = appendLog(shared.log, changes.entries);
   try {
     const result = await Vault.saveData(shared, store.rev);
@@ -245,7 +250,7 @@ async function flushSave() {
     store.base = shared;
     // Poznámka nastavená během ukládání (další import) patří do dalšího uložení, nesmí se ztratit (2.32).
     if (store.note === note) store.note = null;
-    if (S) { applyHist(S, changes.hist); S.log = shared.log; }
+    if (S) { applyHist(S, changes.hist); S.log = shared.log; S.undo = shared.undo; }
     if (changes.entries.length) renderLogBadge();
   } catch (error) {
     store.dirty = true;
@@ -3295,7 +3300,7 @@ function logDay(ts) {
   return d.toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' });
 }
 
-function logListHtml(items, seen, withProfile = true) {
+function logListHtml(items, seen, withProfile = true, withUndo = false) {
   let html = '';
   let day = '';
   items.forEach(x => {
@@ -3305,7 +3310,7 @@ function logListHtml(items, seen, withProfile = true) {
     const time = new Date(x.at).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
     html += `<div class="log-item${isNew ? ' new' : ''}" data-kind="${esc(x.kind)}"><span class="log-ico">${LOG_ICON[x.kind] || LOG_ICON.data}</span>
       <div class="log-body"><p>${esc(x.text)}</p><small>${esc(time)} · ${esc(x.by || 'neznámá kartička')}${ui.me.cardId && x.card === ui.me.cardId ? ' (ty)' : ''}${isNew ? ' · <b>nové</b>' : ''}</small></div>
-      ${withProfile && x.key && S.employees[x.key] ? `<button class="btn ghost small" type="button" data-logprofile="${esc(x.key)}">Profil</button>` : ''}</div>`;
+      <span class="log-acts">${withUndo && x.un ? `<span class="tag" title="Vráceno ${esc(new Date(x.un.at).toLocaleString('cs-CZ'))}${x.un.by ? ` · ${esc(x.un.by)}` : ''}">vráceno</span>` : ''}${withUndo && undoable(x) ? `<button class="btn sec small" type="button" data-logundo="${esc(`${x.at}|${x.u.join(',')}`)}">${I.undo}<span>Vrátit zpět</span></button>` : ''}${withProfile && x.key && S.employees[x.key] ? `<button class="btn ghost small" type="button" data-logprofile="${esc(x.key)}">Profil</button>` : ''}</span></div>`;
   });
   return html;
 }
@@ -3319,20 +3324,23 @@ async function openLog() {
   let query = '';
   let limit = 80;
   let target = null;
+  let undoIds = null;
+  const from = Date.now() - UNDO_DAYS * 864e5;
   await dialog({
     title: 'Poslední změny', wide: true, ok: '', cancel: 'Zavřít',
-    html: `<p class="small muted">Každá úprava dat s tím, kdo ji udělal (podle přihlášené kartičky) a kdy. Opakované úpravy téže věci během pár minut se slučují.</p>
+    html: `<p class="small muted">Úpravy dat za poslední 3 dny s tím, kdo je udělal (podle přihlášené kartičky) a kdy. Opakované úpravy téže věci během pár minut se slučují. <b>Vrátit zpět</b> vrátí jen tu změnu; co se od té doby změnilo znovu, nepřepíše.</p>
       <div class="log-tools"><div class="chips">${LOG_FILTERS.map(([k, t]) => `<button type="button" class="chip${k === 'all' ? ' on' : ''}" data-lf="${k}" aria-pressed="${k === 'all'}">${t}</button>`).join('')}</div>
       <input type="search" id="logQ" placeholder="Hledat jméno, kartičku nebo text…" aria-label="Hledat v historii"></div>
       <div class="log-list" id="logList"></div>`,
     onOpen: dlg => {
       const draw = () => {
         const kinds = LOG_FILTERS.find(f => f[0] === filter)[2];
-        const all = (S.log || []).slice().reverse().filter(x => (!kinds || kinds.includes(x.kind)) && (!query || norm(`${x.text} ${x.by}`).includes(query)));
+        const recent = (S.log || []).filter(x => x.at >= from);
+        const all = recent.slice().reverse().filter(x => (!kinds || kinds.includes(x.kind)) && (!query || norm(`${x.text} ${x.by}`).includes(query)));
         const items = all.slice(0, limit);
         $('#logList', dlg).innerHTML = items.length
-          ? logListHtml(items, seen) + (all.length > limit ? `<button class="btn sec small wide" type="button" id="logMore">Zobrazit starší (${all.length - limit})</button>` : '')
-          : emptyState(S.log.length ? 'Nic neodpovídá' : 'Zatím žádné změny', S.log.length ? 'Zkus jiný filtr nebo hledání.' : 'Každá úprava dat se tu objeví i s tím, kdo a kdy ji udělal.');
+          ? logListHtml(items, seen, true, true) + (all.length > limit ? `<button class="btn sec small wide" type="button" id="logMore">Zobrazit starší (${all.length - limit})</button>` : '')
+          : emptyState(recent.length ? 'Nic neodpovídá' : 'Za poslední 3 dny žádné změny', recent.length ? 'Zkus jiný filtr nebo hledání.' : 'Každá úprava dat se tu objeví i s tím, kdo a kdy ji udělal.');
         const more = $('#logMore', dlg);
         if (more) more.onclick = () => { limit += 150; draw(); };
       };
@@ -3346,13 +3354,57 @@ async function openLog() {
       });
       $('#logQ', dlg).oninput = event => { query = norm(event.target.value); limit = 80; draw(); };
       $('#logList', dlg).onclick = event => {
+        const undo = event.target.closest('[data-logundo]');
+        if (undo) { undoIds = undo.dataset.logundo; dlg.close('cancel'); return; }
         const button = event.target.closest('[data-logprofile]');
         if (button) { target = button.dataset.logprofile; dlg.close('cancel'); }
       };
       draw();
     },
   });
+  if (undoIds) { await undoChange(undoIds); return; }
   if (target) openProfile(target);
+}
+
+/* Vrátit zpět (2.45): potvrzení se všemi záznamy stejného uložení, pak vrácení jen těch hodnot,
+   které se od té doby nezměnily. Výsledek se uloží jako nová změna (jde vrátit i vrácení). */
+async function undoChange(ref) {
+  // rozběhnuté uložení se nejdřív dokončí (vrácení musí stavět na uložených datech)
+  for (let i = 0; i < 75 && (store.dirty || store.saving) && !store.conflict && !store.error; i += 1) {
+    await flushSave();
+    if (store.dirty || store.saving) await new Promise(r => setTimeout(r, 200));
+  }
+  if (store.dirty || store.saving || store.conflict) { toast('Nejdřív se musí dokončit uložení dat, zkus to za chvíli.', true); return; }
+  const [at, list0] = String(ref).split('|');
+  const entry = (S.log || []).find(x => String(x.at) === at && x.u && x.u.join(',') === list0);
+  if (!entry || !undoable(entry)) { toast('Tuhle změnu už vrátit nejde (je starší než 3 dny nebo už je vrácená).', true); return; }
+  const ids = entry.u.slice();
+  const want = new Set(ids);
+  // stejné uložení mohlo změnit víc věcí: v potvrzení jsou všechny (nevrácené) záznamy, kterých se týká
+  const entries = (S.log || []).filter(x => !x.un && x.u && x.u.some(id => want.has(id)));
+  const list = entries.slice().reverse().map(x => `<li>${esc(x.text)} <small class="muted">${esc(new Date(x.at).toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }))} · ${esc(x.by || '')}</small></li>`).join('');
+  const res = await dialog({
+    title: 'Vrátit zpět?', ok: 'Vrátit zpět', cancel: 'Nechat být',
+    html: `<p>Data se vrátí do stavu před ${entries.length === 1 ? 'touto změnou' : 'těmito změnami (uložily se najednou)'}:</p><ul class="log-undolist">${list}</ul>
+      <p class="small muted">Co se od té doby změnilo znovu, zůstane, jak je. Vrácení se zapíše do historie a jde ho zase vrátit.</p>`,
+  });
+  if (res.value !== 'ok') return;
+  const r = undoApply(S, ids, { at: Date.now(), by: ui.me.label || '' });
+  if (!r.done) { toast('Nic se nevrátilo: všechno z této změny se mezitím znovu změnilo.', true); return; }
+  const keepLog = S.log;
+  const keepUndo = S.undo;
+  const cur = S.current;
+  S = sanitizeState(S);
+  S.log = keepLog;
+  S.undo = keepUndo;
+  if (cur) S.current = cur;
+  applyPeriodPref();
+  // jeden záznam o vrácení (bez slučování s původní změnou); i ten jde zase vrátit
+  const head = entry.text;
+  store.note = { kind: entry.kind || 'data', text: `Vráceno zpět: ${head.length > 300 ? `${head.slice(0, 300)}…` : head}` };
+  save();
+  renderAll();
+  toast(r.skip ? `Vráceno zpět. ${r.skip} ${r.skip === 1 ? 'hodnota se mezitím znovu změnila a zůstala' : r.skip <= 4 ? 'hodnoty se mezitím znovu změnily a zůstaly' : 'hodnot se mezitím znovu změnilo a zůstalo'}.` : 'Vráceno zpět.');
 }
 
 /* ==========================================================================

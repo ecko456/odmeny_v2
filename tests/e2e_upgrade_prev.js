@@ -19,12 +19,12 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.41$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.44\\.2$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.45$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
-const ADDED = { 'workAudit.dv.cols.work.norm': '""', 'workAudit.dv.sheets': '({ att: "", work: "" })', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
+const ADDED = { undo: '[]', 'workAudit.dv.cols.work.norm': '""', 'workAudit.dv.sheets': '({ att: "", work: "" })', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
 /* Verze dat se mění (2.42: skupiny Matice u skupin KPI, sloupec normy): stará stránka dostane 426. */
 const SAME_DATA = false;
 
@@ -184,6 +184,8 @@ const STATE = added => `(() => {
   }
   check(JSON.stringify(final.added['workAudit.groups.0.mg']) === '["g_brus"]' && final.added['workAudit.dv.cols.work.norm'] === 'K' && final.added['workAudit.dv.sheets'].att === 'List2', `KPI 2.42 po novém přihlášení: ${JSON.stringify(final.added)}`);
   check(final.st.employees['adámek|aleš'] && final.st.employees['adámek|aleš'].end === '2027-02-28', 'konec trestu (2.43) po novém přihlášení');
+  // Vrátit zpět (2.45): změna z kroku 5 má uložené hodnoty před změnou a odkaz z historie
+  check(Array.isArray(final.added.undo) && final.added.undo.length >= 1 && final.st.log.some(x => x.u && final.added.undo.some(u => x.u.includes(u.id))), `vrátit zpět po novém přihlášení: ${JSON.stringify((final.added.undo || []).map(u => u.ch.length))}`);
   if (final.st.employees['adámek|aleš']) delete final.st.employees['adámek|aleš'].end;
   const keep = JSON.parse(JSON.stringify(before.st));
   // přibyl jen plán tohoto týdne (rychlá kontrola) a záznam v historii; ostatní beze změny

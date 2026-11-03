@@ -2583,3 +2583,12 @@ tr.dv-click:hover td { background: var(--surface-2); }
 .end-extab { max-height: 50vh; overflow: auto; }
 .end-extab td.c, .end-extab th.c { width: 70px; text-align: center; }
 .end-extab input[type="checkbox"] { width: 20px; height: 20px; }
+
+/* Vrátit zpět v Posledních změnách (2.45) */
+.log-acts { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.log-acts .btn .icon { width: 15px; height: 15px; }
+.log-undolist { margin: 8px 0 10px 18px; display: grid; gap: 4px; font-size: 14px; }
+@media screen and (max-width: 900px) {
+  .log-item { grid-template-columns: auto minmax(0, 1fr); }
+  .log-acts { grid-column: 2; justify-content: flex-start; }
+}

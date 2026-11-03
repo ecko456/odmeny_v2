@@ -264,7 +264,8 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
     check(!LAST.some(n => t.includes(n)), 'PDF bez příjmení (jen ID)');
     check(pages.length >= x.pages.length + 1, `PDF má ${pages.length} stran, stránek reportu ${x.pages.length + 1}`);
     const firstMonth = pages.findIndex(p => /Měsíční souhrn —/.test(p));
-    check(firstMonth === 0 && /Týdenní souhrn/.test(pages[1]), 'PDF: měsíc a za ním jeho týdny');
+    // před prvním měsícem smí být jen týdny, které začínají v období a patří k předchozímu měsíci (podle čtvrtka)
+    check(firstMonth >= 0 && pages.slice(0, firstMonth).every(p => /Týdenní souhrn/.test(p)) && /Týdenní souhrn/.test(pages[firstMonth + 1]), `PDF: měsíc a za ním jeho týdny: ${firstMonth} · ${String(pages[firstMonth + 1]).replace(/\s+/g, ' ').slice(0, 160)}`);
   }
   pdfPng(pdf.path, path.join(shots, 'pdf'));
 
