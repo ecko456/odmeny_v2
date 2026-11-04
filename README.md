@@ -62,6 +62,41 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.46
+
+- **Nový modul Úkoly** (v menu pod Rychlou kontrolou, na telefonu dlaždice v hlavním menu
+  a položka plovoucího menu):
+  - úkol má název, popis, **termín** a **zodpovědnou osobu** (nabízí jména z Lidí, vedoucí
+    i dřívější osoby, jde napsat i jiné jméno);
+  - **stavy** Nový, Rozpracovaný, Čeká, Hotovo, Zrušeno;
+  - **komentáře a časová osa**: u úkolu je vidět, kdo kdy co napsal a kdy se změnil stav,
+    termín, osoba, název nebo opakování (nejnovější nahoře). Komentář jde smazat;
+  - **opakovat úkol** každý týden, měsíc, půlrok nebo rok: po označení Hotovo se sám založí
+    další úkol s dalším termínem (konec měsíce se zarovná, 31. 1. → 28. 2.). Když se úkol
+    dokončí pozdě, další termín nikdy není v minulosti. Další opakování se založí jen jednou;
+  - **připomínky**: u úkolu se nastaví, kolik dní předem připomenout (výchozí 2 dny). Úkoly po
+    termínu a s blížícím se termínem ukáže odznak v menu (červený, když je něco po termínu)
+    a pruh nahoře v aplikaci, který jde skrýt;
+  - filtry Otevřené, Po termínu, Blíží se termín, Hotové, Zrušené, Vše, výběr zodpovědné osoby
+    a hledání i v komentářích; export do Excelu (Úkoly a Časová osa).
+- Změny úkolů jsou v Posledních změnách (filtr Úkoly) a jdou vrátit zpět.
+- **Docházka: zaokrouhlení příchodů a odchodů** (soubor Docházka a výkony, od listopadu 2026):
+  - ranní směna 6:00–14:00, odpolední 14:00–22:00 (podle příchodu: před 12:00 ranní; příchod od
+    21:00 je noční 22:00–6:00 se stejnými pravidly);
+  - příchod nejpozději 15 minut po začátku směny (i dřívější) = začátek směny (6:15 → 6:00,
+    14:15 → 14:00), pozdější příchod se zaokrouhlí nahoru na čtvrthodinu (7:31 → 7:45);
+  - odchod od 15 minut před koncem směny = konec směny (13:45 až 14:15 → 14:00, 21:45 → 22:00),
+    dřívější odchod dolů na čtvrthodinu (13:20 → 13:15);
+  - hodiny = zaokrouhlený odchod − zaokrouhlený příchod − 30 min přestávky, **nejvýš 7,5 h**;
+  - časy ze souboru zůstávají uložené, zaokrouhluje se jen výpočet hodin. V okně Jak se soubor
+    načte je u vzoru vidět čas ze souboru i zaokrouhlený („7:31 → 7:45“);
+  - dny nahrané před touto verzí: v Docházce se ukáže upozornění a tlačítko **Přepočítat hodiny**
+    (přepíše jen hodiny dnů s příchodem a odchodem ze souboru, říjen a starší se nemění).
+    Stejně se přepočítají při dalším nahrání souboru.
+  - Lidé v práci a výkon za hodinu v KPI dál počítají se skutečným pobytem ze souboru.
+- Verze dat 41: stránka otevřená ve starší verzi po aktualizaci nic neuloží a vyzve
+  k obnovení (Ctrl+Shift+R). Data se nemění, Úkoly začínají prázdné.
+
 ## Co je nového ve verzi 2.45.4
 
 - **PDF Plánu kapacit, 1. strana:** řádek „chybí“ pod grafem Vývoj počtu lidí proti potřebě

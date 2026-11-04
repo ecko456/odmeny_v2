@@ -22,6 +22,7 @@ const ui = {
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
   sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null },
+  tk: { sel: null, filter: 'open', owner: '', q: '', draft: {}, alertOff: '', listY: 0, dueTimer: null, lastDue: '' },
   wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '', dvMode: 'day', dvDay: '', dvMonth: '', dvSort: 'group', kp: { month: '', sort: 'ks', dir: 'best', dept: '' } },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */
@@ -121,6 +122,10 @@ const I = {
   sparkle: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M11 3.5 12.9 9 18.5 11 12.9 13 11 18.5 9.1 13 3.5 11 9.1 9z"/><path d="M18.5 14.5l.8 2.1 2.2.8-2.2.8-.8 2.3-.8-2.3-2.2-.8 2.2-.8z"/><path d="M18 2.5l.6 1.5 1.4.6-1.4.6-.6 1.5-.6-1.5-1.4-.6 1.4-.6z"/></svg>',
   back: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5 8 12l7 7"/></svg>',
   arrow: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  clock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>',
+  user: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c1-3.8 3.8-5.5 7-5.5s6 1.7 7 5.5"/></svg>',
+  repeat: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11V9a3 3 0 0 1 3-3h12"/><path d="m16 3 3 3-3 3"/><path d="M20 13v2a3 3 0 0 1-3 3H5"/><path d="m8 21-3-3 3-3"/></svg>',
+  chat: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H9l-4.5 3.5V6.5A2.5 2.5 0 0 1 7 4h10.5A2.5 2.5 0 0 1 20 6.5z"/></svg>',
   x: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   scan: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7 9v6M10 9v6M13 9v6M17 9v6"/></svg>',
   shield: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 5 6v5.5c0 4.2 2.9 8 7 9.5 4.1-1.5 7-5.3 7-9.5V6z"/><path d="m9 12 2 2 4-4"/></svg>',
@@ -397,6 +402,8 @@ function renderAll() {
   if (ui.view === 'plankap') renderCapPlan();
   if (ui.view === 'rychla') renderQuick();
   if (ui.view === 'konce') renderEnds();
+  if (ui.view === 'ukoly') renderTasks(); else renderTaskBadge();
+  renderTaskAlert();
   renderSaveState();
   renderLogBadge();
 }
@@ -419,6 +426,7 @@ function showView(name) {
   if (name === 'plankap') renderCapPlan();
   if (name === 'rychla') renderQuick();
   if (name === 'konce') renderEnds();
+  if (name === 'ukoly') renderTasks();
   closeFab();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === (name === 'vyroba' ? 'audit' : name))));
   $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
@@ -426,6 +434,7 @@ function showView(name) {
   document.body.dataset.view = name;
   $$(`#view-${name} .chips.t5-tabs`).forEach(showActiveChip);
   window.scrollTo({ top: 0, behavior: 'instant' });
+  renderTaskAlert();
   if (name === 'nastaveni') loadSecurityLists();
   syncHistory();
 }
@@ -442,6 +451,7 @@ function navSub() {
   if (ui.view === 'matice' && ui.mxTab === 'groups' && ui.posOpen && isPhone()) return 'pos';
   if (ui.view === 'top5' && ui.t5.caseId) return 'case';
   if (ui.view === 'protokoly' && ui.lb.open && isPhone() && lbBook()) return 'book';
+  if (ui.view === 'ukoly' && ui.tk.sel) return 'task';
   return '';
 }
 
@@ -500,6 +510,7 @@ function onPopState(event) {
       else if (sub === 'pos') { ui.posOpen = false; renderPositions(); }
       else if (sub === 'case') { ui.t5.caseId = null; renderTop5(); }
       else if (sub === 'book') closeLbDetail();
+      else if (sub === 'task') { ui.tk.sel = null; renderTasks(); }
     } else if (!sub && st.sub === 'person' && ui.view === 'lide' && isPhone() && S.employees[ui.selPerson]) {
       ui.personOpen = true;
       renderPeople();
@@ -565,7 +576,7 @@ function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm'
 function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
 function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
 function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
-const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['audit', 'KPI'], ['nastaveni', 'Nastavení']];
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['audit', 'KPI'], ['nastaveni', 'Nastavení']];
 
 function homeTileMeta(view, sd) {
   const p = curPeriod();
@@ -589,6 +600,7 @@ function homeTileMeta(view, sd) {
     }
     case 'audit': { const sp = waSpan(S.workAudit); return sp ? `data do ${dayText(sp.to, false)}` : 'lidé v práci a kusy'; }
     case 'servis': { const c = svc(), n = c.devices.filter(d => svHistory(c, d.id).out).length; return n ? `na servisu ${n}` : c.shipments.length ? 'vše je zpátky' : 'předávací protokoly'; }
+    case 'ukoly': { const o = tkOverview(S, todayIso()); return o.late.length ? `${o.late.length} po termínu` : o.soon.length ? `${o.soon.length} blíží se termín` : o.open ? `otevřené ${o.open}` : 'zadat úkol'; }
     case 'shortage': { const l = shc().lists[0]; return l ? `${l.items.length} ${shItemsN(l.items.length)} · ${dayText(todayIso(l.at), false)}` : 'nahrát seznam'; }
     default: return 'pravidla a zálohy';
   }
@@ -807,7 +819,7 @@ function playSplash() {
 }
 
 /* ---------- plovoucí menu vpravo dole (2.15) ---------- */
-const FAB_ITEMS = [['search', 'Vyhledat člověka'], ['rychla', 'Rychlá kontrola'], ['sankce', 'Sankce'], ['top5', 'Top 5'], ['kontroly', 'Kontroly']];
+const FAB_ITEMS = [['search', 'Vyhledat člověka'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['sankce', 'Sankce'], ['top5', 'Top 5'], ['kontroly', 'Kontroly']];
 function openFab() {
   $('#fabMenu').innerHTML = `<button type="button" role="menuitem" class="fab-item fab-home" data-fab="domu"><span class="fab-l">Hlavní menu</span><span class="fab-i">${I.grid}</span></button>${FAB_ITEMS.map(([k, label]) => {
     const badge = k === 'search' ? '' : navBadge(k);
@@ -828,10 +840,10 @@ function closeFab() {
   $('#fab').setAttribute('aria-label', 'Rychlé volby');
   setTimeout(() => { if (!ui.fabOpen) { $('#fabMenu').hidden = true; $('#fabScrim').hidden = true; } }, 240);
 }
-/* Tečka na plovoucím tlačítku: Top 5 nebo Kontroly mají odznak. */
+/* Tečka na plovoucím tlačítku: Top 5, Kontroly nebo Úkoly mají odznak. */
 function renderFabDot() {
   const dot = $('#fabDot');
-  if (dot) dot.hidden = !navBadge('top5') && !navBadge('kontroly');
+  if (dot) dot.hidden = !navBadge('top5') && !navBadge('kontroly') && !navBadge('ukoly');
 }
 
 /* ---------- vyhledání člověka (jméno, ID v evidenci práce, kartička) ---------- */
@@ -2500,6 +2512,7 @@ function renderAttendance() {
   const rows = Object.keys(p.rows).map(k => ({ k, r: p.rows[k], a: attendance(p, k) })).sort((a, b) => norm(a.r.last).localeCompare(norm(b.r.last), 'cs'));
   const totH = rows.reduce((t, x) => t + x.a.totalHours, 0);
   box.innerHTML = `<div class="t5-weekbar att-bar"><span class="small muted">${esc(ctrCap(monthLabel(p.id)))} · odpracováno celkem <b class="num">${nf(totH)} h</b></span><span class="spacer"></span><button class="btn sec" type="button" data-attxlsx>Excel za měsíc</button><button class="btn" type="button" data-attpdf>PDF za měsíc</button></div>
+  ${attRehoursHtml(p)}
   <div class="stats">${[
     statTile('Pracovních dnů', meta.work, `${nf(meta.fund)} h fondu`),
     statTile('Sobot', meta.sats, `víkendových dnů ${meta.sats + meta.suns}`),
@@ -2513,6 +2526,15 @@ function renderAttendance() {
     <td data-label="Hodiny" class="r num">${nf(x.a.workHours)}</td>
     <td data-label="Víkend" class="r num">${x.a.wkDays}</td></tr>`).join('')}</tbody></table></div>
   <div class="callegend">${[['full', 'celá směna'], ['part', 'část směny'], ['wk', 'víkend / svátek odpracovaný'], ['abs', 'omluvená absence'], ['miss', 'chybí'], ['wk0', 'volno']].map(([cls, label]) => `<span><i class="cell ${cls}"></i>${label}</span>`).join('')}</div>`;
+}
+
+/* Hodiny ze souboru Docházka a výkony nahrané před 2.46 nejsou zaokrouhlené: nabídne přepočet
+   (uložené příchody a odchody se nemění, přepíšou se jen hodiny dnů s příchodem). */
+function attRehoursHtml(p) {
+  if (!dvOwns(p.id)) return '';
+  const r = dvRehours(false);
+  if (!r.cells || !r.months.includes(p.id)) return '';
+  return `<div class="note w att-rehours"><span><b>Hodiny nejsou zaokrouhlené.</b> ${r.cells} ${r.cells === 1 ? 'den' : r.cells <= 4 ? 'dny' : 'dní'} u ${r.people} ${lidiN(r.people)} se počítalo před zaokrouhlením příchodů a odchodů na směnu (6:00–14:00, 14:00–22:00, čtvrthodiny, nejvýš 7,5 h).</span> <button class="btn small" type="button" data-attrehours>Přepočítat hodiny</button></div>`;
 }
 
 function showImport(res, ask) {
@@ -3346,11 +3368,12 @@ const LOG_ICON = {
   service: svg('<path d="M15 4.5a4.5 4.5 0 0 0-4.3 5.8L4 17a2.1 2.1 0 0 0 3 3l6.7-6.7A4.5 4.5 0 0 0 19.5 9l-2.7 2.7-3-.6-.6-3z"/>'),
   shortage: svg('<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 9v4.5M12 16.5v.1"/>'),
   capplan: svg('<circle cx="9" cy="7.5" r="3"/><path d="M3.5 20v-1a5 5 0 0 1 5-5h1M15 20v-4M18.5 20v-7M22 20V10"/>'),
+  task: svg('<path d="M9 5h11M9 12h11M9 19h11"/><path d="m3.5 5 1.2 1.2L7 4M3.5 12l1.2 1.2L7 11"/><circle cx="5" cy="19" r="1.4"/>'),
   data: svg('<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>'),
 };
 const LOG_FILTERS = [
   ['all', 'Vše', null],
-  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit', 'logbook', 'workaudit', 'service', 'shortage', 'capplan']],
+  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit', 'logbook', 'workaudit', 'service', 'shortage', 'capplan', 'task']],
   ['people', 'Lidé a úrovně', ['person', 'level']],
   ['sanction', 'Sankce', ['sanction']],
   ['tab', 'Tabáky a výdej', ['adjust', 'issue']],
@@ -3363,6 +3386,7 @@ const LOG_FILTERS = [
   ['service', 'Servis', ['service']],
   ['shortage', 'Shortage', ['shortage']],
   ['capplan', 'Plán kapacit', ['capplan']],
+  ['task', 'Úkoly', ['task']],
 ];
 
 function unseenLog() {
@@ -7030,6 +7054,7 @@ function bindEvents() {
   bindShortage();
   bindWorkAudit();
   bindCapPlan();
+  bindTasks();
 
   // Filtry přehledu jsou osobní: pamatují se jen pro tuto kartičku.
   $('#ovSearch').addEventListener('input', renderOverview);
@@ -7188,6 +7213,11 @@ function bindEvents() {
 
   $('#attView').addEventListener('click', event => {
     if (event.target.closest('[data-attxlsx]')) { exportAttXlsx(); return; }
+    if (event.target.closest('[data-attrehours]')) {
+      const r = dvRehours(true);
+      store.note = { text: `Docházka: hodiny přepočítané se zaokrouhlením příchodů a odchodů (${r.cells} ${r.cells === 1 ? 'den' : r.cells <= 4 ? 'dny' : 'dní'}, ${r.months.map(monthLabel).join(', ')})`, kind: 'import' };
+      save(); renderAll(); toast(`Přepočítáno ${r.cells} dní.`); return;
+    }
     const b = event.target.closest('[data-attpdf]');
     if (b) exportAttPdf(b);
   });
@@ -12165,6 +12195,298 @@ function bindCapPlan() {
 }
 
 /* ==========================================================================
+   ÚKOLY (2.46)
+   Seznam úkolů s filtry a detail: název, popis, termín, zodpovědná osoba, opakování,
+   připomínka, stav a časová osa (komentáře a změny). Výpočty jsou v core.js (tk*).
+   ========================================================================== */
+const TK_FILTERS = [['open', 'Otevřené'], ['late', 'Po termínu'], ['soon', 'Blíží se termín'], ['done', 'Hotové'], ['cancel', 'Zrušené'], ['all', 'Vše']];
+const TK_STATE_TONE = { new: 'acc', run: 'warn', wait: 'wait', done: 'good', cancel: '' };
+function tkList() { return (S.tasks && S.tasks.list) || []; }
+function tkMeta() { return { at: Date.now(), by: ui.me.label || '', today: todayIso() }; }
+function tkPill(state) { return `<span class="tag tk-st tk-st-${state} ${TK_STATE_TONE[state] || ''}">${esc(tkStateName(state))}</span>`; }
+function tkDueHtml(t, today) {
+  const d = tkDue(t, today);
+  const cls = d.late ? 'late' : d.today ? 'today' : d.soon ? 'soon' : '';
+  return `<span class="tk-due ${cls}"${t.due ? ` title="Termín ${esc(dayText(t.due))}"` : ''}>${I.clock || ''}${esc(tkDueText(t, today))}</span>`;
+}
+/* Jména pro výběr zodpovědné osoby: dřívější osoby z úkolů, vedoucí, lidé a přihlášená kartička. */
+function tkPeopleOptions() {
+  const names = new Set(tkOverview(S, todayIso()).owners);
+  if (ui.me.label) names.add(ui.me.label);
+  leadPeople().forEach(e => names.add(`${e.first} ${e.last}`.trim()));
+  Object.values(S.employees).filter(e => !e.excluded && !isLead(e)).forEach(e => names.add(`${e.first} ${e.last}`.trim()));
+  return [...names].filter(Boolean).map(n => `<option value="${esc(n)}"></option>`).join('');
+}
+function tkFiltered(today) {
+  const F = ui.tk, q = norm(F.q || '');
+  return tkSort(tkList()).filter(t => {
+    const d = tkDue(t, today);
+    if (F.filter === 'open' && !d.open) return false;
+    if (F.filter === 'late' && !d.late) return false;
+    if (F.filter === 'soon' && !(d.soon && !d.late)) return false;
+    if ((F.filter === 'done' || F.filter === 'cancel') && t.state !== F.filter) return false;
+    if (F.owner && t.owner !== F.owner) return false;
+    if (q && !norm(`${t.title} ${t.desc} ${t.owner} ${t.tl.filter(e => e.k === 'c').map(e => e.text).join(' ')}`).includes(q)) return false;
+    return true;
+  });
+}
+function tkCount(k, today) {
+  return tkList().filter(t => { const d = tkDue(t, today); return k === 'open' ? d.open : k === 'late' ? d.late : k === 'soon' ? d.soon && !d.late : k === 'all' ? true : t.state === k; }).length;
+}
+function tkRowHtml(t, today) {
+  const nc = t.tl.filter(e => e.k === 'c').length;
+  const d = tkDue(t, today);
+  const meta = [t.owner ? `${I.user || ''}${esc(t.owner)}` : '<span class="muted">bez zodpovědné osoby</span>', t.repeat ? `<span class="tk-rep" title="${esc(tkRepeatName(t.repeat))}">${I.repeat}${esc(tkRepeatName(t.repeat).replace('Každý ', '').replace('Každou ', ''))}</span>` : '', nc ? `<span title="Komentáře">${I.chat}${nc}</span>` : ''].filter(Boolean).join('');
+  return `<button type="button" class="tk-row${d.late ? ' late' : d.soon ? ' soon' : ''}${d.open ? '' : ' closed'}" data-tkopen="${esc(t.id)}">
+    <span class="tk-dot tk-st-${t.state}" aria-hidden="true"></span>
+    <span class="tk-main"><b>${esc(t.title)}</b><span class="tk-meta">${meta}</span></span>
+    <span class="tk-side">${tkPill(t.state)}${tkDueHtml(t, today)}</span></button>`;
+}
+function tkListHtml(today) {
+  const list = tkFiltered(today);
+  if (!tkList().length) return `<div class="card">${emptyState('Zatím žádné úkoly', 'Zadej úkol s termínem a zodpovědnou osobou. Úkol může mít komentáře, stavy a opakování každý týden, měsíc, půlrok nebo rok.', '<button class="btn" type="button" data-tknew>Nový úkol</button>')}</div>`;
+  if (!list.length) return `<div class="card"><p class="muted">Žádný úkol neodpovídá filtru.</p></div>`;
+  return `<div class="tk-list">${list.map(t => tkRowHtml(t, today)).join('')}</div>`;
+}
+function renderTaskBadge() {
+  const badge = $('#navTasks');
+  if (!badge || !S) return;
+  const o = tkOverview(S, todayIso());
+  badge.hidden = !o.remind;
+  badge.textContent = String(o.remind);
+  badge.classList.toggle('late', !!o.late.length);
+  badge.title = o.remind ? [o.late.length ? `${o.late.length} po termínu` : '', o.soon.length ? `${o.soon.length} s blížícím se termínem` : ''].filter(Boolean).join(', ') : '';
+  renderFabDot();
+}
+/* Připomínka nahoře v aplikaci (mimo Úkoly): po termínu a blížící se termíny. Zavřít jde do
+   další změny (nový úkol po termínu ji ukáže znovu). */
+function renderTaskAlert() {
+  const box = $('#taskAlert');
+  if (!box || !S) return;
+  const o = tkOverview(S, todayIso());
+  const sig = [...o.late, ...o.soon].map(t => t.id + t.due).join(',');
+  if (!o.remind || ui.view === 'ukoly' || ui.tk.alertOff === sig) { box.innerHTML = ''; return; }
+  const names = [...o.late, ...o.soon].slice(0, 3).map(t => `„${esc(t.title)}“ (${esc(tkDueText(t, todayIso()))})`);
+  box.innerHTML = `<div class="banner tk-alert${o.late.length ? ' late' : ''}" role="status"><div><b>Úkoly: ${[o.late.length ? `${o.late.length} po termínu` : '', o.soon.length ? `${o.soon.length} ${o.soon.length === 1 ? 'blíží se termín' : 's blížícím se termínem'}` : ''].filter(Boolean).join(', ')}.</b> ${names.join(', ')}${o.remind > 3 ? ` a další (${o.remind - 3})` : ''}</div>
+    <div class="banner-actions"><button class="btn small" type="button" id="tkAlertGo">Zobrazit úkoly</button><button class="btn ghost small" type="button" id="tkAlertOff">Skrýt</button></div></div>`;
+  $('#tkAlertGo').onclick = () => { ui.tk.filter = o.late.length ? 'late' : 'soon'; ui.tk.sel = null; showView('ukoly'); };
+  $('#tkAlertOff').onclick = () => { ui.tk.alertOff = sig; renderTaskAlert(); };
+}
+function renderTasks() {
+  const box = $('#tkView');
+  if (!box || !S) return;
+  renderTaskBadge();
+  const today = todayIso();
+  const t = ui.tk.sel ? tkFind(S, ui.tk.sel) : null;
+  if (ui.tk.sel && !t) ui.tk.sel = null;
+  $('#view-ukoly').classList.toggle('tk-in-detail', !!t);
+  if (t) { box.innerHTML = tkDetailHtml(t, today); return; }
+  const o = tkOverview(S, today);
+  const tiles = `<div class="stats">${[
+    statTile('Otevřené', String(o.open), `z ${o.all} ${o.all === 1 ? 'úkolu' : 'úkolů'}`),
+    statTile('Po termínu', String(o.late.length), o.late.length ? 'termín už uplynul' : 'nic nemešká', o.late.length ? 'crit' : o.open ? 'good' : ''),
+    statTile('Blíží se termín', String(o.soon.length), 'podle připomenutí u úkolu', o.soon.length ? 'warn' : ''),
+    statTile('Hotovo za 30 dní', String(o.done30), 'dokončené úkoly', o.done30 ? 'good' : ''),
+  ].join('')}</div>`;
+  const owners = o.owners;
+  if (ui.tk.owner && !owners.includes(ui.tk.owner)) ui.tk.owner = '';
+  box.innerHTML = `${tiles}
+    <div class="toolbar tk-tools">
+      <div class="chips" role="group" aria-label="Filtr úkolů">${TK_FILTERS.map(([k, l]) => { const n = tkCount(k, today); return `<button type="button" class="chip${ui.tk.filter === k ? ' on' : ''}" data-tkf="${k}" aria-pressed="${ui.tk.filter === k}">${l} <em class="t5-count${k === 'late' && n ? ' late' : ''}">${n}</em></button>`; }).join('')}</div>
+      <select id="tkOwnerF" aria-label="Zodpovědná osoba"><option value="">Všichni zodpovědní</option>${owners.map(n => `<option value="${esc(n)}"${ui.tk.owner === n ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
+      <input type="search" class="grow" id="tkQ" value="${esc(ui.tk.q)}" placeholder="Hledat v úkolech a komentářích…" aria-label="Hledat v úkolech">
+    </div>
+    <div id="tkList">${tkListHtml(today)}</div>`;
+  $$('.chips', box).forEach(showActiveChip);
+}
+function tkTlHtml(t) {
+  const items = t.tl.slice().reverse();
+  return `<ol class="tk-tl">${items.map(e => {
+    const kind = e.k === 'c' ? 'c' : e.k === 's' ? 's' : e.k === 'r' ? 'r' : e.k === 'new' ? 'n' : 'f';
+    const body = e.k === 'c' ? `<div class="tk-c">${esc(e.text).replace(/\n/g, '<br>')}</div>` : `<div class="tk-sys">${e.k === 's' ? `Stav: ${tkPill(e.v0)} → ${tkPill(e.v1)}` : esc(tkTlText(e))}</div>`;
+    return `<li class="tk-e tk-e-${kind}"><span class="tk-e-dot" aria-hidden="true"></span><div class="tk-e-b"><div class="tk-e-h"><b>${esc(e.by || 'neznámý')}</b><time>${esc(tsText(e.at))}</time>${e.k === 'c' ? `<button type="button" class="icon-btn tk-cdel" data-tkcdel="${esc(e.id)}" aria-label="Smazat komentář" title="Smazat komentář">${I.x}</button>` : ''}</div>${body}</div></li>`;
+  }).join('')}</ol>`;
+}
+function tkDetailHtml(t, today) {
+  const d = tkDue(t, today);
+  const prev = tkList().find(x => x.next === t.id), next = t.next ? tkFind(S, t.next) : null;
+  return `<button class="btn ghost small back-btn tk-back" type="button" data-tkback>${I.back}Úkoly</button>
+  <div class="tk-detail">
+    <div class="card tk-card">
+      <div class="tk-head" id="tkHead">${tkHeadHtml(t, today)}</div>
+      <label class="field"><span>Úkol</span><input type="text" id="tkTitle" value="${esc(t.title)}" maxlength="200" required></label>
+      <label class="field"><span>Popis</span><textarea id="tkDesc" rows="4" maxlength="4000" placeholder="Co je potřeba udělat, podrobnosti">${esc(t.desc)}</textarea></label>
+      <div class="form-grid tk-grid">
+        <label class="field"><span>Termín</span><input type="date" id="tkDue" value="${esc(t.due)}"></label>
+        <label class="field"><span>Zodpovědná osoba</span><input type="text" id="tkOwner" value="${esc(t.owner)}" list="tkPeople" maxlength="80" placeholder="jméno"></label>
+        <label class="field"><span>Opakovat úkol</span><select id="tkRepeat">${TK_REPEAT.map(([k, l]) => `<option value="${k}"${t.repeat === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>Připomenout</span><select id="tkRemind">${TK_REMIND.map(n => `<option value="${n}"${t.remind === n ? ' selected' : ''}>${tkRemindText(n)}</option>`).join('')}</select></label>
+      </div>
+      <datalist id="tkPeople">${tkPeopleOptions()}</datalist>
+      <div class="tk-states"><span class="small muted">Stav</span><div class="seg tk-seg" role="group" aria-label="Stav úkolu">${TK_STATES.map(([k, l]) => `<button type="button" class="${t.state === k ? 'on' : ''}" data-tkstate="${k}" aria-pressed="${t.state === k}">${l}</button>`).join('')}</div></div>
+      <div id="tkRep">${tkRepHtml(t, today)}</div>
+      ${prev || next ? `<p class="small tk-chain">${prev ? `<button type="button" class="link" data-tkopen="${esc(prev.id)}">← předchozí opakování (${esc(prev.due ? dayText(prev.due) : 'bez termínu')})</button>` : ''}${next ? `<button type="button" class="link" data-tkopen="${esc(next.id)}">další opakování (${esc(next.due ? dayText(next.due) : 'bez termínu')}) →</button>` : ''}</p>` : ''}
+      <div class="tk-foot"><span class="small muted">Zadal ${esc(t.by || 'neznámý')}, ${esc(tsText(t.at))}${t.done ? ` · hotovo ${esc(tsText(t.done))}${t.doneBy ? ` (${esc(t.doneBy)})` : ''}` : ''}</span><button class="btn ghost small tk-del" type="button" data-tkdel>Smazat úkol</button></div>
+    </div>
+    <div class="card tk-tlcard">
+      <h3>Časová osa</h3>
+      <div class="tk-cform"><label class="sr-only" for="tkNewC">Nový komentář</label><textarea id="tkNewC" rows="3" maxlength="2000" placeholder="Napiš komentář k vývoji úkolu… (Ctrl+Enter přidá)">${esc(ui.tk.draft[t.id] || '')}</textarea>
+        <button class="btn small" type="button" data-tkcomment>Přidat komentář</button></div>
+      <div id="tkTl">${tkTlHtml(t)}</div>
+    </div>
+  </div>`;
+}
+function tkRepHtml(t, today) {
+  return t.repeat ? `<p class="small muted tk-repnote">${I.repeat}${t.next ? `Další opakování je už založené.` : `Po označení Hotovo se založí další úkol s termínem ${esc(dayText(tkNextDue(t.due, t.repeat, today)))}.`}</p>` : '';
+}
+function tkHeadHtml(t, today) {
+  const d = tkDue(t, today);
+  return `${tkPill(t.state)}${tkDueHtml(t, today)}${t.repeat ? `<span class="tag">${I.repeat}${esc(tkRepeatName(t.repeat))}</span>` : ''}${d.soon && !d.late && !d.today ? `<span class="tag warn">připomínka ${esc(tkRemindText(t.remind))}</span>` : ''}`;
+}
+/* Po změně pole se překreslí jen hlavička a časová osa (formulář zůstane, fokus se neztratí). */
+function tkRefresh(t) {
+  if (!t) return;
+  const today = todayIso();
+  const h = $('#tkHead'), tl = $('#tkTl'), rp = $('#tkRep');
+  if (h) h.innerHTML = tkHeadHtml(t, today);
+  if (rp) rp.innerHTML = tkRepHtml(t, today);
+  if (tl) tl.innerHTML = tkTlHtml(t);
+  renderTaskBadge();
+}
+function tkApply(patch) {
+  const id = ui.tk.sel;
+  const r = tkSet(S, id, patch, tkMeta());
+  if (r.err) { toast(r.err, true); return null; }
+  save();
+  if (r.next) toast(`Další opakování založeno s termínem ${dayText(r.next.due)}.`);
+  return r;
+}
+async function tkNewDialog() {
+  const res = await dialog({
+    title: 'Nový úkol', ok: 'Zadat úkol', wide: true,
+    html: `<label class="field"><span>Úkol</span><input name="title" maxlength="200" required autofocus placeholder="Co je potřeba udělat"></label>
+      <label class="field"><span>Popis</span><textarea name="desc" rows="3" maxlength="4000" placeholder="volitelné"></textarea></label>
+      <div class="form-grid tk-grid">
+        <label class="field"><span>Termín</span><input type="date" name="due" value="${esc(ui.tk.lastDue || '')}"></label>
+        <label class="field"><span>Zodpovědná osoba</span><input name="owner" list="tkPeopleNew" maxlength="80" value="${esc(ui.tk.owner || '')}" placeholder="jméno"></label>
+        <label class="field"><span>Opakovat úkol</span><select name="repeat">${TK_REPEAT.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></label>
+        <label class="field"><span>Připomenout</span><select name="remind">${TK_REMIND.map(n => `<option value="${n}"${n === TK_REMIND_DEF ? ' selected' : ''}>${tkRemindText(n)}</option>`).join('')}</select></label>
+      </div><datalist id="tkPeopleNew">${tkPeopleOptions()}</datalist>`,
+    validate: form => (form.elements.title.value.trim() ? '' : 'Zadej název úkolu.'),
+  });
+  if (res.value !== 'ok') return;
+  const f = res.form.elements;
+  const t = tkAdd(S, { title: f.title.value, desc: f.desc.value, due: f.due.value, owner: f.owner.value, repeat: f.repeat.value, remind: f.remind.value }, tkMeta());
+  if (t.err) { toast(t.err, true); return; }
+  save();
+  if (ui.tk.filter !== 'all' && ui.tk.filter !== 'open') ui.tk.filter = 'open';
+  renderTasks();
+  toast(`Úkol „${t.title}“ zadán.`);
+}
+function tkAddComment() {
+  const box = $('#tkNewC');
+  const text = box ? box.value.trim() : '';
+  if (!text) { toast('Napiš text komentáře.', true); if (box) box.focus(); return; }
+  if (!tkComment(S, ui.tk.sel, text, tkMeta())) return;
+  delete ui.tk.draft[ui.tk.sel];
+  save();
+  box.value = '';
+  tkRefresh(tkFind(S, ui.tk.sel));
+}
+async function exportTasksXlsx() {
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    tkSheets(S, todayIso()).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(r => r.map(safeCell)));
+      ws['!cols'] = sheet.cols.map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`ukoly-${todayIso()}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+function tkOpen(id) {
+  if (!ui.tk.sel) ui.tk.listY = window.scrollY;
+  ui.tk.sel = id;
+  renderTasks();
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  syncHistory();
+}
+function tkClose() {
+  ui.tk.sel = null;
+  renderTasks();
+  window.scrollTo({ top: ui.tk.listY || 0, behavior: 'instant' });
+  syncHistory();
+}
+function bindTasks() {
+  const view = $('#tkView');
+  $('#tkNew').onclick = () => tkNewDialog();
+  $('#tkXlsx').onclick = () => exportTasksXlsx();
+  view.addEventListener('click', async event => {
+    const t = event.target;
+    const open = t.closest('[data-tkopen]');
+    if (open) { tkOpen(open.dataset.tkopen); return; }
+    if (t.closest('[data-tknew]')) { tkNewDialog(); return; }
+    const f = t.closest('[data-tkf]');
+    if (f) { ui.tk.filter = f.dataset.tkf; renderTasks(); return; }
+    if (t.closest('[data-tkback]')) { navBack(prev => prev.odmView === 'ukoly' && !prev.sub, tkClose); return; }
+    const st = t.closest('[data-tkstate]');
+    if (st) {
+      if (tkFind(S, ui.tk.sel).state === st.dataset.tkstate) return;
+      if (tkApply({ state: st.dataset.tkstate })) renderTasks();
+      return;
+    }
+    if (t.closest('[data-tkcomment]')) { tkAddComment(); return; }
+    const cd = t.closest('[data-tkcdel]');
+    if (cd) {
+      if (!(await confirmBox('Smazat komentář?', 'Komentář zmizí z časové osy úkolu.', 'Smazat', true))) return;
+      if (tkDelComment(S, ui.tk.sel, cd.dataset.tkcdel)) { save(); tkRefresh(tkFind(S, ui.tk.sel)); }
+      return;
+    }
+    if (t.closest('[data-tkdel]')) {
+      const x = tkFind(S, ui.tk.sel);
+      if (!x || !(await confirmBox('Smazat úkol?', `Úkol „${x.title}“ i s časovou osou se smaže. V Posledních změnách ho jde 3 dny vrátit zpět.`, 'Smazat', true))) return;
+      tkDelete(S, x.id);
+      save();
+      toast('Úkol smazán.');
+      tkClose();
+    }
+  });
+  view.addEventListener('input', event => {
+    const t = event.target;
+    if (t.id === 'tkQ') { ui.tk.q = t.value; $('#tkList').innerHTML = tkListHtml(todayIso()); return; }
+    if (t.id === 'tkNewC') ui.tk.draft[ui.tk.sel] = t.value;
+  });
+  // datum: Chrome posílá change po každé napsané číslici, proto se termín uloží až po chvilce
+  // nebo při opuštění pole (pole se nepřekresluje)
+  const dueCommit = () => {
+    clearTimeout(ui.tk.dueTimer);
+    const inp = $('#tkDue');
+    if (!inp || !ui.tk.sel) return;
+    const x = tkFind(S, ui.tk.sel);
+    if (x && inp.value !== x.due && (!inp.value || TK_ISO.test(inp.value))) { if (tkApply({ due: inp.value })) tkRefresh(tkFind(S, ui.tk.sel)); }
+  };
+  view.addEventListener('change', event => {
+    const t = event.target;
+    if (t.id === 'tkOwnerF') { ui.tk.owner = t.value; renderTasks(); return; }
+    if (t.id === 'tkDue') { clearTimeout(ui.tk.dueTimer); ui.tk.dueTimer = setTimeout(dueCommit, 1500); return; }
+    const map = { tkTitle: 'title', tkDesc: 'desc', tkOwner: 'owner', tkRepeat: 'repeat', tkRemind: 'remind' };
+    const f = map[t.id];
+    if (!f) return;
+    if (f === 'title' && !t.value.trim()) { toast('Úkol musí mít název.', true); t.value = tkFind(S, ui.tk.sel).title; return; }
+    const r = tkApply({ [f]: t.value });
+    if (!r) return;
+    if (f === 'repeat') renderTasks(); else tkRefresh(r.t);
+  });
+  view.addEventListener('focusout', event => { if (event.target.id === 'tkDue') dueCommit(); });
+  view.addEventListener('keydown', event => {
+    const t = event.target;
+    if (t.id === 'tkNewC' && event.key === 'Enter' && (event.ctrlKey || event.metaKey)) { event.preventDefault(); tkAddComment(); return; }
+    if (event.key === 'Enter' && (t.id === 'tkTitle' || t.id === 'tkOwner' || t.id === 'tkDue')) { event.preventDefault(); t.blur(); }
+  });
+}
+
+/* ==========================================================================
    AUDIT: docházka a výkony z jednoho souboru (2.37)
    Záložka Lidé v práci: obsazenost dne po projektech (skupinách Matice), měsíc po dnech
    a produktivita lidí. Výpočty jsou v core.js (dvParse, dvApply, dvDay, dvMonth, dvPerson).
@@ -12779,11 +13101,13 @@ function dvPrevHtml(sheets, cfg) {
   const p = dvParse(sheets, dvx, cfg.unit);
   const v = dvPreview(p, 3);
   const t = m => (m == null ? '—' : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`);
+  // zaokrouhlený čas (2.46) vedle času ze souboru, když se liší
+  const tr = (m, r) => (r == null || r === m ? t(m) : `${t(m)} <span class="muted">→</span> <b>${t(r)}</b>`);
   const who = v.wid ? `<b>ID ${esc(v.wid)}</b> ${v.known ? `· ${esc(v.name)}` : '<span class="tag warn">v Lidech není</span>'}` : '<span class="muted">nikdo</span>';
   const att = v.att ? `<h4>Docházka <small class="muted">list ${esc(v.att.name)} · ${v.att.days} ${denN(v.att.days)}, ${v.att.people} ${lidiN(v.att.people)}</small></h4>
       <p class="small">První člověk: ${who}</p>
-      <div class="dv-prevwrap"><table class="dv-prevtab"><thead><tr><th>Den</th><th>Příchod</th><th>Odchod</th><th>Hodiny</th></tr></thead><tbody>${v.days.map(d => `<tr><td class="num">${esc(ktDay(d.iso))}</td><td class="num">${d.code ? `<span class="tag">${esc(d.code)}</span>` : t(d.in)}</td><td class="num">${d.code ? '' : t(d.out)}</td><td class="num">${d.code ? 'nepřítomnost' : nf(d.h, 2)}</td></tr>`).join('')}</tbody></table></div>
-      <p class="tiny muted">Hodiny = odchod − příchod − 30 min přestávky, bez odchodu délka směny.</p>`
+      <div class="dv-prevwrap"><table class="dv-prevtab"><thead><tr><th>Den</th><th>Příchod</th><th>Odchod</th><th>Hodiny</th></tr></thead><tbody>${v.days.map(d => `<tr><td class="num">${esc(ktDay(d.iso))}</td><td class="num">${d.code ? `<span class="tag">${esc(d.code)}</span>` : tr(d.in, d.rin)}</td><td class="num">${d.code ? '' : tr(d.out, d.rout)}</td><td class="num">${d.code ? 'nepřítomnost' : nf(d.h, 2)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="tiny muted">Příchod do 6:15 (14:15) = 6:00 (14:00), později nahoru na čtvrthodinu; odchod od 13:45 (21:45) = 14:00 (22:00), dříve dolů na čtvrthodinu. Hodiny = odchod − příchod − 30 min přestávky, nejvýš 7,5 h; bez odchodu délka směny.</p>`
     : `<h4>Docházka</h4><div class="note e">${esc(v.errAtt || 'List s docházkou nenalezen.')}</div>`;
   const work = v.work ? `<h4>Vykázaná práce <small class="muted">list ${esc(v.work.name)} · ${v.work.rows} ${zaznamN(v.work.rows)}, čas ${esc(DV_UNIT_TEXT[v.work.unit] || v.work.unit)}</small></h4>
       ${v.own ? '' : '<p class="small muted">Tenhle člověk ve vykázané práci není, ukázka prvních záznamů:</p>'}

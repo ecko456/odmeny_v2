@@ -139,12 +139,24 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
       pcs: Object.keys(S.workAudit.pcs).sort(), log: S.log.map(x => x.text).filter(t => /dochazka-vykony/.test(t)).join(' | ') };
   });
   check(JSON.stringify(r.days) === JSON.stringify(['2026-11-01', '2026-11-02', '2026-11-03']), `dny listopadu: ${r.days}`);
-  check(JSON.stringify(r.hA) === JSON.stringify([0, 8, 7.5]) && JSON.stringify(r.cG) === JSON.stringify([null, null, 'D']), `hodiny a kódy: ${JSON.stringify([r.hA, r.cG])}`);
-  check(JSON.stringify(r.a) === '[15.5,1]' && JSON.stringify(r.pr) === '[70,320,106.3]', `odměny: ${JSON.stringify([r.a, r.pr])}`);
+  // 2.46: 6:00–14:30 se zaokrouhlí na 6:00–14:00, nejvýš 7,5 h
+  check(JSON.stringify(r.hA) === JSON.stringify([0, 7.5, 7.5]) && JSON.stringify(r.cG) === JSON.stringify([null, null, 'D']), `hodiny a kódy: ${JSON.stringify([r.hA, r.cG])}`);
+  check(JSON.stringify(r.a) === '[15,1]' &&JSON.stringify(r.pr) === '[70,320,106.3]', `odměny: ${JSON.stringify([r.a, r.pr])}`);
   check(JSON.stringify(r.prodMonths) === '["2026-11"]' && r.oct === octBefore, `říjen beze změny, evidence jen listopad: ${JSON.stringify(r.prodMonths)}`);
   check(JSON.stringify(r.n2) === '[3,1,0,[1,1],[2,0]]' && JSON.stringify(r.n3) === '[2,1,1,[1,1],[1,0]]' && r.o31 === null, `obsazenost v KPI: ${JSON.stringify([r.n2, r.n3, r.o31])}`);
   check(JSON.stringify(r.pcs) === '["2026-11-02","2026-11-03"]', `kusy: ${r.pcs}`);
   check(/docházka pro odměny za listopad 2026/.test(r.log) && /evidence práce za listopad 2026/.test(r.log), `historie: ${r.log}`);
+
+  // 2.46: hodiny nahrané postaru (bez zaokrouhlení) nabídne Docházka přepočítat
+  await page.evaluate(() => { S.periods['2026-11'].rows['adámek|aleš'].h[1] = 8; window._cur = S.current; S.current = '2026-11'; save(); showView('dochazka'); renderAll(); });
+  await saved(page);
+  await page.waitForSelector('#attView .att-rehours');
+  check(/1 den u 1 člověka/.test(await page.textContent('#attView .att-rehours')), `upozornění na přepočet: ${await page.textContent('#attView .att-rehours')}`);
+  await page.click('[data-attrehours]');
+  await saved(page);
+  const re = await page.evaluate(() => [S.periods['2026-11'].rows['adámek|aleš'].h, !!document.querySelector('#attView .att-rehours'), S.log.some(x => /hodiny přepočítané se zaokrouhlením/.test(x.text))]);
+  check(JSON.stringify(re) === '[[0,7.5,7.5],false,true]', `přepočet hodin: ${JSON.stringify(re)}`);
+  await page.evaluate(() => { S.current = window._cur; showView('audit'); });
 
   // Report docházky (2.42.1): ukáže nahraný den, všichni spárovaní; den bez příchodů nabídne poslední den
   await page.click('#waTabs [data-watab="report"]');

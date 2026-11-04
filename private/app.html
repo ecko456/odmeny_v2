@@ -23,6 +23,7 @@
       <button type="button" data-view="sankce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg><span>Sankce</span></button>
       <button type="button" data-view="kontroly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m8.5 11.5 2 2 4-4M8.5 17h7"/></svg><span>Kontroly</span><em class="nav-badge" id="navKt" hidden></em></button>
       <button type="button" data-view="rychla"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="8.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="15.5" cy="8.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="8.5" cy="15.5" r="1.1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none"/></svg><span>Rychlá kontrola</span></button>
+      <button type="button" data-view="ukoly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 5.5h10M10 12h10M10 18.5h6"/><path d="m3.5 5.5 1.5 1.5L8 4M3.5 12l1.5 1.5L8 10.5"/><circle cx="5.5" cy="18.5" r="1.6"/></svg><span>Úkoly</span><em class="nav-badge" id="navTasks" hidden></em></button>
       <button type="button" data-view="protokoly"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 7.5h6M9 11h6M9 14.5h3"/></svg><span>Protokoly</span></button>
       <button type="button" data-view="servis"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4.5a4.5 4.5 0 0 0-4.3 5.8L4 17a2.1 2.1 0 0 0 3 3l6.7-6.7A4.5 4.5 0 0 0 19.5 9l-2.7 2.7-3-.6-.6-3z"/></svg><span>Servis</span></button>
       <button type="button" data-view="shortage"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 8.5v5M12 16.6v.1"/></svg><span>Shortage</span></button>
@@ -41,6 +42,7 @@
   <main class="main" id="main">
     <div id="demoBanner"></div>
     <div id="wageAlert" class="noprint"></div>
+    <div id="taskAlert" class="noprint"></div>
 
     <!-- ============ DOMŮ (telefon, 2.15) ============ -->
     <section class="view" id="view-domu" aria-label="Hlavní menu">
@@ -293,6 +295,22 @@
         </div>
       </header>
       <div id="cpView"></div>
+    </section>
+
+    <!-- ============ ÚKOLY (2.46) ============ -->
+    <section class="view" id="view-ukoly" aria-labelledby="tkTitleH">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Termíny a odpovědnost</p>
+          <h1 id="tkTitleH">Úkoly</h1>
+          <p class="lede">Zadej úkol s termínem a zodpovědnou osobou. Stav měň podle postupu, k vývoji přidávej komentáře, všechno je na časové ose úkolu. Úkol jde opakovat každý týden, měsíc, půlrok nebo rok a před termínem připomene.</p>
+        </div>
+        <div class="page-actions noprint">
+          <button class="btn sec" type="button" id="tkXlsx">Excel</button>
+          <button class="btn" type="button" id="tkNew">Nový úkol</button>
+        </div>
+      </header>
+      <div id="tkView"></div>
     </section>
 
     <!-- ============ RYCHLÁ KONTROLA (telefon, 2.39) ============ -->

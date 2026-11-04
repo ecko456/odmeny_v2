@@ -34,6 +34,46 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 4. 11. 2026 (verze 2.46):
+
+- Uživatel: „modul ‚Úkoly‘ kde půjde zadat úkol, termín, zodpovědná osoba a půjde měnit stavy
+  a přidávat komentáře s časovou osou. Případně připomínky, pokud se bude blížit termín. A možnost
+  zadat ‚Opakovat úkol‘ každý týden, měsíc, půl rok, rok.“
+  - Data `S.tasks = {list[≤ 1000]: {id 'tk…', title ≤ 200, desc ≤ 4000, due ISO|'', owner ≤ 80
+    (volný text, nabídka z Lidí, vedoucích, dřívějších osob a kartičky), state `TK_STATES`
+    new|run|wait|done|cancel, repeat ''|week|month|half|year, remind `TK_REMIND` (dní předem,
+    výchozí 2), at, by, done, doneBy, series, next (id dalšího opakování), tl[≤ 500]: {id 'te…',
+    at, by, k new|c (komentář, text)|s (stav, v0, v1)|f (pole f: title|due|owner|repeat|remind|desc,
+    v0, v1)|r (založeno opakování, text)}}}` (`blankTasks`, `cleanTasks`). Verze dat 41.
+  - Core (před SERVIS): `tkAdd`, `tkSet` (každá změna do `tl`; Hotovo u opakovaného založí další
+    úkol jen jednou přes `t.next`), `tkStep` (měsíc zarovná konec měsíce), `tkNextDue` (aspoň
+    dnešek), `tkComment`, `tkDelComment`, `tkDelete`, `tkDue`/`tkDueText`, `tkOverview` (late, soon
+    = do `remind` dní, done30, owners), `tkSort`, `tkTlText`, `tkSheets`, `tkChanges` (kind `task`,
+    m `tkn/tks/tkd/tko/tkt/tkr/tkm/tkp/tkc/tkx:`).
+  - UI (sekce ÚKOLY za Plánem kapacit): pohled `ukoly` (`#view-ukoly`, `#tkView`, `#tkNew`,
+    `#tkXlsx`), `ui.tk {sel, filter, owner, q, draft, alertOff}`, `renderTasks` (dlaždice, čipy
+    `[data-tkf]`, `#tkOwnerF`, `#tkQ` překreslí jen `#tkList`), detail `tkDetailHtml` (pole se
+    ukládají na `change` bez překreslení formuláře, `tkRefresh` hlavičky, `#tkRep` a časové osy;
+    termín `#tkDue` po 1,5 s nebo na focusout, Chrome posílá change po číslicích), stavy
+    `[data-tkstate]`, komentář `#tkNewC` + Ctrl+Enter, `[data-tkcdel]`, `[data-tkdel]`, odkazy na
+    předchozí a další opakování. Připomínky: odznak `#navTasks` (`.late` červeně), pruh
+    `#taskAlert` (`renderTaskAlert`, mimo Úkoly, Skrýt do další změny). Telefon: dlaždice,
+    položka plovoucího menu, `navSub` `task` (Zpět zavře detail). Historie filtr Úkoly.
+  - Uživatel pak: „v Docházka, ať to vždy propisuje maximálně 7,5 hodiny a příchody do 6:15 …
+    jako příchod v 6:00, to samé odchod. Od 13:45 do 14:15 odchod ve 14:00. To samé pro odpolední
+    … pokud … čipne si později, tak to vždy zaokrouhlí na 15 minut (7:31 → 7:45)“.
+    - Core `dvRound(a, b)` (směna podle příchodu: před 12:00 ranní 6–14, před 21:00 odpolední 14–22,
+      jinak noční 22–6, tu jsme doplnili sami; příchod ≤ začátek + 15 = začátek, jinak nahoru na
+      čtvrthodinu; odchod ≥ konec − 15 = konec, jinak dolů), `dvHours` = zaokrouhlený pobyt − 30 min,
+      nejvýš `DV_MAX_H` 7,5. Odchod dřív než 15 min před koncem dolů (přísně, uživatel výslovně
+      neřekl). `dvRehours(apply)` přepočítá hodiny listopadu a dál uložené postaru; UI
+      `attRehoursHtml` v Docházce s `[data-attrehours]`. `dvPreview` vrací `rin/rout`, vzor ukáže
+      „7:31 → 7:45“. Lidé v práci a výkon v KPI dál ze skutečného pobytu (`dvStay`).
+  - Testy: core „Úkoly (2.46)“ a „Docházka (2.46)“ (příklady ze zadání), staré testy 2.42 čekají
+    7,5 h místo 8 h, nový `tests/e2e_ukoly.js`, `e2e_mobil` (16 položek menu, Úkoly v plovoucím
+    menu), `e2e_upgrade_prev` 2.41 → 2.46 (`ADDED` tasks, úkol v kroku 5), `test_odmeny` (426 pro 40).
+    `ODM_VERSION` 2.46.
+
 Stav k 4. 11. 2026 (verze 2.45.4):
 
 - Uživatel: „Pod ‚Vývoj počtu lidí proti potřebě‘ máš řádek ‚Chybí‘ … uvádět čistě hodnoty ze
@@ -1984,7 +2024,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.45.1 | `9b0dab2` | výkon v Kapacitách a zaškolení na odpracovaný den z Docházky a výkonů, PDF s výkonem i bez, hledání v Lidech podle ID |
 | 2.45.2 | `f72b98b` | PDF Kapacit a zaškolení jen za zvolenou stránku, Konce trestů bez vedoucích, se zkušeností a PDF, export Docházky za měsíc (Excel, PDF) |
 | 2.45.3 | `da36d15` | PDF Plánu kapacit s manažerským přehledem na 1. straně (ohrožené měsíce, potřeba po měsících, křivka vývoje), roky barevně |
-| 2.45.4 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit – chybí celkem pod grafem (0 zeleně, −N červeně), chybí po odděleních pod tabulkou |
+| 2.45.4 | `c4f0f7e` | PDF Plánu kapacit – chybí celkem pod grafem (0 zeleně, −N červeně), chybí po odděleních pod tabulkou |
+| 2.46 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Úkoly (termín, zodpovědná osoba, stavy, komentáře na časové ose, opakování, připomínky), docházka zaokrouhlená na směnu a čtvrthodiny, nejvýš 7,5 h (data verze 41) |
 
 Verze 2.1 přidala:
 
@@ -2096,7 +2137,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `40` (od 2.45):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `41` (od 2.46):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -2143,13 +2184,14 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `issued{period: {key: {at, tabaky, kafe, pos, lvl, pct, tier, raise}}}` (snímek při výdeji);
   - `marks{period: {key: {bodId: důvod}}}`: body prémie, které vedoucí označil jako nesplněné;
   - `capReport{groups[], thr, hidden[], note, s1am, detail?}`: report Směny a kapacita (`detail` 2.25: `all` | `none`, výchozí se neukládá);
-  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook|workaudit|service|shortage|capplan`);
+  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook|workaudit|service|shortage|capplan|task`);
   - `logbooks[]` (2.16): Protokoly (viz níže);
   - `service` (2.21, 2.22): Servis, evidence zařízení, odeslání a vzory (viz níže);
   - `shortage` (2.27): Shortage, nahrané seznamy chybějících dílů (viz níže);
   - `workAudit.dv` (2.37): docházka a výkony z jednoho souboru (viz Audit);
   - `workAudit.dv.sheets` (2.42.3): zapamatované listy souboru docházky a výkonů;
   - `employees[].end` (2.43): konec trestu;
+  - `tasks` (2.46): Úkoly (viz Kde jsme skončili 2.46);
   - `undo` (2.45): uložené změny za 3 dny pro Vrátit zpět, `log[].u`/`log[].un`;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
@@ -2235,7 +2277,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `konce` (2.43), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
+  `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
   (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
