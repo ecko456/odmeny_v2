@@ -6049,6 +6049,30 @@ function capPlanEnds(d,today,n){
   return {now:cnt(ppl),nowN:ppl.length,overdue,overdueN:tot(overdue),months,
     later:ppl.filter(p=>p.end&&p.end.slice(0,7)>end).length,noEnd:ppl.filter(p=>!p.end).length};
 }
+/** Manažerský přehled plánu kapacit (2.45.3): po měsících kolik lidí zůstane proti potřebě.
+    Oddělení s lidmi nebo s plánem; ohrožený měsíc = aspoň jedno oddělení s plánem pod potřebou.
+    Křivka a potřeba celkem jen z oddělení s plánem (bez plánu se potřeba nezná). */
+function capPlanOutlook(all,today,n){
+  today=today||todayIso();n=n||12;
+  const list=all.depts.filter(d=>d.groups.some(g=>g.members.length||g.set));
+  const depts=list.map(d=>{
+    const set=d.groups.some(g=>g.set),need=set?d.tot.need.n:null,e=capPlanEnds(d,today,n);
+    const rem=e.months.map(m=>m.remainN);
+    return {name:d.dept||"Bez oddělení",set,need,now:e.nowN,overdue:e.overdueN,months:rem,leave:e.months.map(m=>m.leaveN),
+      short:rem.map(v=>set?Math.max(0,need-v):0),nowShort:set?Math.max(0,need-e.nowN):0};
+  });
+  const ids=(depts.length?capPlanEnds(list[0],today,n).months.map(m=>m.m):[]);
+  if(!ids.length){let y=+today.slice(0,4),m=+today.slice(5,7);for(let i=0;i<n;i++){ids.push(y+"-"+String(m).padStart(2,"0"));m++;if(m>12){m=1;y++;}}}
+  const pl=depts.filter(d=>d.set),planned=pl.length>0,src=planned?pl:depts;
+  const sum=f=>ids.map((x,i)=>src.reduce((t,d)=>t+f(d,i),0));
+  const tot={now:src.reduce((t,d)=>t+d.now,0),need:planned?pl.reduce((t,d)=>t+d.need,0):null,
+    months:sum((d,i)=>d.months[i]),leave:sum((d,i)=>d.leave[i]),short:ids.map((x,i)=>pl.reduce((t,d)=>t+d.short[i],0)),
+    risk:ids.map((x,i)=>pl.filter(d=>d.short[i]>0).length)};
+  const riskIdx=tot.risk.map((r,i)=>r?i:-1).filter(i=>i>=0);
+  let min=null;tot.months.forEach((v,i)=>{if(!min||v<min.v)min={v,m:ids[i]};});
+  return {today,ids,depts,planned,tot,riskN:riskIdx.length,first:riskIdx.length?ids[riskIdx[0]]:"",min,
+    maxShort:Math.max(0,...tot.short),nowShort:pl.reduce((t,d)=>t+d.nowShort,0)};
+}
 /* Historie plánu kapacit: potřeba skupiny „původně → teď“ (opakovaná úprava do 10 minut se
    sloučí podle klíče cp:skupina) a poznámka. */
 function cpChanges(A,B,add,st){

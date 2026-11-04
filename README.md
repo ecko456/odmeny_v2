@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.45.3
+
+- **PDF Plánu kapacit: na první straně manažerský přehled.**
+  - Dlaždice: lidí teď, potřeba, kolik měsíců je ohrožených (a který první), nejnižší stav.
+  - Křivka vývoje počtu lidí po měsících proti potřebě. Ohrožené měsíce mají červený podklad
+    a pod osou je, kolik lidí v kterém měsíci chybí.
+  - Tabulka oddělení × měsíce: kolik lidí zůstane, červeně pod potřebou, zeleně splněno.
+  - Ohrožený měsíc = aspoň jedno oddělení s plánem je pod potřebou. Křivka a potřeba celkem
+    počítají jen oddělení, která mají plán.
+- **Roky barevně:** měsíce a pruh pod nimi jsou v roce 2026 modré a v roce 2027 zelené (dál se
+  střídají). Platí pro přehled i pro strany oddělení.
+- Data beze změny (verze 40).
+
 ## Co je nového ve verzi 2.45.2
 
 - **KPI → Kapacity a zaškolení: PDF jen za zvolenou stránku.** PDF obsahuje jen to, co je

@@ -147,7 +147,14 @@ async function setNeed(page, group, key, value) {
     // 2.44.2: jedno oddělení = jedna strana, bez jmen a bez ID
     const pages = txt.split('\f');
     check(/PLÁN KAPACIT/.test(txt) && /Skupiny podle zkušenosti/.test(txt) && /Kdy lidé končí/.test(txt) && /Kolik lidí zůstane/.test(txt) && !/Bednář|Cibulka|Exner|Havel|ID 10/.test(txt), `text PDF: ${txt.slice(0, 400)}`);
-    check(/DOPLNIT 2/.test(txt) && /1 \/ 2/.test(txt) && /2 \/ 2/.test(txt), `stav oddělení a strany: ${txt.slice(0, 600)}`);
+    check(/DOPLNIT 2/.test(txt) && /1 \/ 3/.test(txt) && /3 \/ 3/.test(txt), `stav oddělení a strany: ${txt.slice(0, 600)}`);
+    // 2.45.3: 1. strana manažerský přehled (ohrožené měsíce, křivka proti potřebě, oddělení × měsíce)
+    const ol = await page.evaluate(() => { const o = capPlanOutlook(capPlanAll(), todayIso(), 12); return { riskN: o.riskN, n: o.ids.length, now: o.tot.now, need: o.tot.need, min: o.min, short: o.tot.short, ids: o.ids, depts: o.depts.map(d => [d.name, d.need, d.months]) }; });
+    const p1 = execFileSync('python3', ['-c', 'import sys,pypdf;print(pypdf.PdfReader(sys.argv[1]).pages[0].extract_text())', pdfPath]).toString().replace(/\s+/g, ' ');
+    check(/Manažerský přehled/.test(p1) && /Vývoj počtu lidí proti potřebě/.test(p1) && /Oddělení po měsících/.test(p1) && /2026/.test(p1) && /2027/.test(p1), `1. strana: ${p1.slice(0, 500)}`);
+    check(p1.includes(ol.riskN ? `OHROŽENO ${ol.riskN} Z ${ol.n} MĚSÍCŮ` : 'BEZ OHROŽENÍ') && p1.includes(`potřeba ${ol.need}`) && !/Skupiny podle zkušenosti/.test(p1), `1. strana stav: ${JSON.stringify(ol)} ${p1.slice(0, 300)}`);
+    check(ol.ids[0] === '2026-10' && ol.ids[11] === '2027-09' && ol.depts.every(d => d[2].length === 12), `měsíce přehledu: ${ol.ids}`);
+    check(!/Bednář|Cibulka|Exner|Havel|ID 10/.test(p1), '1. strana bez jmen a ID');
   } catch (error) { if (/pypdf/.test(String(error))) console.log('pypdf není, text PDF se nekontroluje'); else problems.push(`PDF: ${error.message}`); }
   try {
     execFileSync('python3', ['-c', `import sys
@@ -156,7 +163,7 @@ try:
 except ImportError:
     print('pymupdf není, stránky PDF se nevykreslí'); sys.exit(0)
 d=pymupdf.open(sys.argv[1])
-assert d.page_count==2, d.page_count
+assert d.page_count==3, d.page_count
 for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.5,1.5)).save(sys.argv[2]+'/pdf-%d.png'%(i+1))`, pdfPath, shots]);
   } catch (error) { problems.push(`PDF stránky: ${String(error.stderr || error.message).slice(-300)}`); }
   const [dx] = await Promise.all([page.waitForEvent('download'), page.click('#cpXlsx')]);

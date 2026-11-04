@@ -34,6 +34,24 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 4. 11. 2026 (verze 2.45.3):
+
+- Uživatel (k PDF Plánu kapacit): „na první slide manažerský pohled na ohrožené měsíce nebo
+  požadavek počtu lidí v daných měsících, dal trendovou křivku vývoje … oddělit barevné roky
+  v pod textem 2026 … modré a zelené rok 2027“.
+  - Core (před `cpChanges`): `capPlanOutlook(all, today, n)` → `ids`, `depts[{name, set, need,
+    now, overdue, months (zůstane), leave, short, nowShort}]` (oddělení s lidmi nebo plánem),
+    `planned`, `tot{now, need, months, leave, short, risk}` (jen oddělení s plánem, bez plánu
+    všechna), `riskN`, `first`, `min`, `maxShort`, `nowShort`. Ohrožený měsíc = aspoň jedno
+    oddělení s plánem pod potřebou.
+  - UI: `cpOverviewPdf(P, o)` jako 1. strana `exportCapPlanPdf` (štítek OHROŽENO N Z 12 MĚSÍCŮ /
+    BEZ OHROŽENÍ / BEZ PLÁNU, 4 dlaždice, křivka proti čárkované potřebě s červeným podkladem
+    ohrožených měsíců a řádkem „chybí“, tabulka oddělení × měsíce se záhlavím, legenda).
+    `cpYearC(id)` (sudý rok `blue`, lichý `green`), `cpYearAxis(P, cols, x0, cw, y)` (barevná
+    linka a rok pod měsíci) i na stranách oddělení místo roku pod prvním měsícem.
+  - Testy: core „Plán kapacit (2.45.3)“, `e2e_plankap` (3 strany, text 1. strany proti
+    `capPlanOutlook`, oba roky). `ODM_VERSION` 2.45.3, data beze změny (40).
+
 Stav k 3. 11. 2026 (verze 2.45.2):
 
 - Uživatel: „v Kapacity a zaškolení to PDF stahuje se všemi daty, chtěl bych vždy export jen za
@@ -1952,7 +1970,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.44.2 | `457f6d5` | PDF Plánu kapacit – list na oddělení, bez jmen a ID, skupiny podle zkušenosti, kdy lidé končí a kolik zůstane |
 | 2.45 | `590779e` | Poslední změny za 3 dny s tlačítkem Vrátit zpět (jen ta změna, pozdější změny zůstanou) (data verze 40) |
 | 2.45.1 | `9b0dab2` | výkon v Kapacitách a zaškolení na odpracovaný den z Docházky a výkonů, PDF s výkonem i bez, hledání v Lidech podle ID |
-| 2.45.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Kapacit a zaškolení jen za zvolenou stránku, Konce trestů bez vedoucích, se zkušeností a PDF, export Docházky za měsíc (Excel, PDF) |
+| 2.45.2 | `f72b98b` | PDF Kapacit a zaškolení jen za zvolenou stránku, Konce trestů bez vedoucích, se zkušeností a PDF, export Docházky za měsíc (Excel, PDF) |
+| 2.45.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit s manažerským přehledem na 1. straně (ohrožené měsíce, potřeba po měsících, křivka vývoje), roky barevně |
 
 Verze 2.1 přidala:
 

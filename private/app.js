@@ -11824,6 +11824,122 @@ function cpMonthShort(id, first) {
   const t = CP_MON[+id.slice(5, 7) - 1];
   return { t, y: first || id.slice(5) === '01' ? id.slice(0, 4) : '' };
 }
+/* barva roku (2.45.3): sudý rok modře, lichý zeleně (2026 modře, 2027 zeleně) */
+const cpYearC = id => (+String(id).slice(0, 4) % 2 ? 'green' : 'blue');
+/* osa let pod popisky měsíců: barevná linka přes měsíce roku a rok uprostřed */
+function cpYearAxis(P, cols, x0, cw, y) {
+  let i = 0;
+  while (i < cols.length) {
+    const m = cols[i].m;
+    if (!m) { i += 1; continue; }
+    let j = i;
+    while (j + 1 < cols.length && cols[j + 1].m && cols[j + 1].m.slice(0, 4) === m.slice(0, 4)) j += 1;
+    const c = cpYearC(m);
+    const a = x0 + cw * i + 6;
+    const b = x0 + cw * (j + 1) - 6;
+    P.box(a, y, b - a, 4, { fill: c, r: 2 });
+    P.text(m.slice(0, 4), (a + b) / 2, y + 22, 12, { b: true, c, a: 'middle', mono: true });
+    i = j + 1;
+  }
+}
+/* 1. strana PDF (2.45.3): manažerský přehled – ohrožené měsíce, potřeba lidí po měsících
+   a křivka vývoje počtu lidí proti potřebě, pod ní oddělení × měsíce. */
+function cpOverviewPdf(P, o) {
+  const X = 64, W = 1152, R = X + W;
+  const t = o.tot;
+  P.text(`${EXPORT_NAME} · PLÁN KAPACIT`, X, 78, 13, { b: true, c: 'faint', ls: 0.12 });
+  P.text(dayText(o.today), R, 78, 13, { c: 'faint', a: 'end', mono: true });
+  P.text('Manažerský přehled', X, 136, 44, { b: true });
+  const [st, tone] = !o.planned ? ['BEZ PLÁNU', 'plain'] : o.riskN ? [`OHROŽENO ${o.riskN} Z ${o.ids.length} MĚSÍCŮ`, 'crit'] : ['BEZ OHROŽENÍ', 'ok'];
+  const [bg, bd, , fg] = CTR_BOX[tone];
+  const sw = P.width(st, 16, { b: true, ls: 0.08 }) + 40;
+  P.box(R - sw, 100, sw, 46, { fill: bg, stroke: bd, r: 23, lw: 1.5 });
+  P.text(st, R - sw / 2, 129, 16, { b: true, c: fg, a: 'middle', ls: 0.08 });
+  P.line(X, 170, R, 170, 'line', 1.5);
+  // dlaždice
+  const mon = id => `${CP_MON[+id.slice(5, 7) - 1]} ${id.slice(0, 4)}`;
+  const tiles = [
+    ['LIDÍ TEĎ', String(t.now), 'ink', o.planned ? 'oddělení s plánem' : 'všechna oddělení'],
+    ['POTŘEBA', t.need == null ? '—' : String(t.need), t.need == null ? 'faint' : 'ink', t.need == null ? 'plán není zadaný' : o.nowShort ? `teď chybí ${o.nowShort}` : 'teď splněno'],
+    ['OHROŽENÉ MĚSÍCE', o.planned ? String(o.riskN) : '—', !o.planned ? 'faint' : o.riskN ? 'red' : 'green', o.first ? `první ${mon(o.first)}` : o.planned ? 'žádný' : ''],
+    ['NEJNIŽŠÍ STAV', o.min ? String(o.min.v) : '—', o.min && t.need != null && o.min.v < t.need ? 'red' : 'ink', o.min ? mon(o.min.m) : ''],
+  ];
+  const TW = (W - 3 * 18) / 4, top = 196;
+  tiles.forEach(([l, v, c, sub], i) => {
+    const x = X + i * (TW + 18);
+    P.box(x, top, TW, 140, { fill: '#F7F9FC', stroke: 'line', r: 14 });
+    P.text(l, x + 22, top + 34, 13, { b: true, c: 'muted', ls: 0.1 });
+    P.text(v, x + 22, top + 94, 52, { b: true, mono: true, c });
+    if (sub) P.text(sub, x + 22, top + 122, 13, { c: 'muted' });
+  });
+  // trendová křivka: teď + měsíce, potřeba čárkovaně, ohrožené měsíce červeně, pod osou „chybí“
+  let y = 392;
+  P.text('Vývoj počtu lidí proti potřebě', X, y, 20, { b: true });
+  const pts = [{ m: '', l: 'teď', v: t.now, s: o.nowShort, r: o.nowShort > 0 }, ...o.ids.map((m, i) => ({ m, l: CP_MON[+m.slice(5, 7) - 1], v: t.months[i], s: t.short[i], r: t.risk[i] > 0 }))];
+  const CH = 380, T0 = y + 50, base = T0 + CH;
+  const vmax = Math.max(1, t.now, t.need || 0, ...t.months);
+  const vmin = Math.min(...t.months, t.need == null ? Infinity : t.need, t.now);
+  const lo = Math.max(0, Math.floor(vmin * 0.8 / 5) * 5);
+  const hi = Math.max(lo + 5, Math.ceil(vmax * 1.08 / 5) * 5);
+  const Y = v => base - ((v - lo) / (hi - lo)) * CH;
+  const cw = W / pts.length;
+  const cx = i => X + cw * (i + 0.5);
+  const step = Math.max(1, Math.ceil((hi - lo) / 4 / 5) * 5);
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    P.line(X, Y(v), R, Y(v), v === lo ? 'axis' : 'grid', v === lo ? 1.5 : 1);
+    P.text(String(v), X - 10, Y(v) + 5, 12, { c: 'muted', a: 'end', mono: true });
+  }
+  // ohrožené měsíce: světle červený sloupec na pozadí
+  pts.forEach((p, i) => { if (p.r) P.box(cx(i) - cw / 2 + 3, T0, cw - 6, CH, { fill: '#FDF0EE' }); });
+  if (t.need != null) {
+    P.line(X, Y(t.need), R, Y(t.need), 'green', 3, [10, 6]);
+    P.text(`potřeba ${t.need}`, R, Y(t.need) - 10, 14, { b: true, c: 'green', a: 'end' });
+  }
+  P.poly(pts.map((p, i) => [cx(i), Y(p.v)]), 'ink', 4);
+  pts.forEach((p, i) => {
+    P.dot(cx(i), Y(p.v), 8, p.r ? 'red' : 'ink');
+    P.dot(cx(i), Y(p.v), 3.5, 'white');
+    P.text(String(p.v), cx(i), Y(p.v) - 16, 16, { b: true, mono: true, c: p.r ? 'red' : 'ink', a: 'middle' });
+    P.text(p.l, cx(i), base + 26, 14, { b: i === 0 || p.r, c: p.m ? cpYearC(p.m) : 'ink', a: 'middle' });
+    if (o.planned) P.text(p.s ? `−${p.s}` : '·', cx(i), base + 96, 15, { b: !!p.s, mono: true, c: p.s ? 'red' : 'faint', a: 'middle' });
+  });
+  cpYearAxis(P, pts, X, cw, base + 36);
+  if (o.planned) P.text('chybí', X - 10, base + 96, 12, { c: 'muted', a: 'end' });
+  // oddělení × měsíce: kolik lidí zůstane, červeně pod potřebou
+  y = base + 150;
+  P.text('Oddělení po měsících', X, y, 20, { b: true });
+  P.text('číslo = kolik lidí zůstane · červeně pod potřebou', R, y, 13, { c: 'muted', a: 'end' });
+  y += 26;
+  const LW = 250, GW = W - LW, gw = GW / pts.length;
+  const rows = o.depts;
+  // záhlaví: teď a měsíce v barvě roku
+  pts.forEach((p, i) => P.text(p.l, X + LW + gw * (i + 0.5), y + 14, 13, { b: true, c: p.m ? cpYearC(p.m) : 'ink', a: 'middle' }));
+  y += 26;
+  const rh = Math.max(26, Math.min(48, (P.PH - 140 - y) / Math.max(1, rows.length + 1)));
+  rows.forEach(d => {
+    P.text(P.split(d.name, 15, LW - 14, { b: true })[0], X, y + rh / 2 + 2, 15, { b: true });
+    P.text(d.set ? `potřeba ${d.need}` : 'bez plánu', X, y + rh / 2 + 18, 11, { c: d.set ? 'muted' : 'faint' });
+    [d.now, ...d.months].forEach((v, i) => {
+      const short = d.set && v < d.need;
+      const fill = !d.set ? '#F2F4F8' : short ? '#F6D5D0' : '#E3F1E7';
+      P.box(X + LW + gw * i + 2, y + 2, gw - 4, rh - 4, { fill, r: 4 });
+      P.text(String(v), X + LW + gw * (i + 0.5), y + rh / 2 + 6, 15, { b: short, mono: true, c: !d.set ? 'muted' : short ? 'red' : 'green', a: 'middle' });
+    });
+    y += rh;
+  });
+  // legenda
+  y += 34;
+  let lx = X;
+  [['#E3F1E7', 'potřeba splněna'], ['#F6D5D0', 'pod potřebou'], ['#F2F4F8', 'bez plánu']].forEach(([c, l]) => {
+    P.box(lx, y - 14, 18, 18, { fill: c, r: 4 });
+    P.text(l, lx + 26, y, 14, { c: 'muted' });
+    lx += 26 + P.width(l, 14) + 30;
+  });
+  P.line(lx, y - 5, lx + 34, y - 5, 'green', 3, [8, 5]);
+  P.text('potřeba', lx + 44, y, 14, { c: 'muted' });
+  lx += 44 + P.width('potřeba', 14) + 30;
+  ['2026', '2027'].forEach(yr => { const c = cpYearC(yr); P.box(lx, y - 7, 24, 4, { fill: c, r: 2 }); P.text(yr, lx + 32, y, 14, { b: true, c, mono: true }); lx += 32 + P.width(yr, 14, { mono: true }) + 26; });
+}
 /* stav oddělení do štítku v záhlaví */
 function cpDeptState(d) {
   const set = d.groups.some(g => g.set);
@@ -11928,13 +12044,14 @@ function cpDeptPdf(P, d, today, page) {
       for (let j = 0; j < (c.ex[lv] || 0); j += 1) { P.dot(cx, base - 4 - r - k * pitch, r, col); k += 1; }
     });
     if (c.n) P.text(String(c.n), cx, base - 14 - k * pitch, 16, { b: true, mono: true, c: c.k === 'od' ? 'red' : 'ink', a: 'middle' });
-    P.text(c.lbl.t, cx, base + 26, 14, { b: !!c.n, c: c.k === 'od' ? 'red' : c.n ? 'ink' : 'faint', a: 'middle' });
-    if (c.lbl.y) P.text(c.lbl.y, cx, base + 44, 11, { c: c.k === 'od' ? 'red' : 'faint', a: 'middle' });
+    P.text(c.lbl.t, cx, base + 26, 14, { b: !!c.n, c: c.k === 'od' ? 'red' : cpYearC(c.k), a: 'middle' });
+    if (c.k === 'od') P.text(c.lbl.y, cx, base + 44, 11, { c: 'red', a: 'middle' });
   });
+  cpYearAxis(P, cols.map(c => ({ m: c.k === 'od' ? '' : c.k })), X, cw, base + 36);
   // kolik zůstane: sloupec po úrovních, potřeba čárkovaně
   y = base + 96;
   P.text('Kolik lidí zůstane', X, y, 20, { b: true });
-  const rcols = [{ lbl: { t: 'teď', y: '' }, ex: ends.now, n: ends.nowN }, ...ends.months.map((m, i) => ({ lbl: cpMonthShort(m.m, i === 0), ex: m.remain, n: m.remainN }))];
+  const rcols = [{ m: '', lbl: { t: 'teď', y: '' }, ex: ends.now, n: ends.nowN }, ...ends.months.map((m, i) => ({ m: m.m, lbl: cpMonthShort(m.m, i === 0), ex: m.remain, n: m.remainN }))];
   const RH = Math.max(220, Math.min(460, P.PH - 150 - (y + 50) - 92));
   const rbase = y + 50 + RH;
   const rmax = Math.max(1, ends.nowN, set ? t.need.n : 0);
@@ -11953,9 +12070,9 @@ function cpDeptPdf(P, d, today, page) {
     });
     const short = set && c.n < t.need.n;
     P.text(String(c.n), cx, yy - 10, 16, { b: true, mono: true, c: short ? 'red' : 'ink', a: 'middle' });
-    P.text(c.lbl.t, cx, rbase + 26, 14, { b: i === 0, c: i === 0 ? 'ink' : 'faint', a: 'middle' });
-    if (c.lbl.y) P.text(c.lbl.y, cx, rbase + 44, 11, { c: 'faint', a: 'middle' });
+    P.text(c.lbl.t, cx, rbase + 26, 14, { b: i === 0, c: c.m ? cpYearC(c.m) : 'ink', a: 'middle' });
   });
+  cpYearAxis(P, rcols, X, rw, rbase + 36);
   if (set) {
     const ny = rbase - t.need.n * unit;
     P.line(X, ny, R, ny, 'green', 3, [10, 6]);
@@ -11979,7 +12096,8 @@ async function exportCapPlanPdf(button) {
   await withPdf(button, doc => {
     doc.setProperties({ title: 'Plán kapacit', creator: EXPORT_NAME });
     const P = ctrPdf(doc);
-    depts.forEach((d, i) => cpDeptPdf(P, d, today, i + 1));
+    cpOverviewPdf(P, capPlanOutlook(all, today, 12));
+    depts.forEach(d => cpDeptPdf(P, d, today, 2));
     const n = doc.getNumberOfPages();
     for (let i = 1; i <= n; i += 1) {
       doc.setPage(i);

@@ -4275,6 +4275,29 @@ test('Konce trestů (2.45.2): bez vedoucích, zkušenost podle hranice zaškolen
   return null;
 });
 
+test('Plán kapacit (2.45.3): manažerský přehled – ohrožené měsíce, potřeba a vývoj po měsících', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    const grp = (id, dept) => { const p = mkPos(id, id, []); p.dept = dept; p.skillset = [{ id: 'k' + id, name: 'Obsluha', desc: '', scale: null }]; p.maxTab = 8; p.tiers = []; return p; };
+    st.positions = [grp('g1', 'Brus'), grp('g2', 'Obrobna'), grp('g3', 'Lepení')];
+    const add = (k, g, end) => { st.employees[k] = { key: k, last: k, first: 'Jan', positionId: g, shift: 'R', note: '', rate: { ['k' + g]: 4 }, ...(end ? { end } : {}) }; };
+    add('a', 'g1'); add('b', 'g1', '2026-12-10'); add('c', 'g1', '2027-02-01'); add('d', 'g2'); add('e', 'g2', '2026-10-01'); add('f', 'g3');
+    S = sanitizeState(st);
+    S.capPlan = cleanCapPlan({ groups: { g1: { n: 3, l2: 0, l3: 0, l4: 0 }, g2: { n: 1, l2: 0, l3: 0, l4: 0 } } }, new Set(S.positions.map(p => p.id)));
+    const o = capPlanOutlook(capPlanAll(), '2026-11-04', 6);
+    return JSON.stringify({ ids: o.ids, planned: o.planned, depts: o.depts.map(d => [d.name, d.set, d.need, d.now, d.months, d.short]), tot: o.tot, riskN: o.riskN, first: o.first, min: o.min, nowShort: o.nowShort });
+  })()`));
+  assert.deepStrictEqual(out.ids, ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04']);
+  assert.deepStrictEqual(out.depts, [
+    ['Brus', true, 3, 3, [3, 2, 2, 1, 1, 1], [0, 1, 1, 2, 2, 2]],
+    ['Obrobna', true, 1, 2, [1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0]],
+    ['Lepení', false, null, 1, [1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0]]], 'po termínu (e) se nepočítá do zbytku, bez plánu jen počty');
+  assert.deepStrictEqual([out.tot.now, out.tot.need, out.tot.months, out.tot.short, out.tot.risk], [5, 4, [4, 3, 3, 2, 2, 2], [0, 1, 1, 2, 2, 2], [0, 1, 1, 1, 1, 1]], 'křivka jen z oddělení s plánem');
+  assert.deepStrictEqual([out.riskN, out.first, out.min, out.nowShort, out.planned], [5, '2026-12', { v: 2, m: '2027-02' }, 0, true]);
+  return null;
+});
+
 test('Vrátit zpět (2.45): jen změněné hodnoty, pozdější změny zůstanou, smazání a přidání, 3 dny, čištění', () => {
   const core = loadCore();
   const out = JSON.parse(run(core, `(() => {
