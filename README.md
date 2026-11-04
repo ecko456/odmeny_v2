@@ -62,6 +62,23 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.47
+
+- **Nový vzhled Sklo** podle návrhu (tmavé poloprůhledné panely s rozmazaným pozadím, oranžový
+  akcent s podsvícením, zaoblená tlačítka, plovoucí boční panel, písmo Plus Jakarta Sans).
+  Platí pro celou aplikaci včetně zamykací obrazovky a telefonu.
+- **PDF exporty, Excel a tisk se nemění.** Papíry reportů (Kapacity a zaškolení, Report
+  docházky) zůstávají bílé. Test ověřuje, že PDF vyjde v obou vzhledech stejně.
+- **Návrat k původnímu vzhledu:** Nastavení → Zabezpečení → *Vzhled aplikace (toto zařízení)*
+  → *Původní vzhled*. Volba platí pro tento prohlížeč a pamatuje se i po obnovení stránky.
+  Původní styly zůstaly v kódu beze změny, nový vzhled je jen vrstva navíc.
+- Úplný návrat kódu (kdyby bylo potřeba): poslední verze před novým vzhledem je commit
+  `1019df6` (2.46), `cd /root/odmeny_v2 && git checkout 1019df6 && sudo bash deploy/install.sh`.
+  Data se tím nemění (verze dat zůstává 41). Zpět na aktuální větev:
+  `git checkout claude/elegant-clarke-vl5n7d && sudo bash deploy/install.sh`.
+- Písmo Plus Jakarta Sans je přibalené (`static/fonts`, licence OFL), nic se nestahuje z internetu.
+  Obrázky z návrhu (fotka pozadí, avatary) v aplikaci nejsou, pozadí je jen z CSS.
+
 ## Co je nového ve verzi 2.46
 
 - **Nový modul Úkoly** (v menu pod Rychlou kontrolou, na telefonu dlaždice v hlavním menu

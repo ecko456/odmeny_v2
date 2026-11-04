@@ -34,6 +34,25 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 4. 11. 2026 (verze 2.47):
+
+- Uživatel poslal návrh (Google Drive, `dashbordv11.zip`: React + Vite finanční dashboard,
+  sklo, oranžová) a chtěl: „převezmi ten vzhled do odměny, jen pdf exporty apod. neměň … jde
+  pouze o vzhled systému a udělej zálohu ať se můžeme přirozeně vrátit zpět“. Archiv do repa
+  nepatří (fotka pozadí a avatary jsou cizí díla), převzat jen styl.
+  - **Vzhled je vrstva `:root[data-look="glass"]`**: tokeny, písmo Jakarta (`static/fonts/plus-
+    jakarta-sans-*`, OFL) a základ (tlačítka, pole, zámek) v `static/lock.css`, komponenty na
+    konci `private/app.css`. Bez atributu / s `classic` platí původní CSS beze změny.
+  - `static/look.js` (v `<head>` index.php, před vykreslením): `localStorage`
+    `odmeny.look.v1:<adresa>` → `html[data-look]`, výchozí `glass`, `meta theme-color`,
+    `window.OdmLook {get, set}`. V app.js `lookNow`/`setLook`, výběr `#secLook` v Nastavení →
+    Zabezpečení („Vzhled aplikace (toto zařízení)“). Volba je jen pro zařízení, ne ve stavu
+    ani v prefs (verze dat beze změny, 41).
+  - Papíry `.ctr-paper`/`.dr-*` zůstávají bílé, PDF se kreslí bez CSS. `e2e_vzhled` porovná
+    PDF Plánu kapacit v obou vzhledech (text i pixely přes PyMuPDF).
+  - Návrat kódu: 2.46 = `1019df6` (poslední bez nového vzhledu).
+  - Testy: nový `tests/e2e_vzhled.js`, ostatní e2e běží ve skle (výchozí). `ODM_VERSION` 2.47.
+
 Stav k 4. 11. 2026 (verze 2.46):
 
 - Uživatel: „modul ‚Úkoly‘ kde půjde zadat úkol, termín, zodpovědná osoba a půjde měnit stavy
@@ -2028,7 +2047,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.45.2 | `f72b98b` | PDF Kapacit a zaškolení jen za zvolenou stránku, Konce trestů bez vedoucích, se zkušeností a PDF, export Docházky za měsíc (Excel, PDF) |
 | 2.45.3 | `da36d15` | PDF Plánu kapacit s manažerským přehledem na 1. straně (ohrožené měsíce, potřeba po měsících, křivka vývoje), roky barevně |
 | 2.45.4 | `c4f0f7e` | PDF Plánu kapacit – chybí celkem pod grafem (0 zeleně, −N červeně), chybí po odděleních pod tabulkou |
-| 2.46 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Úkoly (termín, zodpovědná osoba, stavy, komentáře na časové ose, opakování, připomínky), docházka zaokrouhlená na směnu a čtvrthodiny, nejvýš 7,5 h (data verze 41) |
+| 2.46 | `1019df6` | Úkoly (termín, zodpovědná osoba, stavy, komentáře na časové ose, opakování, připomínky), docházka zaokrouhlená na směnu a čtvrthodiny, nejvýš 7,5 h (data verze 41) |
+| 2.47 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: vzhled Sklo (tmavé sklo, oranžový akcent, Plus Jakarta Sans), přepínač zpět na původní vzhled v Nastavení, PDF beze změny |
 
 Verze 2.1 přidala:
 
@@ -2487,6 +2507,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
   - `e2e_att_export.js` (2.45.2): export docházky za měsíc (Excel, PDF, součty po odděleních, telefon);
+  - `e2e_vzhled.js` (2.47): vzhled Sklo, přepnutí na původní, zapamatování, PDF stejné v obou vzhledech;
+  - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);
   - `e2e_vykon.js` (2.44): KPI v menu, Výroba pryč, Výkonnost na osobu (pořadí, řazení, filtr, Excel, profil, telefon);
   - `e2e_konce.js` (2.43): import konců trestů a směnnosti, kontroly řádků, Konce trestů, Excel, PDF (2.45.2), telefon;

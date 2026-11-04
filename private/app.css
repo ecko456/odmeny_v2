@@ -2668,3 +2668,72 @@ tr.dv-click:hover td { background: var(--surface-2); }
   .tk-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); justify-self: stretch; }
   .tk-seg button { min-height: 38px; padding: 0 4px; }
 }
+
+/* ==========================================================================
+   Vzhled „Sklo“ (2.47): jen html[data-look="glass"], původní vzhled nahoře zůstává beze změny.
+   Tokeny (barvy, písmo) jsou v static/lock.css. Papíry reportů (.ctr-paper, .dr-*) zůstávají bílé.
+   ========================================================================== */
+:root[data-look="glass"] .side { background: rgba(255, 255, 255, .055); border-right-color: var(--glass-line); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+:root[data-look="glass"] .nav button { border-radius: 999px; color: rgba(255, 255, 255, .72); }
+:root[data-look="glass"] .nav button:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+:root[data-look="glass"] .nav button[aria-current="true"] { background: var(--acc-grad); color: #fff; box-shadow: var(--acc-glow); }
+:root[data-look="glass"] .nav button[aria-current="true"]::before { display: none; }
+:root[data-look="glass"] .nav-badge { background: #fff; color: #d94f00; }
+:root[data-look="glass"] .nav button[aria-current="true"] .nav-badge { background: rgba(0, 0, 0, .28); color: #fff; }
+:root[data-look="glass"] .nav-badge.late { background: var(--crit); color: #fff; }
+:root[data-look="glass"] .side-foot { border-top-color: var(--glass-line); }
+:root[data-look="glass"] .icon-btn { border-radius: 999px; }
+:root[data-look="glass"] .icon-btn:hover { background: rgba(255, 255, 255, .12); }
+/* skleněné plochy */
+:root[data-look="glass"] .card,
+:root[data-look="glass"] .table-card,
+:root[data-look="glass"] .stat,
+:root[data-look="glass"] .tile,
+:root[data-look="glass"] .banner,
+:root[data-look="glass"] .tk-row { background: var(--glass); border-color: var(--glass-line); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--shadow-2); }
+:root[data-look="glass"] .card, :root[data-look="glass"] .table-card { border-radius: 24px; }
+:root[data-look="glass"] .stat { border-radius: 20px; background: radial-gradient(circle at 86% 30%, rgba(255, 120, 30, .14) 0%, rgba(255, 255, 255, .04) 62%), rgba(18, 20, 26, .42); }
+:root[data-look="glass"] .stat::before { height: 2px; opacity: .9; }
+:root[data-look="glass"] .stat .v { letter-spacing: -.02em; }
+:root[data-look="glass"] .tile:hover, :root[data-look="glass"] .tk-row:hover { background: linear-gradient(135deg, rgba(255, 255, 255, .13) 0%, rgba(26, 28, 34, .55) 60%); border-color: rgba(255, 255, 255, .26); transform: translateY(-1px); }
+:root[data-look="glass"] .banner { border-radius: 20px; }
+:root[data-look="glass"] .chip { background: var(--glass-soft); border-color: var(--glass-line); color: var(--ink-2); }
+:root[data-look="glass"] .chip:hover { background: rgba(255, 255, 255, .12); color: #fff; border-color: rgba(255, 255, 255, .28); }
+:root[data-look="glass"] .chip.on { background: var(--acc-grad); border-color: transparent; color: #fff; box-shadow: var(--acc-glow); }
+:root[data-look="glass"] .seg { background: rgba(255, 255, 255, .05); border-color: var(--glass-line); border-radius: 999px; }
+:root[data-look="glass"] .seg button { border-radius: 999px; }
+:root[data-look="glass"] .seg button.on { background: var(--acc-grad); color: #fff; box-shadow: var(--acc-glow); }
+:root[data-look="glass"] .tag.acc { background: var(--acc-soft); color: var(--acc-2); }
+/* tabulky: hlavička a řádky průhledně, lepivé buňky tmavě (jinak by prosvítal obsah pod nimi) */
+:root[data-look="glass"] thead th { background: rgba(14, 15, 20, .72); color: var(--ink-2); }
+:root[data-look="glass"] tbody tr:hover > td { background-color: rgba(255, 255, 255, .04); }
+/* dialogy a plovoucí okna */
+:root[data-look="glass"] dialog.dlg { background: linear-gradient(135deg, rgba(40, 42, 50, .9) 0%, rgba(20, 22, 28, .94) 100%); border-color: var(--glass-line); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); border-radius: 26px; }
+:root[data-look="glass"] dialog.dlg::backdrop { background: rgba(5, 6, 8, .55); backdrop-filter: blur(6px); }
+:root[data-look="glass"] .toast { background: rgba(30, 32, 40, .92); border: 1px solid var(--glass-line); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); color: #fff; }
+:root[data-look="glass"] .page-head h1 { text-shadow: 0 2px 10px rgba(0, 0, 0, .4); }
+:root[data-look="glass"] .eyebrow { color: var(--acc-2); }
+/* monitor: boční panel jako plovoucí skleněná deska */
+@media screen and (min-width: 901px) {
+  :root[data-look="glass"] .shell { grid-template-columns: 268px minmax(0, 1fr); }
+  :root[data-look="glass"] .side { top: 14px; height: calc(100vh - 28px); height: calc(100dvh - 28px); margin: 14px 0 14px 14px; border: 1px solid var(--glass-line); border-radius: 30px;
+    box-shadow: 0 24px 50px -8px rgba(0, 0, 0, .5), inset 0 1.5px 2px rgba(255, 255, 255, .28), inset 0 0 12px rgba(255, 255, 255, .04); }
+  :root[data-look="glass"] .period-box { background: var(--glass-soft); border-color: var(--glass-line); }
+  :root[data-look="glass"] .side { gap: 14px; padding-top: 16px; }
+  :root[data-look="glass"] .nav { gap: 2px; }
+  :root[data-look="glass"] .nav button { min-height: 39px; padding-top: 8px; padding-bottom: 8px; }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-look="glass"] .card, :root[data-look="glass"] .table-card, :root[data-look="glass"] .stat, :root[data-look="glass"] .tile, :root[data-look="glass"] .side, :root[data-look="glass"] dialog.dlg { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--surface); }
+}
+/* telefon: úvod HALA 2, Rychlá kontrola, plovoucí tlačítko a úvodní animace v barvách skla */
+:root[data-look="glass"] .splash { background: radial-gradient(110% 70% at 50% 30%, #ff7a22 0%, #b13c00 42%, #1a0c05 100%); }
+:root[data-look="glass"] .home-hero, :root[data-look="glass"] .qk-hero {
+  background: radial-gradient(90% 80% at 85% 10%, rgba(255, 140, 60, .55), transparent 60%), radial-gradient(120% 90% at 100% 0%, rgba(255, 255, 255, .12), transparent 55%), linear-gradient(155deg, rgba(60, 34, 20, .92) 0%, rgba(30, 22, 20, .9) 55%, rgba(16, 15, 18, .94) 100%);
+  border: 1px solid rgba(255, 255, 255, .16); box-shadow: 0 26px 50px -24px rgba(0, 0, 0, .9), inset 0 1.5px 2px rgba(255, 255, 255, .25); }
+:root[data-look="glass"] .home .seg-pill, :root[data-look="glass"] .qk-pill { background: var(--acc-grad); box-shadow: var(--acc-glow); }
+:root[data-look="glass"] .qk-go { background: var(--acc-grad); box-shadow: 0 18px 32px -16px rgba(226, 79, 0, .8), inset 0 1px 0 rgba(255, 255, 255, .3); }
+@media screen and (max-width: 900px) {
+  :root[data-look="glass"] .fab { background: var(--acc-grad); box-shadow: 0 16px 30px -12px rgba(226, 79, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .3); }
+  :root[data-look="glass"] .fab .nav-dot { box-shadow: 0 0 0 2px #d94f00; }
+}

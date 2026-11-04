@@ -33,6 +33,7 @@ $privateVersion = (string)max(array_map(static fn(string $file): int => (int)fil
   <link rel="apple-touch-icon" href="<?= $asset('static/apple-touch-icon.png') ?>">
   <link rel="manifest" href="<?= $asset('static/manifest.webmanifest') ?>">
   <link rel="stylesheet" href="<?= $asset('static/lock.css') ?>">
+  <script src="<?= $asset('static/look.js') ?>"></script>
 </head>
 <body data-private-version="<?= htmlspecialchars($privateVersion, ENT_QUOTES) ?>">
   <main class="lock" id="lock">

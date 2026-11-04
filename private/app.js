@@ -3048,6 +3048,13 @@ function renderSettings() {
   };
 }
 
+/* Vzhled aplikace (2.47): sklo nebo původní, jen pro toto zařízení (static/look.js).
+   Na tisk ani PDF nemá vliv. */
+function lookNow() { return window.OdmLook ? window.OdmLook.get() : 'glass'; }
+function setLook(look) {
+  if (window.OdmLook) window.OdmLook.set(look); else document.documentElement.dataset.look = look === 'classic' ? 'classic' : 'glass';
+}
+
 const secCache = { cards: null, devices: null };
 
 function renderSecurity() {
@@ -3061,10 +3068,12 @@ function renderSecurity() {
     <div class="form-grid">
       <label class="field"><span>Zamknout po nečinnosti (jen tvoje kartička)</span><select id="secLock">${[5, 10, 15, 30, 60].map(m => `<option value="${m}"${m === lock ? ' selected' : ''}>${m} minut</option>`).join('')}</select></label>
       <div class="field"><span>&nbsp;</span><button class="btn sec" type="button" id="secLockNow">Zamknout teď</button></div>
+      <label class="field"><span>Vzhled aplikace (toto zařízení)</span><select id="secLook">${[['glass', 'Sklo (nový vzhled)'], ['classic', 'Původní vzhled']].map(([k, l]) => `<option value="${k}"${lookNow() === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
     </div>
     <p class="tiny muted">Přihlášen${ui.me.label ? ` kartičkou <b>${esc(ui.me.label)}</b>` : ''}${ui.me.device ? ` na zařízení ${esc(ui.me.device)}` : ''}. Filtry, vybrané období, řazení a skryté sloupce si aplikace pamatuje zvlášť pro každou kartičku. Verze aplikace ${esc(ui.me.version || '')}.</p>`;
   $('#secLock').onchange = event => { setPref({ lockMinutes: +event.target.value }); toast(`Aplikace se zamkne po ${P.lockMinutes} minutách nečinnosti.`); };
   $('#secLockNow').onclick = () => lockApp();
+  $('#secLook').onchange = event => { setLook(event.target.value); toast(event.target.value === 'classic' ? 'Vrácen původní vzhled.' : 'Zapnut nový vzhled Sklo.'); };
   $('#secNewCard').onclick = newCard;
   if ($('#secEnroll')) $('#secEnroll').onclick = () => enrollThisDevice(false);
   if ($('#secRepin')) $('#secRepin').onclick = () => enrollThisDevice(true);
