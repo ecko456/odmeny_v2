@@ -4286,7 +4286,10 @@ test('Plán kapacit (2.45.3): manažerský přehled – ohrožené měsíce, pot
     S = sanitizeState(st);
     S.capPlan = cleanCapPlan({ groups: { g1: { n: 3, l2: 0, l3: 0, l4: 0 }, g2: { n: 1, l2: 0, l3: 0, l4: 0 } } }, new Set(S.positions.map(p => p.id)));
     const o = capPlanOutlook(capPlanAll(), '2026-11-04', 6);
-    return JSON.stringify({ ids: o.ids, planned: o.planned, depts: o.depts.map(d => [d.name, d.set, d.need, d.now, d.months, d.short]), tot: o.tot, riskN: o.riskN, first: o.first, min: o.min, nowShort: o.nowShort });
+    S.capPlan = cleanCapPlan({ groups: { g1: { n: 4, l2: 0, l3: 0, l4: 0 }, g2: { n: 1, l2: 0, l3: 0, l4: 0 } } }, new Set(S.positions.map(p => p.id)));
+    const o2 = capPlanOutlook(capPlanAll(), '2026-11-04', 6);
+    return JSON.stringify({ ids: o.ids, planned: o.planned, depts: o.depts.map(d => [d.name, d.set, d.need, d.now, d.months, d.short]), tot: o.tot, riskN: o.riskN, first: o.first, min: o.min, nowShort: o.nowShort,
+      o2: [o2.tot.need, o2.tot.now, o2.tot.nowGap, o2.nowShort, o2.tot.gap, o2.tot.short] });
   })()`));
   assert.deepStrictEqual(out.ids, ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03', '2027-04']);
   assert.deepStrictEqual(out.depts, [
@@ -4295,6 +4298,9 @@ test('Plán kapacit (2.45.3): manažerský přehled – ohrožené měsíce, pot
     ['Lepení', false, null, 1, [1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0]]], 'po termínu (e) se nepočítá do zbytku, bez plánu jen počty');
   assert.deepStrictEqual([out.tot.now, out.tot.need, out.tot.months, out.tot.short, out.tot.risk], [5, 4, [4, 3, 3, 2, 2, 2], [0, 1, 1, 2, 2, 2], [0, 1, 1, 1, 1, 1]], 'křivka jen z oddělení s plánem');
   assert.deepStrictEqual([out.riskN, out.first, out.min, out.nowShort, out.planned], [5, '2026-12', { v: 2, m: '2027-02' }, 0, true]);
+  // 2.45.4: chybí celkem (potřeba celku − lidé celkem) proti součtu po odděleních
+  assert.deepStrictEqual([out.tot.gap, out.tot.nowGap], [[0, 1, 1, 2, 2, 2], 0]);
+  assert.deepStrictEqual(out.o2, [5, 5, 0, 1, [1, 2, 2, 3, 3, 3], [1, 2, 2, 3, 3, 3]], 'teď: Obrobna navíc vyrovná Brus v celku, po odděleních chybí 1');
   return null;
 });
 

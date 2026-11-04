@@ -151,7 +151,7 @@ async function setNeed(page, group, key, value) {
     // 2.45.3: 1. strana manažerský přehled (ohrožené měsíce, křivka proti potřebě, oddělení × měsíce)
     const ol = await page.evaluate(() => { const o = capPlanOutlook(capPlanAll(), todayIso(), 12); return { riskN: o.riskN, n: o.ids.length, now: o.tot.now, need: o.tot.need, min: o.min, short: o.tot.short, ids: o.ids, depts: o.depts.map(d => [d.name, d.need, d.months]) }; });
     const p1 = execFileSync('python3', ['-c', 'import sys,pypdf;print(pypdf.PdfReader(sys.argv[1]).pages[0].extract_text())', pdfPath]).toString().replace(/\s+/g, ' ');
-    check(/Manažerský přehled/.test(p1) && /Vývoj počtu lidí proti potřebě/.test(p1) && /Oddělení po měsících/.test(p1) && /2026/.test(p1) && /2027/.test(p1), `1. strana: ${p1.slice(0, 500)}`);
+    check(/Manažerský přehled/.test(p1) && /Vývoj počtu lidí proti potřebě/.test(p1) && /Oddělení po měsících/.test(p1) && /součet po odděleních/.test(p1) && /chybí/.test(p1) && /2026/.test(p1) && /2027/.test(p1), `1. strana: ${p1.slice(0, 500)}`);
     check(p1.includes(ol.riskN ? `OHROŽENO ${ol.riskN} Z ${ol.n} MĚSÍCŮ` : 'BEZ OHROŽENÍ') && p1.includes(`potřeba ${ol.need}`) && !/Skupiny podle zkušenosti/.test(p1), `1. strana stav: ${JSON.stringify(ol)} ${p1.slice(0, 300)}`);
     check(ol.ids[0] === '2026-10' && ol.ids[11] === '2027-09' && ol.depts.every(d => d[2].length === 12), `měsíce přehledu: ${ol.ids}`);
     check(!/Bednář|Cibulka|Exner|Havel|ID 10/.test(p1), '1. strana bez jmen a ID');

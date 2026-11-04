@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.45.4
+
+- **PDF Plánu kapacit, 1. strana:** řádek „chybí“ pod grafem Vývoj počtu lidí proti potřebě
+  teď ukazuje schodek celku (potřeba celkem − lidé celkem). Když je potřeba splněná, je tam
+  zelená 0, jinak červeně −N. Červený podklad měsíce v grafu se řídí stejným číslem.
+- Pod tabulkou Oddělení po měsících je nový řádek „chybí, součet po odděleních“ (součet lidí,
+  kteří chybějí v odděleních pod potřebou; přebytek jednoho oddělení tu druhé nevyrovná).
+- Data beze změny.
+
 ## Co je nového ve verzi 2.45.3
 
 - **PDF Plánu kapacit: na první straně manažerský přehled.**

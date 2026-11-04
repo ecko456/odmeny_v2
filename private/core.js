@@ -6068,6 +6068,9 @@ function capPlanOutlook(all,today,n){
   const tot={now:src.reduce((t,d)=>t+d.now,0),need:planned?pl.reduce((t,d)=>t+d.need,0):null,
     months:sum((d,i)=>d.months[i]),leave:sum((d,i)=>d.leave[i]),short:ids.map((x,i)=>pl.reduce((t,d)=>t+d.short[i],0)),
     risk:ids.map((x,i)=>pl.filter(d=>d.short[i]>0).length)};
+  /* 2.45.4: schodek celku = potřeba celkem − lidí celkem (jen oddělení s plánem); short je součet po odděleních */
+  tot.gap=planned?tot.months.map(v=>Math.max(0,tot.need-v)):ids.map(()=>null);
+  tot.nowGap=planned?Math.max(0,tot.need-tot.now):null;
   const riskIdx=tot.risk.map((r,i)=>r?i:-1).filter(i=>i>=0);
   let min=null;tot.months.forEach((v,i)=>{if(!min||v<min.v)min={v,m:ids[i]};});
   return {today,ids,depts,planned,tot,riskN:riskIdx.length,first:riskIdx.length?ids[riskIdx[0]]:"",min,

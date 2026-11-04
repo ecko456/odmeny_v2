@@ -34,6 +34,18 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 4. 11. 2026 (verze 2.45.4):
+
+- Uživatel: „Pod ‚Vývoj počtu lidí proti potřebě‘ máš řádek ‚Chybí‘ … uvádět čistě hodnoty ze
+  souhrnu celku … splněno zeleně 0 … pod potřebou červeně − číslo. A pod Oddělení po měsících
+  dej chybí souhrn podle oddělení“.
+  - Core `capPlanOutlook`: `tot.gap[]` a `tot.nowGap` = max(0, potřeba celku − lidé celku), jen
+    s plánem (jinak null). `tot.short` / `nowShort` zůstal součet po odděleních.
+  - UI `cpOverviewPdf`: řádek pod grafem z `gap` (0 zeleně, −N červeně), podklad ohroženého
+    měsíce v grafu podle `gap`; pod tabulkou oddělení řádek „chybí · součet po odděleních“.
+  - Testy: core 2.45.3 (gap, případ, kdy přebytek Obrobny vyrovná celek), `e2e_plankap`.
+    `ODM_VERSION` 2.45.4, data beze změny (40).
+
 Stav k 4. 11. 2026 (verze 2.45.3):
 
 - Uživatel (k PDF Plánu kapacit): „na první slide manažerský pohled na ohrožené měsíce nebo
@@ -1971,7 +1983,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.45 | `590779e` | Poslední změny za 3 dny s tlačítkem Vrátit zpět (jen ta změna, pozdější změny zůstanou) (data verze 40) |
 | 2.45.1 | `9b0dab2` | výkon v Kapacitách a zaškolení na odpracovaný den z Docházky a výkonů, PDF s výkonem i bez, hledání v Lidech podle ID |
 | 2.45.2 | `f72b98b` | PDF Kapacit a zaškolení jen za zvolenou stránku, Konce trestů bez vedoucích, se zkušeností a PDF, export Docházky za měsíc (Excel, PDF) |
-| 2.45.3 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit s manažerským přehledem na 1. straně (ohrožené měsíce, potřeba po měsících, křivka vývoje), roky barevně |
+| 2.45.3 | `da36d15` | PDF Plánu kapacit s manažerským přehledem na 1. straně (ohrožené měsíce, potřeba po měsících, křivka vývoje), roky barevně |
+| 2.45.4 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: PDF Plánu kapacit – chybí celkem pod grafem (0 zeleně, −N červeně), chybí po odděleních pod tabulkou |
 
 Verze 2.1 přidala:
 

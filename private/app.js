@@ -11875,7 +11875,8 @@ function cpOverviewPdf(P, o) {
   // trendová křivka: teď + měsíce, potřeba čárkovaně, ohrožené měsíce červeně, pod osou „chybí“
   let y = 392;
   P.text('Vývoj počtu lidí proti potřebě', X, y, 20, { b: true });
-  const pts = [{ m: '', l: 'teď', v: t.now, s: o.nowShort, r: o.nowShort > 0 }, ...o.ids.map((m, i) => ({ m, l: CP_MON[+m.slice(5, 7) - 1], v: t.months[i], s: t.short[i], r: t.risk[i] > 0 }))];
+  // r = celek pod potřebou (červeně v grafu), g = kolik celku chybí, s = součet chybějících po odděleních
+  const pts = [{ m: '', l: 'teď', v: t.now, g: t.nowGap, s: o.nowShort, r: t.nowGap > 0 }, ...o.ids.map((m, i) => ({ m, l: CP_MON[+m.slice(5, 7) - 1], v: t.months[i], g: t.gap[i], s: t.short[i], r: t.gap[i] > 0 }))];
   const CH = 380, T0 = y + 50, base = T0 + CH;
   const vmax = Math.max(1, t.now, t.need || 0, ...t.months);
   const vmin = Math.min(...t.months, t.need == null ? Infinity : t.need, t.now);
@@ -11901,7 +11902,7 @@ function cpOverviewPdf(P, o) {
     P.dot(cx(i), Y(p.v), 3.5, 'white');
     P.text(String(p.v), cx(i), Y(p.v) - 16, 16, { b: true, mono: true, c: p.r ? 'red' : 'ink', a: 'middle' });
     P.text(p.l, cx(i), base + 26, 14, { b: i === 0 || p.r, c: p.m ? cpYearC(p.m) : 'ink', a: 'middle' });
-    if (o.planned) P.text(p.s ? `−${p.s}` : '·', cx(i), base + 96, 15, { b: !!p.s, mono: true, c: p.s ? 'red' : 'faint', a: 'middle' });
+    if (o.planned) P.text(p.g ? `−${p.g}` : '0', cx(i), base + 96, 15, { b: true, mono: true, c: p.g ? 'red' : 'green', a: 'middle' });
   });
   cpYearAxis(P, pts, X, cw, base + 36);
   if (o.planned) P.text('chybí', X - 10, base + 96, 12, { c: 'muted', a: 'end' });
@@ -11915,7 +11916,7 @@ function cpOverviewPdf(P, o) {
   // záhlaví: teď a měsíce v barvě roku
   pts.forEach((p, i) => P.text(p.l, X + LW + gw * (i + 0.5), y + 14, 13, { b: true, c: p.m ? cpYearC(p.m) : 'ink', a: 'middle' }));
   y += 26;
-  const rh = Math.max(26, Math.min(48, (P.PH - 140 - y) / Math.max(1, rows.length + 1)));
+  const rh = Math.max(26, Math.min(48, (P.PH - 200 - y) / Math.max(1, rows.length + 1)));
   rows.forEach(d => {
     P.text(P.split(d.name, 15, LW - 14, { b: true })[0], X, y + rh / 2 + 2, 15, { b: true });
     P.text(d.set ? `potřeba ${d.need}` : 'bez plánu', X, y + rh / 2 + 18, 11, { c: d.set ? 'muted' : 'faint' });
@@ -11927,6 +11928,14 @@ function cpOverviewPdf(P, o) {
     });
     y += rh;
   });
+  // chybí po odděleních: součet lidí, kteří chybějí v odděleních pod potřebou
+  if (o.planned) {
+    P.line(X, y + 4, R, y + 4, 'line', 1);
+    P.text('chybí', X, y + 30, 15, { b: true });
+    P.text('součet po odděleních', X, y + 46, 11, { c: 'muted' });
+    pts.forEach((p, i) => P.text(p.s ? `−${p.s}` : '0', X + LW + gw * (i + 0.5), y + 34, 15, { b: true, mono: true, c: p.s ? 'red' : 'green', a: 'middle' }));
+    y += 56;
+  }
   // legenda
   y += 34;
   let lx = X;
