@@ -2673,7 +2673,7 @@ tr.dv-click:hover td { background: var(--surface-2); }
    Vzhled „Sklo“ (2.47): jen html[data-look="glass"], původní vzhled nahoře zůstává beze změny.
    Tokeny (barvy, písmo) jsou v static/lock.css. Papíry reportů (.ctr-paper, .dr-*) zůstávají bílé.
    ========================================================================== */
-:root[data-look="glass"] .side { background: rgba(255, 255, 255, .055); border-right-color: var(--glass-line); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
+:root[data-look="glass"] .side { background: rgba(20, 22, 28, .62); border-right-color: var(--glass-line); }
 :root[data-look="glass"] .nav button { border-radius: 999px; color: rgba(255, 255, 255, .72); }
 :root[data-look="glass"] .nav button:hover { background: rgba(255, 255, 255, .1); color: #fff; }
 :root[data-look="glass"] .nav button[aria-current="true"] { background: var(--acc-grad); color: #fff; box-shadow: var(--acc-glow); }
@@ -2690,7 +2690,9 @@ tr.dv-click:hover td { background: var(--surface-2); }
 :root[data-look="glass"] .stat,
 :root[data-look="glass"] .tile,
 :root[data-look="glass"] .banner,
-:root[data-look="glass"] .tk-row { background: var(--glass); border-color: var(--glass-line); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); box-shadow: var(--shadow-2); }
+:root[data-look="glass"] .tk-row { background: var(--glass); border-color: var(--glass-line); box-shadow: var(--shadow-2); }
+/* Pozor: backdrop-filter dělá z prvku obal pro position: fixed potomky (přetahování v Shortage,
+   plovoucí popisky), proto ho karty a tabulky nemají; za nimi je stejně jen plynulý přechod. */
 :root[data-look="glass"] .card, :root[data-look="glass"] .table-card { border-radius: 24px; }
 :root[data-look="glass"] .stat { border-radius: 20px; background: radial-gradient(circle at 86% 30%, rgba(255, 120, 30, .14) 0%, rgba(255, 255, 255, .04) 62%), rgba(18, 20, 26, .42); }
 :root[data-look="glass"] .stat::before { height: 2px; opacity: .9; }
@@ -2715,7 +2717,9 @@ tr.dv-click:hover td { background: var(--surface-2); }
 :root[data-look="glass"] .eyebrow { color: var(--acc-2); }
 /* monitor: boční panel jako plovoucí skleněná deska */
 @media screen and (min-width: 901px) {
-  :root[data-look="glass"] .shell { grid-template-columns: 268px minmax(0, 1fr); }
+  :root[data-look="glass"] .shell { grid-template-columns: 254px minmax(0, 1fr); }
+  :root[data-look="glass"] .main { padding-left: clamp(18px, 2vw, 30px); padding-right: clamp(18px, 2vw, 30px); }
+  :root[data-look="glass"] .side { background: rgba(255, 255, 255, .055); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); }
   :root[data-look="glass"] .side { top: 14px; height: calc(100vh - 28px); height: calc(100dvh - 28px); margin: 14px 0 14px 14px; border: 1px solid var(--glass-line); border-radius: 30px;
     box-shadow: 0 24px 50px -8px rgba(0, 0, 0, .5), inset 0 1.5px 2px rgba(255, 255, 255, .28), inset 0 0 12px rgba(255, 255, 255, .04); }
   :root[data-look="glass"] .period-box { background: var(--glass-soft); border-color: var(--glass-line); }
@@ -2737,3 +2741,5 @@ tr.dv-click:hover td { background: var(--surface-2); }
   :root[data-look="glass"] .fab { background: var(--acc-grad); box-shadow: 0 16px 30px -12px rgba(226, 79, 0, .7), inset 0 1px 0 rgba(255, 255, 255, .3); }
   :root[data-look="glass"] .fab .nav-dot { box-shadow: 0 0 0 2px #d94f00; }
 }
+/* papíry reportů podle vzoru (Kapacity a zaškolení, Report docházky) mají dál písma Plex */
+:root[data-look="glass"] .ctr-paper, :root[data-look="glass"] .dr-paper { --body: "Plex", "Segoe UI", system-ui, -apple-system, Arial, sans-serif; --disp: "Barlow SC", "Segoe UI Semibold", system-ui, sans-serif; font-family: var(--body); }

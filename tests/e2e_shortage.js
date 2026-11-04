@@ -349,8 +349,14 @@ for i in (0, 3): d[i].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2]+f'
   await saved(page);
   // běžná položka nejde nad TOP SHORTAGE
   const seventh = (await ids())[6];
-  const t0 = await rowBox(0);
+  // zdroj i cíl musí být vidět najednou (u okraje okna se stránka při tažení sama posouvá,
+  // ve vzhledu Sklo jsou řádky vyšší): vyšší okno a cíl doprostřed
+  const vp = page.viewportSize();
+  await page.setViewportSize({ width: vp.width, height: 1700 });
+  await page.evaluate(() => document.querySelectorAll('#shView tbody tr')[0].scrollIntoView({ block: 'center' }));
+  const t0 = await page.locator('#shView tbody tr').nth(0).boundingBox();
   await drag(6, t0.y + 4);
+  await page.setViewportSize(vp);
   await page.waitForFunction(e => S.shortage.lists[0].items[4].ean === e, seventh);
   check((await ids()).slice(0, 4).join() === ORDERED.slice(0, 4).map(x => x.ean).join(), `TOP zůstanou nahoře, běžná položka skončí hned pod nimi: ${(await ids()).slice(0, 6)}`);
   const afterTop = await ids();

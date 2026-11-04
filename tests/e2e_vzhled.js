@@ -40,7 +40,7 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   await page.evaluate(() => document.fonts.ready);
   const app = await page.evaluate(() => ({
     font: getComputedStyle(document.body).fontFamily, jakarta: document.fonts.check('600 16px Jakarta'),
-    side: getComputedStyle(document.querySelector('.side')).borderRadius, card: getComputedStyle(document.querySelector('.stat')).backdropFilter,
+    side: getComputedStyle(document.querySelector('.side')).borderRadius, card: getComputedStyle(document.querySelector('.side')).backdropFilter,
     active: getComputedStyle(document.querySelector('#nav [aria-current="true"]')).backgroundImage,
   }));
   check(/Jakarta/.test(app.font) && app.jakarta && app.side === '30px' && /blur/.test(app.card) && /gradient/.test(app.active), `aplikace ve skle: ${JSON.stringify(app)}`);
