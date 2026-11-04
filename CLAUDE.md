@@ -73,6 +73,9 @@ Stav k 4. 11. 2026 (verze 2.46):
     7,5 h místo 8 h, nový `tests/e2e_ukoly.js`, `e2e_mobil` (16 položek menu, Úkoly v plovoucím
     menu), `e2e_upgrade_prev` 2.41 → 2.46 (`ADDED` tasks, úkol v kroku 5), `test_odmeny` (426 pro 40).
     `ODM_VERSION` 2.46.
+  - `e2e_matice` měl pevné plnění normy 84,9 % z ukázkových dat a od listopadu padal i na 2.45.4
+    (ověřeno); teď bere `normPctOf(productionOf(…))`. Pozor: test končí `process.exit(1)`
+    a chyby vypisuje bez slova PROBLÉMY, hlídej návratový kód.
 
 Stav k 4. 11. 2026 (verze 2.45.4):
 

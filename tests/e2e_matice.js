@@ -581,19 +581,22 @@ async function nav(page, view) {
   await page.click('#nav [data-view="prehled"]');
   await page.waitForSelector('#ovBody tr[data-key="novak|martin"] .col-ncut, #ovBody tr[data-key="novak|martin"] td');
   const ovCut = await page.evaluate(() => { const r = allRows().find(x => x.e.key === 'novak|martin'); return [r.ncut.norm, r.ncut.pct]; });
-  check(JSON.stringify(ovCut) === JSON.stringify([84.9, 10]), `Novák v přehledu: ${JSON.stringify(ovCut)}`);
+  // plnění normy podle evidence práce ukázky (závisí na měsíci ukázkových dat, proto se nebere pevné číslo)
+  const NORM = await page.evaluate(() => normPctOf(productionOf('novak|martin')));
+  const NORMT = String(NORM).replace('.', ',');
+  check(NORM > 60 && NORM <= 90 && JSON.stringify(ovCut) === JSON.stringify([NORM, 10]), `Novák v přehledu: ${JSON.stringify(ovCut)} (plnění ${NORM})`);
   check(/Srážka ze mzdy/.test(await page.textContent('#view-prehled thead')) && /−10 %/.test(await page.textContent('#ovBody tr[data-key="novak|martin"]')), 'sloupec Srážka ze mzdy v přehledu');
   await page.waitForSelector('#wageAlert .wage-alert');
   check(/Novák Martin/.test(await page.textContent('#wageAlert')), 'upozornění na srážku za neproduktivitu');
   await page.click('#wageOpen');
   await page.waitForSelector('#dlg[open] [data-wageok^="n:"]');
-  check(/neproduktivita, plnění normy 84,9 %/.test(await page.textContent('#wageDlg')) && /automaticky/.test(await page.textContent('#wageDlg')), 'seznam srážek ze mzdy obsahuje srážku za neproduktivitu');
+  check(new RegExp(`neproduktivita, plnění normy ${NORMT} %`).test(await page.textContent('#wageDlg')) && /automaticky/.test(await page.textContent('#wageDlg')), 'seznam srážek ze mzdy obsahuje srážku za neproduktivitu');
   await page.screenshot({ path: `${shots}/11c-normcut-list.png` });
   await page.click('#dlg[open] [data-wageok^="n:"]');
   await page.waitForFunction(() => !document.querySelector('#dlg[open] [data-wageok^="n:"]'));   // ruční srážky můžou v seznamu zůstat
   await page.click('#dlgCancel');
   const ncDone = await page.evaluate(m => S.normCutDone[m], demoMonth);
-  check(ncDone && ncDone['novak|martin'] && ncDone['novak|martin'].pct === 10 && ncDone['novak|martin'].norm === 84.9 && ncDone['novak|martin'].by === 'Vedoucí dílny', `zpracováno: ${JSON.stringify(ncDone)}`);
+  check(ncDone && ncDone['novak|martin'] && ncDone['novak|martin'].pct === 10 && ncDone['novak|martin'].norm === NORM && ncDone['novak|martin'].by === 'Vedoucí dílny', `zpracováno: ${JSON.stringify(ncDone)}`);
   check(!/Novák Martin/.test(await page.textContent('#wageAlert')), 'po zpracování Novák z upozornění zmizí');
   // v detailu člověka: zpracováno, zrušit vrátí upozornění
   await page.click('#nav [data-view="lide"]');
@@ -609,7 +612,7 @@ async function nav(page, view) {
   await saved(page);
   const ncLog = await page.evaluate(() => S.log.map(e => e.text));
   check(ncLog.some(t => /^Skupina CNC, srážky ze mzdy za neproduktivitu: vypnuto → do 50 % → 50 %/.test(t) || /^Skupina CNC, srážky ze mzdy za neproduktivitu: .*do 90 % → 10 %/.test(t)), `historie: pásma (${ncLog.filter(t => /neproduktiv/.test(t)).join(' | ')})`);
-  check(ncLog.some(t => /^Srážka ze mzdy za neproduktivitu zpracována: Novák Martin – plnění normy 84,9 %, srážka 10 % ze mzdy/.test(t)), 'historie: srážka za neproduktivitu zpracována');
+  check(ncLog.some(t => t.startsWith(`Srážka ze mzdy za neproduktivitu zpracována: Novák Martin – plnění normy ${NORMT} %, srážka 10 % ze mzdy`)), 'historie: srážka za neproduktivitu zpracována');
   await page.click('#nav [data-view="matice"]');
   await page.click('[data-mxtab="groups"]');
   await page.click('#posList [data-selpos="p_cnc"]');

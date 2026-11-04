@@ -2534,7 +2534,7 @@ function attRehoursHtml(p) {
   if (!dvOwns(p.id)) return '';
   const r = dvRehours(false);
   if (!r.cells || !r.months.includes(p.id)) return '';
-  return `<div class="note w att-rehours"><span><b>Hodiny nejsou zaokrouhlené.</b> ${r.cells} ${r.cells === 1 ? 'den' : r.cells <= 4 ? 'dny' : 'dní'} u ${r.people} ${lidiN(r.people)} se počítalo před zaokrouhlením příchodů a odchodů na směnu (6:00–14:00, 14:00–22:00, čtvrthodiny, nejvýš 7,5 h).</span> <button class="btn small" type="button" data-attrehours>Přepočítat hodiny</button></div>`;
+  return `<div class="note w att-rehours"><span><b>Hodiny nejsou zaokrouhlené.</b> ${r.cells} ${r.cells === 1 ? 'den' : r.cells <= 4 ? 'dny' : 'dní'} u ${r.people} ${r.people === 1 ? 'člověka' : 'lidí'} se počítalo před zaokrouhlením příchodů a odchodů na směnu (6:00–14:00, 14:00–22:00, čtvrthodiny, nejvýš 7,5 h).</span> <button class="btn small" type="button" data-attrehours>Přepočítat hodiny</button></div>`;
 }
 
 function showImport(res, ask) {
