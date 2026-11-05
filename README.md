@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.55
+
+- **Úvodní animace přihlášení.** Na tmavé obrazovce s mřížkou obzoru, zaměřovačem a údaji
+  o letu přiletí ohnivá koule, narazí do středu, rozletí se na jiskry s rázovou vlnou
+  a z nárazu se složí přihlašovací panel. Trvá asi 2 s.
+- Celá animace jen jednou za otevření karty prohlížeče. Po zamknutí aplikace se panel jen
+  krátce složí.
+- Klepnutí nebo psaní (PIN) animaci přeskočí. Přihlášení se mezitím načítá, nic se nezdrží.
+- S nastavením „omezit pohyb“ v systému se animace neukazuje.
+- Data beze změny.
+
 ## Co je nového ve verzi 2.54
 
 - **Jen vzhled Sklo.** Volba „Vzhled aplikace“ v Nastavení je pryč. Kdo měl na zařízení

@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.55):
+
+- Uživatel: „elegantní loading … při načítání přihlašovacího panelu … letící ohnivá koule co se
+  rozletí nárazem a vznikne přihlašovací panel … moderní futuristické a pro letecký průmysl“.
+  - `static/intro.js` (v `<head>` index.php za look.js): `html.intro-on` + `intro-full|short`
+    skryje `.lock-card`, plátno `.intro-canvas` (pointer-events none): HUD (mřížka obzoru,
+    zaměřovač na středu panelu, telemetrie), koule po Bézierově křivce z pravého horního rohu
+    (`T_HIT` 1,3 s), náraz = záblesk, 2 rázové vlny, jiskry, uhlíky, kouř, otřes; `intro-reveal`
+    spustí CSS složení panelu (`introCard`: clip-path kruh, rozmazání, okraj a skenovací linka).
+  - Plná jednou za kartu (`sessionStorage odmeny.intro.v1:<adresa>`), pak `short` (0,6 s),
+    `prefers-reduced-motion` = `none`. Přeskočení: pointerdown, keydown, skrytá karta;
+    pojistka 4 s. `intro-reveal` zůstává (jinak by se znovu spustila animace `rise`).
+    `window.OdmIntro {mode, done, skip}`.
+  - Test `tests/e2e_intro.js` (snímky po snímcích). `ODM_VERSION` 2.55, data beze změny (43).
+
 Stav k 5. 11. 2026 (verze 2.54):
 
 - Uživatel (k hodnocení vzhledu: moc oranžové, barvy v Docházce, kontrast, malé písmo,
@@ -2218,7 +2233,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.51 | `6048aa2` | ruční úpravy docházky s důvodem, zámky dnů a měsíce (nahrání je nepřepíše), širší rozložení, požadavky pracovníka v Úkolech (data verze 42) |
 | 2.52 | `3f22515` | zkušební doba 3 měsíce od prvního evidovaného dne práce, ikona u jména s datem nástupu a konce |
 | 2.53 | `dc2dcf8` | plovoucí menu na telefonu s Hlavní stránkou a Ostatní, zkrácený pátek jen u odpolední sám od sebe, uzamčení vyřízeného protokolu Servisu (data verze 43) |
-| 2.54 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: jen vzhled Sklo (volba v Nastavení pryč), méně oranžové, lepší kontrast, čitelnější kalendář Docházky, tlumené pozadí |
+| 2.54 | `3152b80` | jen vzhled Sklo (volba v Nastavení pryč), méně oranžové, lepší kontrast, čitelnější kalendář Docházky, tlumené pozadí |
+| 2.55 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvodní animace přihlášení (ohnivá koule, náraz, složení panelu), přeskočí se klepnutím nebo psaním |
 
 Verze 2.1 přidala:
 
@@ -2680,6 +2696,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_rucni.js` (2.51): ruční úpravy docházky, zámky, nové nahrání, šířka, požadavek pracovníka v Úkolech, telefon;
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
+  - `e2e_intro.js` (2.55): úvodní animace zámku (plná, krátká, omezit pohyb, přeskočení, přihlášení během ní, telefon);
   - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);
