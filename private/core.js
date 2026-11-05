@@ -5560,6 +5560,67 @@ function attEditChanges(a,b,add){
   });
 }
 
+/* ==========================================================================
+   ZKUŠEBNÍ DOBA (verze 2.52)
+   Začátek = první den, kdy o člověku evidujeme, že pracoval: hodiny v docházce (bez kódu
+   nepřítomnosti) nebo příchod v souboru Docházka a výkony. Zkušební doba je vždy 3 měsíce
+   (konec = stejný den o 3 měsíce později − 1 den, 1. 10. → 31. 12.; když takový den
+   v měsíci není, poslední den měsíce, 31. 1. → 30. 4.).
+   Kdo má první záznam už v prvním dni evidence vůbec, mohl u nás pracovat dřív: začátek
+   neznáme a zkušební dobu neukazujeme. Počítá se z dat, nic se neukládá.
+   ========================================================================== */
+const PROB_MONTHS=3;
+let probCache={sig:"",map:null,first:""};
+function probSig(){
+  const pres=((S.workAudit||{}).dv||{}).pres||{};
+  return Object.keys(S.periods||{}).sort().map(m=>m+":"+(S.periods[m].at||0)+":"+Object.keys(S.periods[m].rows||{}).length).join(",")+"|"+Object.keys(pres).length+"|"+Object.keys(S.employees||{}).length+"|"+Object.values(S.employees||{}).map(e=>e.wid||"").join(",").length+"|"+JSON.stringify(S.attEdits||{}).length;
+}
+/** Mapa klíč člověka → první evidovaný den práce, a první den evidence vůbec. */
+function probStarts(){
+  const sig=probSig();
+  if(probCache.map&&probCache.sig===sig)return probCache;
+  const map=new Map();let first="";
+  const put=(k,iso)=>{if(!k||!iso)return;const o=map.get(k);if(!o||iso<o)map.set(k,iso);if(!first||iso<first)first=iso;};
+  Object.values(S.periods||{}).forEach(p=>{
+    (p.days||[]).forEach((iso,i)=>{
+      Object.entries(p.rows||{}).forEach(([k,r])=>{if((+r.h[i]||0)>0&&!r.c[i])put(k,iso);});
+    });
+  });
+  const pres=((S.workAudit||{}).dv||{}).pres||{};
+  const isos=Object.keys(pres).sort();
+  if(isos.length){
+    const wmap=dvWidMap();
+    isos.forEach(iso=>Object.entries(pres[iso]||{}).forEach(([wid,v])=>{
+      if(!v||v[0]==null)return;
+      const e=wmap.get(wid);
+      if(e)put(e.key,iso);else if(!first||iso<first)first=iso;
+    }));
+  }
+  probCache={sig,map,first};
+  return probCache;
+}
+/** Konec zkušební doby: o PROB_MONTHS měsíců později − 1 den, bez takového dne konec měsíce. */
+function probEnd(start){
+  const [y,m,d]=start.split("-").map(Number);
+  const last=new Date(Date.UTC(y,m-1+PROB_MONTHS+1,0)).getUTCDate();
+  // den, který v cílovém měsíci není (31. 1. → duben), = poslední den měsíce, jinak o den dřív
+  return d>last?isoOf(Date.UTC(y,m-1+PROB_MONTHS,last)):isoOf(Date.UTC(y,m-1+PROB_MONTHS,d)-864e5);
+}
+/** Zkušební doba člověka k dnešku: null = už skončila, začátek neznáme nebo nemá záznam. */
+function probationOf(e,today){
+  if(!e)return null;
+  const P=probStarts(),start=P.map.get(e.key);
+  if(!start||start<=P.first)return null;
+  const end=probEnd(start);
+  today=today||todayIso();
+  if(today>end)return null;
+  return {start,end,left:tkDays(today,end)};
+}
+function probText(x){
+  const n=x.left;
+  return "Ve zkušební době · u nás pracuje od "+dayText(x.start)+" · zkušební doba končí "+dayText(x.end)+(n===0?" (dnes)":n===1?" (zítra)":" (za "+n+(n<=4?" dny)":" dní)"));
+}
+
 function endDeptOf(e){return isLead(e)?"Vedoucí":empDept(e)||"Bez skupiny";}
 function endsOverview(today,n){
   today=today||todayIso();n=n||12;

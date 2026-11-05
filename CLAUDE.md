@@ -34,6 +34,23 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.52):
+
+- Uživatel: „funkci, která rozpozná kdy evidujeme první záznam o tom, že u nás pracovník pracuje.
+  A vždy tam bude ikona … ve zkušebce … když na tu ikonu najedu … od kdy u nás pracuje a kdy mu
+  končí zkušební doba. Zkušební doba je vždy na 3 měsíce.“
+  - Core (před `endDeptOf`): `probStarts()` (první den s hodinami bez kódu v `S.periods`, nebo
+    s příchodem v `dv.pres` přes `dvWidMap`; `first` = první den evidence vůbec; cache podle
+    `probSig`), `probEnd` (+ 3 měsíce − 1 den, chybějící den = konec měsíce), `probationOf(e,
+    today)` (null: bez záznamu, začátek = první den evidence vůbec, po konci), `probText`.
+    **Nic se neukládá**, data beze změny (42).
+  - UI: `probIcon(e)` (`.prob-ic`, `.soon` posledních 14 dní, `title` + `data-prob`, na dotyku
+    toast v globálním click handleru) v seznamu Lidí, detailu (+ `.prob-line`), profilu, Přehledu,
+    Docházce a Matici (`mxWhoHtml`). `I.hourglass`.
+  - Kdyby uživatel chtěl začátek opravit ručně (lidé z doby před evidencí), přidat pole
+    u člověka (to už by byla změna dat).
+  - Testy: core „Zkušební doba (2.52)“, `e2e_rucni` krok 9. `ODM_VERSION` 2.52.
+
 Stav k 5. 11. 2026 (verze 2.51):
 
 - Uživatel: „možnost v docházce úpravy hodin a vždy to bude vyžadovat důvod úpravy … ať pak už
@@ -2156,7 +2173,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.48 | `f4f8d79` | kontrola jmen při nahrání docházky postaru (prohozené jméno a příjmení, překlep, ruční přiřazení), nikdo nový se nepřidá |
 | 2.49 | `9580809` | KPI Výkonnost na osobu – odpracované dny přepočtené na směnu 7,5 h (kratší den = část dne) |
 | 2.50 | `44ea59f` | Docházka bez nahrávání, barvy dnů (ranní, odpolední, přesčas), Excel za měsíc v jednom listu po skupinách směn s barvami |
-| 2.51 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ruční úpravy docházky s důvodem, zámky dnů a měsíce (nahrání je nepřepíše), širší rozložení, požadavky pracovníka v Úkolech (data verze 42) |
+| 2.51 | `6048aa2` | ruční úpravy docházky s důvodem, zámky dnů a měsíce (nahrání je nepřepíše), širší rozložení, požadavky pracovníka v Úkolech (data verze 42) |
+| 2.52 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: zkušební doba 3 měsíce od prvního evidovaného dne práce, ikona u jména s datem nástupu a konce |
 
 Verze 2.1 přidala:
 

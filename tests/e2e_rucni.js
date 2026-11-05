@@ -203,12 +203,34 @@ const KEY = 'adamek|ales';
   await page.click('[data-tkperson]');
   await page.waitForSelector('#view-lide.on .tk-reqcard');
 
+  // 9) zkušební doba (2.52): nový člověk s prvním příchodem 2. 11. 2026
+  await page.evaluate(() => {
+    S.employees['dusek|david'] = { key: 'dusek|david', last: 'Dušek', first: 'David', positionId: 'g_brus', shift: 'R', note: '', wid: '77' };
+    S.workAudit.dv.pres = { '2026-11-02': { '77': [360, 840] } };
+    save(); renderAll();
+  });
+  await saved(page);
+  await page.click('#nav [data-view="lide"]');
+  const probT = await page.$eval('.list [data-key="dusek|david"] .prob-ic', el => el.getAttribute('title')).catch(() => '');
+  check(probT === 'Ve zkušební době · u nás pracuje od 2. 11. 2026 · zkušební doba končí 1. 2. 2027 (za 88 dní)', `zkušební doba: ${probT}`);
+  check(!(await page.$(`.list [data-key="${KEY}"] .prob-ic`)), 'kdo je v evidenci od začátku, ikonu nemá');
+  await page.click('.list [data-key="dusek|david"]');
+  await page.waitForSelector('#lDetail h2 .prob-ic');
+  check(/u nás pracuje od 2\. 11\. 2026/.test(await text(page, '#lDetail .prob-line')), 'detail ukazuje zkušební dobu');
+  await page.hover('.list [data-key="dusek|david"] .prob-ic');
+  await page.screenshot({ path: path.join(shots, '07-zkusebni-doba.png') });
+  await page.evaluate(() => showView('matice'));
+  await page.waitForTimeout(200);
+  check(await page.$$eval('#view-matice .prob-ic', l => l.length) === 1, 'ikona i v Matici (jen u nového člověka)');
+
   // 8) telefon
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => showView('dochazka'));
   await page.waitForTimeout(300);
   check(await overflow(page) <= 0, 'telefon: docházka bez přetečení');
   await page.screenshot({ path: path.join(shots, '06-telefon.png'), fullPage: true });
+  await page.evaluate(() => showView('lide'));
+  await page.waitForTimeout(200);
   await browser.close();
   if (problems.length) { console.log('PROBLÉMY:\n' + problems.join('\n')); process.exit(1); }
   console.log('ruční úpravy docházky a požadavky ok');

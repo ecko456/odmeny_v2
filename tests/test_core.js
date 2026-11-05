@@ -4591,6 +4591,39 @@ test('Docházka (2.51): ruční úprava s důvodem, zámek dne a měsíce, nové
   return null;
 });
 
+test('Zkušební doba (2.52): první den práce z docházky a příchodů, 3 měsíce, začátek evidence se neukazuje', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    st.positions = [mkPos('g1', 'Brus', [])];
+    const emp = (k, wid) => { st.employees[k] = { key: k, last: k.toUpperCase(), first: 'X', positionId: 'g1', shift: 'R', note: '', wid }; };
+    emp('a', '1'); emp('b', '2'); emp('c', '3'); emp('d', '4'); emp('e', '5');
+    S = sanitizeState(st);
+    // říjen postaru: a od 1. 10. (začátek evidence), b od 15. 10., c jen s kódem 15. 10. a hodinami 20. 10.
+    const days = ['2026-10-01', '2026-10-15', '2026-10-20'];
+    S.periods['2026-10'] = { id: '2026-10', y: 2026, m: 10, days, codes: {}, file: 'x', at: 1, headerRow: 1, rows: {
+      a: { first: 'X', last: 'A', h: [7.5, 7.5, 7.5], c: [null, null, null] },
+      b: { first: 'X', last: 'B', h: [0, 7.5, 7.5], c: [null, null, null] },
+      c: { first: 'X', last: 'C', h: [0, 8, 6], c: [null, 'D', null] } } };
+    // listopad jen z příchodů: d od 3. 11.
+    S.workAudit.dv.pres = { '2026-11-03': { '4': [360, 840], '9': [360, 840] } };
+    const t = '2026-11-05';
+    const ends = ['2026-10-01', '2026-10-15', '2026-11-30', '2026-01-31', '2026-12-31'].map(probEnd);
+    const p = k => { const x = probationOf(S.employees[k], t); return x && [x.start, x.end, x.left]; };
+    return JSON.stringify({ ends, a: p('a'), b: p('b'), c: p('c'), d: p('d'), e: p('e'), late: probationOf(S.employees.b, '2027-01-15'), last: !!probationOf(S.employees.b, '2027-01-14'),
+      text: probText(probationOf(S.employees.b, '2027-01-13')) });
+  })()`));
+  assert.deepStrictEqual(out.ends, ['2026-12-31', '2027-01-14', '2027-02-28', '2026-04-30', '2027-03-30']);
+  assert.strictEqual(out.a, null, 'první den evidence vůbec: začátek neznáme');
+  assert.deepStrictEqual(out.b, ['2026-10-15', '2027-01-14', 70]);
+  assert.deepStrictEqual(out.c, ['2026-10-20', '2027-01-19', 75], 'den s kódem nepřítomnosti není práce');
+  assert.deepStrictEqual(out.d, ['2026-11-03', '2027-02-02', 89], 'příchod ze souboru Docházka a výkony');
+  assert.strictEqual(out.e, null, 'bez záznamu');
+  assert.deepStrictEqual([out.late, out.last], [null, true], 'po konci zkušební doby ikona zmizí');
+  assert.strictEqual(out.text, 'Ve zkušební době · u nás pracuje od 15. 10. 2026 · zkušební doba končí 14. 1. 2027 (zítra)');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

@@ -114,6 +114,14 @@ function setWidths(root = document) { $$('[data-w]', root).forEach(element => { 
 
 /* Název v exportech (PDF, záloha): uživatel chce „HALA 2“ místo názvu aplikace (2.13). */
 const EXPORT_NAME = 'HALA 2';
+/* Zkušební doba (2.52): ikona u jména, po najetí (na telefonu klepnutím) od kdy u nás pracuje
+   a kdy končí zkušební doba. */
+function probIcon(e) {
+  const x = S && e ? probationOf(e) : null;
+  if (!x) return '';
+  const t = probText(x);
+  return ` <span class="prob-ic${x.left <= 14 ? ' soon' : ''}" title="${esc(t)}" aria-label="${esc(t)}" role="img" data-prob="${esc(t)}">${I.hourglass}</span>`;
+}
 const I = {
   undo: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>',
   tab: '<svg class="icon tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8.5c0-2 1.6-3.5 3.5-3.5h5C16.4 5 18 6.5 18 8.5V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19z"/><path d="M6 10h12M10 14.5c1.3-1 2.7-1 4 0"/></svg>',
@@ -135,6 +143,7 @@ const I = {
   grid: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
   chart: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M6.5 16v-4M11 16V7.5M15.5 16v-6M20 16V5"/></svg>',
   warn: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
+  hourglass: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10M7 21h10M8 3c0 4 4 5.5 4 9s-4 5-4 9M16 3c0 4-4 5.5-4 9s4 5 4 9"/></svg>',
   unlock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.8"/></svg>',
   lock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>',
   camera: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.4-2h5.6l1.4 2h2.3A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.5"/></svg>',
@@ -1471,14 +1480,14 @@ function renderPeople(opts = {}) {
     if (r === 1) {
       return `${sep}<button class="list-item lead-item${e === held ? ' held' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       <span class="lvl lead" title="Vedoucí pracovník" aria-hidden="true">V</span>
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${out}</b><span title="${esc(e.lead.join(', '))}">${e.lead.length ? esc(e.lead.join(', ')) : '<span class="warn-t">bez oddělení</span>'}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${probIcon(e)}${out}</b><span title="${esc(e.lead.join(', '))}">${e.lead.length ? esc(e.lead.join(', ')) : '<span class="warn-t">bez oddělení</span>'}</span></span>
       <span class="tag">vedoucí</span></button>`;
     }
     const ev = evaluate(e, p);
     const L = ev.L;
     return `${sep}<button class="list-item${e.excluded ? ' out' : ''}${e === held ? ' held' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       ${L.pct != null || L.n ? `<span class="lvl l${L.n}" title="Průměrná úroveň dovedností">${L.n}</span>` : '<span class="lvl l0">?</span>'}
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${out}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}${q && e.wid ? ` · ID ${esc(String(e.wid))}` : ''}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${probIcon(e)}${out}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}${q && e.wid ? ` · ID ${esc(String(e.wid))}` : ''}</span></span>
       ${e.excluded ? '<span class="tag">vyřazen</span>' : `<span class="num small list-val" title="Tabáky za vybraný měsíc">${nf(ev.total, 0)}</span>`}
     </button>`;
   }).join('') : filtered && all.length ? emptyState('Nikdo neodpovídá filtru', 'Zkus jiné oddělení nebo stav, nebo filtr zruš.') : emptyState('Nikdo tu není', 'Nahraj docházku, nebo přidej člověka ručně.');
@@ -1633,7 +1642,7 @@ function renderPersonDetail() {
     <div class="stack">
     <div class="card">
       <div class="card-head">
-        <div><p class="eyebrow">Zaměstnanec</p><h2>${esc(e.last)} ${esc(e.first)}</h2></div>
+        <div><p class="eyebrow">Zaměstnanec</p><h2>${esc(e.last)} ${esc(e.first)}${probIcon(e)}</h2>${probationOf(e) ? `<p class="small muted prob-line">${esc(probText(probationOf(e)))}</p>` : ''}</div>
         <div class="row gap">
           <button class="btn small" type="button" data-profile="${esc(e.key)}">Profil a historie</button>
           ${e.excluded ? `<button class="btn small" type="button" data-include="${esc(e.key)}">Vrátit do seznamu</button>` : `<button class="btn sec small" type="button" data-exclude="${esc(e.key)}" title="Přestane se hodnotit, data zůstanou">Vyřadit</button>`}
@@ -2611,7 +2620,7 @@ function renderAttendance() {
     statTile('Svátků ve všední den', meta.hols, meta.hols ? 'nepočítají se do fondu' : 'žádné'),
   ].join('')}</div>
   <div class="table-card"><table class="stack att-table${all ? ' att-all' : ''}"><thead><tr><th>Zaměstnanec</th><th class="cal att-dayhead"><span class="sr-only">Měsíc</span><div class="calwrap"><div class="calrow">${dmeta.map(d => { const on = all || (L && L.days.includes(d.iso)); return `<button type="button" class="cell att-dl${on ? ' on' : ''}${d.weekend || d.hol ? ' we' : ''}" data-attlock="${esc(d.iso)}" aria-pressed="${!!on}"${all ? ' disabled' : ''} title="${esc(`${DOW[d.dow]} ${d.d}.${d.m}.: ${on ? 'uzamčeno, klepnutím odemkneš' : 'klepnutím uzamkneš den'}`)}" aria-label="${esc(`${on ? 'Odemknout' : 'Uzamknout'} den ${d.d}.${d.m}.`)}">${on ? I.lock : I.unlock}</button>`; }).join('')}</div></div></th><th class="r">Dny</th><th class="r">Hodiny</th><th class="r">Víkend</th></tr></thead><tbody>${rows.map(x => `<tr>
-    <td data-label="Zaměstnanec" class="name"><div class="who"><b>${esc(x.r.last)} ${esc(x.r.first)}</b></div></td>
+    <td data-label="Zaměstnanec" class="name"><div class="who"><b>${esc(x.r.last)} ${esc(x.r.first)}${probIcon(S.employees[x.k])}</b></div></td>
     <td data-label="Měsíc" class="cal" data-attkey="${esc(x.k)}">${calStrip(x.a, S.employees[x.k] || null, { m: p.id, key: x.k })}</td>
     <td data-label="Dny" class="r num">${x.a.workDays}</td>
     <td data-label="Hodiny" class="r num">${nf(x.a.workHours)}</td>
@@ -2886,7 +2895,7 @@ function renderProduction() {
   ].join('')}</div>
   <div class="table-card"><table class="stack"><thead><tr><th>Zaměstnanec</th><th class="r">Kusy</th><th class="r">Odprac. dny</th><th class="r">Ø ks/den</th><th class="r">Ø ks/h</th>${time ? '<th class="r">Čas nad zak.</th><th class="r" title="Norma ÷ strávený čas">Plnění normy</th><th class="r" title="Strávený čas ÷ hodiny v práci">Využití fondu</th>' : ''}<th class="r">Zápisů</th><th class="r">Ø v den zápisu</th></tr></thead><tbody>${rows.map(r => {
     const pr = r.prod;
-    const who = `<td data-label="Zaměstnanec" class="name"><div class="who"><b>${esc(`${r.e.last} ${r.e.first}`)}</b><span class="pos">${r.pos ? esc(r.pos.name) + (r.L.n ? ` · ${esc(r.L.lv.name)}` : '') : ''}</span></div></td>`;
+    const who = `<td data-label="Zaměstnanec" class="name"><div class="who"><b>${esc(`${r.e.last} ${r.e.first}`)}${probIcon(r.e)}</b><span class="pos">${r.pos ? esc(r.pos.name) + (r.L.n ? ` · ${esc(r.L.lv.name)}` : '') : ''}</span></div></td>`;
     if (!pr) return `<tr class="muted-row">${who}<td colspan="${time ? 9 : 6}" class="muted small">bez záznamu v evidenci práce</td></tr>`;
     const own = r.raise.own ? r.pos.levels[r.raise.own.lvl - 1] : (r.tier && (r.tier.next ? r.tier.next.t : r.tier.tier)) || null;
     const days = workedDays(r.att);
@@ -3835,7 +3844,7 @@ function mxFilterOptions(groups, f) {
 
 /* Člověk v matici: jméno, nebo jen ID z evidence práce (2.20, přepínač Jen ID zaměstnanců). */
 function mxWho(e, ids = P.matrixIds) { return ids ? (e.wid ? `ID ${e.wid}` : 'bez ID') : `${e.last} ${e.first}`; }
-function mxWhoHtml(e) { return P.matrixIds && !e.wid ? '<span class="muted">bez ID</span>' : esc(mxWho(e)); }
+function mxWhoHtml(e) { return (P.matrixIds && !e.wid ? '<span class="muted">bez ID</span>' : esc(mxWho(e))) + probIcon(e); }
 
 /* Jedno oddělení v matici (2.10.1): hlavička s vedoucími a souhrnem, tabulka jen s dovednostmi
    oddělení (lidé jeho skupin a zaučení odjinud) a dole pokrytí úrovní 3–4 po směnách. */
@@ -4763,7 +4772,8 @@ function renderProfile() {
     <header class="page-head pf-head">
       <div>
         <p class="eyebrow">Profil zaměstnance</p>
-        <h1>${esc(name)}</h1>
+        <h1>${esc(name)}${probIcon(e)}</h1>
+        ${probationOf(e) ? `<p class="small muted prob-line">${esc(probText(probationOf(e)))}</p>` : ''}
         <p class="pf-meta">${L.pos ? `<span class="lvl l${L.n || 0}">${L.n || '?'}</span> <b>${esc(L.pos.name)}</b>${L.pct != null ? ` · dovednosti ${nf(L.pct, 0)} % (${L.base} ${tabW(L.base)})` : L.legacy && L.n ? ` · ${esc(L.lv.name)} (${L.base} ${tabW(L.base)})` : ' · bez dovedností'} · oddělení ${esc(deptOf(L.pos))}` : '<span class="crit">bez skupiny</span>'}${pfShift ? ` · ${esc(shiftName(pfShift))}` : ''}${e.shortFri ? ` · zkrácený pátek ${nf(friShift())} h` : ''}${e.excluded ? ' · <span class="tag">vyřazen ze seznamu</span>' : ''}</p>
         ${e.note ? `<p class="small muted">${esc(e.note)}</p>` : ''}
       </div>
@@ -7281,6 +7291,9 @@ function bindEvents() {
     if (button) showView(button.dataset.view);
   });
   document.addEventListener('click', event => {
+    // zkušební doba: na dotykovém displeji není najetí myší, info ukáže klepnutí
+    const pb = event.target.closest('[data-prob]');
+    if (pb && window.matchMedia('(hover: none)').matches) toast(pb.dataset.prob);
     const go = event.target.closest('[data-go]');
     if (go) { showView(go.dataset.go); return; }
     const pick = $('#colPick');

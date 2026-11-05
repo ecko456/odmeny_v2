@@ -2799,3 +2799,11 @@ button.cell:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; 
 .tk-reqline { margin: 4px 0 10px; font-size: 14px; }
 .tk-sev { white-space: nowrap; }
 .tk-reqcard .tk-list { margin-top: 6px; }
+
+/* Zkušební doba (2.52): ikona přesýpacích hodin u jména */
+.prob-ic { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; border-radius: 50%; background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--acc); vertical-align: -3px; cursor: help; }
+.prob-ic .icon { width: 13px; height: 13px; }
+.prob-ic.soon { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
+h1 .prob-ic, h2 .prob-ic { width: 26px; height: 26px; vertical-align: 2px; }
+h1 .prob-ic .icon, h2 .prob-ic .icon { width: 16px; height: 16px; }
+.prob-line { margin: 2px 0 6px; }

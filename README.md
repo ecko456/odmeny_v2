@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.52
+
+- **Zkušební doba.** U jména člověka ve zkušební době je ikona přesýpacích hodin, v Lidech,
+  v detailu, v profilu, v Přehledu, v Docházce i v Matici. Po najetí myší (na telefonu po klepnutí)
+  se ukáže, od kdy u nás pracuje a kdy mu končí zkušební doba.
+  - Začátek je první den, kdy o člověku evidujeme, že pracoval: hodiny v docházce (den s kódem
+    nepřítomnosti se nepočítá) nebo příchod v souboru Docházka a výkony.
+  - Zkušební doba je vždy 3 měsíce (nástup 15. 10. → konec 14. 1.; 31. 1. → 30. 4.).
+    Posledních 14 dní je ikona jantarová, po konci zkušební doby zmizí.
+  - Kdo má první záznam už v prvním dni evidence vůbec, mohl u nás pracovat dřív. Jeho nástup
+    tedy neznáme a ikonu nemá.
+- Počítá se jen z nahraných dat, nic nového se neukládá (verze dat zůstává 42).
+
 ## Co je nového ve verzi 2.51
 
 - **Ruční úprava docházky s důvodem.** V Docházce klepni na den člověka a zapiš hodiny nebo kód
