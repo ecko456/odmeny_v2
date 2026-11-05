@@ -34,6 +34,29 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.50):
+
+- Uživatel: „V docházce už můžeš tedy odstranit ‚XLSX, XLSM nebo CSV.‘ Říjen mám uzavřený … v docházce
+  bude jiná barva pro ranní a jiná pro odpolední. A jiná pro přesčasy ve svátek nebo o víkendu.
+  A ať to je takto rozdělené i v excelu … do jednoho listu pod sebe. Jméno, příjmení, ID, součet
+  hodin … jednotlivé dny rozepsané a barevně oddělené … seřadit podle skupin směn a v těch směnách
+  podle jména.“
+  - `app.html`: plocha `#drop`, `#btnPick` a nápověda formátu pryč, zůstal skrytý `#file`
+    (testy přes `setInputFiles`, první nahrání ukázky). `wireDrop` snese chybějící plochu.
+    Pruh ukázky: „Otevřít KPI“ (`data-go="audit"`).
+  - Core (před `endDeptOf`): `ATT_KIND`, `attSlotOf(e, iso)` (příchod z `dv.pres` < `DV_PM_FROM`
+    = ranní, jinak odpolední; bez příchodu `slotOn` s `morningGroup` a `capReport.s1am`; `rot`/`none`
+    = null), `attDayKind(e, c)` (am|pm|ot víkend/svátek s hodinami|work|abs|miss|off),
+    `attShiftSheet(p)` (skupiny `SHIFTS` + Bez směny, řazení příjmení a jméno, `dayTot`, `total`).
+    `attExport`/`attExportSheets` zůstaly (PDF a core testy).
+  - UI: `calStrip(a, e)` třídy `sh-am`/`sh-pm` (CSS přes `--pie-1`/`--pie-3`, `color-mix` u části
+    směny), legenda; Excel vlastním zápisem `xlsxStyled(sheets)` (SheetJS CE styly nezapisuje):
+    `XS_STYLES`, `xsZip` (stored + CRC32), `xsSheetXml` (inlineStr, ukotvení `freeze`, šířky),
+    `attXlsxSheet(x)`, `exportAttXlsx` → jeden list „Docházka“. Noční příchod (≥ 12:00) je odpolední.
+  - Testy: `e2e_att_export` (jeden list, hlavička, člověk proti `attendance`, pořadí skupin,
+    CELKEM, barvy přes openpyxl proti `attDayKind`, kalendář s `sh-am`/`sh-pm`, bez plochy).
+    `ODM_VERSION` 2.50, data beze změny (41).
+
 Stav k 5. 11. 2026 (verze 2.49):
 
 - Uživatel: „Prověř zda v KPI výkonost na osobu, přepočítává ks/den na počet odpracovaných dnů
@@ -2105,7 +2128,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.47 | `b38bfd2` | vzhled Sklo (tmavé sklo, oranžový akcent, Plus Jakarta Sans), přepínač zpět na původní vzhled v Nastavení, PDF beze změny |
 | 2.47.1 | `5e01612` | poznámka v Reportu docházky jen s počty (nepřišlo, neschopenka), spolehlivější stahování PDF a přesná chybová hláška |
 | 2.48 | `f4f8d79` | kontrola jmen při nahrání docházky postaru (prohozené jméno a příjmení, překlep, ruční přiřazení), nikdo nový se nepřidá |
-| 2.49 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: KPI Výkonnost na osobu – odpracované dny přepočtené na směnu 7,5 h (kratší den = část dne) |
+| 2.49 | `9580809` | KPI Výkonnost na osobu – odpracované dny přepočtené na směnu 7,5 h (kratší den = část dne) |
+| 2.50 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Docházka bez nahrávání, barvy dnů (ranní, odpolední, přesčas), Excel za měsíc v jednom listu po skupinách směn s barvami |
 
 Verze 2.1 přidala:
 
@@ -2564,7 +2588,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
-  - `e2e_att_export.js` (2.45.2): export docházky za měsíc (Excel, PDF, součty po odděleních, telefon);
+  - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_vzhled.js` (2.47): vzhled Sklo, přepnutí na původní, zapamatování, PDF stejné v obou vzhledech;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);

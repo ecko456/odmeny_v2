@@ -2756,3 +2756,10 @@ tr.dv-click:hover td { background: var(--surface-2); }
 
 /* KPI: odpracované dny přepočtené na směnu (2.49) */
 .kp-wd { display: block; font-size: 11px; }
+
+/* Docházka: barvy směn (2.50). Ranní modře, odpolední zeleně, přesčas o víkendu / ve svátek
+   zůstává fialový (.cell.wk), část směny světlejší s rámečkem. */
+.cell.full.sh-am { background: var(--pie-1); color: #fff; }
+.cell.full.sh-pm { background: var(--pie-3); color: #fff; }
+.cell.part.sh-am { background: color-mix(in srgb, var(--pie-1) 22%, transparent); border-color: var(--pie-1); color: var(--pie-1); }
+.cell.part.sh-pm { background: color-mix(in srgb, var(--pie-3) 22%, transparent); border-color: var(--pie-3); color: var(--pie-3); }

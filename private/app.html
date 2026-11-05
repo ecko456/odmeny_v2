@@ -194,7 +194,7 @@
         <div>
           <p class="eyebrow">Import</p>
           <h1 id="attTitle">Docházka</h1>
-          <p class="lede">Z docházky se počítá fond hodin, absence, víkendové směny i Kafe. Nahraj export z docházkového systému.</p>
+          <p class="lede">Z docházky se počítá fond hodin, absence, víkendové směny i Kafe. Barvy dnů: ranní, odpolední a přesčas o víkendu nebo ve svátek.</p>
         </div>
         <div class="page-actions">
           <button class="btn sec" type="button" id="btnEnds">Nahrát konce trestů a směnnost</button>
@@ -202,25 +202,8 @@
           <button class="btn danger" type="button" id="btnDelPeriod">Smazat vybrané období</button>
         </div>
       </header>
-      <div class="note i dv-src">Od listopadu 2026 se docházka pro odměny plní ze souboru <b>Docházka a výkony</b> v KPI (příchody, odchody a kódy nepřítomnosti). Tady se nahrává už jen docházka za říjen 2026 a dřív. <button class="link" type="button" data-go="audit">Otevřít KPI</button></div>
-      <div class="drop" id="drop">
-        <div class="drop-ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8z"/><path d="M14 3.5V8h4.5M12 17.5v-6M9.5 14 12 11.5l2.5 2.5"/></svg></div>
-        <div class="drop-text">
-          <h2>Přetáhni sem docházku</h2>
-          <p>XLSX, XLSM nebo CSV. Poznám datum v hlavičce i pouhá čísla dnů, čárku i tečku v hodinách.</p>
-        </div>
-        <button class="btn" type="button" id="btnPick">Vybrat soubor</button>
-        <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.txt" hidden>
-      </div>
-      <details class="format-help">
-        <summary>Jak má soubor vypadat</summary>
-        <div class="format-sheet" aria-hidden="true">
-          <span class="h">A · Jméno</span><span class="h">B · Příjmení</span><span class="h gap">C–E</span><span class="h">F · 1. 9.</span><span class="h">G · 2. 9.</span><span class="h">…</span>
-          <span>Jan</span><span>Novák</span><span class="gap"></span><span>7,5</span><span>D</span><span>…</span>
-          <span>Eva</span><span>Svobodová</span><span class="gap"></span><span>6</span><span>7,5</span><span>…</span>
-        </div>
-        <p class="small muted">V buňkách jsou odpracované hodiny, nebo kód nepřítomnosti (D, NEM, OČR…). Které kódy jsou omluvené, nastavíš v Nastavení.</p>
-      </details>
+      <div class="note i dv-src">Od listopadu 2026 se docházka pro odměny plní ze souboru <b>Docházka a výkony</b> v KPI (příchody, odchody a kódy nepřítomnosti). Tady je docházka vidět po dnech a jde stáhnout do Excelu a PDF. <button class="link" type="button" data-go="audit">Otevřít KPI</button></div>
+      <input type="file" id="file" accept=".xlsx,.xlsm,.xls,.csv,.txt" hidden>
       <div id="importMsg"></div>
       <div id="attView"></div>
     </section>

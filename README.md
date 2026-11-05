@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.50
+
+- **Docházka bez nahrávání.** Plocha „Přetáhni sem docházku“ (XLSX, XLSM nebo CSV) je pryč, říjen
+  je uzavřený. Od listopadu se docházka nahrává jen v KPI (Docházka a výkony).
+- **Barvy dnů v kalendáři docházky:**
+  - ranní modře, odpolední zeleně;
+  - přesčas o víkendu nebo ve svátek fialově;
+  - část směny světlejší s rámečkem.
+
+  Směna se pozná podle příchodu ze souboru Docházka a výkony (před 12:00 ranní). Bez příchodu se
+  bere podle směny člověka a střídání skupin ze Směn a kapacity. Když střídání není nastavené,
+  den zůstane v barvě „odpracováno, směna neznámá“.
+- **Excel za měsíc v jednom listu.**
+  - Sloupce: Jméno, Příjmení, ID, Odpracováno (h) a pak každý den.
+  - Lidé jsou po skupinách směn (Stálá ranní, Stálá odpolední, Skupina 1, Skupina 2, Bez směny),
+    ve skupině podle příjmení.
+  - Dny mají stejné barvy jako v aplikaci, na konci je řádek CELKEM se součty dnů.
+- Pruh s ukázkovými daty odkazuje do KPI.
+
 ## Co je nového ve verzi 2.49
 
 - **KPI → Výkonnost na osobu: odpracované dny podle hodin.** Ø ks na den se dělí odpracovanými

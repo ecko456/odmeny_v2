@@ -1,5 +1,5 @@
-// Prohlížečový průchod 2.45.2: export docházky za měsíc do Excelu a PDF (lidé po odděleních,
-// ID, hodiny v pracovní dny, o víkendu a celkem, součty oddělení a CELKEM), telefon.
+// Prohlížečový průchod 2.45.2: export docházky za měsíc do Excelu a PDF, telefon. Od 2.50 Excel
+// jeden list po skupinách směn s barvami dnů (ranní, odpolední, přesčas), barvy v kalendáři.
 // Běží nad ukázkovými daty čisté instalace. Spuštění stejně jako e2e_dochazka.js; snímky v $S/oshots-attexp.
 const { chromium } = require(process.env.PW);
 const { execFileSync } = require('child_process');
@@ -42,31 +42,44 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   check(bar.includes('odpracováno celkem'), `lišta: ${bar}`);
   await page.screenshot({ path: path.join(shots, '01-dochazka.png') });
 
-  // Excel
+  // Excel (2.50): jeden list, lidé po skupinách směn, ve skupině podle příjmení a jména, dny barevně
   const [dx] = await Promise.all([page.waitForEvent('download'), page.click('[data-attxlsx]')]);
   const xp = path.join(shots, dx.suggestedFilename());
   await dx.saveAs(xp);
+  const ref = await page.evaluate(() => {
+    const p = curPeriod(), x = attShiftSheet(p);
+    const k = Object.keys(p.rows).find(y => S.employees[y] && S.employees[y].wid === '4711'), e = S.employees[k], a = attendance(p, k);
+    return { n: p.days.length, groups: x.groups.map(g => [g.name, g.people.map(q => q.last + ' ' + q.first)]), total: x.total,
+      me: { first: e.first, last: e.last, total: Math.round(a.totalHours * 100) / 100, h: a.cells.map(c => c.h), c: a.cells.map(c => c.c || ''), kind: a.cells.map(c => attDayKind(e, c)) } };
+  });
   const xl = await page.evaluate(async b64 => {
     const X = await xlsx();
     const wb = X.read(Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { type: 'array' });
-    return { names: wb.SheetNames, rows: X.utils.sheet_to_json(wb.Sheets['Docházka'], { header: 1 }), dep: X.utils.sheet_to_json(wb.Sheets['Oddělení'], { header: 1 }), days: X.utils.sheet_to_json(wb.Sheets['Po dnech'], { header: 1 }) };
+    return { names: wb.SheetNames, rows: X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }) };
   }, fs.readFileSync(xp).toString('base64'));
-  check(dx.suggestedFilename() === `dochazka-${exp.id}.xlsx` && JSON.stringify(xl.names) === '["Docházka","Po dnech","Oddělení"]', `Excel: ${dx.suggestedFilename()} ${xl.names}`);
-  const hdr = xl.rows[2];
-  const last = xl.rows[xl.rows.length - 1];
-  check(hdr[0] === 'Oddělení' && hdr.includes('ID') && hdr.includes('Hodiny celkem') && last[0] === 'CELKEM' && Math.abs(last[hdr.indexOf('Hodiny celkem')] - exp.total) < 0.01, `Excel řádky: ${JSON.stringify([hdr, last])}`);
-  check(xl.rows.some(r => r[2] === '4711' && String(r[1]).startsWith(who) && r[0]), 'Excel: člověk s ID a oddělením');
-  check(xl.rows.filter(r => String(r[0]).startsWith('Celkem ')).length === exp.depts.length, 'Excel: součet za každé oddělení');
-  check(xl.dep.length === exp.depts.length + 2, `Excel list Oddělení: ${xl.dep.length}`);
-  // list Po dnech: den = sloupec, hodnoty proti uložené docházce
-  const ref = await page.evaluate(() => { const p = curPeriod(); const k = Object.keys(p.rows).find(x => S.employees[x] && S.employees[x].wid === '4711'); const r = p.rows[k];
-    return { n: p.days.length, h: r.h.map(v => +v || 0), c: r.c.map(v => v || ''), d0: p.days[0] }; });
-  const dh = xl.days[2];
-  const me = xl.days.find(r => r[2] === '4711');
-  const dlast = xl.days[xl.days.length - 1];
-  check(dh.length === ref.n + 4 && /^1\.\d+\. (Po|Út|St|Čt|Pá|So|Ne)/.test(dh[3]) && dh[dh.length - 1] === 'Hodiny celkem', `Po dnech hlavička: ${dh.slice(0, 6)}`);
-  check(me && ref.h.every((h, i) => (ref.c[i] ? String(me[3 + i]).startsWith(ref.c[i]) : h ? me[3 + i] === h : (me[3 + i] == null || me[3 + i] === ''))), `Po dnech člověk: ${JSON.stringify(me && me.slice(0, 12))}`);
-  check(dlast[0] === 'CELKEM' && Math.abs(dlast[dlast.length - 1] - exp.total) < 0.01 && Math.abs(dlast.slice(3, -1).reduce((t, v) => t + (+v || 0), 0) - exp.total) < 0.01, `Po dnech CELKEM: ${JSON.stringify(dlast.slice(-4))}`);
+  check(dx.suggestedFilename() === `dochazka-${exp.id}.xlsx` && JSON.stringify(xl.names) === '["Docházka"]', `Excel: ${dx.suggestedFilename()} ${xl.names}`);
+  const hdr = xl.rows[3];
+  check(hdr[0] === 'Jméno' && hdr[1] === 'Příjmení' && hdr[2] === 'ID' && /Odpracováno/.test(hdr[3]) && hdr.length === 4 + ref.n && /^1\. (Po|Út|St|Čt|Pá|So|Ne)/.test(hdr[4]), `Excel hlavička: ${JSON.stringify(hdr.slice(0, 7))}`);
+  const me = xl.rows.find(r => r[2] === '4711');
+  check(me && me[0] === ref.me.first && me[1] === ref.me.last && Math.abs(me[3] - ref.me.total) < 0.01
+    && ref.me.h.every((h, i) => (ref.me.c[i] ? String(me[4 + i]).startsWith(ref.me.c[i]) : h ? me[4 + i] === h : (me[4 + i] == null || me[4 + i] === ''))), `Excel člověk: ${JSON.stringify(me && me.slice(0, 12))}`);
+  const heads = xl.rows.slice(4).filter(r => / · \d+ (člověk|lidé|lidí)$/.test(String(r[0] || ''))).map(r => String(r[0]).split(' · ')[0]);
+  check(JSON.stringify(heads) === JSON.stringify(ref.groups.map(g => g[0])) && ref.groups.every(g => g[1].every((nm, i, a) => !i || nm.localeCompare(a[i - 1], 'cs') >= 0)), `skupiny směn: ${JSON.stringify(heads)} / ${JSON.stringify(ref.groups.map(g => g[0]))}`);
+  const tot = xl.rows.find(r => r[0] === 'CELKEM') || [];
+  check(tot[0] === 'CELKEM' && Math.abs(tot[3] - exp.total) < 0.01 && Math.abs(tot.slice(4).reduce((t, v) => t + (+v || 0), 0) - exp.total) < 0.01, `Excel CELKEM: ${JSON.stringify(tot.slice(0, 6))}`);
+  // barvy: openpyxl čte soubor jako Excel (výplň buněk člověka podle druhu dne)
+  try {
+    const fills = JSON.parse(execFileSync('python3', ['-c', `import sys,json,openpyxl
+ws=openpyxl.load_workbook(sys.argv[1]).active
+row=next(r for r in ws.iter_rows() if r[2].value=='4711')
+print(json.dumps([c.fill.fgColor.rgb if c.fill and c.fill.fill_type=='solid' else None for c in row[4:]]))`, xp]).toString());
+    const want = { am: 'FFCFE2F8', pm: 'FFD3F0E0', ot: 'FFE4DAF7', abs: 'FFFBEBC8', miss: 'FFF9D9D9', off: 'FFF4F4F4', work: 'FFE6ECEA' };
+    check(fills.length === ref.n && ref.me.kind.every((k, i) => fills[i] === want[k]), `barvy dnů: ${JSON.stringify(fills.slice(0, 10))} / ${JSON.stringify(ref.me.kind.slice(0, 10))}`);
+    check(ref.me.kind.some(k => k === 'am' || k === 'pm'), `ukázka má ranní nebo odpolední: ${ref.me.kind}`);
+  } catch (error) { if (/openpyxl/.test(String(error.stderr || error))) console.log('openpyxl není, barvy se nekontrolují'); else problems.push(`barvy: ${String(error.stderr || error.message).slice(-300)}`); }
+  // aplikace: kalendář s barvami směn
+  const cal = await page.evaluate(() => ({ am: document.querySelectorAll('#attView .cell.sh-am').length, pm: document.querySelectorAll('#attView .cell.sh-pm').length, drop: !!document.querySelector('#drop'), help: /XLSX, XLSM/.test(document.querySelector('#view-dochazka').textContent) }));
+  check(cal.am + cal.pm > 0 && !cal.drop && !cal.help, `kalendář: ${JSON.stringify(cal)}`);
 
   // PDF
   const [dp] = await Promise.all([page.waitForEvent('download'), page.click('[data-attpdf]')]);

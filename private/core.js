@@ -5367,6 +5367,41 @@ function attExportSheets(x){
   byDay.push(["CELKEM","","",...dSum(x.people),x.tot.total]);
   return [{name:"Docházka",rows,cols:[18,26,10,16,12,14,12,14,12,12,12]},{name:"Po dnech",rows:byDay,cols:[18,26,10,...dl.map(()=>9),12]},{name:"Oddělení",rows:sum,cols:[20,8,16,14,12,12]}];
 }
+/* Barvy dnů v docházce (2.50): ranní, odpolední, přesčas o víkendu nebo ve svátek, nepřítomnost.
+   Směna dne podle příchodu ze souboru Docházka a výkony (před 12:00 ranní, jinak odpolední),
+   bez příchodu podle směny člověka (střídání skupin podle Směny a kapacita). */
+const ATT_KIND={am:"ranní",pm:"odpolední",ot:"přesčas (víkend / svátek)",work:"odpracováno (směna neznámá)",abs:"nepřítomnost (kód)",miss:"chybí",off:"volno"};
+function attSlotOf(e,iso){
+  if(!e)return null;
+  const pres=S.workAudit&&S.workAudit.dv&&S.workAudit.dv.pres&&S.workAudit.dv.pres[iso];
+  const w=e.wid?widKey(e.wid):"";
+  if(pres&&w&&pres[w]&&pres[w][0]!=null)return pres[w][0]<DV_PM_FROM?"am":"pm";
+  const sl=slotOn(e,morningGroup(isoWeek(iso).id,(S.capReport||{}).s1am));
+  return sl==="am"||sl==="pm"?sl:null;
+}
+function attDayKind(e,c){
+  if(c.h>0)return c.d.weekend||c.d.hol?"ot":attSlotOf(e,c.d.iso)||"work";
+  if(c.c)return "abs";
+  return c.d.work?"miss":"off";
+}
+/** Docházka po dnech do jednoho listu (2.50, přání uživatele): lidé po skupinách směn (Stálá ranní,
+    Stálá odpolední, Skupina 1, Skupina 2, bez směny), ve skupině podle příjmení a jména;
+    u každého dne hodiny nebo kód a druh dne (barva). */
+function attShiftSheet(p){
+  if(!p||!p.rows)return null;
+  const meta=periodMeta(p),groups=[...SHIFTS.map(([k,n])=>({k,name:n,people:[]})),{k:"",name:"Bez směny",people:[]}];
+  Object.keys(p.rows).forEach(k=>{
+    const r=p.rows[k],e=S.employees[k]||null,a=attendance(p,k);
+    const q={key:k,first:(e?e.first:r.first)||"",last:(e?e.last:r.last)||"",wid:e&&e.wid?String(e.wid):"",total:Math.round(a.totalHours*100)/100,
+      days:a.cells.map(c=>({v:c.c?(c.ah?c.c+" ("+nf(c.ah,2)+" h)":c.c):c.h>0?c.h:"",kind:attDayKind(e,c),h:c.h}))};
+    const g=groups.find(x=>x.k===((e&&e.shift)||""))||groups[groups.length-1];g.people.push(q);
+  });
+  groups.forEach(g=>g.people.sort((a,b)=>norm(a.last).localeCompare(norm(b.last),"cs")||norm(a.first).localeCompare(norm(b.first),"cs")));
+  const out=groups.filter(g=>g.people.length);
+  const dayTot=meta.days.map((d,i)=>Math.round(out.reduce((t,g)=>t+g.people.reduce((u,q)=>u+q.days[i].h,0),0)*100)/100);
+  return {id:p.id,meta,groups:out,dayTot,total:Math.round(out.reduce((t,g)=>t+g.people.reduce((u,q)=>u+q.total,0),0)*100)/100,
+    n:out.reduce((t,g)=>t+g.people.length,0)};
+}
 /** Přehled odchodů: po měsících a odděleních od tohoto měsíce na n měsíců. */
 function endDeptOf(e){return isLead(e)?"Vedoucí":empDept(e)||"Bez skupiny";}
 function endsOverview(today,n){

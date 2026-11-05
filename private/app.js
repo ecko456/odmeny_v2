@@ -922,8 +922,8 @@ async function openPersonSearch() {
 function renderDemoBanner() {
   const box = $('#demoBanner');
   if (!S.demo) { box.innerHTML = ''; return; }
-  box.innerHTML = `<div class="banner"><div><b>Ukázková data.</b> Vidíš vymyšlený měsíc, ať je poznat, jak aplikace funguje. Jakmile nahraješ vlastní docházku, ukázka zmizí.</div>
-    <div class="banner-actions"><button class="btn small" type="button" data-go="dochazka">Nahrát docházku</button><button class="btn sec small" type="button" id="btnClearDemo">Vymazat ukázku</button></div></div>`;
+  box.innerHTML = `<div class="banner"><div><b>Ukázková data.</b> Vidíš vymyšlený měsíc, ať je poznat, jak aplikace funguje. Než začneš s vlastními daty, ukázku vymaž; docházka se nahrává v KPI (Docházka a výkony).</div>
+    <div class="banner-actions"><button class="btn small" type="button" data-go="audit">Otevřít KPI</button><button class="btn sec small" type="button" id="btnClearDemo">Vymazat ukázku</button></div></div>`;
   $('#btnClearDemo').onclick = async () => {
     if (!(await confirmBox('Vymazat ukázku?', 'Smažou se ukázkoví lidé, docházka, výroba a sankce. Skupiny, dovednosti a nastavení zůstanou (bez ukázkových prémií).', 'Vymazat'))) return;
     // Pozice, nastavení a důvody sankcí zůstávají (jak slibuje dialog), mizí jen ukázkoví lidé a jejich data.
@@ -1379,15 +1379,18 @@ function prodKv(r) {
   </dl>`;
 }
 
-function calStrip(a) {
+function calStrip(a, e) {
   return `<div class="calwrap"><div class="calrow">${a.cells.map(c => {
     let cls = 'cell';
+    // 2.50: s člověkem (e) barva podle směny dne: ranní, odpolední, přesčas o víkendu / ve svátek
+    const kind = e !== undefined && c.h > 0 ? attDayKind(e, c) : '';
     if (c.d.weekend || c.d.hol) cls += c.h > 0 ? ' wk' : ' wk0';
     else if (c.h >= (c.ds || S.settings.shift) - 1e-9) cls += ' full';
     else if (c.h > 0) cls += ' part';
     else if (c.isEx || c.c) cls += ' abs';
     else cls += ' miss';
-    const title = `${DOW[c.d.dow]} ${c.d.d}.${c.d.m}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c ? `${c.c}${c.ah ? ` (${nf(c.ah, 2)} h u kódu, nepočítají se)` : ''}` : 'nic')}${c.d.hol ? ` — ${c.d.hol}` : ''}`;
+    if (kind === 'am' || kind === 'pm') cls += ` sh-${kind}`;
+    const title = `${DOW[c.d.dow]} ${c.d.d}.${c.d.m}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c ? `${c.c}${c.ah ? ` (${nf(c.ah, 2)} h u kódu, nepočítají se)` : ''}` : 'nic')}${kind ? ` · ${ATT_KIND[kind]}` : ''}${c.d.hol ? ` — ${c.d.hol}` : ''}`;
     return `<div class="${cls}" title="${esc(title)}">${c.d.d}</div>`;
   }).join('')}</div></div>`;
 }
@@ -2422,14 +2425,85 @@ function bindGroupEditor() {
    DOCHÁZKA
    ========================================================================== */
 /* Export docházky za měsíc (2.45.2): Excel a PDF, lidé po odděleních se součty hodin. */
+/* Excel s barvami buněk (2.50). SheetJS v aplikaci styly nezapisuje, proto vlastní malý zápis
+   xlsx: jeden nebo víc listů, buňka = hodnota nebo {v, s} (klíč stylu z XS_STYLES), šířky
+   sloupců, ukotvené řádky a sloupce. ZIP bez komprese (metoda stored) s CRC32. */
+const XS_STYLES = {
+  h: { b: 1, fill: 'FFE8EAEE' }, hwk: { b: 1, fill: 'FFD6D9E0' }, g: { b: 1, fill: 'FFF3F4F6' }, t: { b: 1 }, title: { b: 1, sz: 14 },
+  am: { fill: 'FFCFE2F8' }, pm: { fill: 'FFD3F0E0' }, ot: { fill: 'FFE4DAF7' }, work: { fill: 'FFE6ECEA' },
+  abs: { fill: 'FFFBEBC8' }, miss: { fill: 'FFF9D9D9' }, off: { fill: 'FFF4F4F4' },
+};
+const XS_KEYS = Object.keys(XS_STYLES);
+function xsCrcTable() { const t = new Uint32Array(256); for (let n = 0; n < 256; n += 1) { let c = n; for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; }
+let XS_CRC = null;
+function xsCrc(b) { XS_CRC = XS_CRC || xsCrcTable(); let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i += 1) c = XS_CRC[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function xsZip(files) {
+  const enc = new TextEncoder(), parts = [], dir = [];
+  let off = 0;
+  const u16 = n => [n & 0xFF, (n >>> 8) & 0xFF], u32 = n => [n & 0xFF, (n >>> 8) & 0xFF, (n >>> 16) & 0xFF, (n >>> 24) & 0xFF];
+  files.forEach(([name, text]) => {
+    const nb = enc.encode(name), data = enc.encode(text), crc = xsCrc(data);
+    const head = [0x50, 0x4B, 0x03, 0x04, ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0)];
+    parts.push(new Uint8Array(head), nb, data);
+    dir.push([0x50, 0x4B, 0x01, 0x02, ...u16(20), ...u16(20), ...u16(0x0800), ...u16(0), ...u16(0), ...u16(0x21), ...u32(crc), ...u32(data.length), ...u32(data.length), ...u16(nb.length), ...u16(0), ...u16(0), ...u16(0), ...u16(0), ...u32(0), ...u32(off)], nb);
+    off += head.length + nb.length + data.length;
+  });
+  let size = 0;
+  const cd = [];
+  for (let i = 0; i < dir.length; i += 2) { const h = new Uint8Array(dir[i]); cd.push(h, dir[i + 1]); size += h.length + dir[i + 1].length; }
+  const end = new Uint8Array([0x50, 0x4B, 0x05, 0x06, 0, 0, 0, 0, ...u16(files.length), ...u16(files.length), ...u32(size), ...u32(off), 0, 0]);
+  return new Blob([...parts, ...cd, end], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+function xsEsc(v) { return String(v).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function xsCol(i) { let s = ''; i += 1; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
+function xsSheetXml(sh) {
+  const rows = sh.rows.map((row, r) => `<row r="${r + 1}">${(row || []).map((cell, c) => {
+    if (cell == null || cell === '') return '';
+    const o = cell && typeof cell === 'object' ? cell : { v: cell };
+    const si = o.s ? XS_KEYS.indexOf(o.s) + 1 : 0, ref = `${xsCol(c)}${r + 1}`, st = si > 0 ? ` s="${si}"` : '';
+    if (o.v == null || o.v === '') return si > 0 ? `<c r="${ref}"${st}/>` : '';
+    if (typeof o.v === 'number' && Number.isFinite(o.v)) return `<c r="${ref}"${st}><v>${o.v}</v></c>`;
+    return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${xsEsc(o.v)}</t></is></c>`;
+  }).join('')}</row>`).join('');
+  const fr = sh.freeze, pane = fr ? `<sheetViews><sheetView workbookViewId="0"><pane xSplit="${fr.c}" ySplit="${fr.r}" topLeftCell="${xsCol(fr.c)}${fr.r + 1}" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>` : '';
+  const cols = sh.cols && sh.cols.length ? `<cols>${sh.cols.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>` : '';
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${pane}${cols}<sheetData>${rows}</sheetData></worksheet>`;
+}
+function xlsxStyled(sheets) {
+  const fills = [...new Set(XS_KEYS.map(k => XS_STYLES[k].fill).filter(Boolean))];
+  const fonts = ['<font><sz val="11"/><name val="Calibri"/></font>', '<font><b/><sz val="11"/><name val="Calibri"/></font>', '<font><b/><sz val="14"/><name val="Calibri"/></font>'];
+  const xf = k => { const st = XS_STYLES[k], fi = st.fill ? fills.indexOf(st.fill) + 2 : 0, fo = st.sz ? 2 : st.b ? 1 : 0;
+    return `<xf numFmtId="0" fontId="${fo}" fillId="${fi}" borderId="0" xfId="0"${fi ? ' applyFill="1"' : ''}${fo ? ' applyFont="1"' : ''}/>`; };
+  const styles = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length + 2}"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>${fills.map(c => `<fill><patternFill patternType="solid"><fgColor rgb="${c}"/><bgColor indexed="64"/></patternFill></fill>`).join('')}</fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${XS_KEYS.length + 1}"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>${XS_KEYS.map(xf).join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+  const names = sheets.map(sh => xsEsc(String(sh.name).replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)));
+  return xsZip([
+    ['[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`],
+    ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+    ['xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${names.map((n, i) => `<sheet name="${n}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`],
+    ['xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`],
+    ['xl/styles.xml', styles],
+    ...sheets.map((sh, i) => [`xl/worksheets/sheet${i + 1}.xml`, xsSheetXml(sh)]),
+  ]);
+}
+/* Docházka do Excelu (2.50): jeden list, lidé po skupinách směn, každý den barevně podle druhu dne. */
+function attXlsxSheet(x) {
+  const lab = d => `${d.d}. ${DOW[d.dow]}${d.hol && !d.weekend ? ' sv.' : ''}`;
+  const rows = [[{ v: `Docházka – ${monthLabel(x.id)} · fond ${nf(x.meta.fund)} h (${x.meta.work} pracovních dnů) · ${x.n} ${lidiN(x.n)}`, s: 'title' }],
+    ['Barvy dnů jsou vysvětlené pod tabulkou.'], [],
+    [{ v: 'Jméno', s: 'h' }, { v: 'Příjmení', s: 'h' }, { v: 'ID', s: 'h' }, { v: 'Odpracováno (h)', s: 'h' }, ...x.meta.days.map(d => ({ v: lab(d), s: d.weekend || d.hol ? 'hwk' : 'h' }))]];
+  x.groups.forEach(g => {
+    rows.push([{ v: `${g.name} · ${g.people.length} ${lidiN(g.people.length)}`, s: 'g' }, { v: '', s: 'g' }, { v: '', s: 'g' }, { v: Math.round(g.people.reduce((t, q) => t + q.total, 0) * 100) / 100, s: 'g' }, ...x.meta.days.map(() => ({ v: '', s: 'g' }))]);
+    g.people.forEach(q => rows.push([q.first, q.last, q.wid, { v: q.total, s: 't' }, ...q.days.map(c => ({ v: c.v, s: c.kind === 'off' ? 'off' : c.kind }))]));
+  });
+  rows.push([], [{ v: 'CELKEM', s: 't' }, '', '', { v: x.total, s: 't' }, ...x.dayTot.map(v => ({ v: v || '', s: 't' }))]);
+  rows.push([], [{ v: 'Barvy dnů', s: 't' }], ...['am', 'pm', 'ot', 'work', 'abs', 'miss', 'off'].map(k => [{ v: '', s: k }, ATT_KIND[k]]));
+  return { name: 'Docházka', rows, cols: [14, 18, 10, 15, ...x.meta.days.map(() => 7.5)], freeze: { r: 4, c: 4 } };
+}
 async function exportAttXlsx() {
-  const x = attExport(curPeriod());
+  const x = attShiftSheet(curPeriod());
   if (!x) { toast('Docházka za tento měsíc není nahraná.', true); return; }
   try {
-    const X = await xlsx();
-    const wb = X.utils.book_new();
-    attExportSheets(x).forEach(sheet => { const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell))); ws['!cols'] = sheet.cols.map(wch => ({ wch })); X.utils.book_append_sheet(wb, ws, sheet.name); });
-    downloadFile(`dochazka-${x.id}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    downloadFile(`dochazka-${x.id}.xlsx`, xlsxStyled([attXlsxSheet(x)]));
   } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
 }
 function attPdf(P, x) {
@@ -2521,11 +2595,11 @@ function renderAttendance() {
   ].join('')}</div>
   <div class="table-card"><table class="stack att-table"><thead><tr><th>Zaměstnanec</th><th>Měsíc</th><th class="r">Dny</th><th class="r">Hodiny</th><th class="r">Víkend</th></tr></thead><tbody>${rows.map(x => `<tr>
     <td data-label="Zaměstnanec" class="name"><div class="who"><b>${esc(x.r.last)} ${esc(x.r.first)}</b></div></td>
-    <td data-label="Měsíc" class="cal">${calStrip(x.a)}</td>
+    <td data-label="Měsíc" class="cal">${calStrip(x.a, S.employees[x.k] || null)}</td>
     <td data-label="Dny" class="r num">${x.a.workDays}</td>
     <td data-label="Hodiny" class="r num">${nf(x.a.workHours)}</td>
     <td data-label="Víkend" class="r num">${x.a.wkDays}</td></tr>`).join('')}</tbody></table></div>
-  <div class="callegend">${[['full', 'celá směna'], ['part', 'část směny'], ['wk', 'víkend / svátek odpracovaný'], ['abs', 'omluvená absence'], ['miss', 'chybí'], ['wk0', 'volno']].map(([cls, label]) => `<span><i class="cell ${cls}"></i>${label}</span>`).join('')}</div>`;
+  <div class="callegend">${[['full sh-am', 'ranní'], ['full sh-pm', 'odpolední'], ['part sh-am', 'část směny (světlejší)'], ['wk', 'přesčas o víkendu / ve svátek'], ['full', 'odpracováno, směna neznámá'], ['abs', 'nepřítomnost (kód)'], ['miss', 'chybí'], ['wk0', 'volno']].map(([cls, label]) => `<span><i class="cell ${cls}"></i>${label}</span>`).join('')}</div>`;
 }
 
 /* Hodiny ze souboru Docházka a výkony nahrané před 2.46 nejsou zaokrouhlené: nabídne přepočet
@@ -7322,9 +7396,11 @@ function bindEvents() {
     save(); renderAll(); toast('Období smazáno.');
   };
   const wireDrop = (zone, button, input, fn) => {
-    $(`#${button}`).onclick = () => $(`#${input}`).click();
+    // 2.50: v Docházce už plocha pro přetažení ani tlačítko nejsou (nahrává se v KPI), zůstal jen skrytý vstup
+    if ($(`#${button}`)) $(`#${button}`).onclick = () => $(`#${input}`).click();
     $(`#${input}`).onchange = event => { fn(event.target.files[0]); event.target.value = ''; };
     const dz = $(`#${zone}`);
+    if (!dz) return;
     ['dragenter', 'dragover'].forEach(type => dz.addEventListener(type, event => { event.preventDefault(); dz.classList.add('over'); }));
     ['dragleave', 'drop'].forEach(type => dz.addEventListener(type, event => { event.preventDefault(); dz.classList.remove('over'); }));
     dz.addEventListener('drop', event => { if (event.dataTransfer.files && event.dataTransfer.files[0]) fn(event.dataTransfer.files[0]); });
