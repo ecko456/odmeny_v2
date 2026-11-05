@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.49
+
+- **KPI → Výkonnost na osobu: odpracované dny podle hodin.** Ø ks na den se dělí odpracovanými
+  dny přepočtenými na směnu. Celá směna (7,5 h) je 1 den, kratší den se počítá poměrně
+  (3,75 h = 0,5 dne). Víc než směna se počítá jako 1 den a den s kódem nepřítomnosti se
+  nepočítá. U člověka se zkráceným pátkem je celý pátek jeho kratší směna. Ve sloupci Dny je
+  přepočtený počet a pod ním „z N“ dnů v práci. Excel má navíc sloupce Dny v práci
+  a Odpracované hodiny.
+
 ## Co je nového ve verzi 2.48
 
 - **Docházka (říjen 2026 a starší): kontrola jmen při nahrání.** Před uložením se každý řádek

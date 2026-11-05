@@ -150,7 +150,7 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await dl.saveAs(file);
   check(dl.suggestedFilename() === 'vykonnost-na-osobu-2026-10.xlsx', `soubor: ${dl.suggestedFilename()}`);
   const book = await page.evaluate(async b64 => { const X = await xlsx(); const wb = X.read(Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { type: 'array' }); return X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 }); }, fs.readFileSync(file).toString('base64'));
-  check(book[3][7] === 'Ø ks na den' && book[4][2] === 'Cibulka Cyril' && book[4][7] === 130 && book.at(-1)[0] === 'Celkem', `Excel: ${JSON.stringify(book.slice(3, 6))}`);
+  check(book[3][9] === 'Ø ks na den' && book[3][7] === 'Odpracované dny (přepočet na směnu)' && book[4][2] === 'Cibulka Cyril' && book[4][9] === 130 && book.at(-1)[0] === 'Celkem', `Excel: ${JSON.stringify(book.slice(3, 6))}`);
 
   // 5) klik na člověka otevře profil
   await page.click('.kp-dept tbody tr:first-child .name');
@@ -161,6 +161,18 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.evaluate(() => showView('vyroba'));
   check(await page.evaluate(() => document.querySelector('#nav [data-view="audit"]').getAttribute('aria-current')) === 'true', 'u Výroby svítí KPI');
   await page.evaluate(() => showView('audit'));
+
+  // 6b) 2.49: kratší den se počítá jako část dne (3,75 h = 0,5 dne)
+  const part = await page.evaluate(() => {
+    const p = S.periods['2026-10'], k = Object.keys(p.rows).find(x => S.employees[x] && S.employees[x].last === 'Cibulka');
+    const i = p.rows[k].h.findIndex(h => h > 0); p.rows[k].h[i] = 3.75;
+    renderWorkAudit();
+    const tr = [...document.querySelectorAll('.kp-dept tbody tr')].find(r => /Cibulka/.test(r.textContent));
+    const q = kpiPerf('2026-10', {}).people.find(x => x.key === k);
+    return { cell: tr.querySelector('[data-label="Dny"]').textContent.replace(/\s+/g, ' ').trim(), days: q.days, wd: q.wd, ks: q.v.ks, ksAll: q.ks };
+  });
+  check(part.days === 9.5 && part.wd === 10 && /9,5/.test(part.cell) && /z 10/.test(part.cell) && Math.abs(part.ks - part.ksAll / 9.5) < 1e-9, `kratší den: ${JSON.stringify(part)}`);
+  await page.screenshot({ path: path.join(shots, '01b-cast-dne.png') });
 
   // 7) telefon a tmavý režim
   await page.setViewportSize({ width: 390, height: 844 });

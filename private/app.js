@@ -13505,7 +13505,7 @@ function kpHtml() {
   const t = x.tot;
   const tiles = `<div class="stats">${[
     statTile('Lidí', String(t.people), `${shown.length === 1 ? '1 oddělení' : `${x.depts.length} oddělení`}`),
-    statTile('Ø ks na den', t.ks1 != null ? nf(t.ks1, 1) : '—', `${nf(t.ks, 0)} ks za ${t.days} ${denN(t.days)} v práci`),
+    statTile('Ø ks na den', t.ks1 != null ? nf(t.ks1, 1) : '—', `${nf(t.ks, 0)} ks ÷ ${nf(t.days, 1)} odpracovaných dnů (${nf(t.hrs, 1)} h)`),
     statTile('Kusy za hodinu', t.ph != null ? nf(t.ph, 1) : '—', x.time ? 'kusy ÷ vykázaný čas' : 'evidence bez času'),
     statTile('Plnění normy', t.norm != null ? `${nf(t.norm, 1)} %` : '—', t.norm != null ? 'norma ÷ čas u řádků s normou' : 'norma v evidenci není'),
   ].join('')}</div>`;
@@ -13522,7 +13522,7 @@ function kpHtml() {
       return `<tr data-dvperson="${esc(q.key)}" tabindex="0" class="dv-click">
         <td class="r num kp-rank" data-label="Pořadí">${q.rank == null ? '<span class="muted">–</span>' : `<b>${q.rank}.</b>`}</td>
         <td class="name" data-label="Zaměstnanec">${q.rank != null ? `<span class="kp-mrank">${q.rank}.</span> ` : ''}<b>${esc(q.name)}</b>${q.wid ? ` <small class="muted num">ID ${esc(q.wid)}</small>` : ''}</td>
-        <td data-label="Skupina">${esc(q.group)}</td><td class="r num" data-label="Dny">${q.days || '<span class="muted">0</span>'}</td>
+        <td data-label="Skupina">${esc(q.group)}</td><td class="r num" data-label="Dny" title="${q.wd} ${denN(q.wd)} v práci, ${nf(q.hrs, 1)} h">${q.days ? nf(q.days, 1) : '<span class="muted">0</span>'}${q.days && q.days !== q.wd ? `<small class="muted kp-wd">z ${q.wd}</small>` : ''}</td>
         ${KP_COLS.map(([k, l]) => k === x.sort
           ? `<td class="r num kp-on" data-label="${l}"><span class="kp-val">${kpVal(k, q.v[k])}</span>${v != null ? `<span class="kp-track"><i class="kp-fill${tone}" data-w="${w}"></i></span>` : ''}</td>`
           : `<td class="r num" data-label="${l}">${kpVal(k, q.v[k])}</td>`).join('')}</tr>`;
@@ -13530,11 +13530,11 @@ function kpHtml() {
     return `<div class="card kp-dept" data-kpdept="${esc(d.name)}"><div class="card-head"><div><h3>${esc(d.name)}</h3>
       <p class="small muted">${d.people.length} ${d.people.length === 1 ? 'člověk' : d.people.length <= 4 ? 'lidé' : 'lidí'} · průměr oddělení ${avg != null ? `<b>${KP_FMT[x.sort](avg)}</b>` : '—'} · ${lab[x.sort]}</p></div></div>
       <div class="table-card flat"><table class="stack kp-tab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>
-      <tfoot><tr class="kp-avg"><td></td><td class="name" data-label="">Průměr oddělení</td><td></td><td class="r num" data-label="Dny">${d.avg.days}</td>${KP_COLS.map(([k, l]) => `<td class="r num${k === x.sort ? ' kp-on' : ''}" data-label="${l}">${kpVal(k, d.avg[k === 'ks' ? 'ks1' : k])}</td>`).join('')}</tr></tfoot></table></div></div>`;
+      <tfoot><tr class="kp-avg"><td></td><td class="name" data-label="">Průměr oddělení</td><td></td><td class="r num" data-label="Dny">${nf(d.avg.days, 1)}</td>${KP_COLS.map(([k, l]) => `<td class="r num${k === x.sort ? ' kp-on' : ''}" data-label="${l}">${kpVal(k, d.avg[k === 'ks' ? 'ks1' : k])}</td>`).join('')}</tr></tfoot></table></div></div>`;
   }).join('');
   return `${bar}${tiles}${notes.length ? `<div class="note i">${notes.map(esc).join(' ')}</div>` : ''}
     ${cards || '<p class="small muted">Za měsíc nikdo s vykázanou prací.</p>'}
-    <p class="hint">Ø ks na den = dokončené kusy ÷ odpracované dny z docházky. Ø h na den = vykázaný čas ÷ odpracované dny. Kusy za hodinu = kusy ÷ vykázaný čas. Plnění normy = norma ÷ čas u řádků s normou. Využití fondu = vykázaný čas ÷ hodiny v práci. Průměr oddělení je vážený (součty, ne průměr průměrů). Vedoucí a vyřazení se nepočítají, oddělení podle skupiny v Matici ke konci měsíce. Klik na člověka otevře profil.</p>`;
+    <p class="hint">Odpracované dny = hodiny z docházky přepočtené na směnu: celá směna (${nf(S.settings.shift, 1)} h) = 1 den, kratší den = hodiny ÷ ${nf(S.settings.shift, 1)} (např. 3,75 h = 0,5 dne), víc než směna = 1 den, den s kódem nepřítomnosti se nepočítá. Ø ks na den = dokončené kusy ÷ odpracované dny. Ø h na den = vykázaný čas ÷ odpracované dny. Kusy za hodinu = kusy ÷ vykázaný čas. Plnění normy = norma ÷ čas u řádků s normou. Využití fondu = vykázaný čas ÷ hodiny v práci. Průměr oddělení je vážený (součty, ne průměr průměrů). Vedoucí a vyřazení se nepočítají, oddělení podle skupiny v Matici ke konci měsíce. Klik na člověka otevře profil.</p>`;
 }
 async function exportKpXlsx() {
   kpPick();

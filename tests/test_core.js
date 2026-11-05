@@ -4217,9 +4217,9 @@ test('KPI (2.44): výkonnost na osobu po odděleních, průměr na den, řazení
   assert.strictEqual(out.un, 1, 'nespárované jméno z evidence');
   assert.deepStrictEqual(out.tot, [5, 15, 1010, 67.3, 15.8, 56.9]);
   assert.deepStrictEqual(out.a, [5, 66.7], 'Ø vykázané h na den a využití fondu');
-  assert.deepStrictEqual(out.sheet[0], 12);
-  assert.deepStrictEqual(out.sheet[1], ['Brus', 1, 'Pb Jan', '2', 'Brus', 2, 300, 150]);
-  assert.deepStrictEqual(out.sheet[2], ['Celkem', '', '', '', '', 15, 1010, 67.3]);
+  assert.deepStrictEqual(out.sheet[0], 14);
+  assert.deepStrictEqual(out.sheet[1], ['Brus', 1, 'Pb Jan', '2', 'Brus', 2, 15, 2]);
+  assert.deepStrictEqual(out.sheet[2], ['Celkem', '', '', '', '', 15, 112.5, 15]);
   assert.strictEqual(out.none, true, 'měsíc bez evidence');
   return null;
 });
@@ -4473,6 +4473,32 @@ test('Docházka postaru (2.48): kontrola jmen, prohozené jméno a příjmení, 
   assert.strictEqual(out.skipped, 2, 'neznámý a zdvojený řádek');
   assert.deepStrictEqual(out.hrs, [7.5, 0, 7.5, 7.5, 7.5]);
   assert.strictEqual(out.emps, 9, 'nikdo nový');
+  return null;
+});
+
+test('KPI (2.49): odpracované dny přepočtené na směnu 7,5 h (kratší den = část dne)', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    st.positions = [mkPos('g1', 'Brus', [])]; st.positions[0].dept = 'Brus';
+    st.employees.a = { key: 'a', last: 'A', first: 'Jan', positionId: 'g1', shift: 'R', note: '', wid: '1' };
+    st.employees.b = { key: 'b', last: 'B', first: 'Jan', positionId: 'g1', shift: 'R', note: '', wid: '2', shortFri: true };
+    S = sanitizeState(st);
+    const days = ['2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08', '2026-10-09', '2026-10-10'];
+    S.periods['2026-10'] = { id: '2026-10', y: 2026, m: 10, days, codes: {}, file: 'x', at: 1, headerRow: 1, rows: {
+      a: { first: 'Jan', last: 'A', h: [7.5, 3.75, 9, 7.5, 0, 0], c: [null, null, null, 'D', null, null] },
+      b: { first: 'Jan', last: 'B', h: [7.5, 7.5, 7.5, 7.5, 6.5, 3.75], c: [null, null, null, null, null, null] } } };
+    const rec = (name, total) => ({ name, total, count: 1, days: { '2026-10-05': total }, spent: 600, norm: 0, nspent: 0 });
+    S.production['2026-10'] = { time: true, file: 'v.xlsx', at: 1, records: 2, total: 0, names: { '1': rec('1', 250), '2': rec('2', 550) } };
+    const x = kpiPerf('2026-10', { now: new Date(2026, 9, 31).getTime() });
+    const q = k => x.people.find(p => p.key === k);
+    return JSON.stringify({ a: [q('a').wd, q('a').days, q('a').v.ks], b: [q('b').wd, q('b').days, q('b').v.ks], tot: [x.tot.days, x.tot.ks1] });
+  })()`));
+  // a: 7,5 h = 1, 3,75 h = 0,5, 9 h = 1 (víc než směna), den s kódem D se nepočítá → 2,5 dne, 250 ks = 100 ks/den
+  assert.deepStrictEqual(out.a, [3, 2.5, 100]);
+  // b: zkrácený pátek 6,5 h = celá jeho směna (1), sobota 3,75 h = 0,5 → 5,5 dne, 550 ks = 100 ks/den
+  assert.deepStrictEqual(out.b, [6, 5.5, 100]);
+  assert.deepStrictEqual(out.tot, [8, 100]);
   return null;
 });
 

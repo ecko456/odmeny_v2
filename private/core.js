@@ -513,6 +513,14 @@ function productionOf(key){return prodIndex()[key]||null;}
 /* Průměr na den se počítá vůči odpracovaným dnům z docházky, ne vůči dnům se zápisem:
    díl přes několik dnů se zapíše jednou, ale pracovalo se na něm celou dobu. */
 function workedDays(att){return att?(att.workDays+att.wkDays):0;}
+/** Odpracované dny přepočtené na směny (2.49, KPI Výkonnost na osobu): den s celou směnou
+    (7,5 h, u zkráceného pátku jeho směna) = 1 den, kratší den = hodiny ÷ směna, víc než směna
+    se počítá jako 1. Dny s kódem nepřítomnosti se nepočítají (attendance je má s 0 h). */
+function shiftDays(att){
+  if(!att||!att.found)return 0;
+  let d=0;att.cells.forEach(c=>{if(c.h>0&&c.ds>0)d+=Math.min(c.h,c.ds)/c.ds;});
+  return Math.round(d*100)/100;
+}
 function avgPerDay(prod,att){const d=workedDays(att);return (prod&&d)?prod.total/d:null;}
 function avgTitle(prod,att){
   if(!prod)return "";
@@ -5968,10 +5976,10 @@ function kpiPerf(month,opts){
     const people=[];
     Object.entries(idx).forEach(([key,pr])=>{
       const e=S.employees[key];if(!e||e.excluded||isLead(e))return;
-      const att=per?attendance(per,key):null,days=workedDays(att&&att.found?att:null);
+      const att=per?attendance(per,key):null,days=shiftDays(att),wd=workedDays(att&&att.found?att:null);
       const g=dvGroupOf(e,endIso,today);
       const q={key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",gid:g.id,group:g.name,dept:g.id==="-"?"Bez skupiny":(g.dept||"").trim()||g.name,
-        days,ks:pr.total,spent:time?pr.spent:null,norm:pr.nspent>0?pr.norm/pr.nspent*100:null,nm:pr.norm||0,ns:pr.nspent||0,
+        days,wd,hrs:att&&att.found?att.totalHours:0,ks:pr.total,spent:time?pr.spent:null,norm:pr.nspent>0?pr.norm/pr.nspent*100:null,nm:pr.norm||0,ns:pr.nspent||0,
         fund:att&&att.found?att.totalHours*60:0};
       q.v={ks:days?q.ks/days:null,h:time&&days?pr.spent/60/days:null,ph:time&&pr.spent>0?q.ks/(pr.spent/60):null,
         norm:q.norm,use:time&&att&&att.found&&att.totalHours>0?pr.spent/(att.totalHours*60)*100:null};
@@ -6000,10 +6008,10 @@ function kpiCmp(sort,dir){
     ne průměr průměrů: člověk se dvěma dny neváží stejně jako člověk s dvaceti. */
 function kpiAvg(list,time){
   const sum=f=>list.reduce((s,q)=>s+(f(q)||0),0);
-  const days=sum(q=>q.days),ks=sum(q=>q.ks),sp=time?sum(q=>q.spent):0;
+  const days=Math.round(sum(q=>q.days)*100)/100,wd=sum(q=>q.wd),hrs=sum(q=>q.hrs),ks=sum(q=>q.ks),sp=time?sum(q=>q.spent):0;
   const nm=sum(q=>q.nm),ns=sum(q=>q.ns);
   const us=list.filter(q=>q.v.use!=null),usp=us.reduce((s,q)=>s+q.spent,0),uf=us.reduce((s,q)=>s+q.fund,0);
-  return {people:list.length,days,ks,
+  return {people:list.length,days,wd,hrs,ks,
     ks1:days?ks/days:null,h:time&&days?sp/60/days:null,ph:time&&sp>0?ks/(sp/60):null,
     norm:ns>0?nm/ns*100:null,use:uf>0?usp/uf*100:null};
 }
@@ -6012,12 +6020,12 @@ function kpiSheets(x){
   const lab=Object.fromEntries(KPI_SORT);
   const r1=v=>v==null?"":Math.round(v*10)/10;
   const rows=[["Výkonnost na osobu · "+monthLabel(x.month)],["Řazeno: "+lab[x.sort]+(x.dir==="worst"?", od nejhorších":", od nejlepších")],[],
-    ["Oddělení","Pořadí","Příjmení a jméno","ID","Skupina","Odpracované dny","Kusy celkem","Ø ks na den","Ø vykázané h na den","Kusy za hodinu","Plnění normy %","Využití fondu %"]];
+    ["Oddělení","Pořadí","Příjmení a jméno","ID","Skupina","Dny v práci","Odpracované hodiny","Odpracované dny (přepočet na směnu)","Kusy celkem","Ø ks na den","Ø vykázané h na den","Kusy za hodinu","Plnění normy %","Využití fondu %"]];
   x.depts.forEach(d=>{
-    d.people.forEach(q=>rows.push([d.name,q.rank==null?"":q.rank,q.name,q.wid,q.group,q.days,q.ks,r1(q.v.ks),r1(q.v.h),r1(q.v.ph),r1(q.v.norm),r1(q.v.use)]));
-    rows.push([d.name,"","Průměr oddělení","","",d.avg.days,d.avg.ks,r1(d.avg.ks1),r1(d.avg.h),r1(d.avg.ph),r1(d.avg.norm),r1(d.avg.use)]);
+    d.people.forEach(q=>rows.push([d.name,q.rank==null?"":q.rank,q.name,q.wid,q.group,q.wd,r1(q.hrs),q.days,q.ks,r1(q.v.ks),r1(q.v.h),r1(q.v.ph),r1(q.v.norm),r1(q.v.use)]));
+    rows.push([d.name,"","Průměr oddělení","","",d.avg.wd,r1(d.avg.hrs),d.avg.days,d.avg.ks,r1(d.avg.ks1),r1(d.avg.h),r1(d.avg.ph),r1(d.avg.norm),r1(d.avg.use)]);
   });
-  rows.push(["Celkem","","","","",x.tot.days,x.tot.ks,r1(x.tot.ks1),r1(x.tot.h),r1(x.tot.ph),r1(x.tot.norm),r1(x.tot.use)]);
+  rows.push(["Celkem","","","","",x.tot.wd,r1(x.tot.hrs),x.tot.days,x.tot.ks,r1(x.tot.ks1),r1(x.tot.h),r1(x.tot.ph),r1(x.tot.norm),r1(x.tot.use)]);
   return [{name:"Výkonnost na osobu",rows}];
 }
 

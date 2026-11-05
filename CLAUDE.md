@@ -34,6 +34,22 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.49):
+
+- Uživatel: „Prověř zda v KPI výkonost na osobu, přepočítává ks/den na počet odpracovaných dnů
+  z docházky, pokud byl celou směnu, tak 7,5 hodiny, pokud méně, tak den má méně hodin“.
+  - Nebylo tak: `kpiPerf` bral `workedDays` (každý den s hodinami = 1).
+  - Core `shiftDays(att)` (za `workedDays`): součet min(h, `ds`) ÷ `ds` přes `att.cells`
+    (`ds` = `dayShift`, tj. `S.settings.shift` 7,5 h, zkrácený pátek `friShift`), kód
+    nepřítomnosti = 0 h, na 0,01. `kpiPerf`: `days` = `shiftDays`, navíc `wd` (dny v práci)
+    a `hrs`; `kpiAvg` sčítá i `wd`, `hrs`. `kpiSheets`: sloupce Dny v práci, Odpracované
+    hodiny, Odpracované dny (přepočet na směnu).
+  - UI `kpHtml`: Dny `nf(days, 1)` + `.kp-wd` „z N“, dlaždice „ks ÷ N odpracovaných dnů (h)“,
+    vysvětlivka. **Kapacity a zaškolení (`perfOf`) zůstávají na `workedDays`**, uživatel chtěl
+    jen KPI; kdyby chtěl stejně i tam, změnit `perfOf`.
+  - Testy: core „KPI (2.49)“ a upravený „KPI (2.44)“ (Excel), `e2e_vykon` (Excel, kratší den).
+    `ODM_VERSION` 2.49, data beze změny (41).
+
 Stav k 5. 11. 2026 (verze 2.48):
 
 - Uživatel: „Budu naposledy nahrávat excel s docházkou za říjen, můžeš přidat raději AI na kontrolu
@@ -2088,7 +2104,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.46 | `1019df6` | Úkoly (termín, zodpovědná osoba, stavy, komentáře na časové ose, opakování, připomínky), docházka zaokrouhlená na směnu a čtvrthodiny, nejvýš 7,5 h (data verze 41) |
 | 2.47 | `b38bfd2` | vzhled Sklo (tmavé sklo, oranžový akcent, Plus Jakarta Sans), přepínač zpět na původní vzhled v Nastavení, PDF beze změny |
 | 2.47.1 | `5e01612` | poznámka v Reportu docházky jen s počty (nepřišlo, neschopenka), spolehlivější stahování PDF a přesná chybová hláška |
-| 2.48 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kontrola jmen při nahrání docházky postaru (prohozené jméno a příjmení, překlep, ruční přiřazení), nikdo nový se nepřidá |
+| 2.48 | `f4f8d79` | kontrola jmen při nahrání docházky postaru (prohozené jméno a příjmení, překlep, ruční přiřazení), nikdo nový se nepřidá |
+| 2.49 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: KPI Výkonnost na osobu – odpracované dny přepočtené na směnu 7,5 h (kratší den = část dne) |
 
 Verze 2.1 přidala:
 
