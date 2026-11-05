@@ -4110,7 +4110,7 @@ test('Report docházky (2.40): plnění denního požadavku z příchodů – de
     });
   })()`));
   // 27. 10.: Brus plán 5 (Plán kapacit), přišli 2, b3 chybí, b4 nemocný; CNC 2/2; ID 77 neznámé
-  assert.deepStrictEqual(out.d, ['real', 7, 5, false, [['Brus', 5, 2, 'nemoc 1 · nepřišli ID 3'], ['CNC', 2, 2, ''], ['Neznámé ID', 0, 1, '']]]);
+  assert.deepStrictEqual(out.d, ['real', 7, 5, false, [['Brus', 5, 2, 'nepřišlo 1 · neschopenka 1'], ['CNC', 2, 2, ''], ['Neznámé ID', 0, 1, '']]]);
   // týden: 26. splněno (6, vedoucí ne), 27. ne, 28. svátek (přesčas), 29.–30. plán (Brus 5 − nemocný = 4, CNC 2, celkem 6 = splněno)
   assert.deepStrictEqual(out.w.slice(0, 7), [2, 1, 50, 2, 2, 1, 0]);
   assert.deepStrictEqual(out.w[7].map(t => t[0] + t[1]), ['2026-10-26real', '2026-10-27real', '2026-10-29plan', '2026-10-30plan']);

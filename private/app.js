@@ -2823,13 +2823,34 @@ async function readProdFile(file, forceChoose = false) {
 /* ==========================================================================
    PRAVIDLA DO PDF: vzniká v prohlížeči z dešifrovaných dat, server obsah nevidí
    ========================================================================== */
-async function pdfAsset(name) {
-  const res = await fetch(`app.php?f=${name}&v=${document.body.dataset.privateVersion || '1'}`, { credentials: 'same-origin' });
-  if (!res.ok) throw new Error(`nepodařilo se načíst ${name} (${res.status})`);
+/* Písma PDF (2.47.1): stáhnou se jednou za otevření stránky a drží se v paměti. Výpadek sítě se
+   zkusí ještě jednou, vypršené přihlášení (401) dá srozumitelnou hlášku místo „nepodařilo se načíst“. */
+const PDF_ASSETS = new Map();
+const PDF_EXPIRED = 'přihlášení na serveru vypršelo. Zamkni aplikaci (zámek nahoře) a odemkni ji znovu, pak PDF stáhni znovu';
+async function pdfAssetFetch(name) {
+  const url = `app.php?f=${name}&v=${document.body.dataset.privateVersion || '1'}`;
+  let res;
+  try { res = await fetch(url, { credentials: 'same-origin' }); } catch (error) { res = await fetch(url, { credentials: 'same-origin', cache: 'reload' }); }
+  if (res.status === 401) throw new Error(PDF_EXPIRED);
+  if (!res.ok) throw new Error(`písmo ${name} se nepodařilo stáhnout ze serveru (HTTP ${res.status})`);
   const bytes = new Uint8Array(await res.arrayBuffer());
   let bin = '';
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+function pdfAsset(name) {
+  if (!PDF_ASSETS.has(name)) PDF_ASSETS.set(name, pdfAssetFetch(name).catch(error => { PDF_ASSETS.delete(name); throw error; }));
+  return PDF_ASSETS.get(name);
+}
+async function pdfLib() {
+  if (window.jspdf) return;
+  const src = `app.php?f=jspdf.js&v=${document.body.dataset.privateVersion || '1'}`;
+  try { await OdmLock.loadScript(src); } catch (error) {
+    const res = await fetch(src, { credentials: 'same-origin', method: 'HEAD' }).catch(() => null);
+    if (res && res.status === 401) throw new Error(PDF_EXPIRED);
+    await OdmLock.loadScript(`${src}&r=${Date.now()}`).catch(() => { throw new Error('knihovnu pro PDF se nepodařilo stáhnout ze serveru, zkontroluj připojení a zkus to znovu'); });
+  }
+  if (!window.jspdf) throw new Error('knihovna pro PDF se nenačetla, obnov stránku (Ctrl+Shift+R)');
 }
 
 function drawRules(doc, d) {
@@ -2939,7 +2960,7 @@ async function exportRulesPdf() {
   const button = $('#btnRulesPdf');
   button.disabled = true;
   try {
-    if (!window.jspdf) await OdmLock.loadScript(`app.php?f=jspdf.js&v=${document.body.dataset.privateVersion || '1'}`);
+    await pdfLib();
     const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
     const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
     doc.addFileToVFS('Plex-Regular.ttf', regular);
@@ -5704,7 +5725,7 @@ function bindTop5Events() {
    Vzniká v prohlížeči z dešifrovaných dat, server obsah nevidí.
    ========================================================================== */
 async function newPdf(orientation = 'portrait', opts = {}) {
-  if (!window.jspdf) await OdmLock.loadScript(`app.php?f=jspdf.js&v=${document.body.dataset.privateVersion || '1'}`);
+  await pdfLib();
   const [regular, semibold, mono, monoBold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf'),
     ...(opts.mono ? [pdfAsset('pdf-mono.ttf'), pdfAsset('pdf-mono-semibold.ttf')] : [])]);
   const doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation, compress: true });
@@ -6315,7 +6336,8 @@ async function withPdf(button, fn, orientation = 'portrait', opts = {}) {
     const doc = await newPdf(orientation, opts);
     return await fn(doc);
   } catch (error) {
-    toast(`PDF se nepovedlo: ${error.message}`, true);
+    console.error(error);
+    toast(`PDF se nepovedlo vytvořit: ${error && error.message ? error.message : error}`, true);
     return null;
   } finally {
     if (button) button.disabled = false;
@@ -12932,7 +12954,7 @@ async function exportDrPdf(button) {
       P.text(`Strana ${i} / ${n}`, 1224, P.PH - 22, 11, { c: DRC.muted, a: 'end' });
     }
     downloadFile(`report-dochazky-${st.mode === 'day' ? r.from : `${r.from}-${r.to}`}.pdf`, doc.output('blob'), 'application/pdf');
-  }, 'portrait', { mono: true });
+  }, 'portrait');
 }
 async function exportDrXlsx() {
   const st = drRef();

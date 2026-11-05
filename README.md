@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.47.1
+
+- **KPI → Report docházky:** sloupec Poznámka ukazuje jen počty, kolik lidí nepřišlo a kolik
+  má neschopenku („nepřišlo 2 · neschopenka 1“). ID už v něm nejsou.
+- **PDF:** písma a knihovna pro PDF se stáhnou jen jednou a pak zůstanou v paměti. Výpadek sítě
+  se zkusí znovu. Když vyprší přihlášení na serveru, aplikace to řekne přímo (zamknout
+  a odemknout). Chybová hláška ukazuje přesnou příčinu. Report docházky už nepotřebuje písmo
+  Plex Mono.
+
 ## Co je nového ve verzi 2.47
 
 - **Nový vzhled Sklo** podle návrhu (tmavé poloprůhledné panely s rozmazaným pozadím, oranžový

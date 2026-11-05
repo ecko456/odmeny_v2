@@ -34,6 +34,24 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.47.1):
+
+- Uživatel: „V KPI v Report docházky mi nejde stáhnout PDF, vyskočí chyba, že se PDF nepovedlo
+  načíst. Dále v ‚Poznámka‘ uvádět jen počty, kolik nepřišlo a kolik má neschopenku, nemusíš
+  uvádět ID.“
+  - Chybu jsme nevyvolali: PDF vzniklo ve všech režimech na ukázkových datech, na 30 skupinách
+    (2 strany), na neobvyklých ID a názvech (azbuka, emoji), se skupinami reportu i s neznámými
+    ID. Nevyšlo NaN v obsahu ani poškozený soubor (pymupdf). Nejpravděpodobnější příčina je
+    hláška „PDF se nepovedlo: nepodařilo se načíst …“ z `pdfAsset` nebo `loadScript`, tedy
+    stažení písma nebo jsPDF ze serveru (401 po vypršení relace, výpadek sítě).
+  - `pdfAsset` drží písma v paměti (`PDF_ASSETS`), síť zkusí znovu, 401 → `PDF_EXPIRED`
+    (zamknout a odemknout). `pdfLib()` načte jsPDF (opakování a rozlišení 401). `withPdf` píše
+    „PDF se nepovedlo vytvořit: …“ a chybu do konzole. Report docházky bez `mono`.
+  - `drDay` poznámka: „nepřišlo N“ (vždy, když někdo chybí) · „neschopenka N“, bez ID.
+  - **Když se chyba bude opakovat, chtít od uživatele přesný text hlášky.**
+  - Testy: core „Report docházky (2.41)“, `e2e_report` (poznámka 27. 10., hláška při 401).
+    `ODM_VERSION` 2.47.1, data beze změny (41).
+
 Stav k 4. 11. 2026 (verze 2.47):
 
 - Uživatel poslal návrh (Google Drive, `dashbordv11.zip`: React + Vite finanční dashboard,
@@ -2048,7 +2066,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.45.3 | `da36d15` | PDF Plánu kapacit s manažerským přehledem na 1. straně (ohrožené měsíce, potřeba po měsících, křivka vývoje), roky barevně |
 | 2.45.4 | `c4f0f7e` | PDF Plánu kapacit – chybí celkem pod grafem (0 zeleně, −N červeně), chybí po odděleních pod tabulkou |
 | 2.46 | `1019df6` | Úkoly (termín, zodpovědná osoba, stavy, komentáře na časové ose, opakování, připomínky), docházka zaokrouhlená na směnu a čtvrthodiny, nejvýš 7,5 h (data verze 41) |
-| 2.47 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: vzhled Sklo (tmavé sklo, oranžový akcent, Plus Jakarta Sans), přepínač zpět na původní vzhled v Nastavení, PDF beze změny |
+| 2.47 | `b38bfd2` | vzhled Sklo (tmavé sklo, oranžový akcent, Plus Jakarta Sans), přepínač zpět na původní vzhled v Nastavení, PDF beze změny |
+| 2.47.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: poznámka v Reportu docházky jen s počty (nepřišlo, neschopenka), spolehlivější stahování PDF a přesná chybová hláška |
 
 Verze 2.1 přidala:
 

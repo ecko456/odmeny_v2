@@ -5723,12 +5723,10 @@ function drDay(iso,ctx){
   }
   rows.forEach(r=>{
     if(kind==="none")return;
+    // Poznámka jen s počty (2.47.1, přání uživatele): kolik lidí nepřišlo a kolik má neschopenku, bez ID.
     const parts=[];
-    if(r.sick)parts.push("nemoc "+r.sick);
-    if(kind==="real"&&r.done<r.plan&&r.miss.length){
-      const ids=r.miss.map(w=>w?"ID "+w:"bez ID").sort((a,b)=>a.localeCompare(b,"cs",{numeric:true}));
-      parts.push("nepřišli "+ids.slice(0,6).join(", ")+(ids.length>6?" a "+(ids.length-6)+" další":""));
-    }
+    if(kind==="real"&&r.miss.length)parts.push("nepřišlo "+r.miss.length);
+    if(r.sick)parts.push("neschopenka "+r.sick);
     r.note=parts.join(" · ");
   });
   const plan=rows.filter(r=>!r.extra).reduce((x,r)=>x+r.plan,0),done=rows.reduce((x,r)=>x+r.done,0);

@@ -94,7 +94,7 @@ const pdfText = file => {
     };
   });
   // den 30. 10.: Brus plán 10 (Plán kapacit), přišlo 6 (301 vedoucí, 302 nemocný), Lepení 4/4, CNC 3/3, neznámé ID 1
-  check(JSON.stringify(exp.day) === JSON.stringify(['real', 14, 17, 14, true, [['Brus', 10, 6, 'nemoc 1'], ['Lepení', 4, 4, ''], ['CNC', 3, 3, ''], ['Neznámé ID', 0, 1, '']]]), `den: ${JSON.stringify(exp.day)}`);
+  check(JSON.stringify(exp.day) === JSON.stringify(['real', 14, 17, 14, true, [['Brus', 10, 6, 'neschopenka 1'], ['Lepení', 4, 4, ''], ['CNC', 3, 3, ''], ['Neznámé ID', 0, 1, '']]]), `den: ${JSON.stringify(exp.day)}`);
   check(JSON.stringify(exp.week.slice(0, 5)) === JSON.stringify([4, 2, 50, 2, 0]), `týden: ${JSON.stringify(exp.week)}`);
   check(JSON.stringify(exp.week[5].map(p => p[0])) === JSON.stringify(['2026-10-26', '2026-10-27', '2026-10-29', '2026-10-30']), 'v týdnu jen pracovní dny');
   check(JSON.stringify(exp.month) === JSON.stringify([4, 2, 17]), `měsíc: ${JSON.stringify(exp.month)}`);
@@ -106,7 +106,7 @@ const pdfText = file => {
   await page.click('[data-watab="report"]');
   await page.waitForSelector('.dr-paper');
   check(/SPLNĚNO/.test(await text(page, '.dr-verdict')) && /14\s*reálně dodáno/.test(await text(page, '.dr-verdict')), `výrok dne: ${await text(page, '.dr-verdict')}`);
-  check(/nemoc 1/.test(await text(page, '.dr-tab')) && /Neznámé ID/.test(await text(page, '.dr-tab')), 'tabulka dne s poznámkou a neznámým ID');
+  check(/neschopenka 1/.test(await text(page, '.dr-tab')) && /Neznámé ID/.test(await text(page, '.dr-tab')), 'tabulka dne s poznámkou a neznámým ID');
   check(!/P30\d/.test(await text(page, '.dr-paper')), 'v reportu nejsou jména');
   await page.screenshot({ path: path.join(shots, '01-den.png'), fullPage: true });
   // předchozí den = 29. 10. nesplněno, poznámka s ID
@@ -140,7 +140,17 @@ const pdfText = file => {
   check(dl.suggestedFilename() === 'report-dochazky-2026-10-30.pdf' && fs.readFileSync(pdfPath).slice(0, 5).toString() === '%PDF-', `PDF: ${dl.suggestedFilename()}`);
   const txt = pdfText(pdfPath);
   if (txt == null) console.log('pypdf není, text PDF se nekontroluje');
-  else check(/Report docházky/.test(txt) && /Denní report/.test(txt) && /SPLNĚNO/.test(txt) && /Rozpad po skupinách/.test(txt) && /nemoc 1/.test(txt) && !/P30\d/.test(txt), `text PDF: ${txt.slice(0, 400)}`);
+  else check(/Report docházky/.test(txt) && /Denní report/.test(txt) && /SPLNĚNO/.test(txt) && /Rozpad po skupinách/.test(txt) && /neschopenka 1/.test(txt) && !/P30\d/.test(txt), `text PDF: ${txt.slice(0, 400)}`);
+  // 2.47.1: poznámka jen s počty (27. 10.: v Brusu nepřišli 2, bez ID), vypršené přihlášení = srozumitelná hláška
+  const n29 = await page.evaluate(() => drDay('2026-10-27').rows.map(r => r.note));
+  check(n29.every(t => !/ID/.test(t)) && n29[0] === 'nepřišlo 2', `poznámka 27. 10.: ${JSON.stringify(n29)}`);
+  await page.route(/app\.php\?f=pdf-regular/, route => route.fulfill({ status: 401, body: '' }));
+  await page.evaluate(() => PDF_ASSETS.clear());
+  const okProblems = problems.length;
+  await page.click('[data-drpdf]');
+  await page.waitForFunction(() => /přihlášení na serveru vypršelo/.test(document.body.textContent), null, { timeout: 10000 }).catch(() => problems.push('PDF při 401 bez hlášky o přihlášení'));
+  problems.splice(okProblems, problems.length - okProblems, ...problems.slice(okProblems).filter(t => !/HTTP 401|console: Error|401 \(Unauthorized\)/.test(t)));
+  await page.unroute(/app\.php\?f=pdf-regular/);
   await page.click('[data-drmode="week"]');
   const [dw] = await Promise.all([page.waitForEvent('download'), page.click('[data-drpdf]')]);
   const pdfW = path.join(shots, dw.suggestedFilename());
