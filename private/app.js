@@ -2565,23 +2565,82 @@ async function doImport(aoa, name, fy, fm, force = false) {
   if (!force && !S.demo && S.periods[per.id]) {
     if (!(await confirmBox('Přepsat docházku?', `Docházka za ${periodName(per)} už je nahraná. Nový soubor ji nahradí; zařazení, sankce, ruční úpravy a výdeje zůstanou.`, 'Přepsat'))) return;
   }
+  // 2.48: do vlastních dat se hodiny jen přiřadí k lidem v systému (kontrola prohozeného jména
+  // a překlepů), nikdo nový se nepřidá a jména v systému zůstanou.
+  let pending = per;
+  let matchNote = '';
+  if (!S.demo) {
+    const m = attMatch(per);
+    const assign = await attMatchDialog(m, name);
+    if (!assign) return;
+    const r = attRemap(per, assign);
+    pending = r.period;
+    const got = Object.keys(pending.rows).length;
+    const fixed = m.rows.filter(x => x.how !== 'exact' && assign.get(x.k)).length;
+    matchNote = `přiřazeno lidí: ${got}${fixed ? ` (po kontrole jména ${fixed})` : ''}${r.skipped ? `, nenahrané řádky: ${r.skipped}` : ''}`;
+    store.note = { kind: 'import', text: `Nahrána docházka za ${periodName(per)} (${name}): ${matchNote}` };
+  }
   if (S.demo) {
     S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; S.log = []; S.eff = blankEff(); S.marks = {}; S.audit = blankAudit();
     dropDemoRaise(S.positions);
     store.note = { kind: 'import', text: `Nahrána první docházka za ${periodName(per)} (${Object.keys(per.rows).length} lidí, ${name}); ukázková data smazána` };
   }
-  S.periods[per.id] = per;
+  const fresh = !matchNote;
+  S.periods[per.id] = pending;
   setPeriod(per.id);
   let added = 0;
-  Object.entries(per.rows).forEach(([k, r]) => {
-    if (!S.employees[k]) { S.employees[k] = { key: k, first: r.first, last: r.last, positionId: null, level: null, note: '' }; added += 1; }
-    else { S.employees[k].first = r.first; S.employees[k].last = r.last; }
-  });
+  if (fresh) {
+    Object.entries(per.rows).forEach(([k, r]) => {
+      if (!S.employees[k]) { S.employees[k] = { key: k, first: r.first, last: r.last, positionId: null, level: null, note: '' }; added += 1; }
+      else { S.employees[k].first = r.first; S.employees[k].last = r.last; }
+    });
+  }
   save();
   showImport(res, { y: per.y, m: per.m });
   renderAll();
-  toast(`Nahráno: ${Object.keys(per.rows).length} lidí${added ? `, ${added} nových` : ''}.`);
+  if (!fresh) $('#importMsg').insertAdjacentHTML('beforeend', `<div class="note i att-matchmsg"><b>Kontrola jmen:</b> ${esc(matchNote)}. Nikdo nový se nepřidal.</div>`);
+  toast(fresh ? `Nahráno: ${Object.keys(per.rows).length} lidí${added ? `, ${added} nových` : ''}.` : `Docházka nahrána: ${matchNote}.`);
   if (added) $('#importMsg').insertAdjacentHTML('beforeend', `<div class="note w"><b>${added} nových lidí</b> čeká na zařazení do skupiny. <button class="link" type="button" data-go="lide">Zařadit teď</button></div>`);
+}
+
+/* Kontrola jmen před nahráním docházky postaru (2.48): ukáže řádky, které nesedí přesně
+   (prohozené jméno a příjmení, překlep, nenalezeno), s výběrem člověka ze systému. Vrátí mapu
+   řádek souboru → klíč člověka (bez přiřazení = nenahraje se), nebo null (zrušeno). */
+async function attMatchDialog(m, fileName) {
+  const assign = new Map(m.rows.filter(x => x.emp).map(x => [x.k, x.emp]));
+  const odd = m.rows.filter(x => x.how !== 'exact');
+  if (!odd.length && !m.missing.length) return assign;
+  const nameOf = k => { const e = S.employees[k]; return e ? `${e.last} ${e.first}`.trim() : k; };
+  const opts = Object.values(S.employees).filter(e => e && e.key).sort((a, b) => norm(`${a.last} ${a.first}`).localeCompare(norm(`${b.last} ${b.first}`), 'cs'));
+  const optHtml = sel => `<option value="">— nepřiřazovat —</option>${opts.map(e => `<option value="${esc(e.key)}"${e.key === sel ? ' selected' : ''}>${esc(`${e.last} ${e.first}`.trim())}${e.wid ? ` · ID ${esc(e.wid)}` : ''}${e.excluded ? ' (vyřazen)' : ''}</option>`).join('')}`;
+  const HOW = { swap: ['prohozené jméno a příjmení', 'acc'], fuzzy: ['podobné jméno (překlep)', 'warn'], none: ['v systému nenalezen', 'crit'], dup: ['stejný člověk je v souboru dvakrát', 'crit'] };
+  const order = { none: 0, dup: 1, fuzzy: 2, swap: 3 };
+  odd.sort((a, b) => order[a.how] - order[b.how] || norm(a.last).localeCompare(norm(b.last), 'cs'));
+  const rowHtml = (x, i) => `<tr data-amrow="${i}"><td class="name" data-label="V souboru"><b>${esc(`${x.first} ${x.last}`.trim())}</b><small class="muted">sloupec A ${esc(x.first || '—')} · B ${esc(x.last || '—')}</small></td>
+    <td data-label="Kontrola"><span class="tag ${HOW[x.how][1]}">${esc(HOW[x.how][0])}</span>${x.how === 'dup' && x.dupOf ? `<small class="muted"> (už přiřazen řádek ${esc(m.rows.find(r => r.k === x.dupOf) ? `${m.rows.find(r => r.k === x.dupOf).first} ${m.rows.find(r => r.k === x.dupOf).last}` : '')})</small>` : ''}${x.how === 'none' && x.cand.length ? `<small class="muted"> možná: ${x.cand.slice(0, 3).map(k => esc(nameOf(k))).join(', ')}</small>` : ''}</td>
+    <td data-label="Přiřadit k"><select name="am-${i}" aria-label="Přiřadit řádek ${esc(`${x.first} ${x.last}`)}">${optHtml(x.emp || '')}</select></td></tr>`;
+  const miss = m.missing.map(nameOf).sort((a, b) => norm(a).localeCompare(norm(b), 'cs'));
+  const res = await dialog({
+    title: 'Kontrola jmen v docházce', ok: 'Nahrát hodiny', wide: true,
+    html: `<p>Soubor <b>${esc(fileName)}</b>: ${m.rows.length} ${m.rows.length === 1 ? 'řádek' : m.rows.length <= 4 ? 'řádky' : 'řádků'}. Přesně sedí ${m.n.exact}${m.n.swap ? `, prohozené jméno a příjmení ${m.n.swap}` : ''}${m.n.fuzzy ? `, podobné jméno ${m.n.fuzzy}` : ''}${m.n.none + m.n.dup ? `, nepřiřazeno ${m.n.none + m.n.dup}` : ''}.</p>
+      <p class="small muted">Hodiny se jen přiřadí k lidem, kteří už v systému jsou. Nikdo nový se nepřidá a jména v systému zůstanou. Řádek bez přiřazení se nenahraje. Kontrola běží v prohlížeči, jména se nikam neposílají.</p>
+      ${odd.length ? `<div class="table-card flat att-matchtab"><table class="stack"><thead><tr><th>V souboru</th><th>Kontrola</th><th>Přiřadit k</th></tr></thead><tbody>${odd.map(rowHtml).join('')}</tbody></table></div>` : '<div class="note i">Všechny řádky souboru sedí přesně na lidi v systému.</div>'}
+      ${miss.length ? `<details class="att-miss"><summary>${miss.length} ${lidiN(miss.length)} ze systému v souboru ${miss.length >= 2 && miss.length <= 4 ? 'nejsou' : 'není'}</summary><p class="small">${miss.map(esc).join(', ')}</p></details>` : ''}`,
+    validate: form => {
+      const seen = new Map();
+      for (const [k, key] of assign) if (!odd.some(x => x.k === k)) seen.set(key, k);
+      for (let i = 0; i < odd.length; i += 1) {
+        const v = form.elements.namedItem(`am-${i}`).value;
+        if (!v) continue;
+        if (seen.has(v)) return `${nameOf(v)} je přiřazený dvakrát. Každý člověk může mít jen jeden řádek docházky.`;
+        seen.set(v, odd[i].k);
+      }
+      return null;
+    },
+  });
+  if (res.value !== 'ok') return null;
+  odd.forEach((x, i) => { const v = res.form.elements.namedItem(`am-${i}`).value; if (v) assign.set(x.k, v); else assign.delete(x.k); });
+  return assign;
 }
 
 /** Tabulka ze souboru: CSV (UTF-8 i Windows-1250) nebo Excel; u Excelu vybere nejlepší list. */

@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.48):
+
+- Uživatel: „Budu naposledy nahrávat excel s docházkou za říjen, můžeš přidat raději AI na kontrolu
+  správnosti? Může se stát, že bude prohozené jméno a příjmení. Ať to jen přiřadí hlavně hodiny do
+  docházky a nikoho nepřidává do systému apod.“
+  - **Bez AI, schválně:** AI by musela dostat jména lidí (pravidlo: žádná osobní data třetí
+    straně). Párování běží v prohlížeči a na prohozené jméno a překlepy stačí. Uživateli řečeno.
+  - Core (před evidencí práce): `attDist` (Levenshtein), `attSig` (slova seřazená),
+    `attMatch(per, emps)` → `rows[{k, first, last, emp, how exact|swap|fuzzy|none|dup, cand, dupOf}]`,
+    `n`, `missing` (bez vyřazených a vedoucích). Přesně, pak prohozené (`swap` i slova v jiném
+    pořadí), pak podobnost ≤ 2 znaky (jen jednoznačně), každý člověk nejvýš jednou.
+    `attRemap(per, assign)` → řádky pod klíčem a jménem ze systému, nepřiřazené pryč (`skipped`).
+  - UI `doImport`: mimo ukázková data `attMatchDialog(m, file)` (jen když něco nesedí přesně nebo
+    někdo chybí; tabulka `.att-matchtab`, `select[name="am-i"]`, validace dvojího přiřazení,
+    `<details class="att-miss">`), pak `store.note` „Nahrána docházka za … : přiřazeno lidí …“,
+    zpráva `.att-matchmsg`. Lidé se nepřidávají a jména se nepřepisují. Ukázková data (první
+    nahrání) beze změny.
+  - Testy: core „Docházka postaru (2.48)“, nový `tests/e2e_jmena.js`. `ODM_VERSION` 2.48, data
+    beze změny (41).
+
 Stav k 5. 11. 2026 (verze 2.47.1):
 
 - Uživatel: „V KPI v Report docházky mi nejde stáhnout PDF, vyskočí chyba, že se PDF nepovedlo
@@ -2067,7 +2087,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.45.4 | `c4f0f7e` | PDF Plánu kapacit – chybí celkem pod grafem (0 zeleně, −N červeně), chybí po odděleních pod tabulkou |
 | 2.46 | `1019df6` | Úkoly (termín, zodpovědná osoba, stavy, komentáře na časové ose, opakování, připomínky), docházka zaokrouhlená na směnu a čtvrthodiny, nejvýš 7,5 h (data verze 41) |
 | 2.47 | `b38bfd2` | vzhled Sklo (tmavé sklo, oranžový akcent, Plus Jakarta Sans), přepínač zpět na původní vzhled v Nastavení, PDF beze změny |
-| 2.47.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: poznámka v Reportu docházky jen s počty (nepřišlo, neschopenka), spolehlivější stahování PDF a přesná chybová hláška |
+| 2.47.1 | `5e01612` | poznámka v Reportu docházky jen s počty (nepřišlo, neschopenka), spolehlivější stahování PDF a přesná chybová hláška |
+| 2.48 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kontrola jmen při nahrání docházky postaru (prohozené jméno a příjmení, překlep, ruční přiřazení), nikdo nový se nepřidá |
 
 Verze 2.1 přidala:
 
@@ -2525,6 +2546,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
+  - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2): export docházky za měsíc (Excel, PDF, součty po odděleních, telefon);
   - `e2e_vzhled.js` (2.47): vzhled Sklo, přepnutí na původní, zapamatování, PDF stejné v obou vzhledech;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);

@@ -2743,3 +2743,13 @@ tr.dv-click:hover td { background: var(--surface-2); }
 }
 /* papíry reportů podle vzoru (Kapacity a zaškolení, Report docházky) mají dál písma Plex */
 :root[data-look="glass"] .ctr-paper, :root[data-look="glass"] .dr-paper { --body: "Plex", "Segoe UI", system-ui, -apple-system, Arial, sans-serif; --disp: "Barlow SC", "Segoe UI Semibold", system-ui, sans-serif; font-family: var(--body); }
+
+/* Kontrola jmen v docházce (2.48) */
+.att-matchtab td.name small { display: block; margin-top: 2px; }
+.att-matchtab select { min-width: 220px; width: 100%; }
+.att-matchtab td:last-child { width: 40%; }
+.att-miss summary { cursor: pointer; margin-top: 10px; }
+@media screen and (max-width: 900px) {
+  .att-matchtab select { min-width: 0; }
+  .att-matchtab td:last-child { width: auto; }
+}

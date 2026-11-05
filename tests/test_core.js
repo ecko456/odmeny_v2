@@ -4434,6 +4434,48 @@ test('Vrátit zpět (2.45): jen změněné hodnoty, pozdější změny zůstanou
   return null;
 });
 
+test('Docházka postaru (2.48): kontrola jmen, prohozené jméno a příjmení, překlep, nikdo nový', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    S = sanitizeState(blank());
+    const add = (last, first, extra) => { const key = norm(last) + '|' + norm(first); S.employees[key] = { key, last, first, positionId: null, note: '', ...extra }; };
+    add('Novák', 'Jan'); add('Dvořák', 'Petr'); add('Svoboda', 'Karel'); add('Černý', 'Tomáš'); add('Malý', 'Ivan', { excluded: true }); add('Vedoucí', 'Josef', { lead: ['Brus'] });
+    add('Kopecký', 'Aleš'); add('Kopecký', 'Aleš Jiří'); add('Horák', 'Milan');
+    S = sanitizeState(S);
+    // A jméno, B příjmení (jako soubor docházky)
+    const aoa = [['Jméno', 'Příjmení', '', '', '', '1.10.2026', '2.10.2026', '5.10.2026', '6.10.2026', '7.10.2026'],
+      ['Jan', 'Novák', '', '', '', 8, 8, 8, 8, 8],
+      ['Dvořák', 'Petr', '', '', '', 7.5, 'D', 7.5, 7.5, 7.5],
+      ['Karel', 'Svobodda', '', '', '', 6, 6, 6, 6, 6],
+      ['Tomas', 'Cerny', '', '', '', 8, 8, 0, 8, 8],
+      ['Neznámý', 'Člověk', '', '', '', 8, 8, 8, 8, 8],
+      ['Novák', 'Jan', '', '', '', 4, 4, 4, 4, 4],
+      ['Aleš', 'Kopecky', '', '', '', 1, 1, 1, 1, 1]];
+    const res = buildPeriod(aoa, 'rijen.xlsx');
+    const m = attMatch(res.period);
+    const by = Object.fromEntries(m.rows.map(x => [x.first + ' ' + x.last, [x.how, x.emp, x.cand.length]]));
+    const assign = new Map(m.rows.filter(x => x.emp).map(x => [x.k, x.emp]));
+    const r = attRemap(res.period, assign);
+    const keys = Object.keys(r.period.rows).sort();
+    return JSON.stringify({ by, n: m.n, missing: m.missing.sort(), keys, names: keys.map(k => r.period.rows[k].last + ' ' + r.period.rows[k].first), skipped: r.skipped,
+      hrs: r.period.rows['dvorak|petr'].h, emps: Object.keys(S.employees).length });
+  })()`));
+  assert.deepStrictEqual(out.by['Jan Novák'], ['exact', 'novak|jan', 0]);
+  assert.deepStrictEqual(out.by['Dvořák Petr'], ['swap', 'dvorak|petr', 0], 'prohozené jméno a příjmení');
+  assert.deepStrictEqual(out.by['Karel Svobodda'], ['fuzzy', 'svoboda|karel', 0], 'překlep');
+  assert.deepStrictEqual(out.by['Tomas Cerny'], ['exact', 'cerny|tomas', 0], 'bez diakritiky je stejný klíč');
+  assert.deepStrictEqual(out.by['Neznámý Člověk'], ['none', null, 0]);
+  assert.deepStrictEqual(out.by['Novák Jan'], ['dup', null, 1], 'prohozený řádek člověka, který už v souboru je, se nepřiřadí');
+  assert.strictEqual(out.by['Aleš Kopecky'][0], 'exact');
+  assert.deepStrictEqual(out.missing, ['horak|milan', 'kopecky|ales jiri'], 'chybí v souboru: bez vyřazených a vedoucích');
+  assert.deepStrictEqual(out.keys, ['cerny|tomas', 'dvorak|petr', 'kopecky|ales', 'novak|jan', 'svoboda|karel']);
+  assert.deepStrictEqual(out.names, ['Černý Tomáš', 'Dvořák Petr', 'Kopecký Aleš', 'Novák Jan', 'Svoboda Karel'], 'jména ze systému, ne ze souboru');
+  assert.strictEqual(out.skipped, 2, 'neznámý a zdvojený řádek');
+  assert.deepStrictEqual(out.hrs, [7.5, 0, 7.5, 7.5, 7.5]);
+  assert.strictEqual(out.emps, 9, 'nikdo nový');
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

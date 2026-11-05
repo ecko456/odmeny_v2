@@ -369,6 +369,65 @@ function buildPeriod(aoa,fileName,forceY,forceM){
     rows,codes,file:fileName,at:Date.now(),headerRow:hr+1}};
 }
 
+/* ---------- kontrola párování docházky postaru (2.48) ----------
+   Soubor docházky (A jméno, B příjmení) se přiřadí k lidem v systému, nikdo nový se nepřidá.
+   Pořadí: přesně (příjmení|jméno), prohozené jméno a příjmení, stejná slova v jiném pořadí,
+   podobnost (překlep do 2 znaků celkem, jen jednoznačně). Každý člověk nejvýš jednou. */
+function attDist(a,b){
+  if(a===b)return 0;
+  const m=a.length,n=b.length;if(!m||!n)return Math.max(m,n);
+  let prev=Array.from({length:n+1},(_,j)=>j);
+  for(let i=1;i<=m;i++){const cur=[i];for(let j=1;j<=n;j++)cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));prev=cur;}
+  return prev[n];
+}
+function attSig(a,b){return norm(a+" "+b).split(/[\s\-]+/).filter(Boolean).sort().join(" ");}
+function attMatch(per,emps){
+  emps=emps||S.employees;
+  const list=Object.values(emps||{}).filter(e=>e&&e.key);
+  const byKey=new Map(list.map(e=>[e.key,e]));
+  const bySig=new Map();
+  list.forEach(e=>{const g=attSig(e.last,e.first);bySig.set(g,(bySig.get(g)||[]).concat(e.key));});
+  const rows=Object.entries(per.rows||{}).map(([k,r])=>({k,first:r.first||"",last:r.last||"",emp:null,how:"none",cand:[]}));
+  const used=new Map();
+  const take=(x,key,how)=>{if(used.has(key)){x.how="dup";x.cand=[key];x.dupOf=used.get(key);return false;}used.set(key,x.k);x.emp=key;x.how=how;return true;};
+  rows.forEach(x=>{if(byKey.has(x.k))take(x,x.k,"exact");});
+  rows.forEach(x=>{
+    if(x.how!=="none")return;
+    const sw=norm(x.first)+"|"+norm(x.last);
+    if(byKey.has(sw)){take(x,sw,"swap");return;}
+    const c=(bySig.get(attSig(x.first,x.last))||[]).filter(k=>!used.has(k));
+    if(c.length===1)take(x,c[0],"swap");else if(c.length>1)x.cand=c;
+  });
+  rows.forEach(x=>{
+    if(x.how!=="none"||x.cand.length)return;
+    const a=norm(x.first),b=norm(x.last);
+    if((a+b).length<5)return;
+    let best=3,cand=[];
+    list.forEach(e=>{
+      if(used.has(e.key))return;
+      const f=norm(e.first),l=norm(e.last);
+      const d=Math.min(attDist(b,l)+attDist(a,f),attDist(a,l)+attDist(b,f));
+      if(d<best){best=d;cand=[e.key];}else if(d===best)cand.push(e.key);
+    });
+    if(best<=2&&cand.length===1)take(x,cand[0],"fuzzy");else if(best<=2)x.cand=cand;
+  });
+  const n={exact:0,swap:0,fuzzy:0,none:0,dup:0};rows.forEach(x=>n[x.how]++);
+  const inFile=new Set(rows.filter(x=>x.emp).map(x=>x.emp));
+  const missing=list.filter(e=>!e.excluded&&!isLead(e)&&!inFile.has(e.key)).map(e=>e.key);
+  return {rows,n,missing};
+}
+/** Docházka jen s přiřazenými lidmi: řádky pod klíčem a jménem člověka v systému, ostatní pryč. */
+function attRemap(per,assign,emps){
+  emps=emps||S.employees;
+  const rows={};let skipped=0;
+  Object.entries(per.rows||{}).forEach(([k,r])=>{
+    const key=assign.get(k);const e=key&&emps[key];
+    if(!e||rows[key]){skipped++;return;}
+    rows[key]={...r,first:e.first,last:e.last};
+  });
+  return {period:{...per,rows},skipped};
+}
+
 /* ---------- evidence práce (vyrobené kusy) ---------- */
 function cellToDateTime(v){
   if(v==null||v==="")return null;

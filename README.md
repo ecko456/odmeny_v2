@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.48
+
+- **Docházka (říjen 2026 a starší): kontrola jmen při nahrání.** Před uložením se každý řádek
+  souboru přiřadí k člověku, který už v systému je. Najde i prohozené jméno a příjmení
+  (sloupec A a B), slova v jiném pořadí a drobný překlep. Co nesedí přesně, ukáže okno
+  „Kontrola jmen v docházce“ s výběrem člověka. Řádek bez přiřazení se nenahraje.
+  **Nikdo nový se nepřidá a jména v systému se nepřepíšou.** Okno ukáže i lidi ze systému,
+  kteří v souboru chybí. Kontrola běží v prohlížeči a jména se nikam neposílají.
+
 ## Co je nového ve verzi 2.47.1
 
 - **KPI → Report docházky:** sloupec Poznámka ukazuje jen počty, kolik lidí nepřišlo a kolik

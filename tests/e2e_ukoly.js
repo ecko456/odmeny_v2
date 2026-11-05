@@ -175,6 +175,7 @@ async function newTask(page, x) {
   await page.click('[data-tkdel]');
   await page.waitForSelector('#dlg[open]');
   await page.click('#dlgOk');
+  await page.waitForFunction(() => !S.tasks.list.some(t => t.title === 'Úklid skladu nářadí') && document.querySelector('#tkList'), null, { timeout: 5000 }).catch(() => {});
   await saved(page);
   check(!(await task(page, 'Úklid skladu nářadí')).length && await page.isVisible('#tkList'), 'úkol smazán, zpět v seznamu');
 
