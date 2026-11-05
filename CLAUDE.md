@@ -34,6 +34,22 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.54):
+
+- Uživatel (k hodnocení vzhledu: moc oranžové, barvy v Docházce, kontrast, malé písmo,
+  prosvítání pozadí): „proveď všechny body a starý vzhled už můžeš z nastavení smazat, tento
+  si nechám“.
+  - `static/look.js`: vždy `data-look="glass"`, starý klíč `odmeny.look.v1:<adresa>` smaže,
+    `window.OdmLook = {get}`. `#secLook`, `lookNow`, `setLook` pryč. CSS původního vzhledu
+    zůstalo jako základ, sklo je pořád vrstva nad ním (`:root[data-look="glass"]`).
+  - Tokeny skla: `--ink-2` #cdd1da, `--ink-3` #a6abb8. Konec `app.css` „Doladění skla (2.54)“:
+    malá primární tlačítka neutrální, `.chip.on` jen `--acc-soft` + okraj, `.note.i` neutrální,
+    `.cell.full/.part` bez směny šedé, `.cell.ed` tečka 7 px, `.cell.lk` šrafování
+    (`:root .cell.cell.lk` kvůli síle selektoru), kalendář 25 px / 11 px, `body::before`
+    opacity .4 na datových stránkách nad 900 px.
+  - Testy: `e2e_vzhled` (bez volby, stará volba se zahodí, doladění, PDF nezávisí na CSS).
+    `ODM_VERSION` 2.54, data beze změny (43).
+
 Stav k 5. 11. 2026 (verze 2.53):
 
 - Uživatel (telefon): „když kliknu na první stránce na ranní, otevře se pod tím kompletní menu.
@@ -2201,7 +2217,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.50 | `44ea59f` | Docházka bez nahrávání, barvy dnů (ranní, odpolední, přesčas), Excel za měsíc v jednom listu po skupinách směn s barvami |
 | 2.51 | `6048aa2` | ruční úpravy docházky s důvodem, zámky dnů a měsíce (nahrání je nepřepíše), širší rozložení, požadavky pracovníka v Úkolech (data verze 42) |
 | 2.52 | `3f22515` | zkušební doba 3 měsíce od prvního evidovaného dne práce, ikona u jména s datem nástupu a konce |
-| 2.53 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plovoucí menu na telefonu s Hlavní stránkou a Ostatní, zkrácený pátek jen u odpolední sám od sebe, uzamčení vyřízeného protokolu Servisu (data verze 43) |
+| 2.53 | `dc2dcf8` | plovoucí menu na telefonu s Hlavní stránkou a Ostatní, zkrácený pátek jen u odpolední sám od sebe, uzamčení vyřízeného protokolu Servisu (data verze 43) |
+| 2.54 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: jen vzhled Sklo (volba v Nastavení pryč), méně oranžové, lepší kontrast, čitelnější kalendář Docházky, tlumené pozadí |
 
 Verze 2.1 přidala:
 
@@ -2663,7 +2680,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_rucni.js` (2.51): ruční úpravy docházky, zámky, nové nahrání, šířka, požadavek pracovníka v Úkolech, telefon;
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
-  - `e2e_vzhled.js` (2.47): vzhled Sklo, přepnutí na původní, zapamatování, PDF stejné v obou vzhledech;
+  - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);
   - `e2e_vykon.js` (2.44): KPI v menu, Výroba pryč, Výkonnost na osobu (pořadí, řazení, filtr, Excel, profil, telefon);

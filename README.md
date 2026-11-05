@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.54
+
+- **Jen vzhled Sklo.** Volba „Vzhled aplikace“ v Nastavení je pryč. Kdo měl na zařízení
+  zapnutý původní vzhled, uvidí po aktualizaci Sklo. PDF exporty se nemění.
+- **Doladěné Sklo:**
+  - oranžová je jen u hlavní akce a aktivní položky; malá tlačítka, informační pruhy
+    a zapnuté filtry jsou neutrální (filtr jen s oranžovým okrajem);
+  - šedé popisky a vysvětlivky jsou světlejší a lépe čitelné;
+  - v Docházce je den bez známé směny šedý (dřív oranžový jako akcent), ručně upravený den má
+    výraznou červenou tečku, uzamčený den je šrafovaný, čísla dnů jsou větší;
+  - teplé podsvícení pozadí je na stránkách s daty na monitoru tlumené (úvodní stránka
+    a telefon beze změny).
+
 ## Co je nového ve verzi 2.53
 
 - **Plovoucí menu na telefonu.** Volba směny na hlavní stránce už pod sebou neotevírá menu.

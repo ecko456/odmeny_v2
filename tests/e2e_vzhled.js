@@ -1,8 +1,8 @@
-// Prohlížečový průchod 2.47: vzhled Sklo (výchozí) a přepnutí zpět na původní vzhled v Nastavení.
-// Ověří: výchozí vzhled na zámku i v aplikaci, písmo Jakarta, přepínač, zapamatování po obnovení
-// stránky, původní vzhled bez stop skla, CSP bez chyb a že PDF export (Plán kapacit) vyjde v obou
-// vzhledech stejně (text i vykreslené strany, když je PyMuPDF). Hodiny stránky stojí, ať se PDF dá
-// porovnat. Spuštění stejně jako e2e_undo.js; snímky v $S/oshots-vzhled.
+// Prohlížečový průchod 2.47, od 2.54 jen vzhled Sklo (volba v Nastavení zrušená). Ověří: sklo na
+// zámku i v aplikaci, písmo Jakarta, doladění 2.54 (méně oranžové, kontrast), že stará uložená
+// volba původního vzhledu se zahodí, CSP bez chyb a že PDF export (Plán kapacit) nezávisí na CSS
+// (text i vykreslené strany, když je PyMuPDF). Hodiny stránky stojí, ať se PDF dá porovnat.
+// Spuštění stejně jako e2e_undo.js; snímky v $S/oshots-vzhled.
 const { chromium } = require(process.env.PW);
 const { execFileSync } = require('child_process');
 const fs = require('fs');
@@ -57,19 +57,21 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   };
   const pdfGlass = await pdfOf('plan-sklo.pdf');
 
-  // přepnutí na původní vzhled
+  // 2.54: volba vzhledu v Nastavení není, PDF nezávisí na CSS (porovnání s původní vrstvou CSS)
   await page.evaluate(() => showView('nastaveni'));
-  await page.waitForSelector('#secLook');
-  check(await page.inputValue('#secLook') === 'glass', 'v Nastavení vybrané Sklo');
-  await page.selectOption('#secLook', 'classic');
-  const cls = await page.evaluate(() => ({
-    look: document.documentElement.dataset.look, font: getComputedStyle(document.body).fontFamily, bg: getComputedStyle(document.body).backgroundColor,
-    side: getComputedStyle(document.querySelector('.side')).borderRadius, card: getComputedStyle(document.querySelector('.card')).backdropFilter,
-  }));
-  check(cls.look === 'classic' && /^Plex/.test(cls.font) && cls.side === '0px' && (cls.card === 'none' || !cls.card), `původní vzhled: ${JSON.stringify(cls)}`);
-  await page.evaluate(() => showView('prehled'));
-  await page.screenshot({ path: path.join(shots, '03-puvodni.png') });
+  await page.waitForSelector('#secLock');
+  check(!(await page.$('#secLook')), 'v Nastavení už není volba vzhledu');
+  await page.evaluate(() => { document.documentElement.dataset.look = 'classic'; });
   const pdfClassic = await pdfOf('plan-puvodni.pdf');
+  await page.evaluate(() => { document.documentElement.dataset.look = 'glass'; });
+  // doladění skla (2.54): malá tlačítka a zapnuté čipy bez oranžové plochy, čitelnější šedé texty
+  await page.evaluate(() => showView('ukoly'));
+  const tune = await page.evaluate(() => {
+    const chip = document.querySelector('#tkView .chip.on'), small = document.querySelector('.btn.small:not(.sec):not(.ghost):not(.danger)');
+    const ink3 = getComputedStyle(document.documentElement).getPropertyValue('--ink-3').trim();
+    return { chip: chip ? getComputedStyle(chip).backgroundImage : 'x', small: small ? getComputedStyle(small).backgroundImage : 'none', ink3 };
+  });
+  check(tune.chip === 'none' && tune.small === 'none' && tune.ink3 === '#a6abb8', `doladění skla: ${JSON.stringify(tune)}`);
 
   // PDF beze změny
   try {
@@ -88,12 +90,11 @@ print('same' if ok else 'diff')`, pdfGlass, pdfClassic]).toString().trim();
     check(same === 'same' || same === 'skip', `PDF: vykreslené strany v obou vzhledech stejné (${same})`);
   } catch (error) { problems.push(`PDF strany: ${String(error.stderr || error.message).slice(-300)}`); }
 
-  // volba vzhledu vydrží obnovení stránky (zámek i aplikace) a jde vrátit
+  // dřív uložený původní vzhled (2.47–2.53) se po načtení zahodí, vždy sklo
+  await page.evaluate(() => localStorage.setItem('odmeny.look.v1:' + location.pathname.replace(/[^/]*$/, ''), 'classic'));
   await page.reload();
   await page.waitForSelector('#lock');
-  check(await page.evaluate(() => document.documentElement.dataset.look) === 'classic', 'po obnovení původní vzhled');
-  await page.evaluate(() => window.OdmLook.set('glass'));
-  check(await page.evaluate(() => document.documentElement.dataset.look === 'glass' && localStorage.getItem('odmeny.look.v1:' + location.pathname.replace(/[^/]*$/, '')) === 'glass'), 'zpět na sklo');
+  check(await page.evaluate(() => document.documentElement.dataset.look === 'glass' && localStorage.getItem('odmeny.look.v1:' + location.pathname.replace(/[^/]*$/, '')) === null), 'po obnovení vždy sklo, stará volba smazaná');
 
   // telefon
   await page.setViewportSize({ width: 390, height: 844 });

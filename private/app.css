@@ -2841,3 +2841,33 @@ h1 .prob-ic .icon, h2 .prob-ic .icon { width: 16px; height: 16px; }
   body.fab-more-on .fab-other .fab-i { color: var(--acc); }
 }
 @media screen and (max-width: 900px) and (prefers-reduced-motion: reduce) { .fab-more { transition: none; } }
+
+/* ==========================================================================
+   Doladění skla (2.54)
+   1. Oranžová jen pro hlavní akci a aktivní položku: malá tlačítka jsou neutrální sklo,
+      zapnutý filtr (čip) jen s oranžovým okrajem, bez záře.
+   2. Docházka: den bez známé směny šedý (oranžová je akcent), ručně upravený den s výraznou
+      tečkou, uzamčený den šrafovaný.
+   3. Kontrast textů (tokeny --ink-2 a --ink-3 v lock.css).
+   4. Větší čísla v kalendáři docházky.
+   5. Teplé podsvícení pozadí je na datových stránkách monitoru tlumené (úvod a telefon beze změny).
+   ========================================================================== */
+:root[data-look="glass"] .btn.small:not(.sec):not(.ghost):not(.danger) { background: rgba(255, 255, 255, .1); border-color: var(--glass-line); color: var(--ink); box-shadow: none; }
+:root[data-look="glass"] .btn.small:not(.sec):not(.ghost):not(.danger):hover { background: rgba(255, 255, 255, .16); filter: none; box-shadow: none; border-color: rgba(255, 255, 255, .3); }
+:root[data-look="glass"] .chip.on { background: var(--acc-soft); border-color: var(--acc-line); color: #fff; box-shadow: none; }
+:root[data-look="glass"] .chip.on .t5-count:not(.late), :root[data-look="glass"] .chip.on .num { color: #fff; }
+
+:root[data-look="glass"] .cell.full:not(.sh-am):not(.sh-pm) { background: #5b6170; color: #fff; }
+:root[data-look="glass"] .cell.part:not(.sh-am):not(.sh-pm) { background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .28); color: var(--ink); }
+:root[data-look="glass"] .note.i { background: rgba(255, 255, 255, .06); border-color: var(--glass-line); }
+.cell.ed::after { top: 1px; right: 1px; width: 7px; height: 7px; background: #ff3b30; box-shadow: 0 0 0 1.5px #fff; }
+:root .cell.cell.lk { background-image: repeating-linear-gradient(135deg, rgba(0, 0, 0, .34) 0 3px, transparent 3px 6px); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55); }
+:root[data-look="glass"] .callegend i.cell.ed, :root[data-look="glass"] .callegend i.cell.lk { background-color: #5b6170; }
+
+.att-table .calrow, .att-dayhead .calrow { grid-auto-columns: minmax(21px, 1fr); }
+.att-table .cell, .att-table button.cell { height: 25px; font-size: 11px; }
+.att-dl { height: 25px; }
+
+@media (min-width: 901px) {
+  :root[data-look="glass"] body[data-view]:not([data-view="domu"])::before { opacity: .4; }
+}
