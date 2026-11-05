@@ -200,7 +200,7 @@ async function newTask(page, x) {
     return { names: wb.SheetNames, a: X.utils.sheet_to_json(wb.Sheets['Úkoly'], { header: 1 }), b: X.utils.sheet_to_json(wb.Sheets['Časová osa'], { header: 1 }) };
   }, fs.readFileSync(xp).toString('base64'));
   check(dx.suggestedFilename() === 'ukoly-2026-11-04.xlsx' && JSON.stringify(xl.names) === '["Úkoly","Časová osa"]', `Excel: ${dx.suggestedFilename()} ${xl.names}`);
-  check(xl.a.length === 5 && xl.a[1][0] === 'Objednat brusné kotouče' && xl.a[1][5] === 'po termínu' && xl.b.some(r => r[3] === 'komentář' && /U vrat chybí revizní štítek/.test(r[4])) && !xl.b.some(r => /Objednán revizní technik/.test(r[4])), `Excel řádky: ${JSON.stringify(xl.a.slice(0, 2))}`);
+  check(xl.a.length === 5 && xl.a[1][0] === 'Objednat brusné kotouče' && xl.a[1][8] === 'po termínu' && xl.a[1][1] === 'úkol' && xl.b.some(r => r[3] === 'komentář' && /U vrat chybí revizní štítek/.test(r[4])) && !xl.b.some(r => /Objednán revizní technik/.test(r[4])), `Excel řádky: ${JSON.stringify(xl.a.slice(0, 2))}`);
 
   // úvod na telefonu, plovoucí menu, detail a Zpět
   await page.setViewportSize({ width: 390, height: 844 });

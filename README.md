@@ -62,6 +62,26 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.51
+
+- **Ruční úprava docházky s důvodem.** V Docházce klepni na den člověka a zapiš hodiny nebo kód
+  nepřítomnosti. Důvod úpravy je povinný a zapíše se do historie změn i s původní hodnotou.
+  - Ručně upravený den má v rohu červenou tečku.
+  - Nové nahrání docházky (postaru i soubor Docházka a výkony v KPI) ruční úpravy nepřepíše.
+  - Tlačítko „Vrátit hodnotu ze souboru“ úpravu zruší a den dostane hodnotu z posledního souboru.
+- **Zámky.**
+  - Zámkem nad dnem uzamkneš celý den: nové nahrání ho nezmění.
+  - Tlačítkem „Uzamknout měsíc“ uzamkneš celý měsíc. Uzamčený měsíc nahrání přeskočí a nejde
+    ani smazat, dokud ho neodemkneš. Ruční úpravy dnů jdou dál.
+- **Širší rozložení na velkých monitorech.** Docházka, Přehled, Matice, KPI, Úkoly a další
+  datové části využijí šířku až 2400 px, ostatní části až 1920 px.
+- **Požadavek pracovníka.** V Lidech má každý člověk kartu Požadavky pracovníka: co chce,
+  podrobnosti, termín, závažnost (nízká, střední, vysoká) a kdo to vyřeší.
+  - Požadavek je zároveň úkol v Úkolech: stavy, komentáře, připomínka termínu.
+  - V Úkolech je filtr „Požadavky pracovníků“, dlaždice s počtem a u řádku jméno a závažnost.
+  - Otevřený požadavek s vysokou závažností se ukáže v připomínce nahoře i bez termínu.
+- Verze dat 42: stránka 2.50 otevřená při aktualizaci už nic neuloží (výzva k obnovení).
+
 ## Co je nového ve verzi 2.50
 
 - **Docházka bez nahrávání.** Plocha „Přetáhni sem docházku“ (XLSX, XLSM nebo CSV) je pryč, říjen

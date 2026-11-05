@@ -135,6 +135,7 @@ const I = {
   grid: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
   chart: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M6.5 16v-4M11 16V7.5M15.5 16v-6M20 16V5"/></svg>',
   warn: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
+  unlock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.8"/></svg>',
   lock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>',
   camera: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.4-2h5.6l1.4 2h2.3A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   up: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 14 6-6 6 6"/></svg>',
@@ -1379,7 +1380,9 @@ function prodKv(r) {
   </dl>`;
 }
 
-function calStrip(a, e) {
+function calStrip(a, e, opt) {
+  // 2.51: opt = {m, key}: buňky jsou tlačítka ruční úpravy, ručně upravený den a uzamčený den
+  // mají značku
   return `<div class="calwrap"><div class="calrow">${a.cells.map(c => {
     let cls = 'cell';
     // 2.50: s člověkem (e) barva podle směny dne: ranní, odpolední, přesčas o víkendu / ve svátek
@@ -1390,7 +1393,11 @@ function calStrip(a, e) {
     else if (c.isEx || c.c) cls += ' abs';
     else cls += ' miss';
     if (kind === 'am' || kind === 'pm') cls += ` sh-${kind}`;
-    const title = `${DOW[c.d.dow]} ${c.d.d}.${c.d.m}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c ? `${c.c}${c.ah ? ` (${nf(c.ah, 2)} h u kódu, nepočítají se)` : ''}` : 'nic')}${kind ? ` · ${ATT_KIND[kind]}` : ''}${c.d.hol ? ` — ${c.d.hol}` : ''}`;
+    const ed = opt ? attEditOf(opt.m, opt.key, c.d.iso) : null, lk = opt ? attLocked(opt.m, c.d.iso) : false;
+    if (ed) cls += ' ed';
+    if (lk) cls += ' lk';
+    const title = `${DOW[c.d.dow]} ${c.d.d}.${c.d.m}. ${c.h > 0 ? `${nf(c.h)} h` : (c.c ? `${c.c}${c.ah ? ` (${nf(c.ah, 2)} h u kódu, nepočítají se)` : ''}` : 'nic')}${kind ? ` · ${ATT_KIND[kind]}` : ''}${c.d.hol ? ` — ${c.d.hol}` : ''}${ed ? ` · ručně upraveno (ze souboru ${attValText(ed.wh, ed.wc)}): ${ed.note}` : ''}${lk ? ' · uzamčeno' : ''}`;
+    if (opt) return `<button type="button" class="${cls}" data-attcell="${esc(c.d.iso)}" title="${esc(title)}" aria-label="${esc(`Upravit ${title}`)}">${c.d.d}</button>`;
     return `<div class="${cls}" title="${esc(title)}">${c.d.d}</div>`;
   }).join('')}</div></div>`;
 }
@@ -1645,6 +1652,7 @@ function renderPersonDetail() {
       <label class="switch"><input type="checkbox" id="pSick"${e.sick ? ' checked' : ''}><span>Nemoc: dočasně se nepočítá do kapacit směn${e.sick ? ` (od ${esc(dayText(e.sick))})` : ''}</span></label>
       <label class="switch"><input type="checkbox" id="pLead"><span>Vedoucí pracovník: nepočítá se do benefitů, v Matici dovedností jen jako vedoucí oddělení</span></label>
     </div>
+    ${tkReqCard(e)}
     ${legacyCard(e)}
     <div class="card rate-card">
       <div class="card-head"><div><h3>Dovednosti${pos ? ` · ${esc(pos.name)}` : ''}</h3>${pos && skills.length ? `<p class="small muted">Průměr <b>${nf(r.L.pct, 1)} %</b>${pos.onlyKafe ? ' (skupina jen s Kafe)' : ` → <b>${r.L.base}</b> z ${+pos.maxTab || 0} tabáků za dovednosti`}</p>` : ''}</div>
@@ -1690,6 +1698,7 @@ function renderPersonDetail() {
     toast(`${e.last} ${e.first}${e.shortFri ? `: pátek ${nf(friShift())} h = celá směna.` : `: pátek zase ${nf(S.settings.shift)} h.`}`);
   };
   $('#pLead').onchange = event => setLead(e, event.target.checked);
+  bindTkReqCard(box, e);
   // konec trestu (2.43): ukládá se při opuštění pole (datum se píše po číslicích, nepřekreslovat na change)
   $('#pEnd').addEventListener('focusout', event => {
     const v = event.target.value;
@@ -2578,6 +2587,11 @@ async function exportAttPdf(button) {
     downloadFile(`dochazka-${x.id}.pdf`, doc.output('blob'), 'application/pdf');
   }, 'portrait', { mono: true });
 }
+/* Docházka pro odměny po nahrání (2.51): uzamčený měsíc se nenahrál, uzamčené dny a ruční
+   úpravy zůstaly. */
+function dvPeriodsText(list) {
+  return list.map(x => x.locked ? `${monthLabel(x.m)} (měsíc je uzamčený, nenahrán)` : `${monthLabel(x.m)}${x.lockedDays || x.edits ? ` (${[x.lockedDays ? `uzamčené dny ${x.lockedDays} beze změny` : '', x.edits ? `ruční úpravy ${x.edits} zůstaly` : ''].filter(Boolean).join(', ')})` : ''}`).join(', ');
+}
 function renderAttendance() {
   const p = curPeriod();
   const box = $('#attView');
@@ -2585,21 +2599,79 @@ function renderAttendance() {
   const meta = periodMeta(p);
   const rows = Object.keys(p.rows).map(k => ({ k, r: p.rows[k], a: attendance(p, k) })).sort((a, b) => norm(a.r.last).localeCompare(norm(b.r.last), 'cs'));
   const totH = rows.reduce((t, x) => t + x.a.totalHours, 0);
-  box.innerHTML = `<div class="t5-weekbar att-bar"><span class="small muted">${esc(ctrCap(monthLabel(p.id)))} · odpracováno celkem <b class="num">${nf(totH)} h</b></span><span class="spacer"></span><button class="btn sec" type="button" data-attxlsx>Excel za měsíc</button><button class="btn" type="button" data-attpdf>PDF za měsíc</button></div>
+  const all = attLocked(p.id), nEd = attEditCount(p.id), L = (S.attLocks || {})[p.id];
+  const dmeta = periodMeta(p).days;
+  box.innerHTML = `<div class="t5-weekbar att-bar"><span class="small muted">${esc(ctrCap(monthLabel(p.id)))} · odpracováno celkem <b class="num">${nf(totH)} h</b>${nEd ? ` · ručně upraveno <b class="num">${nEd}</b> ${nEd === 1 ? 'den' : nEd <= 4 ? 'dny' : 'dní'}` : ''}</span><span class="spacer"></span><button class="btn ${all ? '' : 'ghost'} att-mlock${all ? ' on' : ''}" type="button" data-attlock="" aria-pressed="${all}">${all ? I.lock : I.unlock}${all ? 'Měsíc uzamčen' : 'Uzamknout měsíc'}</button><button class="btn sec" type="button" data-attxlsx>Excel za měsíc</button><button class="btn" type="button" data-attpdf>PDF za měsíc</button></div>
   ${attRehoursHtml(p)}
+  <p class="small muted att-edithelp">${all ? `${I.lock}Celý měsíc je uzamčený${L && L.by ? ` (${esc(L.by)}, ${esc(tsText(L.at))})` : ''}: nové nahrání docházky ho nezmění.` : 'Klepnutím na den upravíš hodiny nebo kód (vždy s důvodem). Ruční úpravy nové nahrání nepřepíše. Zámkem nad dnem uzamkneš celý den, nahrání ho pak nezmění.'} Ručně upravené dny mají v rohu tečku.</p>
   <div class="stats">${[
     statTile('Pracovních dnů', meta.work, `${nf(meta.fund)} h fondu`),
     statTile('Sobot', meta.sats, `víkendových dnů ${meta.sats + meta.suns}`),
     statTile('Lidí v souboru', rows.length, esc(p.file || '')),
     statTile('Svátků ve všední den', meta.hols, meta.hols ? 'nepočítají se do fondu' : 'žádné'),
   ].join('')}</div>
-  <div class="table-card"><table class="stack att-table"><thead><tr><th>Zaměstnanec</th><th>Měsíc</th><th class="r">Dny</th><th class="r">Hodiny</th><th class="r">Víkend</th></tr></thead><tbody>${rows.map(x => `<tr>
+  <div class="table-card"><table class="stack att-table${all ? ' att-all' : ''}"><thead><tr><th>Zaměstnanec</th><th class="cal att-dayhead"><span class="sr-only">Měsíc</span><div class="calwrap"><div class="calrow">${dmeta.map(d => { const on = all || (L && L.days.includes(d.iso)); return `<button type="button" class="cell att-dl${on ? ' on' : ''}${d.weekend || d.hol ? ' we' : ''}" data-attlock="${esc(d.iso)}" aria-pressed="${!!on}"${all ? ' disabled' : ''} title="${esc(`${DOW[d.dow]} ${d.d}.${d.m}.: ${on ? 'uzamčeno, klepnutím odemkneš' : 'klepnutím uzamkneš den'}`)}" aria-label="${esc(`${on ? 'Odemknout' : 'Uzamknout'} den ${d.d}.${d.m}.`)}">${on ? I.lock : I.unlock}</button>`; }).join('')}</div></div></th><th class="r">Dny</th><th class="r">Hodiny</th><th class="r">Víkend</th></tr></thead><tbody>${rows.map(x => `<tr>
     <td data-label="Zaměstnanec" class="name"><div class="who"><b>${esc(x.r.last)} ${esc(x.r.first)}</b></div></td>
-    <td data-label="Měsíc" class="cal">${calStrip(x.a, S.employees[x.k] || null)}</td>
+    <td data-label="Měsíc" class="cal" data-attkey="${esc(x.k)}">${calStrip(x.a, S.employees[x.k] || null, { m: p.id, key: x.k })}</td>
     <td data-label="Dny" class="r num">${x.a.workDays}</td>
     <td data-label="Hodiny" class="r num">${nf(x.a.workHours)}</td>
     <td data-label="Víkend" class="r num">${x.a.wkDays}</td></tr>`).join('')}</tbody></table></div>
-  <div class="callegend">${[['full sh-am', 'ranní'], ['full sh-pm', 'odpolední'], ['part sh-am', 'část směny (světlejší)'], ['wk', 'přesčas o víkendu / ve svátek'], ['full', 'odpracováno, směna neznámá'], ['abs', 'nepřítomnost (kód)'], ['miss', 'chybí'], ['wk0', 'volno']].map(([cls, label]) => `<span><i class="cell ${cls}"></i>${label}</span>`).join('')}</div>`;
+  <div class="callegend">${[['full sh-am', 'ranní'], ['full sh-pm', 'odpolední'], ['part sh-am', 'část směny (světlejší)'], ['wk', 'přesčas o víkendu / ve svátek'], ['full', 'odpracováno, směna neznámá'], ['abs', 'nepřítomnost (kód)'], ['miss', 'chybí'], ['wk0', 'volno'], ['full ed', 'ručně upraveno'], ['full lk', 'uzamčený den']].map(([cls, label]) => `<span><i class="cell ${cls}"></i>${label}</span>`).join('')}</div>`;
+}
+
+/* Zámek dne nebo měsíce (2.51). Měsíc se zamyká s potvrzením (nahrání ho pak vynechá). */
+async function attToggleLock(iso) {
+  const p = curPeriod();
+  if (!p) return;
+  const on = !!iso && !attLocked(p.id, iso);
+  if (!iso) {
+    const all = attLocked(p.id);
+    if (!all && !(await confirmBox('Uzamknout celý měsíc?', `Docházka za ${periodName(p)} se při dalším nahrání nezmění (soubor ji přeskočí). Ruční úpravy dnů půjdou dál. Odemknout jde stejným tlačítkem.`, 'Uzamknout'))) return;
+    attLockSet(S, p.id, '', !all, { by: ui.me.label || '', at: Date.now() });
+    save(); renderAttendance();
+    toast(all ? `Docházka za ${periodName(p)} odemčena.` : `Docházka za ${periodName(p)} uzamčena.`);
+    return;
+  }
+  attLockSet(S, p.id, iso, on, { by: ui.me.label || '', at: Date.now() });
+  save(); renderAttendance();
+  toast(on ? `Den ${dayText(iso)} uzamčen: nahrání ho nezmění.` : `Den ${dayText(iso)} odemčen.`);
+}
+/* Ruční úprava dne (2.51): hodiny, kód nepřítomnosti a povinný důvod. */
+async function attEditDialog(key, iso) {
+  const p = curPeriod();
+  if (!p) return;
+  const cell = attCellAt(p, key, iso), ed = attEditOf(p.id, key, iso);
+  const r = p.rows[key] || S.employees[key];
+  const who = r ? `${r.last} ${r.first}`.trim() : key;
+  const codes = [...new Set([...Object.keys(p.codes || {}), ...String(S.settings.excused || '').split(/[\s,;]+/).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'cs'));
+  const res = await dialog({
+    title: `Upravit docházku · ${who}`, ok: 'Uložit úpravu', wide: false,
+    html: `<p><b>${esc(DOW[new Date(`${iso}T12:00:00`).getDay()])} ${esc(dayText(iso))}</b> · teď ${esc(attValText(cell.h, cell.c))}${ed ? ` · <span class="tag acc">ručně upraveno</span> ze souboru ${esc(attValText(ed.wh, ed.wc))}` : ''}${attLocked(p.id, iso) ? ` · <span class="tag">${I.lock}uzamčeno</span>` : ''}</p>
+      <div class="form-grid att-edgrid">
+        <label class="field"><span>Odpracované hodiny</span><input name="h" inputmode="decimal" autocomplete="off" value="${esc(cell.c ? '' : String(cell.h || '').replace('.', ','))}" placeholder="např. 7,5" autofocus></label>
+        <label class="field"><span>Kód nepřítomnosti</span><input name="c" list="attCodes" maxlength="10" autocomplete="off" value="${esc(cell.c || '')}" placeholder="prázdné = v práci"></label>
+      </div><datalist id="attCodes">${codes.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+      <label class="field"><span>Důvod úpravy (povinný)</span><textarea name="note" rows="2" maxlength="300" aria-required="true" placeholder="proč se hodnota mění, třeba „zapomněl čipnout, potvrdil mistr“">${esc(ed ? ed.note : '')}</textarea></label>
+      <p class="small muted">Den s kódem nepřítomnosti se nepočítá jako odpracovaný (hodiny u kódu jsou jen pro informaci). Ruční úpravu nové nahrání docházky nepřepíše.</p>
+      ${ed ? '<button class="btn ghost small" type="submit" value="undo" formnovalidate>Vrátit hodnotu ze souboru</button>' : ''}`,
+    validate: form => {
+      const f = form.elements, h = String(f.h.value).trim();
+      if (h && !/^\d{1,2}([.,]\d{1,2})?$/.test(h)) return 'Hodiny zadej číslem, třeba 7,5.';
+      if (attHrs(h) > 24) return 'Den má nejvýš 24 hodin.';
+      if (String(f.note.value).trim().length < 3) return 'Napiš důvod úpravy (aspoň 3 znaky).';
+      return '';
+    },
+  });
+  if (res.value === 'undo') {
+    if (attEditDel(S, p.id, key, iso)) { save(); renderAll(); toast(`Docházka ${who}, ${dayText(iso)}: vrácena hodnota ze souboru.`); }
+    return;
+  }
+  if (res.value !== 'ok') return;
+  const f = res.form.elements;
+  const out = attEditSet(S, p.id, key, iso, { h: f.h.value, c: f.c.value, note: f.note.value }, { by: ui.me.label || '', at: Date.now() });
+  if (out.err) { toast(out.err, true); return; }
+  save(); renderAll();
+  toast(out.back ? `Hodnota je stejná jako v souboru, ruční úprava zrušena.` : `Docházka ${who}, ${dayText(iso)}: ${attValText(out.edit.h, out.edit.c)}.`);
 }
 
 /* Hodiny ze souboru Docházka a výkony nahrané před 2.46 nejsou zaokrouhlené: nabídne přepočet
@@ -2636,8 +2708,13 @@ async function doImport(aoa, name, fy, fm, force = false) {
     showImport({ ok: false, err: `Docházka za ${periodName(per)} se nahrává v KPI tlačítkem Nahrát docházku a výkony (od listopadu 2026 je to jediný zdroj docházky). Tady jde nahrát jen říjen 2026 a dřív.` }, null);
     return;
   }
+  if (!S.demo && attLocked(per.id)) {
+    showImport({ ok: false, err: `Docházka za ${periodName(per)} je uzamčená. Kdo ji chce nahrát znovu, musí v Docházce měsíc odemknout.` }, null);
+    return;
+  }
   if (!force && !S.demo && S.periods[per.id]) {
-    if (!(await confirmBox('Přepsat docházku?', `Docházka za ${periodName(per)} už je nahraná. Nový soubor ji nahradí; zařazení, sankce, ruční úpravy a výdeje zůstanou.`, 'Přepsat'))) return;
+    const ne = attEditCount(per.id), nl = ((S.attLocks || {})[per.id] || { days: [] }).days.length;
+    if (!(await confirmBox('Přepsat docházku?', `Docházka za ${periodName(per)} už je nahraná. Nový soubor ji nahradí; zařazení, sankce, ruční úpravy${ne ? ` docházky (${ne})` : ''}${nl ? `, uzamčené dny (${nl})` : ''} a výdeje zůstanou.`, 'Přepsat'))) return;
   }
   // 2.48: do vlastních dat se hodiny jen přiřadí k lidem v systému (kontrola prohozeného jména
   // a překlepů), nikdo nový se nepřidá a jména v systému zůstanou.
@@ -2655,12 +2732,14 @@ async function doImport(aoa, name, fy, fm, force = false) {
     store.note = { kind: 'import', text: `Nahrána docházka za ${periodName(per)} (${name}): ${matchNote}` };
   }
   if (S.demo) {
-    S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; S.log = []; S.eff = blankEff(); S.marks = {}; S.audit = blankAudit();
+    S.demo = false; S.periods = {}; S.employees = {}; S.production = {}; S.prodMap = {}; S.sanctions = []; S.adjust = {}; S.kafe = {}; S.issued = {}; S.log = []; S.eff = blankEff(); S.marks = {}; S.audit = blankAudit(); S.attEdits = {}; S.attLocks = {};
     dropDemoRaise(S.positions);
     store.note = { kind: 'import', text: `Nahrána první docházka za ${periodName(per)} (${Object.keys(per.rows).length} lidí, ${name}); ukázková data smazána` };
   }
   const fresh = !matchNote;
+  const before = S.periods[per.id] || null;
   S.periods[per.id] = pending;
+  attProtect(per.id, before);   // 2.51: uzamčené dny a ruční úpravy nové nahrání nepřepíše
   setPeriod(per.id);
   let added = 0;
   if (fresh) {
@@ -7377,6 +7456,10 @@ function bindEvents() {
 
   $('#attView').addEventListener('click', event => {
     if (event.target.closest('[data-attxlsx]')) { exportAttXlsx(); return; }
+    const lk = event.target.closest('[data-attlock]');
+    if (lk) { attToggleLock(lk.dataset.attlock); return; }
+    const cell = event.target.closest('[data-attcell]');
+    if (cell) { attEditDialog(cell.closest('[data-attkey]').dataset.attkey, cell.dataset.attcell); return; }
     if (event.target.closest('[data-attrehours]')) {
       const r = dvRehours(true);
       store.note = { text: `Docházka: hodiny přepočítané se zaokrouhlením příchodů a odchodů (${r.cells} ${r.cells === 1 ? 'den' : r.cells <= 4 ? 'dny' : 'dní'}, ${r.months.map(monthLabel).join(', ')})`, kind: 'import' };
@@ -7388,10 +7471,13 @@ function bindEvents() {
   $('#btnDelPeriod').onclick = async () => {
     const p = curPeriod();
     if (!p) return;
+    if (attLocked(p.id)) { toast(`Docházka za ${periodName(p)} je uzamčená. Před smazáním ji odemkni.`, true); return; }
     if (!(await confirmBox('Smazat období?', `Smaže se docházka za ${periodName(p)} i ruční úpravy a výdeje toho měsíce. Lidé, skupiny a sankce zůstanou.`, 'Smazat', true))) return;
     delete S.periods[S.current];
     delete S.adjust[S.current];
     if (S.issued) delete S.issued[S.current];
+    if (S.attEdits) delete S.attEdits[S.current];
+    if (S.attLocks) delete S.attLocks[S.current];
     setPeriod(Object.keys(S.periods).sort().reverse()[0] || null);
     save(); renderAll(); toast('Období smazáno.');
   };
@@ -12365,7 +12451,9 @@ function bindCapPlan() {
    Seznam úkolů s filtry a detail: název, popis, termín, zodpovědná osoba, opakování,
    připomínka, stav a časová osa (komentáře a změny). Výpočty jsou v core.js (tk*).
    ========================================================================== */
-const TK_FILTERS = [['open', 'Otevřené'], ['late', 'Po termínu'], ['soon', 'Blíží se termín'], ['done', 'Hotové'], ['cancel', 'Zrušené'], ['all', 'Vše']];
+const TK_FILTERS = [['open', 'Otevřené'], ['late', 'Po termínu'], ['soon', 'Blíží se termín'], ['req', 'Požadavky pracovníků'], ['done', 'Hotové'], ['cancel', 'Zrušené'], ['all', 'Vše']];
+const TK_SEV_TONE = { high: 'crit', mid: 'warn', low: '' };
+function tkSevPill(sev) { return sev ? `<span class="tag tk-sev tk-sev-${sev} ${TK_SEV_TONE[sev] || ''}">${esc(tkSevName(sev))} závažnost</span>` : ''; }
 const TK_STATE_TONE = { new: 'acc', run: 'warn', wait: 'wait', done: 'good', cancel: '' };
 function tkList() { return (S.tasks && S.tasks.list) || []; }
 function tkMeta() { return { at: Date.now(), by: ui.me.label || '', today: todayIso() }; }
@@ -12390,23 +12478,24 @@ function tkFiltered(today) {
     if (F.filter === 'open' && !d.open) return false;
     if (F.filter === 'late' && !d.late) return false;
     if (F.filter === 'soon' && !(d.soon && !d.late)) return false;
+    if (F.filter === 'req' && !(tkIsReq(t) && d.open)) return false;
     if ((F.filter === 'done' || F.filter === 'cancel') && t.state !== F.filter) return false;
     if (F.owner && t.owner !== F.owner) return false;
-    if (q && !norm(`${t.title} ${t.desc} ${t.owner} ${t.tl.filter(e => e.k === 'c').map(e => e.text).join(' ')}`).includes(q)) return false;
+    if (q && !norm(`${t.title} ${t.desc} ${t.owner} ${tkPersonName(t)} ${t.tl.filter(e => e.k === 'c').map(e => e.text).join(' ')}`).includes(q)) return false;
     return true;
   });
 }
 function tkCount(k, today) {
-  return tkList().filter(t => { const d = tkDue(t, today); return k === 'open' ? d.open : k === 'late' ? d.late : k === 'soon' ? d.soon && !d.late : k === 'all' ? true : t.state === k; }).length;
+  return tkList().filter(t => { const d = tkDue(t, today); return k === 'open' ? d.open : k === 'late' ? d.late : k === 'soon' ? d.soon && !d.late : k === 'req' ? tkIsReq(t) && d.open : k === 'all' ? true : t.state === k; }).length;
 }
 function tkRowHtml(t, today) {
   const nc = t.tl.filter(e => e.k === 'c').length;
   const d = tkDue(t, today);
-  const meta = [t.owner ? `${I.user || ''}${esc(t.owner)}` : '<span class="muted">bez zodpovědné osoby</span>', t.repeat ? `<span class="tk-rep" title="${esc(tkRepeatName(t.repeat))}">${I.repeat}${esc(tkRepeatName(t.repeat).replace('Každý ', '').replace('Každou ', ''))}</span>` : '', nc ? `<span title="Komentáře">${I.chat}${nc}</span>` : ''].filter(Boolean).join('');
+  const meta = [tkIsReq(t) ? `<span class="tk-req">Požadavek pracovníka · <b>${esc(tkPersonName(t))}</b></span>` : '', t.owner ? `${I.user || ''}${esc(t.owner)}` : (tkIsReq(t) ? '' : '<span class="muted">bez zodpovědné osoby</span>'), t.repeat ? `<span class="tk-rep" title="${esc(tkRepeatName(t.repeat))}">${I.repeat}${esc(tkRepeatName(t.repeat).replace('Každý ', '').replace('Každou ', ''))}</span>` : '', nc ? `<span title="Komentáře">${I.chat}${nc}</span>` : ''].filter(Boolean).join('');
   return `<button type="button" class="tk-row${d.late ? ' late' : d.soon ? ' soon' : ''}${d.open ? '' : ' closed'}" data-tkopen="${esc(t.id)}">
     <span class="tk-dot tk-st-${t.state}" aria-hidden="true"></span>
     <span class="tk-main"><b>${esc(t.title)}</b><span class="tk-meta">${meta}</span></span>
-    <span class="tk-side">${tkPill(t.state)}${tkDueHtml(t, today)}</span></button>`;
+    <span class="tk-side">${d.open ? tkSevPill(t.sev) : ''}${tkPill(t.state)}${tkDueHtml(t, today)}</span></button>`;
 }
 function tkListHtml(today) {
   const list = tkFiltered(today);
@@ -12430,13 +12519,64 @@ function renderTaskAlert() {
   const box = $('#taskAlert');
   if (!box || !S) return;
   const o = tkOverview(S, todayIso());
-  const sig = [...o.late, ...o.soon].map(t => t.id + t.due).join(',');
-  if (!o.remind || ui.view === 'ukoly' || ui.tk.alertOff === sig) { box.innerHTML = ''; return; }
-  const names = [...o.late, ...o.soon].slice(0, 3).map(t => `„${esc(t.title)}“ (${esc(tkDueText(t, todayIso()))})`);
-  box.innerHTML = `<div class="banner tk-alert${o.late.length ? ' late' : ''}" role="status"><div><b>Úkoly: ${[o.late.length ? `${o.late.length} po termínu` : '', o.soon.length ? `${o.soon.length} ${o.soon.length === 1 ? 'blíží se termín' : 's blížícím se termínem'}` : ''].filter(Boolean).join(', ')}.</b> ${names.join(', ')}${o.remind > 3 ? ` a další (${o.remind - 3})` : ''}</div>
+  const high = tkList().filter(t => tkIsReq(t) && t.sev === 'high' && TK_OPEN.has(t.state) && !o.late.includes(t) && !o.soon.includes(t));
+  const sig = [...o.late, ...o.soon, ...high].map(t => t.id + t.due).join(',');
+  if ((!o.remind && !high.length) || ui.view === 'ukoly' || ui.tk.alertOff === sig) { box.innerHTML = ''; return; }
+  const all = [...o.late, ...o.soon, ...high];
+  const names = all.slice(0, 3).map(t => `„${esc(t.title)}“ (${tkIsReq(t) ? `${esc(tkPersonName(t))}, ` : ''}${esc(t.due ? tkDueText(t, todayIso()) : `${tkSevName(t.sev).toLowerCase()} závažnost`)})`);
+  box.innerHTML = `<div class="banner tk-alert${o.late.length || high.length ? ' late' : ''}" role="status"><div><b>Úkoly: ${[o.late.length ? `${o.late.length} po termínu` : '', o.soon.length ? `${o.soon.length} ${o.soon.length === 1 ? 'blíží se termín' : 's blížícím se termínem'}` : '', high.length ? `${high.length} ${high.length === 1 ? 'požadavek pracovníka' : high.length <= 4 ? 'požadavky pracovníků' : 'požadavků pracovníků'} s vysokou závažností` : ''].filter(Boolean).join(', ')}.</b> ${names.join(', ')}${all.length > 3 ? ` a další (${all.length - 3})` : ''}</div>
     <div class="banner-actions"><button class="btn small" type="button" id="tkAlertGo">Zobrazit úkoly</button><button class="btn ghost small" type="button" id="tkAlertOff">Skrýt</button></div></div>`;
-  $('#tkAlertGo').onclick = () => { ui.tk.filter = o.late.length ? 'late' : 'soon'; ui.tk.sel = null; showView('ukoly'); };
+  $('#tkAlertGo').onclick = () => { ui.tk.filter = o.late.length ? 'late' : o.soon.length ? 'soon' : 'req'; ui.tk.sel = null; showView('ukoly'); };
   $('#tkAlertOff').onclick = () => { ui.tk.alertOff = sig; renderTaskAlert(); };
+}
+function tkSevOptions(sel) { return `<option value="">— bez závažnosti —</option>${TK_SEV.map(([k, l]) => `<option value="${k}"${sel === k ? ' selected' : ''}>${l}</option>`).join('')}`; }
+/* Požadavky pracovníka v detailu člověka (2.51): seznam a přidání. Zobrazují se i v Úkolech. */
+function tkReqCard(e) {
+  const today = todayIso();
+  const list = tkSort(tkList().filter(t => t.person === e.key));
+  const open = list.filter(t => TK_OPEN.has(t.state));
+  return `<div class="card tk-reqcard"><div class="card-head"><div><h3>Požadavky pracovníka</h3><p class="small muted">Co člověk chce, do kdy a jak je to vážné. Požadavek se objeví v Úkolech i s připomínkou termínu.</p></div>
+    <button class="btn small" type="button" data-tkreqadd>Přidat požadavek</button></div>
+    ${list.length ? `<div class="tk-list">${[...open, ...list.filter(t => !TK_OPEN.has(t.state)).slice(0, 5)].map(t => tkRowHtml(t, today).replace('data-tkopen=', 'data-tkreqopen=')).join('')}</div>` : '<p class="small muted">Zatím žádný požadavek.</p>'}</div>`;
+}
+function openPersonFromTask(key) {
+  ui.selPerson = key; ui.personOpen = true;
+  renderPeople();
+  showView('lide');
+}
+function openTaskFromPerson(id) {
+  ui.tk.filter = 'all';
+  ui.tk.sel = null;
+  showView('ukoly');
+  tkOpen(id);
+}
+async function tkReqDialog(e) {
+  const who = `${e.first} ${e.last}`.trim();
+  const res = await dialog({
+    title: `Požadavek pracovníka · ${who}`, ok: 'Přidat požadavek', wide: true,
+    html: `<label class="field"><span>Co pracovník chce</span><input name="title" maxlength="200" required autofocus placeholder="třeba přeřazení na ranní směnu, nové pracovní boty"></label>
+      <label class="field"><span>Podrobnosti</span><textarea name="desc" rows="3" maxlength="4000" placeholder="volitelné"></textarea></label>
+      <div class="form-grid tk-grid">
+        <label class="field"><span>Termín</span><input type="date" name="due"></label>
+        <label class="field"><span>Závažnost</span><select name="sev">${TK_SEV.map(([k, l]) => `<option value="${k}"${k === 'mid' ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>Zodpovídá</span><input name="owner" list="tkPeopleReq" maxlength="80" value="${esc(ui.me.label || '')}" placeholder="kdo to vyřeší"></label>
+        <label class="field"><span>Připomenout</span><select name="remind">${TK_REMIND.map(n => `<option value="${n}"${n === TK_REMIND_DEF ? ' selected' : ''}>${tkRemindText(n)}</option>`).join('')}</select></label>
+      </div><datalist id="tkPeopleReq">${tkPeopleOptions()}</datalist>`,
+    validate: form => (form.elements.title.value.trim() ? '' : 'Napiš, co pracovník chce.'),
+  });
+  if (res.value !== 'ok') return null;
+  const f = res.form.elements;
+  const t = tkAdd(S, { title: f.title.value, desc: f.desc.value, due: f.due.value, owner: f.owner.value, remind: f.remind.value, sev: f.sev.value, person: e.key, pname: who }, tkMeta());
+  if (t.err) { toast(t.err, true); return null; }
+  save();
+  renderTaskBadge(); renderTaskAlert();
+  toast(`Požadavek „${t.title}“ přidán, najdeš ho i v Úkolech.`);
+  return t;
+}
+function bindTkReqCard(box, e) {
+  const add = $('[data-tkreqadd]', box);
+  if (add) add.onclick = async () => { if (await tkReqDialog(e)) renderPersonDetail(); };
+  $$('[data-tkreqopen]', box).forEach(b => { b.onclick = () => openTaskFromPerson(b.dataset.tkreqopen); });
 }
 function renderTasks() {
   const box = $('#tkView');
@@ -12453,6 +12593,7 @@ function renderTasks() {
     statTile('Po termínu', String(o.late.length), o.late.length ? 'termín už uplynul' : 'nic nemešká', o.late.length ? 'crit' : o.open ? 'good' : ''),
     statTile('Blíží se termín', String(o.soon.length), 'podle připomenutí u úkolu', o.soon.length ? 'warn' : ''),
     statTile('Hotovo za 30 dní', String(o.done30), 'dokončené úkoly', o.done30 ? 'good' : ''),
+    ...(o.req || tkList().some(tkIsReq) ? [statTile('Požadavky pracovníků', String(o.req), o.reqHigh ? `${o.reqHigh} s vysokou závažností` : 'otevřené požadavky', o.reqHigh ? 'crit' : o.req ? 'warn' : '')] : []),
   ].join('')}</div>`;
   const owners = o.owners;
   if (ui.tk.owner && !owners.includes(ui.tk.owner)) ui.tk.owner = '';
@@ -12480,13 +12621,15 @@ function tkDetailHtml(t, today) {
   <div class="tk-detail">
     <div class="card tk-card">
       <div class="tk-head" id="tkHead">${tkHeadHtml(t, today)}</div>
-      <label class="field"><span>Úkol</span><input type="text" id="tkTitle" value="${esc(t.title)}" maxlength="200" required></label>
+      ${tkIsReq(t) ? `<p class="tk-reqline">Požadavek pracovníka <button type="button" class="link" data-tkperson="${esc(t.person)}">${esc(tkPersonName(t))}</button>${S.employees[t.person] ? '' : ' <span class="muted small">(už není v Lidech)</span>'}</p>` : ''}
+      <label class="field"><span>${tkIsReq(t) ? 'Co pracovník chce' : 'Úkol'}</span><input type="text" id="tkTitle" value="${esc(t.title)}" maxlength="200" required></label>
       <label class="field"><span>Popis</span><textarea id="tkDesc" rows="4" maxlength="4000" placeholder="Co je potřeba udělat, podrobnosti">${esc(t.desc)}</textarea></label>
       <div class="form-grid tk-grid">
         <label class="field"><span>Termín</span><input type="date" id="tkDue" value="${esc(t.due)}"></label>
         <label class="field"><span>Zodpovědná osoba</span><input type="text" id="tkOwner" value="${esc(t.owner)}" list="tkPeople" maxlength="80" placeholder="jméno"></label>
         <label class="field"><span>Opakovat úkol</span><select id="tkRepeat">${TK_REPEAT.map(([k, l]) => `<option value="${k}"${t.repeat === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
         <label class="field"><span>Připomenout</span><select id="tkRemind">${TK_REMIND.map(n => `<option value="${n}"${t.remind === n ? ' selected' : ''}>${tkRemindText(n)}</option>`).join('')}</select></label>
+        ${tkIsReq(t) ? `<label class="field"><span>Závažnost</span><select id="tkSev">${tkSevOptions(t.sev)}</select></label>` : ''}
       </div>
       <datalist id="tkPeople">${tkPeopleOptions()}</datalist>
       <div class="tk-states"><span class="small muted">Stav</span><div class="seg tk-seg" role="group" aria-label="Stav úkolu">${TK_STATES.map(([k, l]) => `<button type="button" class="${t.state === k ? 'on' : ''}" data-tkstate="${k}" aria-pressed="${t.state === k}">${l}</button>`).join('')}</div></div>
@@ -12507,7 +12650,7 @@ function tkRepHtml(t, today) {
 }
 function tkHeadHtml(t, today) {
   const d = tkDue(t, today);
-  return `${tkPill(t.state)}${tkDueHtml(t, today)}${t.repeat ? `<span class="tag">${I.repeat}${esc(tkRepeatName(t.repeat))}</span>` : ''}${d.soon && !d.late && !d.today ? `<span class="tag warn">připomínka ${esc(tkRemindText(t.remind))}</span>` : ''}`;
+  return `${tkPill(t.state)}${tkDueHtml(t, today)}${d.open ? tkSevPill(t.sev) : ''}${t.repeat ? `<span class="tag">${I.repeat}${esc(tkRepeatName(t.repeat))}</span>` : ''}${d.soon && !d.late && !d.today ? `<span class="tag warn">připomínka ${esc(tkRemindText(t.remind))}</span>` : ''}`;
 }
 /* Po změně pole se překreslí jen hlavička a časová osa (formulář zůstane, fokus se neztratí). */
 function tkRefresh(t) {
@@ -12593,6 +12736,8 @@ function bindTasks() {
     const open = t.closest('[data-tkopen]');
     if (open) { tkOpen(open.dataset.tkopen); return; }
     if (t.closest('[data-tknew]')) { tkNewDialog(); return; }
+    const pp = t.closest('[data-tkperson]');
+    if (pp) { if (S.employees[pp.dataset.tkperson]) openPersonFromTask(pp.dataset.tkperson); else toast('Člověk už v Lidech není.', true); return; }
     const f = t.closest('[data-tkf]');
     if (f) { ui.tk.filter = f.dataset.tkf; renderTasks(); return; }
     if (t.closest('[data-tkback]')) { navBack(prev => prev.odmView === 'ukoly' && !prev.sub, tkClose); return; }
@@ -12636,7 +12781,7 @@ function bindTasks() {
     const t = event.target;
     if (t.id === 'tkOwnerF') { ui.tk.owner = t.value; renderTasks(); return; }
     if (t.id === 'tkDue') { clearTimeout(ui.tk.dueTimer); ui.tk.dueTimer = setTimeout(dueCommit, 1500); return; }
-    const map = { tkTitle: 'title', tkDesc: 'desc', tkOwner: 'owner', tkRepeat: 'repeat', tkRemind: 'remind' };
+    const map = { tkTitle: 'title', tkDesc: 'desc', tkOwner: 'owner', tkRepeat: 'repeat', tkRemind: 'remind', tkSev: 'sev' };
     const f = map[t.id];
     if (!f) return;
     if (f === 'title' && !t.value.trim()) { toast('Úkol musí mít název.', true); t.value = tkFind(S, ui.tk.sel).title; return; }
@@ -13437,7 +13582,7 @@ async function dvImport(file, opts = {}) {
   const meta = { name: file.name, by: ui.me.label || '', at: Date.now() };
   const r = dvApply(wa, p, meta, { audit: toAudit });
   const parts = [a ? `docházka ${dayText(a.from)} – ${dayText(a.to)} (${a.people} ${lidiN(a.people)})` : '', w ? `výkony za ${r.months.map(monthLabel).join(', ')}` : '', r.audit ? `kusy do KPI za ${r.audit.days} ${denN(r.audit.days)}` : '',
-    r.periods.length ? `docházka pro odměny za ${r.periods.map(x => monthLabel(x.m)).join(', ')}` : '', r.prod.length ? `evidence práce za ${r.prod.map(x => monthLabel(x.m)).join(', ')}` : ''].filter(Boolean);
+    r.periods.length ? `docházka pro odměny za ${dvPeriodsText(r.periods)}` : '', r.prod.length ? `evidence práce za ${r.prod.map(x => monthLabel(x.m)).join(', ')}` : ''].filter(Boolean);
   store.note = { kind: 'workaudit', text: `KPI: nahrán soubor ${file.name}: ${parts.join(', ')}`, keep: true };
   save();
   if (r.periods.length || r.prod.length) renderAll();   // docházka a evidence práce pro odměny
@@ -13456,7 +13601,7 @@ async function dvImportAudit(file) {
   if (r.audit && r.audit.added.length) Object.assign(ui.wa, { opFilter: 'nogroup', opQ: '' });
   renderWorkAudit();
   const ng = r.audit ? r.audit.added.length : 0;
-  toast(`Nahráno: ${a ? `docházka za ${r.days} ${denN(r.days)}` : 'bez docházky'}${w ? `, výkony za ${r.months.map(monthLabel).join(', ')}` : ''}${r.audit ? `, kusy do KPI za ${r.audit.days} ${denN(r.audit.days)}` : ''}${r.periods.length ? `, docházka pro odměny za ${r.periods.map(x => monthLabel(x.m)).join(', ')}` : ''}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu v Nastavení.` : ''}`);
+  toast(`Nahráno: ${a ? `docházka za ${r.days} ${denN(r.days)}` : 'bez docházky'}${w ? `, výkony za ${r.months.map(monthLabel).join(', ')}` : ''}${r.audit ? `, kusy do KPI za ${r.audit.days} ${denN(r.audit.days)}` : ''}${r.periods.length ? `, docházka pro odměny za ${dvPeriodsText(r.periods)}` : ''}.${ng ? ` ${ng} ${ng === 1 ? 'nová operace čeká' : ng <= 4 ? 'nové operace čekají' : 'nových operací čeká'} na skupinu v Nastavení.` : ''}`);
 }
 
 /* ---------- denní report (PDF) a měsíc do Excelu ---------- */

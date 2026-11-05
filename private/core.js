@@ -123,7 +123,7 @@ function save(){_prodIdx=null;_effCache=null;if(typeof onStateChange==="function
 
 function blank(){return {positions:JSON.parse(JSON.stringify(DEF_POSITIONS)),employees:{},periods:{},adjust:{},
   sanctions:[],sanReasons:DEF_SAN_REASONS.slice(),production:{},prodMap:{},kafe:{},issued:{},current:null,
-  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),service:blankService(),shortage:blankShortage(),capPlan:blankCapPlan(),tasks:blankTasks(),undo:[],v:DATA_VERSION};}
+  settings:{...DEF_SETTINGS},demo:false,log:[],eff:blankEff(),audit:blankAudit(),marks:{},capReport:blankCapReport(),leadSkills:[],normCutDone:{},logbooks:[],workAudit:blankWorkAudit(),service:blankService(),shortage:blankShortage(),capPlan:blankCapPlan(),tasks:blankTasks(),attEdits:{},attLocks:{},undo:[],v:DATA_VERSION};}
 /* Převod ze staršího modelu (procenta + zaškrtávané podkategorie) na úrovně a tabáky. */
 function migrate(o){
   o.positions.forEach(p=>{
@@ -2174,7 +2174,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=41;
+const DATA_VERSION=42;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -2483,6 +2483,9 @@ function sanitizeState(input){
   out.capPlan=cleanCapPlan(o.capPlan,new Set(out.positions.filter(isGroup).map(x=>x.id)));
   /* Úkoly (2.46): starší data je nemají, začínají prázdné */
   out.tasks=cleanTasks(o.tasks);
+  /* Docházka – ruční úpravy a zámky (2.51): starší data je nemají */
+  out.attEdits=cleanAttEdits(o.attEdits);
+  out.attLocks=cleanAttLocks(o.attLocks);
   // data před 2.18.1: požadavek lidí je pevných 100 (zadání), dřív se bral jen ze souboru
   if(!(+o.v>=17)&&out.workAudit.target==null)out.workAudit.target=WA_TARGET;
   out.v=DATA_VERSION;
@@ -2815,6 +2818,7 @@ function describeChanges(a,b,meta){
   shChanges(a.shortage,b.shortage,add);
   cpChanges(a.capPlan,b.capPlan,add,b);
   tkChanges(a.tasks,b.tasks,add);
+  attEditChanges(a,b,add);
   return {entries,hist};
 }
 
@@ -5403,6 +5407,159 @@ function attShiftSheet(p){
     n:out.reduce((t,g)=>t+g.people.length,0)};
 }
 /** Přehled odchodů: po měsících a odděleních od tohoto měsíce na n měsíců. */
+/* ==========================================================================
+   DOCHÁZKA: ruční úpravy hodin a zámky (verze 2.51)
+   S.attEdits[měsíc][klíč][den] = {h, c, note (důvod, povinný), at, by, wh, wc}: ručně zapsaná
+   hodnota dne a hodnota ze souboru (wh hodiny, wc kód), na kterou se úprava vrátí. Úprava je
+   zapsaná i přímo v S.periods (výpočty ji tak vidí všude) a po každém nahrání docházky se znovu
+   použije (attProtect), takže ji nové nahrání nepřepíše.
+   S.attLocks[měsíc] = {all, days[], at, by}: uzamčené dny se při nahrání nemění, uzamčený celý
+   měsíc se nenahrává vůbec.
+   ========================================================================== */
+const ATT_EDIT_MAX=5000,ATT_MONTH_RE=/^\d{4}-\d{2}$/;
+function attCode(v){const c=String(v==null?"":v).replace(/[^\p{L}\p{N}]/gu,"").toUpperCase().slice(0,10);return c||null;}
+function attHrs(v){const n=typeof v==="number"?v:parseFloat(String(v==null?"":v).replace(",","."));return Number.isFinite(n)?Math.max(0,Math.min(24,Math.round(n*100)/100)):0;}
+function cleanAttEdits(o){
+  const out={};let n=0;
+  const str=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").trim().slice(0,max);
+  Object.keys(o&&typeof o==="object"?o:{}).filter(m=>ATT_MONTH_RE.test(m)).sort().forEach(m=>{
+    const M=o[m];if(!M||typeof M!=="object")return;
+    Object.keys(M).forEach(k=>{
+      const K=M[k];if(!k||k.length>200||!K||typeof K!=="object")return;
+      Object.keys(K).filter(iso=>TK_ISO.test(iso)&&iso.startsWith(m)).sort().forEach(iso=>{
+        const x=K[iso];if(!x||typeof x!=="object"||n>=ATT_EDIT_MAX)return;
+        const note=str(x.note,300);if(!note)return;
+        ((out[m]||(out[m]={}))[k]||(out[m][k]={}))[iso]={h:attHrs(x.h),c:attCode(x.c),note,at:Number.isFinite(+x.at)?+x.at:0,by:str(x.by,60),wh:attHrs(x.wh),wc:attCode(x.wc)};
+        n++;
+      });
+    });
+  });
+  return out;
+}
+function cleanAttLocks(o){
+  const out={};
+  Object.keys(o&&typeof o==="object"?o:{}).filter(m=>ATT_MONTH_RE.test(m)).sort().forEach(m=>{
+    const x=o[m];if(!x||typeof x!=="object")return;
+    const days=[...new Set((Array.isArray(x.days)?x.days:[]).filter(d=>TK_ISO.test(d)&&d.startsWith(m)))].sort().slice(0,31);
+    if(!x.all&&!days.length)return;
+    out[m]={all:!!x.all,days,at:Number.isFinite(+x.at)?+x.at:0,by:String(x.by||"").slice(0,60)};
+  });
+  return out;
+}
+/** Je den (nebo bez dne celý měsíc) uzamčený? */
+function attLocked(m,iso,st){
+  const L=((st||S).attLocks||{})[m];
+  if(!L)return false;
+  if(L.all)return true;
+  return !!iso&&L.days.includes(iso);
+}
+function attEditOf(m,key,iso,st){const E=(((st||S).attEdits||{})[m]||{})[key];return E&&E[iso]||null;}
+function attCellAt(p,key,iso){
+  const i=p?p.days.indexOf(iso):-1,r=p&&p.rows[key];
+  return {i,found:!!r,h:r&&i>=0?(+r.h[i]||0):0,c:r&&i>=0?(r.c[i]||null):null};
+}
+function attRecodes(p){const codes={};Object.values(p.rows).forEach(r=>r.c.forEach(c=>{if(c)codes[c]=(codes[c]||0)+1;}));p.codes=codes;}
+function attWrite(st,p,key,i,h,c){
+  let r=p.rows[key];
+  if(!r){const e=st.employees[key];if(!e)return false;r=p.rows[key]={first:e.first,last:e.last,h:p.days.map(()=>0),c:p.days.map(()=>null)};}
+  r.h[i]=h;r.c[i]=c;
+  return true;
+}
+/** Ruční úprava dne (hodiny, kód nepřítomnosti, povinný důvod). Hodnota rovná souboru úpravu
+    zruší. Vrátí {ok, edit} nebo {err}. */
+function attEditSet(st,m,key,iso,x,meta){
+  const p=st.periods[m];
+  if(!p)return {err:"Docházka za tento měsíc není nahraná."};
+  const cell=attCellAt(p,key,iso);
+  if(cell.i<0)return {err:"Den v docházce není."};
+  if(!cell.found&&!st.employees[key])return {err:"Člověk v docházce není."};
+  const note=String(x.note||"").replace(/[\u0000-\u001F\u007F]/g," ").trim().slice(0,300);
+  if(note.length<3)return {err:"Napiš důvod úpravy (aspoň 3 znaky)."};
+  const c=attCode(x.c),h=attHrs(x.h);
+  st.attEdits=st.attEdits||{};
+  const old=attEditOf(m,key,iso,st);
+  const wh=old?old.wh:cell.h,wc=old?old.wc:cell.c;
+  attWrite(st,p,key,cell.i,h,c);
+  attRecodes(p);
+  const M=st.attEdits[m]||(st.attEdits[m]={}),K=M[key]||(M[key]={});
+  if(Math.abs(h-wh)<0.005&&c===wc){delete K[iso];if(!Object.keys(K).length)delete M[key];if(!Object.keys(M).length)delete st.attEdits[m];return {ok:true,edit:null,back:true};}
+  K[iso]={h,c,note,at:meta.at||Date.now(),by:meta.by||"",wh,wc};
+  return {ok:true,edit:K[iso]};
+}
+/** Zruší ruční úpravu: den dostane zpátky hodnotu ze souboru. */
+function attEditDel(st,m,key,iso){
+  const ed=attEditOf(m,key,iso,st),p=st.periods[m];
+  if(!ed)return false;
+  const cell=attCellAt(p,key,iso);
+  if(p&&cell.i>=0&&cell.found){p.rows[key].h[cell.i]=ed.wh;p.rows[key].c[cell.i]=ed.wc;attRecodes(p);}
+  const M=st.attEdits[m],K=M[key];
+  delete K[iso];if(!Object.keys(K).length)delete M[key];if(!Object.keys(M).length)delete st.attEdits[m];
+  return true;
+}
+/** Zámek dne (iso) nebo celého měsíce (iso prázdné). */
+function attLockSet(st,m,iso,on,meta){
+  st.attLocks=st.attLocks||{};
+  const L=st.attLocks[m]||{all:false,days:[],at:0,by:""};
+  if(!iso)L.all=!!on;
+  else{L.days=L.days.filter(d=>d!==iso);if(on)L.days.push(iso);L.days.sort();}
+  L.at=meta.at||Date.now();L.by=meta.by||"";
+  if(!L.all&&!L.days.length)delete st.attLocks[m];else st.attLocks[m]=L;
+}
+function attEditCount(m,st){let n=0;Object.values(((st||S).attEdits||{})[m]||{}).forEach(K=>{n+=Object.keys(K).length;});return n;}
+/** Po nahrání docházky (S.periods[m] už je nová): uzamčené dny dostanou hodnoty z předchozí
+    docházky `old`, ruční úpravy se znovu zapíšou (u neuzamčených dnů si zapamatují novou
+    hodnotu ze souboru). Vrátí {locked, edits} = počet uzamčených dnů a úprav. */
+function attProtect(m,old,st){
+  st=st||S;
+  const p=st.periods[m];
+  if(!p)return {locked:0,edits:0};
+  let locked=0,edits=0;
+  if(old)p.days.forEach((iso,i)=>{
+    if(!attLocked(m,iso,st))return;
+    locked++;
+    const oi=old.days.indexOf(iso);
+    Object.entries(p.rows).forEach(([k,r])=>{const o=old.rows[k];r.h[i]=o&&oi>=0?(+o.h[oi]||0):0;r.c[i]=o&&oi>=0?(o.c[oi]||null):null;});
+    if(oi>=0)Object.entries(old.rows).forEach(([k,o])=>{
+      if(p.rows[k]||!(+o.h[oi]||o.c[oi]))return;
+      p.rows[k]={first:o.first,last:o.last,h:p.days.map(()=>0),c:p.days.map(()=>null)};
+      p.rows[k].h[i]=+o.h[oi]||0;p.rows[k].c[i]=o.c[oi]||null;
+    });
+  });
+  Object.entries((st.attEdits||{})[m]||{}).forEach(([k,K])=>Object.entries(K).forEach(([iso,ed])=>{
+    const cell=attCellAt(p,k,iso);
+    if(cell.i<0)return;
+    if(!attLocked(m,iso,st)){ed.wh=cell.h;ed.wc=cell.c;}
+    if(attWrite(st,p,k,cell.i,ed.h,ed.c))edits++;
+  }));
+  attRecodes(p);
+  return {locked,edits};
+}
+function attValText(h,c){return c?c+(h>0?" ("+String(h).replace(".",",")+" h)":""):h>0?String(h).replace(".",",")+" h":"nic";}
+/* Historie změn: úprava dne (s důvodem), zrušení úpravy, zámky dnů a měsíce. */
+function attEditChanges(a,b,add){
+  const A=a.attEdits||{},B=b.attEdits||{};
+  const who=(m,k)=>{const r=((b.periods||{})[m]||{}).rows&&b.periods[m].rows[k]||(a.periods&&a.periods[m]&&a.periods[m].rows[k])||(b.employees||{})[k];return r?(r.last+" "+r.first).trim():k;};
+  new Set([...Object.keys(A),...Object.keys(B)]).forEach(m=>{
+    const MA=A[m]||{},MB=B[m]||{};
+    new Set([...Object.keys(MA),...Object.keys(MB)]).forEach(k=>{
+      const KA=MA[k]||{},KB=MB[k]||{};
+      new Set([...Object.keys(KA),...Object.keys(KB)]).forEach(iso=>{
+        const x=KA[iso],y=KB[iso];
+        if(y&&(!x||x.h!==y.h||x.c!==y.c||x.note!==y.note))add("adjust","Docházka – "+who(m,k)+", "+dayText(iso)+": "+attValText(x?x.h:y.wh,x?x.c:y.wc)+" → "+attValText(y.h,y.c)+" (důvod: "+y.note+")",{key:k,m:"atte:"+m+":"+k+":"+iso});
+        else if(x&&!y)add("adjust","Docházka – "+who(m,k)+", "+dayText(iso)+": ruční úprava zrušena",{key:k,m:"atte:"+m+":"+k+":"+iso});
+      });
+    });
+  });
+  const LA=a.attLocks||{},LB=b.attLocks||{};
+  new Set([...Object.keys(LA),...Object.keys(LB)]).forEach(m=>{
+    const x=LA[m]||{all:false,days:[]},y=LB[m]||{all:false,days:[]};
+    if(!!x.all!==!!y.all)add("adjust","Docházka za "+monthLabel(m)+": celý měsíc "+(y.all?"uzamčen":"odemčen"),{m:"attl:"+m});
+    const xs=new Set(x.days),ys=new Set(y.days);
+    y.days.filter(d=>!xs.has(d)).forEach(d=>add("adjust","Docházka: den "+dayText(d)+" uzamčen",{m:"attl:"+d}));
+    x.days.filter(d=>!ys.has(d)).forEach(d=>add("adjust","Docházka: den "+dayText(d)+" odemčen",{m:"attl:"+d}));
+  });
+}
+
 function endDeptOf(e){return isLead(e)?"Vedoucí":empDept(e)||"Bez skupiny";}
 function endsOverview(today,n){
   today=today||todayIso();n=n||12;
@@ -5506,7 +5663,7 @@ function dvRehours(apply){
     Object.entries(p.rows||{}).forEach(([k,r])=>{
       const wid=byKey.get(k);if(!wid)return;
       p.days.forEach((iso,i)=>{
-        const v=(dv.pres[iso]||{})[wid];if(!v||r.c[i])return;
+        const v=(dv.pres[iso]||{})[wid];if(!v||r.c[i]||attLocked(m,iso)||attEditOf(m,k,iso))return;
         const h=dvHours(v[0],v[1]);
         if(Math.abs((+r.h[i]||0)-h)<0.005)return;
         cells++;people.add(k);months.add(m);
@@ -5522,6 +5679,8 @@ function dvToPeriods(a,meta){
   const map=dvWidMap(),months={},pad=n=>String(n).padStart(2,"0");
   a.dates.filter(dvOwns).forEach(iso=>(months[iso.slice(0,7)]||(months[iso.slice(0,7)]=[])).push(iso));
   return Object.keys(months).sort().map(m=>{
+    /* 2.51: uzamčený měsíc se nenahrává, uzamčené dny a ruční úpravy hlídá attProtect */
+    if(attLocked(m))return {m,days:0,people:0,locked:true};
     const old=S.periods[m]||null,file=new Set(months[m]);
     const last=[...months[m],...(old?old.days:[])].sort().pop();
     const days=[];for(let d=1;d<=31;d++){const iso=m+"-"+pad(d);if(iso>last)break;days.push(iso);}
@@ -5545,8 +5704,9 @@ function dvToPeriods(a,meta){
     });
     const codes={};Object.values(rows).forEach(r=>r.c.forEach(c=>{if(c)codes[c]=(codes[c]||0)+1;}));
     S.periods[m]={id:m,y:+m.slice(0,4),m:+m.slice(5,7),days,rows,codes,file:("Docházka a výkony: "+(meta.name||"")).slice(0,200),at:meta.at||Date.now(),headerRow:1};
+    const prot=attProtect(m,old);
     if(!S.current)S.current=m;
-    return {m,days:months[m].length,people};
+    return {m,days:months[m].length,people,lockedDays:prot.locked,edits:prot.edits};
   });
 }
 /** Evidence práce za měsíce od DV_FROM (místo Výroby): celé měsíce ze souboru. Jméno = ID
@@ -6247,6 +6407,13 @@ const TK_REPEAT=[["","Neopakovat"],["week","Každý týden"],["month","Každý m
 const TK_REPEAT_KEYS=TK_REPEAT.map(x=>x[0]);
 const TK_REMIND=[0,1,2,3,5,7,14];
 const TK_REMIND_DEF=2;
+/* Požadavek pracovníka (2.51): úkol s `person` (klíč člověka), `pname` (jméno v době zadání)
+   a závažností `sev`. */
+const TK_SEV=[["low","Nízká"],["mid","Střední"],["high","Vysoká"]];
+const TK_SEV_KEYS=TK_SEV.map(x=>x[0]);
+const TK_SEV_RANK={high:0,mid:1,low:2,"":3};
+function tkSevName(k){const x=TK_SEV.find(s=>s[0]===k);return x?x[1]:"bez závažnosti";}
+function tkIsReq(t){return !!(t&&t.person);}
 const TK_ISO=/^\d{4}-\d{2}-\d{2}$/;
 function blankTasks(){return {list:[]};}
 function tkStateName(k){const x=TK_STATES.find(s=>s[0]===k);return x?x[1]:k;}
@@ -6265,10 +6432,11 @@ function cleanTasks(o){
       state:TK_STATE_KEYS.includes(t.state)?t.state:"new",repeat:TK_REPEAT_KEYS.includes(t.repeat)?t.repeat:"",
       remind:TK_REMIND.includes(rem)?rem:TK_REMIND_DEF,at:ts(t.at),by:str(t.by,60),done:ts(t.done),doneBy:str(t.doneBy,60),
       series:typeof t.series==="string"&&SAFE_ID.test(t.series)?t.series:"",next:typeof t.next==="string"&&SAFE_ID.test(t.next)?t.next:"",
+      person:str(t.person,200),pname:t.person?str(t.pname,120):"",sev:TK_SEV_KEYS.includes(t.sev)?t.sev:"",
       tl:(Array.isArray(t.tl)?t.tl:[]).filter(e=>e&&typeof e==="object"&&["new","c","s","f","r"].includes(e.k)).slice(-TK_TL_MAX).map(e=>({
         id:uniq(e.id,"te"),at:ts(e.at),by:str(e.by,60),k:e.k,
         ...(e.k==="c"||e.k==="r"||e.k==="new"?{text:txt(e.text,2000)}:{}),
-        ...(e.k==="s"||e.k==="f"?{f:e.k==="s"?"state":["title","due","owner","repeat","remind","desc"].includes(e.f)?e.f:"title",v0:str(e.v0,300),v1:str(e.v1,300)}:{})}))};
+        ...(e.k==="s"||e.k==="f"?{f:e.k==="s"?"state":["title","due","owner","repeat","remind","desc","sev"].includes(e.f)?e.f:"title",v0:str(e.v0,300),v1:str(e.v1,300)}:{})}))};
   }).filter(t=>t.title);
   const ids=new Set(list.map(t=>t.id));
   list.forEach(t=>{if(t.next&&!ids.has(t.next))t.next="";});
@@ -6292,7 +6460,7 @@ function tkNextDue(due,rep,today){
 }
 function tkFind(st,id){return ((st.tasks||{}).list||[]).find(t=>t.id===id)||null;}
 function tkTl(t,e,meta){t.tl.push({id:uid("te"),at:meta.at||Date.now(),by:meta.by||"",...e});if(t.tl.length>TK_TL_MAX)t.tl=t.tl.slice(-TK_TL_MAX);}
-const TK_FIELD_TEXT={title:"Název",due:"Termín",owner:"Zodpovídá",repeat:"Opakování",remind:"Připomenout",desc:"Popis",state:"Stav"};
+const TK_FIELD_TEXT={title:"Název",due:"Termín",owner:"Zodpovídá",repeat:"Opakování",remind:"Připomenout",desc:"Popis",state:"Stav",sev:"Závažnost"};
 function tkFieldVal(f,v){
   if(f==="state")return tkStateName(v);
   if(f==="due")return v?dayText(v):"bez termínu";
@@ -6300,6 +6468,7 @@ function tkFieldVal(f,v){
   if(f==="repeat")return tkRepeatName(v);
   if(f==="remind")return tkRemindText(+v);
   if(f==="desc")return v?commentShort(v):"bez popisu";
+  if(f==="sev")return tkSevName(v);
   return String(v==null?"":v);
 }
 /* Nový úkol; vrátí úkol, nebo chybu {err}. */
@@ -6310,9 +6479,10 @@ function tkAdd(st,x,meta){
   if(st.tasks.list.length>=TK_MAX)return {err:"Úkolů je už "+TK_MAX+", smaž některé hotové."};
   const t={id:uid("tk"),title,desc:String(x.desc||"").trim().slice(0,4000),due:TK_ISO.test(x.due||"")?x.due:"",owner:String(x.owner||"").trim().slice(0,80),
     state:"new",repeat:TK_REPEAT_KEYS.includes(x.repeat)?x.repeat:"",remind:TK_REMIND.includes(+x.remind)?+x.remind:TK_REMIND_DEF,
-    at:meta.at||Date.now(),by:meta.by||"",done:0,doneBy:"",series:x.series||"",next:"",tl:[]};
+    at:meta.at||Date.now(),by:meta.by||"",done:0,doneBy:"",series:x.series||"",next:"",
+    person:String(x.person||"").slice(0,200),pname:x.person?String(x.pname||"").trim().slice(0,120):"",sev:TK_SEV_KEYS.includes(x.sev)?x.sev:"",tl:[]};
   if(t.repeat&&!t.series)t.series=t.id;
-  tkTl(t,{k:"new",text:x.from?"Vytvořen opakováním po dokončení předchozího úkolu":""},meta);
+  tkTl(t,{k:"new",text:x.from?"Vytvořen opakováním po dokončení předchozího úkolu":t.person?"Požadavek pracovníka "+(t.pname||"")+" zadán"+(t.sev?" (závažnost "+tkSevName(t.sev).toLowerCase()+")":""):""},meta);
   st.tasks.list.unshift(t);
   return t;
 }
@@ -6322,7 +6492,7 @@ function tkSet(st,id,patch,meta){
   const t=tkFind(st,id);
   if(!t)return {err:"Úkol už neexistuje."};
   let next=null;
-  ["title","due","owner","repeat","remind","desc","state"].forEach(f=>{
+  ["title","due","owner","repeat","remind","desc","sev","state"].forEach(f=>{
     if(!(f in patch))return;
     let v=patch[f];
     if(f==="title"){v=String(v||"").trim().slice(0,200);if(!v)return;}
@@ -6332,6 +6502,7 @@ function tkSet(st,id,patch,meta){
     else if(f==="state"){if(!TK_STATE_KEYS.includes(v))return;}
     else if(f==="repeat"){v=TK_REPEAT_KEYS.includes(v)?v:"";}
     else if(f==="remind"){v=+v;if(!TK_REMIND.includes(v))return;}
+    else if(f==="sev"){v=TK_SEV_KEYS.includes(v)?v:"";}
     if(t[f]===v)return;
     const v0=t[f];
     t[f]=v;
@@ -6344,7 +6515,7 @@ function tkSet(st,id,patch,meta){
   });
   if(t.state==="done"&&t.repeat&&!t.next){
     const due=tkNextDue(t.due,t.repeat,meta.today||todayIso());
-    const n=tkAdd(st,{title:t.title,desc:t.desc,due,owner:t.owner,repeat:t.repeat,remind:t.remind,series:t.series||t.id,from:t.id},meta);
+    const n=tkAdd(st,{title:t.title,desc:t.desc,due,owner:t.owner,repeat:t.repeat,remind:t.remind,series:t.series||t.id,from:t.id,person:t.person,pname:t.pname,sev:t.sev},meta);
     if(!n.err){t.next=n.id;next=n;tkTl(t,{k:"r",text:"Další opakování založeno s termínem "+dayText(due)},meta);}
   }
   return {t,next};
@@ -6387,17 +6558,21 @@ function tkOverview(st,today){
   const soon=open.filter(t=>{const d=tkDue(t,today);return d.soon&&!d.late;}).sort((a,b)=>a.due<b.due?-1:1);
   const since=Date.parse(today+"T00:00:00")-30*864e5;
   const owners=[...new Set(L.map(t=>t.owner).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"cs"));
-  return {all:L.length,open:open.length,late,soon,remind:late.length+soon.length,done30:L.filter(t=>t.state==="done"&&t.done>=since).length,owners};
+  const req=open.filter(tkIsReq);
+  return {all:L.length,open:open.length,late,soon,remind:late.length+soon.length,done30:L.filter(t=>t.state==="done"&&t.done>=since).length,owners,
+    req:req.length,reqHigh:req.filter(t=>t.sev==="high").length};
 }
 /* Pořadí seznamu: otevřené podle termínu (bez termínu na konci), hotové a zrušené od nejnovějších. */
 function tkSort(list){
   return list.slice().sort((a,b)=>{
     const oa=TK_OPEN.has(a.state),ob=TK_OPEN.has(b.state);
     if(oa!==ob)return oa?-1:1;
-    if(oa){if(!!a.due!==!!b.due)return a.due?-1:1;if(a.due!==b.due)return a.due<b.due?-1:1;return b.at-a.at;}
+    if(oa){if(!!a.due!==!!b.due)return a.due?-1:1;if(a.due!==b.due)return a.due<b.due?-1:1;const r=TK_SEV_RANK[a.sev||""]-TK_SEV_RANK[b.sev||""];if(r)return r;return b.at-a.at;}
     return (b.done||b.at)-(a.done||a.at);
   });
 }
+/** Jméno pracovníka u požadavku: dnešní jméno z Lidí, jinak jméno v době zadání. */
+function tkPersonName(t,st){const e=t&&t.person?((st||S).employees||{})[t.person]:null;return e?(e.first+" "+e.last).trim():(t&&t.pname)||"";}
 function tkTlText(e){
   if(e.k==="new")return e.text||"Úkol zadán";
   if(e.k==="c"||e.k==="r")return e.text;
@@ -6406,11 +6581,11 @@ function tkTlText(e){
 function tkSheets(st,today){
   const L=tkSort(((st||S).tasks||{}).list||[]);
   const dt=ts=>ts?todayIso(ts)+" "+new Date(ts).toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"}):"";
-  const rows=L.map(t=>{const d=tkDue(t,today);return [t.title,tkStateName(t.state),t.due?dayText(t.due):"",t.owner,tkRepeatName(t.repeat),
+  const rows=L.map(t=>{const d=tkDue(t,today);return [t.title,tkIsReq(t)?"požadavek pracovníka":"úkol",tkIsReq(t)?tkPersonName(t,st):"",t.sev?tkSevName(t.sev):"",tkStateName(t.state),t.due?dayText(t.due):"",t.owner,tkRepeatName(t.repeat),
     d.late?"po termínu":d.today?"dnes":d.soon?"blíží se":"",t.desc,t.by,dt(t.at),t.done?dt(t.done):"",t.tl.filter(e=>e.k==="c").length];});
   const tl=[];
   L.forEach(t=>t.tl.forEach(e=>tl.push([t.title,dt(e.at),e.by,e.k==="c"?"komentář":e.k==="s"?"stav":e.k==="f"?"změna":e.k==="r"?"opakování":"zadání",tkTlText(e)])));
-  return [{name:"Úkoly",cols:[36,13,12,20,14,12,40,16,17,17,10],rows:[["Úkol","Stav","Termín","Zodpovídá","Opakování","Upozornění","Popis","Zadal","Zadáno","Hotovo","Komentářů"],...rows]},
+  return [{name:"Úkoly",cols:[36,20,22,11,13,12,20,14,12,40,16,17,17,10],rows:[["Úkol","Druh","Pracovník","Závažnost","Stav","Termín","Zodpovídá","Opakování","Upozornění","Popis","Zadal","Zadáno","Hotovo","Komentářů"],...rows]},
     {name:"Časová osa",cols:[36,17,16,12,60],rows:[["Úkol","Kdy","Kdo","Druh","Záznam"],...tl]}];
 }
 /* Historie změn (Poslední změny): nový a smazaný úkol, stav, termín, osoba, název, opakování,
@@ -6418,11 +6593,11 @@ function tkSheets(st,today){
 function tkChanges(A,B,add){
   const a=(A&&A.list)||[],b=(B&&B.list)||[];
   const am=new Map(a.map(t=>[t.id,t]));
-  const q=t=>"Úkol „"+t.title+"“";
+  const q=t=>t.person?"Požadavek pracovníka "+(t.pname||"")+" „"+t.title+"“":"Úkol „"+t.title+"“";
   b.forEach(t=>{
     const o=am.get(t.id);
-    if(!o){add("task",q(t)+" zadán"+(t.due?", termín "+dayText(t.due):"")+(t.owner?", zodpovídá "+t.owner:"")+(t.repeat?", "+tkRepeatName(t.repeat).toLowerCase():""),{m:"tkn:"+t.id});return;}
-    [["state","tks"],["due","tkd"],["owner","tko"],["title","tkt"],["repeat","tkr"],["remind","tkm"],["desc","tkp"]].forEach(([f,m])=>{
+    if(!o){add("task",q(t)+" zadán"+(t.sev?", závažnost "+tkSevName(t.sev).toLowerCase():"")+(t.due?", termín "+dayText(t.due):"")+(t.owner?", zodpovídá "+t.owner:"")+(t.repeat?", "+tkRepeatName(t.repeat).toLowerCase():""),{m:"tkn:"+t.id,...(t.person?{key:t.person}:{})});return;}
+    [["state","tks"],["due","tkd"],["owner","tko"],["title","tkt"],["repeat","tkr"],["remind","tkm"],["desc","tkp"],["sev","tkv"]].forEach(([f,m])=>{
       if(o[f]!==t[f])add("task","",{m:m+":"+t.id,p:q(t)+" – "+TK_FIELD_TEXT[f].toLowerCase()+": ",v0:tkFieldVal(f,o[f]),v1:tkFieldVal(f,t[f])});
     });
     const oc=new Set(o.tl.filter(e=>e.k==="c").map(e=>e.id));

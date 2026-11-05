@@ -34,6 +34,32 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.51):
+
+- Uživatel: „možnost v docházce úpravy hodin a vždy to bude vyžadovat důvod úpravy … ať pak už
+  nepřepíše opětovné nahrání … zámek … uzamknout celý měsíc“, „panely jsou zbytečně smrsknuté …
+  lépe využívat širší monitory“ a „k danému odsouzenému … ‚Požadavek pracovníka‘ … co osoba chce,
+  termín a závažnost … vyskakovat v modulu ‚Úkoly‘“.
+  - Data (verze 42): `S.attEdits[měsíc][klíč][den] = {h, c, note (povinný), at, by, wh, wc}`
+    (wh/wc = hodnota ze souboru), `S.attLocks[měsíc] = {all, days[], at, by}` (`cleanAttEdits`,
+    `cleanAttLocks`). Úprava se zapisuje i přímo do `S.periods` (výpočty beze změny).
+  - Core (před `endDeptOf`): `attEditSet` (hodnota rovná souboru úpravu zruší), `attEditDel`,
+    `attLockSet` (iso prázdné = měsíc), `attLocked`, `attEditOf`, `attProtect(m, old)` po každém
+    nahrání (uzamčené dny z předchozí docházky, úpravy znovu, `wh/wc` = nový soubor),
+    `attEditChanges` (historie kind `adjust`, m `atte:`/`attl:`). `dvToPeriods` uzamčený měsíc
+    přeskočí (`{locked: true}`) a vrací `lockedDays`, `edits`; `dvRehours` úpravy a zámky vynechá.
+  - UI: `calStrip(a, e, {m, key})` = tlačítka `[data-attcell]` (`.ed`, `.lk`), hlavička se zámky
+    `[data-attlock="iso"]` a `[data-attlock=""]` (měsíc, potvrzení), `attEditDialog`,
+    `attToggleLock`, `dvPeriodsText`. `doImport` uzamčený měsíc odmítne, smazání období taky.
+  - Šířka: `.main` nad 1100 px max 1920 px, datové pohledy (`:has(> #view-….on)`) 2400 px.
+  - Úkoly: `person` (klíč), `pname`, `sev` low|mid|high (`TK_SEV`, `tkIsReq`, `tkPersonName`),
+    řazení podle závažnosti při stejném termínu, `tkOverview.req/reqHigh`, Excel sloupce Druh,
+    Pracovník, Závažnost. UI: karta `tkReqCard` v detailu člověka (`[data-tkreqadd]`,
+    `tkReqDialog`, `[data-tkreqopen]`), filtr `req`, `#tkSev`, odkaz `[data-tkperson]`,
+    připomínka `#taskAlert` i pro otevřené požadavky s vysokou závažností bez termínu.
+  - Testy: core „Docházka (2.51)“, nový `tests/e2e_rucni.js`, `test_odmeny` (426 pro 41),
+    `e2e_upgrade_prev` (`ADDED` attEdits, attLocks). `ODM_VERSION` 2.51.
+
 Stav k 5. 11. 2026 (verze 2.50):
 
 - Uživatel: „V docházce už můžeš tedy odstranit ‚XLSX, XLSM nebo CSV.‘ Říjen mám uzavřený … v docházce
@@ -2129,7 +2155,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.47.1 | `5e01612` | poznámka v Reportu docházky jen s počty (nepřišlo, neschopenka), spolehlivější stahování PDF a přesná chybová hláška |
 | 2.48 | `f4f8d79` | kontrola jmen při nahrání docházky postaru (prohozené jméno a příjmení, překlep, ruční přiřazení), nikdo nový se nepřidá |
 | 2.49 | `9580809` | KPI Výkonnost na osobu – odpracované dny přepočtené na směnu 7,5 h (kratší den = část dne) |
-| 2.50 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Docházka bez nahrávání, barvy dnů (ranní, odpolední, přesčas), Excel za měsíc v jednom listu po skupinách směn s barvami |
+| 2.50 | `44ea59f` | Docházka bez nahrávání, barvy dnů (ranní, odpolední, přesčas), Excel za měsíc v jednom listu po skupinách směn s barvami |
+| 2.51 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: ruční úpravy docházky s důvodem, zámky dnů a měsíce (nahrání je nepřepíše), širší rozložení, požadavky pracovníka v Úkolech (data verze 42) |
 
 Verze 2.1 přidala:
 
@@ -2241,7 +2268,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `41` (od 2.46):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `42` (od 2.51):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -2296,6 +2323,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
   - `workAudit.dv.sheets` (2.42.3): zapamatované listy souboru docházky a výkonů;
   - `employees[].end` (2.43): konec trestu;
   - `tasks` (2.46): Úkoly (viz Kde jsme skončili 2.46);
+  - `attEdits`, `attLocks` (2.51): ruční úpravy docházky a zámky dnů a měsíců;
   - `undo` (2.45): uložené změny za 3 dny pro Vrátit zpět, `log[].u`/`log[].un`;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
@@ -2587,6 +2615,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_report.js` (2.40): Report docházky (den, týden, měsíc, rok, plán, svátek, PDF, Excel, telefon);
   - `e2e_zdroj.js` (2.42): soubor Docházka a výkony od listopadu (docházka pro odměny, evidence
     práce, obsazenost Auditu, skupiny Matice, starý výkaz listopad nepřepíše, říjen beze změny, telefon);
+  - `e2e_rucni.js` (2.51): ruční úpravy docházky, zámky, nové nahrání, šířka, požadavek pracovníka v Úkolech, telefon;
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_vzhled.js` (2.47): vzhled Sklo, přepnutí na původní, zapamatování, PDF stejné v obou vzhledech;

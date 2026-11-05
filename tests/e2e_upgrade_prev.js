@@ -19,12 +19,12 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.41$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.50$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.51$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
-const ADDED = { undo: '[]', tasks: '({ list: [] })', 'workAudit.dv.cols.work.norm': '""', 'workAudit.dv.sheets': '({ att: "", work: "" })', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
+const ADDED = { undo: '[]', tasks: '({ list: [] })', attEdits: '({})', attLocks: '({})', 'workAudit.dv.cols.work.norm': '""', 'workAudit.dv.sheets': '({ att: "", work: "" })', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
 /* Verze dat se mění (2.42: skupiny Matice u skupin KPI, sloupec normy): stará stránka dostane 426. */
 const SAME_DATA = false;
 
