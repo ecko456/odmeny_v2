@@ -87,8 +87,10 @@ const rows = page => page.evaluate(() => [...document.querySelectorAll('#qkResul
 
   // Vstup z hlavního menu: dlaždice Rychlá kontrola.
   if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="am"]');
-  check(/vylosovat jména/.test(await text(page, '#homeView .tile[data-go="rychla"]')), 'dlaždice Rychlá kontrola v hlavním menu');
-  await page.click('#homeView .tile[data-go="rychla"]');
+  await page.click('#fab');
+  await page.waitForFunction(() => document.body.classList.contains('fab-open'));
+  check(/Rychlá kontrola/.test(await text(page, '#fabMenu .fab-quick [data-fab="rychla"]')), 'Rychlá kontrola v rychlých volbách menu');
+  await page.click('#fabMenu [data-fab="rychla"]');
   await page.waitForSelector('#view-rychla.on .qk-hero');
   check(await page.evaluate(() => history.state && history.state.odmView === 'rychla'), 'rychlá kontrola je záznam v historii (Zpět)');
   // směna se převezme z hlavního menu (ranní)

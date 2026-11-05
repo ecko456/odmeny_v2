@@ -103,7 +103,7 @@ const DEF_SETTINGS={
   shift:7.5,
   excused:"D,DOV,N,NEM,PN,L,P,OČR,ŠK,S,V,NV",
   excusedReducesFund:false,
-  friShift:6.5,            // zkrácený pátek - platí jen pro lidi se zaškrtnutým shortFri
+  friShift:6.5,            // zkrácený pátek - od 2.53 jen odpolední směna v pátek (friShort), sám od sebe
   absenceCutoff:null,      // od kolika dní absence (po vyplnění víkendem) nemá nárok na nic; null = vypnuto
   adjStep:1,
   adjOver:2,               // o kolik smí ruční úprava jít nad maximum pozice
@@ -682,13 +682,18 @@ function periodMeta(p){
 /* délka směny pro konkrétní den: kdo má zkrácený pátek, má v pátek plnou směnu už při friShift hodinách */
 function friShift(){const f=+S.settings.friShift;return f>0?f:S.settings.shift;}
 function dayShift(d,shortFri){return (shortFri&&d.dow===5)?friShift():S.settings.shift;}
+/* Oprava (2.53, přání uživatele): zkrácená směna (friShift, 6,5 h) je jen odpolední směna v pátek
+   a pozná se sama: podle příchodu v souboru Docházka a výkony (od 12:00 odpolední), bez něj podle
+   směny člověka a střídání skupin (attSlotOf). Ruční zaškrtnutí u člověka (e.shortFri) se už
+   nepoužívá; v původní aplikaci platil zkrácený pátek jen pro zaškrtnuté a pro všechny jejich pátky. */
+function friShort(e,d){return !!e&&d.dow===5&&attSlotOf(e,d.iso)==="pm";}
 function attendance(p,key){
   const meta=periodMeta(p), row=p.rows[key];
   const ex=excusedSet();
-  const emp=S.employees[key], sf=!!(emp&&emp.shortFri);
+  const emp=S.employees[key];
   const r={found:!!row,workDays:0,workHours:0,cappedHours:0,wkDays:0,wkHours:0,otWeek:0,
     missed:0,excusedDays:0,excusedHours:0,codes:{},cells:[],totalDays:0,totalHours:0,
-    shortFri:sf,fridays:0,absDays:0,shortHours:0,shortDays:0,codedDays:0,codedHours:0};
+    shortFri:false,fridays:0,absDays:0,shortHours:0,shortDays:0,codedDays:0,codedHours:0};
   let fund=0;
   meta.days.forEach((d,i)=>{
     const raw=row?(row.h[i]||0):0, c=row?(row.c[i]||null):null;
@@ -698,12 +703,13 @@ function attendance(p,key){
     const h=c?0:raw;
     if(c&&raw>0){r.codedDays++;r.codedHours+=raw;}
     /* Oprava: kód z buňky se porovnává stejně normalizovaný jako seznam (OČR = OCR). */
+    const sf=d.dow===5&&friShort(emp,d);   // 2.53: jen odpolední v pátek
     const isEx=!!(c&&ex.has(norm(c).toUpperCase())), ds=dayShift(d,sf);
     if(c)r.codes[c]=(r.codes[c]||0)+1;
     if(h>0){r.totalDays++;r.totalHours+=h;}
     if(d.work){
       fund+=ds;
-      if(d.dow===5)r.fridays++;
+      if(sf)r.fridays++;   // 2.53: zkrácené (odpolední) pátky
       /* absence = celý pracovní den bez docházky (i den s kódem a hodinami, 2.25.1); kratší směna není
          absence (projeví se jen v hodinách a u Kafe) */
       if(h>0){r.workDays++;r.workHours+=h;r.cappedHours+=Math.min(h,ds);
@@ -720,7 +726,8 @@ function attendance(p,key){
   r.fundRatio=fund>0?clamp(r.cappedHours/fund,0,1):1;
   r.otCap=meta.otCap;
   /* o kolik je osobní fond nižší než společný (kvůli zkrácenému pátku) - sníží i práh Kafe */
-  r.friDiff=sf?Math.max(0,r.fridays*(S.settings.shift-friShift())):0;
+  r.shortFri=r.fridays>0;
+  r.friDiff=Math.max(0,r.fridays*(S.settings.shift-friShift()));
   return r;
 }
 function posOf(e){return S.positions.find(p=>p.id===e.positionId)||null;}
@@ -1271,7 +1278,7 @@ function planReality(weekId){
     const slot=planned?(shiftOf(e)?slotOn(e,mg):"noshift"):"none";
     const capable=planned&&capableIn(e,pos,thr);
     const cells=days.map((d,i)=>{
-      const a=att[i],plan=planned&&d.has?dayShift(d,!!e.shortFri):0;
+      const a=att[i],plan=planned&&d.has?dayShift(d,friShort(e,d)):0;
       /* den s kódem je nepřítomnost i s hodinami („8 D“): ty hodiny nejsou odpracované (w = 0) */
       let kind="";
       if(a){if(a.c)kind=ex.has(norm(a.c).toUpperCase())?"excused":"code";else if(a.h>0)kind="work";else if(plan)kind="miss";}
@@ -1452,7 +1459,7 @@ function capTimeline(from,to,opts){
         const posId=e?levelAt(e,ts).pos:null,gi=posId!=null&&gIdx.has(posId)?gIdx.get(posId):-1;
         if(gi<0){if(w>0){extraN++;extraH+=w;}return;}
         const pos=groups[gi],t=cells[gi],pct=pctPast(e,pos,ts),ok=pct!=null&&pct>=lim;
-        t.planN++;t[ok?"planOk":"planTr"]++;t.planH+=dayShift(day,!!e.shortFri);t[slotKey(e,mg)]++;
+        t.planN++;t[ok?"planOk":"planTr"]++;t.planH+=dayShift(day,friShort(e,day));t[slotKey(e,mg)]++;
         if(!ok)t.trSPlan+=prog(pct);
         if(kind==="work"){t.present++;t[ok?"presOk":"presTr"]++;if(!ok)t.trSPres+=prog(pct);}
         else if(kind==="excused")t.excused++;else t.miss++;
@@ -1468,7 +1475,7 @@ function capTimeline(from,to,opts){
         const t=cells[gi];
         if(e.sick&&e.sick<=iso){t.sick++;return;}   // nemocní (od data) se do plánu nepočítají (jako kapacity, 2.9)
         const pos=groups[gi],pct=skillPct(e,pos),ok=pct!=null&&pct>=lim;
-        t.planN++;t[ok?"planOk":"planTr"]++;t.planH+=dayShift(day,!!e.shortFri);t[slotKey(e,mg)]++;
+        t.planN++;t[ok?"planOk":"planTr"]++;t.planH+=dayShift(day,friShort(e,day));t[slotKey(e,mg)]++;
         if(!ok)t.trSPlan+=prog(pct);
       });
     }
@@ -1827,7 +1834,7 @@ function exportRows(rows){
     {t:"Směna",v:r=>shiftOf(r.e)?shiftName(shiftOf(r.e)):""},
     {t:"Jen Kafe",v:r=>r.kafeOnly?"ano":""},
     {t:"Dovednosti %",v:r=>r.L.pct!=null?r.L.pct:(r.L.n||"")},
-    {t:"Zkrácený pátek",v:r=>r.e.shortFri?"ano":""},
+    {t:"Zkrácený pátek",v:r=>r.att&&r.att.fridays?r.att.fridays+"× odpolední":""},
     {t:"Odpracované dny",v:r=>r.att&&r.att.found?r.att.workDays:"",s:1},
     {t:"Hodiny celkem",v:r=>r.att&&r.att.found?n2(r.att.totalHours):"",s:1},
     {t:"Fond hodin",v:r=>r.att&&r.att.found?n2(r.att.fund):""},
@@ -2174,7 +2181,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=42;
+const DATA_VERSION=43;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -6708,7 +6715,9 @@ function cleanService(o){
         fault:str(i.fault,600),back:back&&back>=x.date?back:"",backNote:str(i.backNote,300)};
     }),
     /* digitální podpis předávajícího (2.26): obrázek je šifrovaný soubor (Vault), tady jen id, jméno a kdy */
-    ...(svSignClean(x.sign)?{sign:svSignClean(x.sign)}:{})}));
+    ...(svSignClean(x.sign)?{sign:svSignClean(x.sign)}:{}),
+    /* uzamčený protokol (2.53): jen když je všechno vrácené (nebo k vyřazení) */
+    ...(x.lock&&typeof x.lock==="object"?{lock:{at:Number.isFinite(+x.lock.at)?Math.max(0,+x.lock.at):0,by:str(x.lock.by,60)}}:{})})).map(x=>{if(x.lock&&!svShipDone(x))delete x.lock;return x;});
   /* vzory zařízení (2.22): druh, značka a model k rychlému vyplnění položky */
   const tkeys=new Set();
   const templates=(Array.isArray(o.templates)?o.templates:[]).filter(t=>t&&typeof t==="object").slice(0,300)
@@ -6915,6 +6924,8 @@ function svDevDups(svc){
    založí; evidence se doplní o novější údaje z položky. Vrací {ship, created[]}. */
 /* Podpis předávajícího (2.26): {file: id šifrovaného PNG, name, at, by}; bez platného id null. */
 const SV_FILE_ID=/^[0-9a-f]{32}$/;
+/** Protokol je vyřízený (2.53): má zařízení a každé je vrácené, nebo jde k vyřazení. Jen ten jde uzamknout. */
+function svShipDone(x){return !!(x&&x.items&&x.items.length&&x.items.every(i=>i.back||i.purpose==="scrap"));}
 function svSignClean(x){
   if(!x||typeof x!=="object"||!SV_FILE_ID.test(String(x.file||"")))return null;
   const name=String(x.name==null?"":x.name).replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,80);
@@ -6991,6 +7002,7 @@ function svChanges(A,B,add){
     const key=i=>JSON.stringify([i.dev,i.kind,i.brand,i.model,i.made,i.iid,i.sn,i.iidBad,i.snBad,i.mark,i.purpose,i.faults,i.fault]);
     if(o.date!==x.date||o.to!==x.to||o.note!==x.note||JSON.stringify(o.items.map(key))!==JSON.stringify(x.items.map(key)))
       add("service",head+": upraven protokol ("+dayText(x.date)+(x.to?", "+x.to:"")+", "+x.items.length+" zařízení)",{m:"svs:"+x.id});
+    if(!!o.lock!==!!x.lock)add("service",head+(x.lock?": protokol uzamčen (vše vráceno)":": protokol odemčen"),{m:"svlock:"+x.id});
     const sa=o.sign||null,sb=x.sign||null;
     if((sa&&sa.file)!==(sb&&sb.file))add("service",sb?head+": podepsal předávající "+sb.name+(sa?" (nový podpis)":""):head+": odebrán podpis předávajícího ("+sa.name+")",{m:"svsign:"+x.id});
     x.items.forEach(i=>{

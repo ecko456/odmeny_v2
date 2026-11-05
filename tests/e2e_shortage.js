@@ -756,9 +756,13 @@ for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.4,1.4)).save(sys.a
   await page.screenshot({ path: path.join(shots, '04-telefon.png'), fullPage: true });
   await page.click('#brandHome');
   await page.waitForSelector('#view-domu.on');
-  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
-  check(/1 položka/.test(await page.textContent('#homeView .home-menu [data-go="shortage"]')), 'Shortage v hlavním menu telefonu');
-  await page.click('#homeView .home-menu [data-go="shortage"]');
+  await page.click('#fab');
+  await page.waitForFunction(() => document.body.classList.contains('fab-open'));
+  await page.click('#fabMenu [data-fabmore]');
+  await page.waitForFunction(() => document.body.classList.contains('fab-more-on'));
+  await page.waitForTimeout(250);
+  check(/1 položka/.test(await page.textContent('#fabMenu .fab-more [data-fab="shortage"]')), 'Shortage v menu Ostatní na telefonu');
+  await page.click('#fabMenu [data-fab="shortage"]');
   await page.waitForFunction(() => ui.view === 'shortage');
   await page.setViewportSize({ width: 1440, height: 900 });
 

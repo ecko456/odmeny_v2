@@ -34,6 +34,32 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 5. 11. 2026 (verze 2.53):
+
+- Uživatel (telefon): „když kliknu na první stránce na ranní, otevře se pod tím kompletní menu.
+  Spíše … hned od začátku vpravo dole ikona rozevíracího menu … ‚hlavní stránka‘ … dolu ‚Ostatní‘
+  … scrolovací výběr modulů … jen v tom rozevíracím menu … maximálně plynulý systém“.
+  - `homeOpenHtml` jen rizika (dlaždice pryč), plovoucí tlačítko i na `domu`. `openFab`: Hlavní
+    stránka (`data-fab="domu"`, `I.home`), `.fab-quick` (`FAB_ITEMS`), `#fabMore` (`fabMoreHtml`,
+    `fabOthers` = `HOME_TILES` bez rychlých, `.fab-mi` s ikonou, stavem `homeTileMeta` a odznakem),
+    `[data-fabmore]` → `fabMore(on)` (`body.fab-more-on`, bez přechodu na stránku). Tečka na FAB
+    při odznaku kterékoli části. Testy jdou na části přes FAB (Ostatní).
+- Uživatel: „zkrácených směn … automaticky identifikuje lidi na odpolední směně v pátek. Zkrácená
+  směna je pouze odpolední v pátek na 6,5“.
+  - Core `friShort(e, d)` (pátek a `attSlotOf` = pm), `attendance` po dnech (`fridays` = zkrácené
+    pátky, `friDiff` z nich), `planReality` a `capTimeline` taky. `e.shortFri` zůstává v datech,
+    nepoužívá se (UI přepínač pryč, Excel sloupec ukazuje počet odpoledních pátků). Označeno
+    `Oprava (2.53…)`, porovnání s původní aplikací maže `shortFri` v `comparableState`.
+- Uživatel (Servis): „pokud potvrdím, že bylo již vráceno, odemkne se funkce ‚uzamknout‘ a protokol
+  se zabalí … nepůjde již smazat … ikona pro rozevření“.
+  - Data `shipment.lock {at, by}` (verze 43), `svShipDone(x)` (vše vrácené nebo k vyřazení), čištění
+    zámek bez splnění zahodí, historie `svlock:`. UI: `[data-svlock]`, sbalená karta `.sv-locked`
+    s `[data-svexpand]` (`ui.sv.exp`, jen v paměti), rozbalená jen ke čtení s `[data-svunlock]`,
+    pojistka v click handleru proti úpravám uzamčeného.
+  - Testy: core „Zkrácený pátek (2.53)“ a „Servis (2.53)“, upravené 2.24 a 2.49, `e2e_mobil`
+    (Ostatní), `e2e_servis` (uzamčení), navigace v e2e přes FAB, `test_odmeny` (426 pro 42).
+    `ODM_VERSION` 2.53.
+
 Stav k 5. 11. 2026 (verze 2.52):
 
 - Uživatel: „funkci, která rozpozná kdy evidujeme první záznam o tom, že u nás pracovník pracuje.
@@ -2174,7 +2200,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.49 | `9580809` | KPI Výkonnost na osobu – odpracované dny přepočtené na směnu 7,5 h (kratší den = část dne) |
 | 2.50 | `44ea59f` | Docházka bez nahrávání, barvy dnů (ranní, odpolední, přesčas), Excel za měsíc v jednom listu po skupinách směn s barvami |
 | 2.51 | `6048aa2` | ruční úpravy docházky s důvodem, zámky dnů a měsíce (nahrání je nepřepíše), širší rozložení, požadavky pracovníka v Úkolech (data verze 42) |
-| 2.52 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: zkušební doba 3 měsíce od prvního evidovaného dne práce, ikona u jména s datem nástupu a konce |
+| 2.52 | `3f22515` | zkušební doba 3 měsíce od prvního evidovaného dne práce, ikona u jména s datem nástupu a konce |
+| 2.53 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plovoucí menu na telefonu s Hlavní stránkou a Ostatní, zkrácený pátek jen u odpolední sám od sebe, uzamčení vyřízeného protokolu Servisu (data verze 43) |
 
 Verze 2.1 přidala:
 
@@ -2214,8 +2241,8 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
   `skillset` se počítá postaru (`levelOf` větev `legacy`), dnes jen pro porovnání s původní
   aplikací v testech. `sanitizeState` každou takovou pozici převede na skupinu.
 - **Směna**: `R` stálá ranní, `S1` a `S2` směnnost skupina 1 a 2 (`SHIFTS`).
-- **Fond** = pracovní dny × směna (výchozí 7,5 h). Kdo má „zkrácený pátek“, má v pátek
-  `friShift` (6,5 h).
+- **Fond** = pracovní dny × směna (výchozí 7,5 h). Odpolední směna v pátek má od 2.53 sama
+  `friShift` (6,5 h), viz `friShort`.
 - **Absence** = celý pracovní den bez hodin a bez omluveného kódu (výchozí omluvené kódy
   jsou `D,DOV,N,NEM,PN,L,P,OČR,ŠK,S,V,NV`; porovnávají se bez diakritiky).
 - **Víkendová směna** vyplní jeden den absence. Zbytek absence → **srážka** podle pravidel
@@ -2286,7 +2313,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `42` (od 2.51):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `43` (od 2.53):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

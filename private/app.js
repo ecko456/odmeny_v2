@@ -144,6 +144,7 @@ const I = {
   chart: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 20.5h17"/><path d="M6.5 16v-4M11 16V7.5M15.5 16v-6M20 16V5"/></svg>',
   warn: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></svg>',
   hourglass: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10M7 21h10M8 3c0 4 4 5.5 4 9s-4 5-4 9M16 3c0 4-4 5.5-4 9s4 5 4 9"/></svg>',
+  home: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-4.5v-6h-5v6H5a1 1 0 0 1-1-1z"/></svg>',
   unlock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.8"/></svg>',
   lock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>',
   camera: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.3l1.4-2h5.6l1.4 2h2.3A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.5"/></svg>',
@@ -548,6 +549,7 @@ function bindPhoneUi() {
   $('#fab').onclick = () => (ui.fabOpen ? closeFab() : openFab());
   $('#fabScrim').onclick = closeFab;
   $('#fabMenu').addEventListener('click', event => {
+    if (event.target.closest('[data-fabmore]')) { fabMore(!document.body.classList.contains('fab-more-on')); return; }
     const item = event.target.closest('[data-fab]');
     if (!item) return;
     closeFab();
@@ -681,7 +683,7 @@ function renderHome(unfold = false) {
       <span class="seg-pill" aria-hidden="true"></span>
       ${['am', 'pm', 'both'].map(k => `<button type="button" role="radio" aria-checked="${sel === k}" data-hshift="${k}"${live === k && !sel ? ' class="hint"' : ''}>${SLOT_NAME[k]}</button>`).join('')}
     </div>
-    ${sel ? '' : '<p class="home-hint">Vyber směnu, kterou dnes řídíš. Pak se otevře menu.</p>'}
+    ${sel ? '' : '<p class="home-hint">Vyber směnu, kterou dnes řídíš. Části aplikace najdeš v menu vpravo dole.</p>'}
     <div class="home-open${unfold ? ' unfold' : ''}"${sel ? '' : ' hidden'}>${sel ? homeOpenHtml(sd, sel) : ''}</div>
     <section class="home-staff card">
       <div class="hs-head"><h2>${real ? 'V práci podle oddělení' : 'Obsazenost podle oddělení'}</h2><span class="tiny muted">${sd.mg ? `ranní má ${sd.mg === 'S1' ? 'skupina 1' : 'skupina 2'}` : 'střídání skupin nenastavené'}</span></div>
@@ -733,11 +735,9 @@ function homeRows(sd, real) {
   });
   return rows;
 }
+/* 2.53: dlaždice částí jsou jen v plovoucím menu (Ostatní); pod volbou směny zůstala rizika směny. */
 function homeOpenHtml(sd, sel) {
-  return `<nav class="home-menu" aria-label="Části aplikace">${HOME_TILES.map(([v, label]) => {
-    const badge = navBadge(v);
-    return `<button type="button" class="tile" data-go="${v}">${navIcon(v)}<b>${label}</b><small>${esc(homeTileMeta(v, sd))}</small>${badge ? `<em class="nav-badge">${esc(badge)}</em>` : ''}</button>`;
-  }).join('')}</nav>${homeRisks(sd, sel)}`;
+  return homeRisks(sd, sel);
 }
 function sumPlan(sd, k) {
   return sd.depts.reduce((x, r) => ({ ks: x.ks + r.plan[k].ks, h: x.h + r.plan[k].h }), { ks: 0, h: 0 });
@@ -778,8 +778,6 @@ function chooseShift(k) {
   open.hidden = false;
   if (first && !reducedMotion()) {
     open.classList.add('unfold');
-    // přepínač nahoru pod lištu, pod ním se rozevře menu
-    setTimeout(() => { if (ui.view === 'domu') seg.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
   } else {
     open.classList.remove('unfold');
   }
@@ -830,11 +828,28 @@ function playSplash() {
 
 /* ---------- plovoucí menu vpravo dole (2.15) ---------- */
 const FAB_ITEMS = [['search', 'Vyhledat člověka'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['sankce', 'Sankce'], ['top5', 'Top 5'], ['kontroly', 'Kontroly']];
+/* 2.53: Hlavní stránka nahoře, rychlé volby, dole Ostatní: rozbalí v menu posuvný seznam ostatních
+   částí (bez přechodu na jinou stránku, dokud se nevybere). */
+function fabOthers() { const q = new Set(FAB_ITEMS.map(x => x[0])); return HOME_TILES.filter(([v]) => !q.has(v)); }
+function fabMoreHtml() {
+  const sd = staffDay();
+  return fabOthers().map(([v, label]) => {
+    const badge = navBadge(v);
+    let meta = '';
+    try { meta = homeTileMeta(v, sd); } catch (e) { meta = ''; }
+    return `<button type="button" role="menuitem" class="fab-mi" data-fab="${v}"><span class="fab-mii">${navIcon(v)}</span><span class="fab-mil"><b>${label}</b>${meta ? `<small>${esc(meta)}</small>` : ''}</span>${badge ? `<em class="nav-badge">${esc(badge)}</em>` : ''}</button>`;
+  }).join('');
+}
 function openFab() {
-  $('#fabMenu').innerHTML = `<button type="button" role="menuitem" class="fab-item fab-home" data-fab="domu"><span class="fab-l">Hlavní menu</span><span class="fab-i">${I.grid}</span></button>${FAB_ITEMS.map(([k, label]) => {
+  const otherBadge = fabOthers().some(([v]) => navBadge(v));
+  $('#fabMenu').innerHTML = `<button type="button" role="menuitem" class="fab-item fab-home" data-fab="domu"><span class="fab-l">Hlavní stránka</span><span class="fab-i">${I.home}</span></button>
+    <div class="fab-quick">${FAB_ITEMS.map(([k, label]) => {
     const badge = k === 'search' ? '' : navBadge(k);
     return `<button type="button" role="menuitem" class="fab-item" data-fab="${k}"><span class="fab-l">${label}</span><span class="fab-i">${k === 'search' ? I.search : navIcon(k)}${badge ? `<em class="nav-badge">${esc(badge)}</em>` : ''}</span></button>`;
-  }).join('')}`;
+  }).join('')}</div>
+    <div class="fab-more" id="fabMore" role="group" aria-label="Ostatní části" hidden><div class="fab-more-list">${fabMoreHtml()}</div></div>
+    <button type="button" class="fab-item fab-other" data-fabmore aria-expanded="false"><span class="fab-l">Ostatní</span><span class="fab-i">${I.grid}${otherBadge ? '<em class="nav-dot"></em>' : ''}</span></button>`;
+  document.body.classList.remove('fab-more-on');
   ui.fabOpen = true;
   $('#fabMenu').hidden = false;
   $('#fabScrim').hidden = false;
@@ -842,10 +857,19 @@ function openFab() {
   $('#fab').setAttribute('aria-label', 'Zavřít rychlé volby');
   requestAnimationFrame(() => requestAnimationFrame(() => { if (ui.fabOpen) document.body.classList.add('fab-open'); }));
 }
+function fabMore(on) {
+  const box = $('#fabMore'), btn = $('[data-fabmore]');
+  if (!box) return;
+  box.hidden = false;
+  if (btn) { btn.setAttribute('aria-expanded', String(on)); $('.fab-l', btn).textContent = on ? 'Zpět na rychlé volby' : 'Ostatní'; }
+  requestAnimationFrame(() => document.body.classList.toggle('fab-more-on', on));
+  if (on) { const l = $('.fab-more-list', box); if (l) l.scrollTop = 0; }
+  else setTimeout(() => { if (!document.body.classList.contains('fab-more-on') && $('#fabMore')) $('#fabMore').hidden = true; }, 220);
+}
 function closeFab() {
   if (!ui.fabOpen) return;
   ui.fabOpen = false;
-  document.body.classList.remove('fab-open');
+  document.body.classList.remove('fab-open', 'fab-more-on');
   $('#fab').setAttribute('aria-expanded', 'false');
   $('#fab').setAttribute('aria-label', 'Rychlé volby');
   setTimeout(() => { if (!ui.fabOpen) { $('#fabMenu').hidden = true; $('#fabScrim').hidden = true; } }, 240);
@@ -853,7 +877,7 @@ function closeFab() {
 /* Tečka na plovoucím tlačítku: Top 5, Kontroly nebo Úkoly mají odznak. */
 function renderFabDot() {
   const dot = $('#fabDot');
-  if (dot) dot.hidden = !navBadge('top5') && !navBadge('kontroly') && !navBadge('ukoly');
+  if (dot) dot.hidden = !HOME_TILES.some(([v]) => navBadge(v));
 }
 
 /* ---------- vyhledání člověka (jméno, ID v evidenci práce, kartička) ---------- */
@@ -968,7 +992,7 @@ function ovColumns() {
   const c = [
     { k: 'rank', t: '#', cls: 'rank', cell: (r, i) => i + 1 },
     { k: 'name', t: 'Zaměstnanec', sort: true, cls: 'name',
-      cell: r => `<div class="who"><b>${esc(r.e.last)} ${esc(r.e.first)}</b><span class="pos">${r.pos ? esc(r.pos.name) : '<span class="crit">nezařazen</span>'}${r.e.shortFri ? ` · <span title="Zkrácený pátek: ${nf(friShift())} h = celá směna">pá ${nf(friShift())} h</span>` : ''}${r.p && r.att && !r.att.found ? ' · bez docházky' : ''}</span></div>`,
+      cell: r => `<div class="who"><b>${esc(r.e.last)} ${esc(r.e.first)}</b><span class="pos">${r.pos ? esc(r.pos.name) : '<span class="crit">nezařazen</span>'}${r.att && r.att.fridays ? ` · <span title="Odpolední směna v pátek je zkrácená: ${nf(friShift())} h = celá směna">pá ${nf(friShift())} h ×${r.att.fridays}</span>` : ''}${r.p && r.att && !r.att.found ? ' · bez docházky' : ''}</span></div>`,
       foot: rows => `<b>Celkem ${rows.length} lidí</b>` },
     { k: 'days', t: 'Dny', sort: true, cls: 'r', hint: 'Odpracované všední dny',
       cell: r => (r.att && r.att.found ? `<span class="num">${r.att.workDays}</span>` : '<span class="muted">—</span>'),
@@ -1259,7 +1283,7 @@ function attKv(r) {
     <dt>Odpracováno celkem</dt><dd>${nf(a.totalHours)} h</dd>
     <dt>Kafe (práh ${nf(r.kafeTh)} h)</dt><dd>${r.kafe ? `<span class="kafe-ok">${I.kafe}</span>` : r.lost ? '<span class="pen">bez nároku</span>' : '<span class="muted">nesplněno</span>'}</dd>
     <dt>Všední dny</dt><dd>${nf(a.cappedHours)} / ${nf(a.fund)} h</dd>
-    ${a.shortFri ? `<dt class="sub">zkrácený pátek</dt><dd>${a.fridays}× ${nf(friShift())} h</dd>` : ''}
+    ${a.shortFri ? `<dt class="sub">zkrácený pátek (odpolední)</dt><dd>${a.fridays}× ${nf(friShift())} h</dd>` : ''}
     <dt>Absence (dny bez docházky)</dt><dd>${t.gross}</dd>
     ${a.shortDays ? `<dt class="sub">kratší směny (jen pro Kafe)</dt><dd>${a.shortDays}×, −${nf(a.shortHours)} h</dd>` : ''}
     <dt>Víkendové směny</dt><dd>${a.wkDays} (${nf(a.wkHours)} h)</dd>
@@ -1487,7 +1511,7 @@ function renderPeople(opts = {}) {
     const L = ev.L;
     return `${sep}<button class="list-item${e.excluded ? ' out' : ''}${e === held ? ' held' : ''}" type="button" data-key="${esc(e.key)}" aria-current="${e.key === ui.selPerson}">
       ${L.pct != null || L.n ? `<span class="lvl l${L.n}" title="Průměrná úroveň dovedností">${L.n}</span>` : '<span class="lvl l0">?</span>'}
-      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${probIcon(e)}${out}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.shortFri ? ` · pá ${nf(friShift())} h` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}${q && e.wid ? ` · ID ${esc(String(e.wid))}` : ''}</span></span>
+      <span class="nm"><b>${esc(e.last)} ${esc(e.first)}${probIcon(e)}${out}</b><span>${L.pos ? esc(L.pos.name) + (L.pct != null ? ` · ${nf(L.pct, 0)} %` : L.legacy ? (L.n ? ` · ${esc(L.lv.name)}` : ' · <span class="warn-t">bez úrovně</span>') : ' · <span class="warn-t">bez dovedností</span>') : '<span class="crit">bez skupiny</span>'}${shiftOf(e) ? ` · ${esc(shiftName(shiftOf(e)).replace('Směnnost – s', 'S'))}` : ''}${e.sick ? ' · <span class="warn-t">nemoc</span>' : ''}${e.legacy ? ' · <span class="tag warn">převést</span>' : ''}${q && e.wid ? ` · ID ${esc(String(e.wid))}` : ''}</span></span>
       ${e.excluded ? '<span class="tag">vyřazen</span>' : `<span class="num small list-val" title="Tabáky za vybraný měsíc">${nf(ev.total, 0)}</span>`}
     </button>`;
   }).join('') : filtered && all.length ? emptyState('Nikdo neodpovídá filtru', 'Zkus jiné oddělení nebo stav, nebo filtr zruš.') : emptyState('Nikdo tu není', 'Nahraj docházku, nebo přidej člověka ručně.');
@@ -1657,7 +1681,7 @@ function renderPersonDetail() {
         <label class="field"><span>ID v evidenci práce</span><input type="text" id="pWid" value="${esc(e.wid || '')}" placeholder="volitelné" maxlength="40" autocomplete="off"></label>
         <label class="field"><span>Konec trestu${e.end ? ` <small class="muted">za ${Math.max(0, daysBetween(todayIso(), e.end))} dní</small>` : ''}</span><input type="date" id="pEnd" value="${esc(e.end || '')}"></label>
       </div>
-      <label class="switch"><input type="checkbox" id="pFri"${e.shortFri ? ' checked' : ''}><span>Zkrácený pátek: ${nf(friShift())} h se počítá jako celá směna</span></label>
+      <p class="small muted fri-auto">Zkrácený pátek se pozná sám: odpolední směna v pátek má ${nf(friShift())} h jako celou směnu (podle příchodu, jinak podle směny a střídání skupin).</p>
       <label class="switch"><input type="checkbox" id="pSick"${e.sick ? ' checked' : ''}><span>Nemoc: dočasně se nepočítá do kapacit směn${e.sick ? ` (od ${esc(dayText(e.sick))})` : ''}</span></label>
       <label class="switch"><input type="checkbox" id="pLead"><span>Vedoucí pracovník: nepočítá se do benefitů, v Matici dovedností jen jako vedoucí oddělení</span></label>
     </div>
@@ -1700,11 +1724,6 @@ function renderPersonDetail() {
     const v = String(event.target.value).trim();
     if (!setWid(e.key, v)) { toast(`ID ${v} už má ${nameOf(keyByWid(v))}.`, true); event.target.value = e.wid || ''; return; }
     save(); renderAll(); toast(v ? `ID ${v} uloženo.` : 'ID smazáno.');
-  };
-  $('#pFri').onchange = event => {
-    if (event.target.checked) e.shortFri = true; else delete e.shortFri;
-    save(); renderAll();
-    toast(`${e.last} ${e.first}${e.shortFri ? `: pátek ${nf(friShift())} h = celá směna.` : `: pátek zase ${nf(S.settings.shift)} h.`}`);
   };
   $('#pLead').onchange = event => setLead(e, event.target.checked);
   bindTkReqCard(box, e);
@@ -3225,9 +3244,9 @@ function renderSettings() {
   $('#setAtt').innerHTML = `<h3>Pravidla docházky</h3>
     <div class="form-grid">
       <label class="field"><span>Délka směny (hodin)</span><input type="number" id="sShift" value="${s.shift}" min="1" max="24" step="0.5"></label>
-      <label class="field"><span>Zkrácený pátek (hodin)</span><input type="number" id="sFri" value="${friShift()}" min="1" max="24" step="0.5"></label>
+      <label class="field"><span>Zkrácený pátek, odpolední (hodin)</span><input type="number" id="sFri" value="${friShift()}" min="1" max="24" step="0.5"></label>
     </div>
-    <p class="small muted">Podle směny se počítá fond (dny × směna) a jestli je den odpracovaný celý. Zkrácený pátek platí jen pro lidi se zaškrtnutou volbou v části Lidé: pátek s ${nf(friShift())} h se jim počítá jako celá směna a o rozdíl se sníží jejich fond i práh Kafe.</p>
+    <p class="small muted">Podle směny se počítá fond (dny × směna) a jestli je den odpracovaný celý. Zkrácený pátek platí sám pro odpolední směnu v pátek (podle příchodu, jinak podle směny člověka a střídání skupin): ${nf(friShift())} h se počítá jako celá směna a o rozdíl se sníží fond i práh Kafe.</p>
     <label class="field"><span>Kódy omluvené absence</span><input type="text" id="sExc" value="${esc(s.excused)}" maxlength="300"></label>
     <p class="small muted">Text v buňce místo hodin (dovolená, nemoc…), oddělený čárkou. Na diakritice nezáleží: OČR i OCR znamená totéž.</p>
     <label class="switch"><input type="checkbox" id="sRed"${s.excusedReducesFund ? ' checked' : ''}><span>Omluvená absence snižuje fond hodin</span></label>
@@ -4774,7 +4793,7 @@ function renderProfile() {
         <p class="eyebrow">Profil zaměstnance</p>
         <h1>${esc(name)}${probIcon(e)}</h1>
         ${probationOf(e) ? `<p class="small muted prob-line">${esc(probText(probationOf(e)))}</p>` : ''}
-        <p class="pf-meta">${L.pos ? `<span class="lvl l${L.n || 0}">${L.n || '?'}</span> <b>${esc(L.pos.name)}</b>${L.pct != null ? ` · dovednosti ${nf(L.pct, 0)} % (${L.base} ${tabW(L.base)})` : L.legacy && L.n ? ` · ${esc(L.lv.name)} (${L.base} ${tabW(L.base)})` : ' · bez dovedností'} · oddělení ${esc(deptOf(L.pos))}` : '<span class="crit">bez skupiny</span>'}${pfShift ? ` · ${esc(shiftName(pfShift))}` : ''}${e.shortFri ? ` · zkrácený pátek ${nf(friShift())} h` : ''}${e.excluded ? ' · <span class="tag">vyřazen ze seznamu</span>' : ''}</p>
+        <p class="pf-meta">${L.pos ? `<span class="lvl l${L.n || 0}">${L.n || '?'}</span> <b>${esc(L.pos.name)}</b>${L.pct != null ? ` · dovednosti ${nf(L.pct, 0)} % (${L.base} ${tabW(L.base)})` : L.legacy && L.n ? ` · ${esc(L.lv.name)} (${L.base} ${tabW(L.base)})` : ' · bez dovedností'} · oddělení ${esc(deptOf(L.pos))}` : '<span class="crit">bez skupiny</span>'}${pfShift ? ` · ${esc(shiftName(pfShift))}` : ''}${e.excluded ? ' · <span class="tag">vyřazen ze seznamu</span>' : ''}</p>
         ${e.note ? `<p class="small muted">${esc(e.note)}</p>` : ''}
       </div>
       <div class="page-actions noprint">
@@ -8837,18 +8856,29 @@ function svPartItems(x, part) {
 }
 function svShipHtml(x) {
   const c = svc();
+  // 2.53: uzamčený protokol je sbalený na jeden řádek, rozbalí se ikonou a jde jen číst
+  const lk = !!x.lock, exp = lk && ui.sv.exp && ui.sv.exp.has(x.id);
+  if (lk && !exp) {
+    const scrapL = x.items.filter(i => i.purpose === 'scrap').length;
+    return `<article class="card sv-ship sv-locked" data-svship="${esc(x.id)}">
+      <button type="button" class="sv-lockrow" data-svexpand="${esc(x.id)}" aria-expanded="false" aria-label="Rozbalit protokol ${esc(svNo(x))}">
+        <span class="sv-lockic" aria-hidden="true">${I.lock}</span>
+        <span class="sv-lockmain"><b>Protokol ${esc(svNo(x))}</b><small class="muted">${esc(dayText(x.date))} · ${x.to ? esc(x.to) : 'servis neuveden'} · ${x.items.length} zařízení${scrapL ? ` (k vyřazení ${scrapL})` : ''}</small></span>
+        <span class="tag ok">vše vráceno</span><span class="sv-chev" aria-hidden="true">${I.back}</span></button></article>`;
+  }
   const outN = x.items.filter(i => !i.back && i.purpose !== 'scrap').length;
   const scrapN = x.items.filter(i => i.purpose === 'scrap').length;
   const repN = x.items.length - scrapN;
   const both = scrapN > 0 && repN > 0;   // oddíly jen, když jsou v protokolu obě části
   const today = todayIso();
   const sec = (t, n) => `<tr class="sv-sec"><th colspan="5">${t} <span class="muted">(${n})</span></th></tr>`;
+  const ro = lk;   // uzamčený = jen ke čtení
   const rows = svPartItems(x, 'all').map(({ it: i, j }, n) => {
     const dv = c.devices.find(d => d.id === i.dev);
     const days = daysBetween(x.date, i.back || today);
     const state = i.purpose === 'scrap' && !i.back ? '<span class="tag crit">k vyřazení</span>'
       : i.back
-      ? `<span class="tag ok">vráceno ${esc(dayText(i.back))}</span><small>${days} ${denN(days)} na servisu${i.backNote ? ` · ${esc(i.backNote)}` : ''}</small><button class="linkish" type="button" data-svunback="${esc(x.id)}" data-j="${j}">zrušit vrácení</button>`
+      ? `<span class="tag ok">vráceno ${esc(dayText(i.back))}</span><small>${days} ${denN(days)} na servisu${i.backNote ? ` · ${esc(i.backNote)}` : ''}</small>${ro ? '' : `<button class="linkish" type="button" data-svunback="${esc(x.id)}" data-j="${j}">zrušit vrácení</button>`}`
       : `<span class="tag warn">na servisu${days > 0 ? ` ${days} ${denN(days)}` : ''}</span><button class="btn sec small" type="button" data-svback="${esc(x.id)}" data-j="${j}">Vráceno</button>`;
     const row = `<tr>
       <td class="name" data-label="Zařízení"><b>${esc(svDevName(i))}</b>${i.made ? `<small class="sv-made">rok výroby ${esc(i.made)}</small>` : ''}${dv ? `<button class="linkish" type="button" data-svdev="${esc(dv.id)}">historie</button>` : ''}</td>
@@ -8858,21 +8888,24 @@ function svShipHtml(x) {
       <td class="sv-state sv-block" data-label="Stav">${state}</td></tr>`;
     return `${both && n === 0 ? sec('Na opravu', repN) : ''}${both && n === repN ? sec('K vyřazení', scrapN) : ''}${row}`;
   }).join('');
-  return `<article class="card sv-ship${ui.sv.open === x.id ? ' fresh' : ''}" data-svship="${esc(x.id)}">
+  const done = svShipDone(x);
+  return `<article class="card sv-ship${ui.sv.open === x.id ? ' fresh' : ''}${lk ? ' sv-locked open' : ''}" data-svship="${esc(x.id)}">
+    ${lk ? `<button type="button" class="sv-lockrow" data-svexpand="${esc(x.id)}" aria-expanded="true" aria-label="Sbalit protokol ${esc(svNo(x))}"><span class="sv-lockic" aria-hidden="true">${I.lock}</span><span class="sv-lockmain"><b>Uzamčeno</b><small class="muted">${x.lock.by ? `${esc(x.lock.by)}, ` : ''}${esc(tsText(x.lock.at))} · jen ke čtení</small></span><span class="sv-chev" aria-hidden="true">${I.back}</span></button>` : ''}
     <div class="card-head"><div><h3>Protokol ${esc(svNo(x))}</h3>
       <p class="small muted">${esc(dayText(x.date))} · ${x.to ? esc(x.to) : 'servis neuveden'} · ${x.items.length} zařízení${x.by ? ` · zapsal ${esc(x.by)}` : ''}</p>
       ${x.note ? `<p class="small">${esc(x.note)}</p>` : ''}
       <p class="small sv-signline">${x.sign ? `<span class="tag ok">podepsáno</span> Předal: <b>${esc(x.sign.name)}</b>${x.sign.at ? ` · ${esc(dayText(todayIso(x.sign.at)))}` : ''}
-        <button class="linkish" type="button" data-svsign="${esc(x.id)}">změnit podpis</button><button class="linkish" type="button" data-svunsign="${esc(x.id)}">odebrat</button>`
-        : `<span class="muted">Předal: bez podpisu</span> <button class="btn sec small" type="button" data-svsign="${esc(x.id)}">Podepsat (Předal)</button>`}</p></div>
+        ${ro ? '' : `<button class="linkish" type="button" data-svsign="${esc(x.id)}">změnit podpis</button><button class="linkish" type="button" data-svunsign="${esc(x.id)}">odebrat</button>`}`
+        : `<span class="muted">Předal: bez podpisu</span>${ro ? '' : ` <button class="btn sec small" type="button" data-svsign="${esc(x.id)}">Podepsat (Předal)</button>`}`}</p></div>
       <div class="row gap wrap sv-actions">${outN ? `<span class="tag warn">na servisu ${outN}</span>` : scrapN === x.items.length ? '' : '<span class="tag ok">vše vráceno</span>'}${scrapN ? `<span class="tag crit">k vyřazení ${scrapN}</span>` : ''}
         ${outN > 1 ? `<button class="btn sec small" type="button" data-svbackall="${esc(x.id)}">Vráceno vše</button>` : ''}
         <span class="sv-pdfs" role="group" aria-label="PDF protokolu ${esc(svNo(x))}"><span class="small muted">PDF:</span>${SV_PARTS.map(([p, t]) => {
           const n = p === 'all' ? x.items.length : p === 'scrap' ? scrapN : repN;
           return `<button class="btn small${p === 'all' ? '' : ' sec'}" type="button" data-svpdf="${esc(x.id)}" data-svpart="${p}"${n ? '' : ` disabled title="V protokolu není žádné zařízení ${p === 'scrap' ? 'k vyřazení' : 'na opravu'}"`}>${t}${p === 'all' ? '' : ` (${n})`}</button>`;
         }).join('')}</span>
+        ${ro ? `<button class="btn ghost small" type="button" data-svunlock="${esc(x.id)}">${I.unlock}Odemknout</button>` : `${done ? `<button class="btn small sv-lockbtn" type="button" data-svlock="${esc(x.id)}" title="Protokol se sbalí, nepůjde upravit ani smazat">${I.lock}Uzamknout</button>` : ''}
         <button class="btn sec small" type="button" data-svedit="${esc(x.id)}">Upravit</button>
-        <button class="icon-btn" type="button" data-svshipdel="${esc(x.id)}" title="Smazat protokol" aria-label="Smazat protokol ${esc(svNo(x))}">${I.x}</button></div></div>
+        <button class="icon-btn" type="button" data-svshipdel="${esc(x.id)}" title="Smazat protokol" aria-label="Smazat protokol ${esc(svNo(x))}">${I.x}</button>`}</div></div>
     <div class="table-card flat"><table class="stack sv-items-tab"><thead><tr><th>Zařízení</th><th>Interní ID</th><th>Výrobní číslo</th><th>Závada</th><th>Stav</th></tr></thead><tbody>${rows}</tbody></table></div>
   </article>`;
 }
@@ -9192,6 +9225,29 @@ function bindService() {
       save(); renderService(); return;
     }
     if (t.closest('[data-svall]')) { ui.sv.all = true; renderService(); return; }
+    const exb = t.closest('[data-svexpand]');
+    if (exb) { ui.sv.exp = ui.sv.exp || new Set(); const id = exb.dataset.svexpand; if (ui.sv.exp.has(id)) ui.sv.exp.delete(id); else ui.sv.exp.add(id); renderService(); return; }
+    const lockB = t.closest('[data-svlock]');
+    if (lockB) {
+      const x = svc().shipments.find(s => s.id === lockB.dataset.svlock);
+      if (!x || !svShipDone(x)) { toast('Uzamknout jde jen protokol, kde je všechno vrácené.', true); return; }
+      x.lock = { at: Date.now(), by: ui.me.label || '' };
+      if (ui.sv.exp) ui.sv.exp.delete(x.id);
+      save(); renderService(); toast(`Protokol ${svNo(x)} uzamčen a sbalený.`); return;
+    }
+    const unlockB = t.closest('[data-svunlock]');
+    if (unlockB) {
+      const x = svc().shipments.find(s => s.id === unlockB.dataset.svunlock);
+      if (!x || !(await confirmBox(`Odemknout protokol ${svNo(x)}?`, 'Protokol půjde zase upravit a smazat.', 'Odemknout'))) return;
+      delete x.lock;
+      save(); renderService(); return;
+    }
+    const lockedOf = el => { const x = svc().shipments.find(s => s.id === el); return x && x.lock ? x : null; };
+    const guard = t.closest('[data-svback], [data-svbackall], [data-svunback], [data-svedit], [data-svshipdel], [data-svsign], [data-svunsign]');
+    if (guard) {
+      const id = guard.dataset.svback || guard.dataset.svbackall || guard.dataset.svunback || guard.dataset.svedit || guard.dataset.svshipdel || guard.dataset.svsign || guard.dataset.svunsign;
+      if (lockedOf(id)) { toast('Protokol je uzamčený. Nejdřív ho odemkni.', true); return; }
+    }
     const back = t.closest('[data-svback]');
     if (back) { await svBackDialog(back.dataset.svback, +back.dataset.j); return; }
     const backAll = t.closest('[data-svbackall]');

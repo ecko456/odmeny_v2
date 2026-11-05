@@ -325,11 +325,15 @@ const stepId = (page, i) => page.evaluate(i => lbBook().steps[i].id, i);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.click('#brandHome');
   await page.waitForSelector('#view-domu.on');
-  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
-  const tile = await page.textContent('#homeView .home-menu [data-go="protokoly"]');
+  await page.click('#fab');
+  await page.waitForFunction(() => document.body.classList.contains('fab-open'));
+  await page.click('#fabMenu [data-fabmore]');
+  await page.waitForFunction(() => document.body.classList.contains('fab-more-on'));
+  await page.waitForTimeout(250);
+  const tile = await page.textContent('#fabMenu .fab-more [data-fab="protokoly"]');
   // o víkendu a ve svátek dlaždice ukazuje nejbližší den plánu („v den plánu N úkonů“)
   check(/Protokoly/.test(tile) && /((dnes|v den plánu) \d+ úkon|1 stroj)/.test(tile), `dlaždice Protokoly: ${tile}`);
-  await page.click('#homeView .home-menu [data-go="protokoly"]');
+  await page.click('#fabMenu [data-fab="protokoly"]');
   await page.waitForFunction(() => ui.view === 'protokoly');
   await page.waitForTimeout(200);
   check(await page.isHidden('#lbDetail') || !(await page.evaluate(() => document.querySelector('#lbSplit').classList.contains('show-detail'))), 'na telefonu nejdřív seznam');

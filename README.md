@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.53
+
+- **Plovoucí menu na telefonu.** Volba směny na hlavní stránce už pod sebou neotevírá menu.
+  Tlačítko menu vpravo dole je vidět hned od začátku:
+  - nahoře **Hlavní stránka** (obsazenost dne), pod ní rychlé volby (Vyhledat člověka, Rychlá
+    kontrola, Úkoly, Sankce, Top 5, Kontroly);
+  - dole **Ostatní**: rozbalí přímo v menu posuvný seznam ostatních částí s krátkým stavem.
+    Stránka se přepne až po výběru části, „Zpět na rychlé volby“ seznam zase zavře.
+- **Zkrácený pátek sám od sebe.** Zkrácená směna (6,5 h) je jen odpolední v pátek. Pozná se
+  podle příchodu v souboru Docházka a výkony (od 12:00 odpolední), bez něj podle směny člověka
+  a střídání skupin. Zaškrtnutí „Zkrácený pátek“ u člověka je pryč a už se nepoužívá.
+- **Servis: uzamčení vyřízeného protokolu.** Když je všechno vrácené (nebo jde k vyřazení),
+  objeví se tlačítko **Uzamknout**. Uzamčený protokol se sbalí na jeden řádek a nejde upravit
+  ani smazat. Ikonou se rozbalí jen ke čtení, PDF jde stáhnout dál a odemknout ho jde s potvrzením.
+- Verze dat 43: stránka 2.52 otevřená při aktualizaci už nic neuloží (výzva k obnovení).
+
 ## Co je nového ve verzi 2.52
 
 - **Zkušební doba.** U jména člověka ve zkušební době je ikona přesýpacích hodin, v Lidech,

@@ -55,8 +55,10 @@ async function nav(page, view) {
   if (await page.isVisible(`#nav [data-view="${view}"]`)) { await page.click(`#nav [data-view="${view}"]`); return; }
   await page.click('#brandHome');
   await page.waitForSelector('#view-domu.on');
-  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
-  await page.click(`#homeView .home-menu [data-go="${view}"]`);
+  await page.click('#fab');
+  await page.waitForFunction(() => document.body.classList.contains('fab-open'));
+  if (!(await page.$(`#fabMenu .fab-quick [data-fab="${view}"]`))) { await page.click('#fabMenu [data-fabmore]'); await page.waitForFunction(() => document.body.classList.contains('fab-more-on')); await page.waitForTimeout(250); }
+  await page.click(`#fabMenu [data-fab="${view}"]`);
   await page.waitForFunction(v => ui.view === v, view);
 }
 

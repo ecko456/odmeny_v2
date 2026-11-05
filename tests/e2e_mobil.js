@@ -37,8 +37,10 @@ async function nav(page, name) {
   if (await page.isVisible(`#nav [data-view="${name}"]`)) await page.click(`#nav [data-view="${name}"]`);
   else {
     await home(page);
-    if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
-    await page.click(`#homeView .home-menu [data-go="${name}"]`);
+    await page.click('#fab');
+    await page.waitForFunction(() => document.body.classList.contains('fab-open'));
+    if (!(await page.$(`#fabMenu .fab-quick [data-fab="${name}"]`))) { await page.click('#fabMenu [data-fabmore]'); await page.waitForFunction(() => document.body.classList.contains('fab-more-on')); await page.waitForTimeout(250); }
+    await page.click(`#fabMenu [data-fab="${name}"]`);
   }
   await page.waitForFunction(v => ui.view === v, name);
 }
@@ -76,7 +78,7 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
   await page.screenshot({ path: `${shots}/00-splash.png` });
   await page.waitForFunction(() => document.querySelector('#splash').hidden, null, { timeout: 6000 });
   check(await view(page) === 'domu' && await page.evaluate(() => history.state && history.state.odmView === 'domu'), 'po přihlášení hlavní menu');
-  check(await page.isHidden('#nav') && await page.isHidden('#fab'), 'na telefonu není postranní menu, v hlavním menu ani plovoucí tlačítko');
+  check(await page.isHidden('#nav') && await page.isVisible('#fab'), 'na telefonu není postranní menu, plovoucí tlačítko je hned na hlavní stránce (2.53)');
 
   // Manifest a ikony pro přidání na plochu (index.php, CSP manifest-src).
   const man = await page.evaluate(async () => {
@@ -121,12 +123,12 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
   const opened = await page.evaluate(() => ({
     on: document.querySelector('.seg').dataset.on, sel: document.querySelector('.home').dataset.sel,
     checked: [...document.querySelectorAll('[data-hshift]')].map(b => b.getAttribute('aria-checked')).join(','),
-    tiles: [...document.querySelectorAll('.home-menu .tile')].map(t => t.dataset.go),
+    tiles: document.querySelectorAll('#homeView .home-menu, #homeView .tile').length,
     risks: !!document.querySelector('.home-risks, .home-ok'), hint: !!document.querySelector('.home-hint'),
     pmFaded: +getComputedStyle(document.querySelector('.hb.pm')).opacity < 0.7,
   }));
   check(opened.on === 'am' && opened.sel === 'am' && opened.checked === 'true,false,false', `volba směny: ${JSON.stringify(opened)}`);
-  check(JSON.stringify(opened.tiles) === JSON.stringify(SECTIONS), `dlaždice menu: ${opened.tiles.join(', ')}`);
+  check(opened.tiles === 0, 'po volbě směny se pod ní menu neotevře (2.53: části jsou v plovoucím menu)');
   check(opened.risks && !opened.hint && opened.pmFaded, `po volbě rizika, bez nápovědy, odpolední potlačená: ${JSON.stringify(opened)}`);
   await page.screenshot({ path: `${shots}/03-menu.png` });
   await page.click('[data-hshift="both"]');
@@ -134,8 +136,27 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
   check(await page.evaluate(() => document.querySelector('.seg').dataset.on === 'both' && ui.homeShift === 'both'), 'obě směny');
   await page.screenshot({ path: `${shots}/04-both.png` });
 
-  // Dlaždice otevře část; plovoucí tlačítko je vpravo dole.
-  await page.click('#homeView .home-menu [data-go="lide"]');
+  // Plovoucí tlačítko je vidět už na hlavní stránce (2.53); Ostatní otevře část.
+  check(await page.isVisible('#fab'), 'plovoucí tlačítko je na hlavní stránce');
+  await fab(page);
+  await page.click('#fabMenu [data-fabmore]');
+  await page.waitForFunction(() => document.body.classList.contains('fab-more-on'));
+  await page.waitForTimeout(300);
+  const QUICK = ['search', 'rychla', 'ukoly', 'sankce', 'top5', 'kontroly'];
+  const more = await page.evaluate(() => ({ list: [...document.querySelectorAll('#fabMore [data-fab]')].map(b => b.dataset.fab), view: ui.view, quick: getComputedStyle(document.querySelector('.fab-quick')).display,
+    box: document.querySelector('.fab-more-list').getBoundingClientRect().toJSON(), sh: document.querySelector('.fab-more-list').scrollHeight, ch: document.querySelector('.fab-more-list').clientHeight,
+    label: document.querySelector('[data-fabmore] .fab-l').textContent }));
+  check(JSON.stringify(more.list) === JSON.stringify(SECTIONS.filter(v => !QUICK.includes(v))), `Ostatní: ${more.list.join(', ')}`);
+  check(more.view === 'domu' && more.quick === 'none' && more.label === 'Zpět na rychlé volby', `Ostatní se otevře v menu bez přechodu: ${JSON.stringify(more)}`);
+  check(more.box.left >= 0 && more.box.right <= 390 && more.box.top >= 0 && more.sh > more.ch, `seznam Ostatní na displeji a posuvný: ${JSON.stringify(more)}`);
+  await page.screenshot({ path: `${shots}/04b-ostatni.png` });
+  await page.click('#fabMenu [data-fabmore]');
+  await page.waitForFunction(() => !document.body.classList.contains('fab-more-on'));
+  check(await page.evaluate(() => getComputedStyle(document.querySelector('.fab-quick')).display !== 'none' && ui.view === 'domu'), 'Zpět na rychlé volby');
+  await page.click('#fabMenu [data-fabmore]');
+  await page.waitForFunction(() => document.body.classList.contains('fab-more-on'));
+  await page.waitForTimeout(250);
+  await page.click('#fabMenu [data-fab="lide"]');
   await page.waitForFunction(() => ui.view === 'lide');
   const fabBox = await page.locator('#fab').boundingBox();
   check(fabBox && fabBox.x + fabBox.width > 390 - 30 && fabBox.y + fabBox.height > 844 - 40, `plovoucí tlačítko vpravo dole: ${JSON.stringify(fabBox)}`);
@@ -155,13 +176,13 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
   await fab(page);
   await page.waitForTimeout(350);
   const menu = await page.evaluate(() => ({
-    items: [...document.querySelectorAll('#fabMenu [data-fab]')].map(b => b.dataset.fab),
+    items: [...document.querySelectorAll('#fabMenu .fab-item[data-fab]')].map(b => b.dataset.fab),
     labels: [...document.querySelectorAll('#fabMenu .fab-l')].map(b => b.textContent),
     badge: document.querySelector('#fabMenu [data-fab="top5"] .nav-badge')?.textContent,
     exp: document.querySelector('#fab').getAttribute('aria-expanded'), scrim: !document.querySelector('#fabScrim').hidden,
   }));
   check(JSON.stringify(menu.items) === JSON.stringify(['domu', 'search', 'rychla', 'ukoly', 'sankce', 'top5', 'kontroly']), `plovoucí menu: ${menu.items.join(', ')}`);
-  check(menu.labels.join('|') === 'Hlavní menu|Vyhledat člověka|Rychlá kontrola|Úkoly|Sankce|Top 5|Kontroly' && menu.badge === '2' && menu.exp === 'true' && menu.scrim, `plovoucí menu: ${JSON.stringify(menu)}`);
+  check(menu.labels.join('|') === 'Hlavní stránka|Vyhledat člověka|Rychlá kontrola|Úkoly|Sankce|Top 5|Kontroly|Ostatní' && menu.badge === '2' && menu.exp === 'true' && menu.scrim, `plovoucí menu: ${JSON.stringify(menu)}`);
   await page.screenshot({ path: `${shots}/06-fab.png` });
   await page.goBack();
   await page.waitForFunction(() => !ui.fabOpen);
@@ -225,8 +246,8 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
 
   // Logo otevře hlavní menu; po první volbě směny už rovnou rozbalené.
   await home(page);
-  check(await page.isVisible('#homeView .home-menu') && await page.evaluate(() => !document.querySelector('.home-open').classList.contains('unfold')), 'menu po návratu rovnou otevřené');
-  check(await page.isHidden('#fab'), 'v hlavním menu není plovoucí tlačítko');
+  check(await page.evaluate(() => !document.querySelector('.home-open').classList.contains('unfold')), 'po návratu bez animace');
+  check(await page.isVisible('#fab'), 'na hlavní stránce je plovoucí tlačítko');
   await page.goBack();
   await page.waitForFunction(() => ui.view === 'lide');
   check(await page.evaluate(() => ui.personOpen && ui.selPerson === 'vesely|tomas'), 'Zpět z hlavního menu vrátil otevřený detail člověka');

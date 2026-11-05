@@ -255,6 +255,29 @@ async function confirm(page) {
   check(/vše vráceno/.test(await page.textContent(ship2)), 'vráceno vše');
   await saved(page);
 
+  // Uzamčení vyřízeného protokolu (2.53): sbalí se, nejde upravit ani smazat, rozbalí se ikonou.
+  check(!(await page.$(`${ship1} [data-svlock]`)), 'protokol se zařízením na servisu nejde uzamknout');
+  await page.click(`${ship2} [data-svlock]`);
+  await page.waitForFunction(() => !!S.service.shipments[1].lock);
+  await saved(page);
+  const lk2 = '[data-svship].sv-locked:has-text("Protokol 2026/002")';
+  check(await page.$eval(lk2, el => !el.classList.contains('open') && !el.querySelector('table') && !el.querySelector('[data-svedit], [data-svshipdel]')), 'uzamčený protokol je sbalený bez úprav a mazání');
+  const hLocked = await page.$eval(lk2, el => el.getBoundingClientRect().height);
+  check(hLocked < 90, `sbalený protokol zabírá málo místa: ${hLocked} px`);
+  await page.screenshot({ path: path.join(shots, '03b-uzamceno.png'), fullPage: true });
+  await page.click(`${lk2} [data-svexpand]`);
+  await page.waitForSelector('[data-svship].sv-locked.open table');
+  check(await page.$eval('[data-svship].sv-locked.open', el => !el.querySelector('[data-svedit], [data-svshipdel], [data-svunback], [data-svsign]') && !!el.querySelector('[data-svunlock]') && !!el.querySelector('[data-svpdf]')), 'rozbalený uzamčený protokol jen ke čtení, PDF jde stáhnout');
+  await page.click('[data-svship].sv-locked.open [data-svexpand]');
+  await page.waitForFunction(() => !document.querySelector('[data-svship].sv-locked.open'));
+  check(await page.evaluate(() => S.log.some(l => /Servis 2026\/002: protokol uzamčen/.test(l.text))), 'uzamčení v historii změn');
+  // odemknout (kvůli dalším krokům testu)
+  await page.click(`${lk2} [data-svexpand]`);
+  await page.click('[data-svship].sv-locked.open [data-svunlock]');
+  await confirm(page);
+  await page.waitForFunction(() => !S.service.shipments[1].lock);
+  await saved(page);
+
   // Evidence zařízení a historie.
   await page.click('[data-svtab="dev"]');
   await page.waitForSelector('#svDevTable tr[data-svdev]');
@@ -422,9 +445,13 @@ async function confirm(page) {
   await page.waitForFunction(() => !ui.sv.draft);
   await page.click('#brandHome');
   await page.waitForSelector('#view-domu.on');
-  if (await page.isHidden('#homeView .home-open')) await page.click('[data-hshift="both"]');
-  check(/Servis/.test(await page.textContent('#homeView .home-menu')) && /na servisu 1/.test(await page.textContent('#homeView .home-menu [data-go="servis"]')), 'Servis v hlavním menu telefonu');
-  await page.click('#homeView .home-menu [data-go="servis"]');
+  await page.click('#fab');
+  await page.waitForFunction(() => document.body.classList.contains('fab-open'));
+  await page.click('#fabMenu [data-fabmore]');
+  await page.waitForFunction(() => document.body.classList.contains('fab-more-on'));
+  await page.waitForTimeout(250);
+  check(/na servisu 1/.test(await page.textContent('#fabMenu .fab-more [data-fab="servis"]')), 'Servis v menu Ostatní na telefonu');
+  await page.click('#fabMenu [data-fab="servis"]');
   await page.waitForFunction(() => ui.view === 'servis');
   await page.setViewportSize({ width: 1440, height: 900 });
 

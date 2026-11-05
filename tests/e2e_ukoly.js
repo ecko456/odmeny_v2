@@ -206,9 +206,13 @@ async function newTask(page, x) {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { ui.homeShift = 'both'; showView('domu'); });
   await page.waitForSelector('#view-domu.on');
-  const tile = await page.evaluate(() => { const t = document.querySelector('#homeView [data-go="ukoly"], #homeView [data-tile="ukoly"], #homeView [data-view="ukoly"]'); return t ? t.textContent.replace(/\s+/g, ' ') : ''; });
-  check(/Úkoly/.test(tile) && /po termínu/.test(tile), `dlaždice úvodu: ${tile}`);
-  await page.evaluate(() => showView('ukoly'));
+  // 2.53: Úkoly jsou v rychlých volbách plovoucího menu, s odznakem připomínek
+  await page.click('#fab');
+  await page.waitForFunction(() => document.body.classList.contains('fab-open'));
+  const tile = await page.evaluate(() => { const t = document.querySelector('#fabMenu .fab-quick [data-fab="ukoly"]'); return t ? t.textContent.replace(/\s+/g, ' ') : ''; });
+  check(/Úkoly/.test(tile) && /\d/.test(tile), `Úkoly v plovoucím menu s odznakem: ${tile}`);
+  await page.click('#fabMenu [data-fab="ukoly"]');
+  await page.waitForFunction(() => ui.view === 'ukoly');
   check(await overflow(page) <= 0, `telefon seznam bez přetečení: ${await overflow(page)}`);
   await page.screenshot({ path: path.join(shots, '04-telefon.png'), fullPage: true });
   await page.click('#tkList .tk-row >> nth=0');
