@@ -34,6 +34,18 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 6. 11. 2026 (verze 2.60):
+
+- Uživatel poslal ukázku „Shader R“ (WebGL, Gaussova barevná pole bílá / tmavá / oranžová v
+  deformovaném prostoru, zrno) a ptal se, jestli ji dát jako pozadí přihlašovací stránky.
+  - `static/lockbg.js` (v index.php před lock.js): plátno `.lock-bg` jako první dítě `#lock`,
+    `html.lock-bg-on`, shader převzatý z ukázky (teplá bílá místo čisté, `SCALE` 0,6 rozlišení),
+    `window.OdmLockBg {frames, running}`. Skrytá karta = pauza, `prefers-reduced-motion` =
+    jeden snímek, bez WebGL nic (zůstane `body::before`), po odemčení (`#lock` odstraněn)
+    `cleanup` přes `isConnected` a MutationObserver. CSS v `lock.css` (závoj `.lock::after`).
+  - Animace zámku z 2.55/2.57 se uživateli nelíbily; tohle je klidné pozadí, ne skládání panelu.
+  - Test `tests/e2e_lockbg.js`. `ODM_VERSION` 2.60, data beze změny (44).
+
 Stav k 6. 11. 2026 (verze 2.59):
 
 - Uživatel (k návrhu dashboardu, 7 návrhů): „a co na širokém monitoru dát doprava náhled na úkoly?
@@ -2318,7 +2330,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.56 | `2afa6a0` | Servis – Vyřazeno servisem s přílohou (PDF nebo fotka protokolu), hledání lidí v menu na PC (data verze 44) |
 | 2.57 | `5f8ec48` | úvodní animace přihlášení – ruka z částic, která se rozevře a utvoří panel |
 | 2.58 | `b697d6d` | úvodní animace přihlášení odstraněná |
-| 2.59 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: pravý panel s úkoly a rychlými akcemi, sbalitelné menu, souhrn v kapsli s pruhy a trendem, hladké křivky, barevná oddělení, skleněná plocha |
+| 2.59 | `ce2ac43` | pravý panel s úkoly a rychlými akcemi, sbalitelné menu, souhrn v kapsli s pruhy a trendem, hladké křivky, barevná oddělení, skleněná plocha |
+| 2.60 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: pozadí přihlašovací stránky z barevných polí (WebGL) |
 
 Verze 2.1 přidala:
 
@@ -2781,6 +2794,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
+  - `e2e_lockbg.js` (2.60): pozadí zámku (kreslí, hýbe se, pauza, omezit pohyb, bez WebGL, po odemčení pryč, telefon);
   - `e2e_panel.js` (2.59): pravý panel (úkoly, rychlé akce, Vrátit zpět), sbalitelné menu, kapsle s pruhy, hladké křivky, oddělení barevně, 1440 / 2560 / telefon;
   - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);

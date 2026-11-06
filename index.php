@@ -51,6 +51,7 @@ $privateVersion = (string)max(array_map(static fn(string $file): int => (int)fil
   <noscript><p class="note e">Aplikace potřebuje zapnutý JavaScript.</p></noscript>
   <script src="<?= $asset('static/vendor/qrcode.js') ?>"></script>
   <script src="<?= $asset('static/vault.js') ?>"></script>
+  <script src="<?= $asset('static/lockbg.js') ?>"></script>
   <script src="<?= $asset('static/lock.js') ?>"></script>
 </body>
 </html>

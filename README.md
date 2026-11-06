@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.60
+
+- **Nové pozadí přihlašovací stránky**: pomalu se přelévající barevná pole (tmavá, oranžová
+  a teplá bílá) s jemným zrnem, za skleněným panelem.
+  - Po přihlášení zmizí a přestane kreslit.
+  - Ve skryté kartě se zastaví; s nastavením „omezit pohyb“ je jen stojící obrázek.
+  - Prohlížeč bez WebGL ukáže dosavadní pozadí.
+- Data beze změny.
+
 ## Co je nového ve verzi 2.59
 
 Vzhled převzatý z návrhu dashboardu (bez jeho obrázků). PDF a data beze změny.

@@ -268,6 +268,13 @@ textarea { resize: vertical; min-height: 76px; }
 .steps i { flex: 1; height: 4px; border-radius: 4px; background: var(--surface-3); }
 .steps i.on { background: var(--acc); }
 
+/* Pozadí přihlašovací stránky (2.60, static/lockbg.js): barevná pole přes WebGL. Bez WebGL
+   třída lock-bg-on chybí a platí CSS pozadí výš. Jemný tmavý závoj drží čitelnost panelu. */
+.lock-bg { position: absolute; inset: 0; z-index: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
+.lock-bg-on .lock::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(60% 55% at 50% 50%, rgba(8, 9, 12, .38), rgba(8, 9, 12, .12) 70%, transparent 100%); }
+.lock-bg-on .lock-card { z-index: 1; }
+
 /* PIN */
 .pin-dots { display: flex; justify-content: center; gap: 12px; margin: 6px 0 18px; }
 .pin-dots i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); transition: background .15s ease, border-color .15s ease, transform .15s ease; }
