@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.56
+
+- **Servis: Vyřazeno servisem.** U zařízení na servisu je vedle tlačítka Vráceno nové
+  tlačítko Vyřazeno servisem (i u zařízení odeslaných k vyřazení).
+  - Zapíše se datum, poznámka a **povinná příloha**: PDF nebo fotka protokolu k vyřazení.
+    Na telefonu jde protokol rovnou vyfotit.
+  - Příloha se šifruje jako ostatní data. PDF může mít až 10 MB, fotka se zmenší na 2400 px.
+  - Na kartě protokolu je odkaz „protokol k vyřazení“: otevřít nebo stáhnout.
+  - Zařízení je v evidenci vedené jako vyřazené a protokol je vyřízený (jde uzamknout).
+  - Zrušení vyřazení i smazání protokolu přílohu smaže. Příloha je i v šifrované záloze.
+- **Hledat člověka v menu na PC.** Pod Hodnoceným obdobím je kolonka, která hledá lidi podle
+  jména, příjmení nebo ID v evidenci práce (i bez nul na začátku). Šipkami a Enterem nebo
+  klepnutím otevřeš člověka v Lidech. Klávesa „/“ do kolonky skočí odkudkoli. Na telefonu
+  zůstává Vyhledat člověka v plovoucím menu.
+- Verze dat 44: stránka ve starší verzi vyřazení servisem nesmaže (musí se obnovit).
+
 ## Co je nového ve verzi 2.55
 
 - **Úvodní animace přihlášení.** Na tmavé obrazovce s mřížkou obzoru, zaměřovačem a údaji

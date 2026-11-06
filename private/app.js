@@ -882,6 +882,99 @@ function renderFabDot() {
 
 /* ---------- vyhledání člověka (jméno, ID v evidenci práce, kartička) ---------- */
 function initials(e) { return `${(e.last || '?')[0]}${(e.first || '')[0] || ''}`.toUpperCase(); }
+/* Hledání lidí podle jména nebo ID (2.56): sdílí ho vyhledání na telefonu a kolonka v menu na PC.
+   Pořadí: přesná shoda ID, jméno nebo příjmení začíná dotazem, pak zbytek; vyřazení na konci. */
+function personFind(raw, list = Object.values(S.employees)) {
+  const byName = (a, b) => norm(`${a.last} ${a.first}`).localeCompare(norm(`${b.last} ${b.first}`), 'cs');
+  const q = norm(String(raw || '').trim());
+  if (!q) return list.slice().sort((a, b) => (a.excluded - b.excluded) || byName(a, b));
+  const digits = String(raw).replace(/\D/g, '').replace(/^0+/, '');
+  const wid = e => String(e.wid || '').replace(/^0+/, '');
+  const score = e => {
+    if (digits && wid(e) === digits) return 0;
+    const a = norm(`${e.last} ${e.first}`), b = norm(`${e.first} ${e.last}`);
+    if (a.startsWith(q) || b.startsWith(q)) return 1;
+    if (a.includes(q) || b.includes(q)) return 2;
+    if (e.wid && (norm(e.wid).includes(q) || (digits.length >= 2 && wid(e).includes(digits)))) return 3;
+    return -1;
+  };
+  return list.map(e => ({ e, s: score(e) })).filter(x => x.s >= 0)
+    .sort((a, b) => (a.e.excluded - b.e.excluded) || (a.s - b.s) || byName(a.e, b.e))
+    .map(x => x.e);
+}
+function openPersonKey(key) {
+  if (!S.employees[key]) return;
+  ui.selPerson = key;
+  ui.personOpen = true;
+  ui.listY = 0;
+  showView('lide');
+  renderPeople();
+}
+/* kolonka „Hledat člověka“ v menu na PC (pod Hodnoceným obdobím) */
+function sideSearchDraw() {
+  const input = $('#sideQ'), box = $('#sideQList');
+  if (!input || !box) return;
+  const q = input.value.trim();
+  if (!q || !S) { box.hidden = true; box.innerHTML = ''; input.setAttribute('aria-expanded', 'false'); return; }
+  const all = personFind(q);
+  const list = all.slice(0, 8);
+  ui.sideQi = Math.min(ui.sideQi || 0, Math.max(0, list.length - 1));
+  box.innerHTML = list.length ? list.map((e, n) => {
+    const lead = isLead(e), pos = posOf(e);
+    const sub = [lead ? 'vedoucí' : pos ? pos.name : 'bez skupiny', e.wid ? `ID ${e.wid}` : '', e.excluded ? 'vyřazen' : '', e.sick ? 'nemoc' : ''].filter(Boolean).join(' · ');
+    return `<button type="button" class="side-qrow${n === ui.sideQi ? ' on' : ''}${e.excluded ? ' out' : ''}" role="option" aria-selected="${n === ui.sideQi}" data-sideq="${esc(e.key)}"><span class="ps-av">${esc(initials(e))}</span><span class="nm"><b>${esc(`${e.last} ${e.first}`)}</b><span>${esc(sub)}</span></span></button>`;
+  }).join('') + (all.length > list.length ? `<p class="side-qmore">a ${all.length - list.length} dalších, upřesni hledání</p>` : '')
+    : '<p class="side-qmore">Nikdo takový. Zkus jinou část jména nebo ID.</p>';
+  box.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
+function sideSearchGo(key) {
+  const input = $('#sideQ');
+  if (input) { input.value = ''; input.blur(); }
+  ui.sideQi = 0;
+  sideSearchDraw();
+  openPersonKey(key);
+}
+function bindSideSearch() {
+  const input = $('#sideQ'), box = $('#sideQList');
+  if (!input || !box) return;
+  input.addEventListener('input', () => { ui.sideQi = 0; sideSearchDraw(); });
+  input.addEventListener('focus', sideSearchDraw);
+  input.addEventListener('keydown', event => {
+    const rows = [...box.querySelectorAll('.side-qrow')];
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (!rows.length) return;
+      event.preventDefault();
+      ui.sideQi = ((ui.sideQi || 0) + (event.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length;
+      sideSearchDraw();
+    } else if (event.key === 'Enter') {
+      const r = rows[ui.sideQi || 0];
+      if (r) { event.preventDefault(); sideSearchGo(r.dataset.sideq); }
+    } else if (event.key === 'Escape') {
+      input.value = ''; sideSearchDraw(); input.blur();
+    }
+  });
+  // výběr už na mousedown, než pole ztratí fokus a seznam zmizí
+  box.addEventListener('mousedown', event => {
+    const r = event.target.closest('[data-sideq]');
+    if (!r) return;
+    event.preventDefault();
+    sideSearchGo(r.dataset.sideq);
+  });
+  input.addEventListener('blur', () => setTimeout(() => {
+    if (document.activeElement !== input) { box.hidden = true; input.setAttribute('aria-expanded', 'false'); }
+  }, 150));
+  // „/“ mimo pole skočí do hledání (jen když je kolonka vidět, tedy na PC)
+  document.addEventListener('keydown', event => {
+    if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+    const t = event.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (document.querySelector('dialog[open]') || !input.offsetParent) return;
+    event.preventDefault();
+    input.focus();
+  });
+}
+
 async function openPersonSearch() {
   const mg = staffDay().mg;
   let filter = ui.homeShift === 'am' || ui.homeShift === 'pm' ? ui.homeShift : '';
@@ -909,11 +1002,8 @@ async function openPersonSearch() {
       const input = $('#psQ', dlg);
       const draw = () => {
         const q = norm(input.value.trim());
-        const digits = input.value.replace(/\D/g, '').replace(/^0+/, '');
-        let list = Object.values(S.employees).filter(e => !q || norm(`${e.last} ${e.first}`).includes(q) || norm(`${e.first} ${e.last}`).includes(q)
-          || (digits && String(e.wid || '').replace(/^0+/, '') === digits) || (e.wid && norm(e.wid).includes(q)));
+        let list = personFind(input.value);
         if (filter) list = list.filter(e => !isLead(e) && slotOn(e, mg) === filter);
-        list.sort((a, b) => (a.excluded - b.excluded) || norm(`${a.last} ${a.first}`).localeCompare(norm(`${b.last} ${b.first}`), 'cs'));
         $('#psCount', dlg).textContent = list.length ? `${list.length} ${lidiN(list.length)}${filter ? ` · ${filter === 'am' ? 'ranní' : 'odpolední'}` : ''}` : '';
         $('#psList', dlg).innerHTML = list.length ? list.slice(0, 80).map(row).join('') : emptyState('Nikdo takový', q ? 'Zkus jinou část jména nebo ID.' : 'Na této směně nikdo není.');
       };
@@ -946,11 +1036,7 @@ async function openPersonSearch() {
   if (!S.employees[key]) return;
   if (pick.act === 'profil') { openProfile(key); return; }
   if (pick.act === 'sankce') { ui.sanDraft.key = key; showView('sankce'); renderSanctions(); return; }
-  ui.selPerson = key;
-  ui.personOpen = true;
-  ui.listY = 0;
-  showView('lide');
-  renderPeople();
+  openPersonKey(key);
 }
 
 function renderDemoBanner() {
@@ -6694,10 +6780,10 @@ function hydratePhotos(root) {
   });
 }
 /* Fotka z telefonu zmenšená na 1600 px a uložená jako JPEG (kvůli místu a rychlosti). */
-async function shrinkPhoto(file) {
+async function shrinkPhoto(file, max = 1600, quality = 0.82) {
   let bmp;
   try { bmp = await createImageBitmap(file); } catch (error) { throw new Error('Tenhle formát fotky prohlížeč neumí otevřít. Zkus JPG nebo PNG.'); }
-  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(bmp.width * scale));
   canvas.height = Math.max(1, Math.round(bmp.height * scale));
@@ -6706,7 +6792,7 @@ async function shrinkPhoto(file) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
   if (bmp.close) bmp.close();
-  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.82));
+  const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
   if (!blob) throw new Error('Fotku se nepodařilo zpracovat.');
   return new Uint8Array(await blob.arrayBuffer());
 }
@@ -7314,6 +7400,7 @@ function bindEvents() {
   });
   document.addEventListener('keydown', event => { if (event.key === 'Escape') $('#colPick').open = false; });
   $('#periodSel').onchange = event => { setPeriod(event.target.value); renderAll(); };
+  bindSideSearch();
   $('#lockBtn').onclick = () => lockApp();
   $('#lockBtnTop').onclick = () => lockApp();
   $('#logBtn').onclick = () => openLog();
@@ -8768,9 +8855,10 @@ function svShipmentsHtml() {
    Podpis se kreslí do plochy (myš, prst, pero), ořízne se, uloží jako šifrovaný PNG (Vault.saveFile)
    a protokol má jen {file, name, at, by}. PDF ho vloží nad čáru „Předal (jméno a podpis)“. */
 function svDropSignFile(id) {
-  // soubor smaž, až když na něj žádný protokol neodkazuje
-  if (id && !svc().shipments.some(x => x.sign && x.sign.file === id)) Vault.deleteFile(id).catch(() => {});
+  // soubor smaž, až když na něj žádný protokol neodkazuje (podpis ani příloha vyřazení)
+  if (id && !svFileIds(S).includes(id)) Vault.deleteFile(id).catch(() => {});
 }
+function svDropFiles(ids) { (ids || []).forEach(svDropSignFile); }
 function signPad(canvas, hint) {
   const ctx = canvas.getContext('2d');
   let strokes = 0, last = null, drawing = false;
@@ -8858,9 +8946,10 @@ function svShipHtml(x) {
       <button type="button" class="sv-lockrow" data-svexpand="${esc(x.id)}" aria-expanded="false" aria-label="Rozbalit protokol ${esc(svNo(x))}">
         <span class="sv-lockic" aria-hidden="true">${I.lock}</span>
         <span class="sv-lockmain"><b>Protokol ${esc(svNo(x))}</b><small class="muted">${esc(dayText(x.date))} · ${x.to ? esc(x.to) : 'servis neuveden'} · ${x.items.length} zařízení${scrapL ? ` (k vyřazení ${scrapL})` : ''}</small></span>
-        <span class="tag ok">vše vráceno</span><span class="sv-chev" aria-hidden="true">${I.back}</span></button></article>`;
+        <span class="tag ok">${x.items.some(i => i.rej) ? 'vše vyřízeno' : 'vše vráceno'}</span><span class="sv-chev" aria-hidden="true">${I.back}</span></button></article>`;
   }
-  const outN = x.items.filter(i => !i.back && i.purpose !== 'scrap').length;
+  const outN = x.items.filter(i => !i.back && !i.rej && i.purpose !== 'scrap').length;
+  const rejN = x.items.filter(i => i.rej).length;
   const scrapN = x.items.filter(i => i.purpose === 'scrap').length;
   const repN = x.items.length - scrapN;
   const both = scrapN > 0 && repN > 0;   // oddíly jen, když jsou v protokolu obě části
@@ -8870,10 +8959,14 @@ function svShipHtml(x) {
   const rows = svPartItems(x, 'all').map(({ it: i, j }, n) => {
     const dv = c.devices.find(d => d.id === i.dev);
     const days = daysBetween(x.date, i.back || today);
-    const state = i.purpose === 'scrap' && !i.back ? '<span class="tag crit">k vyřazení</span>'
+    const rejBtn = ro ? '' : `<button class="btn sec small sv-rejbtn" type="button" data-svrej="${esc(x.id)}" data-j="${j}">Vyřazeno servisem</button>`;
+    const state = i.rej
+      ? `<span class="tag crit">vyřazeno servisem ${esc(dayText(i.rej.date))}</span><small>${i.rej.note ? `${esc(i.rej.note)} · ` : ''}${esc(i.rej.by || '')}</small>
+        <button class="linkish sv-rejfile" type="button" data-svrejview="${esc(x.id)}" data-j="${j}">protokol k vyřazení</button>${ro ? '' : `<button class="linkish" type="button" data-svunrej="${esc(x.id)}" data-j="${j}">zrušit vyřazení</button>`}`
+      : i.purpose === 'scrap' && !i.back ? `<span class="tag crit">k vyřazení</span>${rejBtn}`
       : i.back
       ? `<span class="tag ok">vráceno ${esc(dayText(i.back))}</span><small>${days} ${denN(days)} na servisu${i.backNote ? ` · ${esc(i.backNote)}` : ''}</small>${ro ? '' : `<button class="linkish" type="button" data-svunback="${esc(x.id)}" data-j="${j}">zrušit vrácení</button>`}`
-      : `<span class="tag warn">na servisu${days > 0 ? ` ${days} ${denN(days)}` : ''}</span><button class="btn sec small" type="button" data-svback="${esc(x.id)}" data-j="${j}">Vráceno</button>`;
+      : `<span class="tag warn">na servisu${days > 0 ? ` ${days} ${denN(days)}` : ''}</span><span class="sv-stbtns"><button class="btn sec small" type="button" data-svback="${esc(x.id)}" data-j="${j}">Vráceno</button>${rejBtn}</span>`;
     const row = `<tr>
       <td class="name" data-label="Zařízení"><b>${esc(svDevName(i))}</b>${i.made ? `<small class="sv-made">rok výroby ${esc(i.made)}</small>` : ''}${dv ? `<button class="linkish" type="button" data-svdev="${esc(dv.id)}">historie</button>` : ''}</td>
       <td data-label="Interní ID">${svIdCell(i.iid, i.iidBad)}</td>
@@ -8891,7 +8984,7 @@ function svShipHtml(x) {
       <p class="small sv-signline">${x.sign ? `<span class="tag ok">podepsáno</span> Předal: <b>${esc(x.sign.name)}</b>${x.sign.at ? ` · ${esc(dayText(todayIso(x.sign.at)))}` : ''}
         ${ro ? '' : `<button class="linkish" type="button" data-svsign="${esc(x.id)}">změnit podpis</button><button class="linkish" type="button" data-svunsign="${esc(x.id)}">odebrat</button>`}`
         : `<span class="muted">Předal: bez podpisu</span>${ro ? '' : ` <button class="btn sec small" type="button" data-svsign="${esc(x.id)}">Podepsat (Předal)</button>`}`}</p></div>
-      <div class="row gap wrap sv-actions">${outN ? `<span class="tag warn">na servisu ${outN}</span>` : scrapN === x.items.length ? '' : '<span class="tag ok">vše vráceno</span>'}${scrapN ? `<span class="tag crit">k vyřazení ${scrapN}</span>` : ''}
+      <div class="row gap wrap sv-actions">${outN ? `<span class="tag warn">na servisu ${outN}</span>` : scrapN === x.items.length ? '' : `<span class="tag ok">${rejN ? 'vše vyřízeno' : 'vše vráceno'}</span>`}${scrapN ? `<span class="tag crit">k vyřazení ${scrapN}</span>` : ''}${rejN ? `<span class="tag crit">vyřazeno servisem ${rejN}</span>` : ''}
         ${outN > 1 ? `<button class="btn sec small" type="button" data-svbackall="${esc(x.id)}">Vráceno vše</button>` : ''}
         <span class="sv-pdfs" role="group" aria-label="PDF protokolu ${esc(svNo(x))}"><span class="small muted">PDF:</span>${SV_PARTS.map(([p, t]) => {
           const n = p === 'all' ? x.items.length : p === 'scrap' ? scrapN : repN;
@@ -8906,7 +8999,7 @@ function svShipHtml(x) {
 async function svBackDialog(shipId, idx) {
   const x = svc().shipments.find(s => s.id === shipId);
   if (!x) return;
-  const items = idx == null ? x.items.filter(i => !i.back && i.purpose !== 'scrap') : [x.items[idx]].filter(Boolean);
+  const items = idx == null ? x.items.filter(i => !i.back && !i.rej && i.purpose !== 'scrap') : [x.items[idx]].filter(i => i && !i.rej);
   if (!items.length) return;
   const res = await dialog({
     title: idx == null ? 'Vráceno ze servisu – vše' : 'Vráceno ze servisu', ok: 'Zapsat',
@@ -8922,6 +9015,98 @@ async function svBackDialog(shipId, idx) {
   save();
   renderService();
   toast(`Zapsáno: ${items.length === 1 ? 'zařízení je' : `${items.length} zařízení jsou`} zpátky ze servisu (${dayText(back)}).`);
+}
+
+/* ---------- vyřazeno servisem (2.56) ----------
+   Servis zařízení neopravil, ale vyřadil: povinná příloha je PDF nebo fotka jeho protokolu k vyřazení.
+   Příloha se šifruje (Vault.saveFile) po dílech do 1 MB, takže projde i větší PDF ze skeneru.
+   Fotka se zmenší na nejvýš 2400 px (text protokolu musí zůstat čitelný). */
+const SV_REJ_PART = 1000000;
+const SV_REJ_MAX = 10 * 1024 * 1024;
+async function svRejBytes(file) {
+  const type = String(file.type || '').toLowerCase();
+  const pdf = type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+  if (pdf) {
+    if (file.size > SV_REJ_MAX) throw new Error(`PDF je moc velké (${(file.size / 1048576).toFixed(1)} MB), nejvýš 10 MB.`);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (String.fromCharCode(...bytes.subarray(0, 5)) !== '%PDF-') throw new Error('Soubor není PDF.');
+    return { bytes, type: 'application/pdf' };
+  }
+  if (!/^image\//.test(type) && !/\.(jpe?g|png|heic|webp)$/i.test(file.name || '')) throw new Error('Nahraj PDF nebo fotku protokolu.');
+  return { bytes: await shrinkPhoto(file, 2400, 0.85), type: 'image/jpeg' };
+}
+async function svRejDialog(shipId, j) {
+  const x = svc().shipments.find(s => s.id === shipId);
+  const it = x && x.items[j];
+  if (!it || it.rej) return;
+  let picked = null;
+  const res = await dialog({
+    title: 'Vyřazeno servisem', ok: 'Zapsat vyřazení',
+    html: `<p><b>${esc(svDevName(it))}</b>${svDevIdent(it) ? ` (${esc(svDevIdent(it))})` : ''}, protokol ${esc(svNo(x))}, odesláno ${esc(dayText(x.date))}.</p>
+      <p class="small muted">Servis zařízení neopraví a vyřadí ho. Přilož jeho protokol k vyřazení: PDF, nebo fotku. Zařízení se v evidenci povede jako vyřazené.</p>
+      <label class="field"><span>Datum vyřazení</span><input type="date" name="date" value="${esc(todayIso() < x.date ? x.date : todayIso())}" min="${esc(x.date)}" required></label>
+      <div class="field"><span>Protokol k vyřazení (PDF nebo fotka)</span>
+        <label class="btn sec sv-rejpick">${I.up}<span data-rejname>Vybrat soubor nebo vyfotit…</span><input type="file" name="file" accept="application/pdf,.pdf,image/*" class="sr-only"></label></div>
+      <label class="field"><span>Poznámka (nepovinné)</span><input type="text" name="note" maxlength="300" placeholder="např. oprava se nevyplatí"></label>`,
+    onOpen: dlg => {
+      const inp = $('input[name="file"]', dlg);
+      inp.addEventListener('change', () => {
+        picked = inp.files && inp.files[0] || null;
+        $('[data-rejname]', dlg).textContent = picked ? `${picked.name} (${(picked.size / 1024 < 1024 ? `${Math.max(1, Math.round(picked.size / 1024))} kB` : `${(picked.size / 1048576).toFixed(1)} MB`)})` : 'Vybrat soubor nebo vyfotit…';
+        dlg.querySelector('.dlg-error')?.remove();
+      });
+    },
+    validate: form => { const v = form.elements.namedItem('date').value; return !SV_ISO.test(v) ? 'Vyplň datum vyřazení.' : v < x.date ? 'Vyřazení nemůže být dřív než odeslání.' : !picked ? 'Přilož PDF nebo fotku protokolu k vyřazení.' : null; },
+  });
+  if (res.value !== 'ok' || !picked) return;
+  const date = res.form.elements.namedItem('date').value;
+  const note = res.form.elements.namedItem('note').value.replace(/\s+/g, ' ').trim().slice(0, 300);
+  let data;
+  try { data = await svRejBytes(picked); } catch (error) { toast(error.message, true); return; }
+  toast('Šifruji a nahrávám protokol k vyřazení…');
+  const files = [];
+  try {
+    for (let o = 0; o < data.bytes.length; o += SV_REJ_PART) files.push(await Vault.saveFile(data.bytes.subarray(o, o + SV_REJ_PART)));
+  } catch (error) {
+    files.forEach(f => Vault.deleteFile(f).catch(() => {}));
+    toast(`Protokol se nepodařilo nahrát: ${error.message}`, true);
+    return;
+  }
+  // mezitím mohl protokol zmizet nebo se změnit
+  const x2 = svc().shipments.find(s => s.id === shipId);
+  const it2 = x2 && x2.items[j];
+  if (!it2 || it2.rej || x2.lock) { files.forEach(f => Vault.deleteFile(f).catch(() => {})); toast('Protokol se mezitím změnil, zkus to znovu.', true); return; }
+  it2.rej = { date, note, files, name: String(picked.name || 'protokol').slice(0, 120), type: data.type, size: data.bytes.length, at: Date.now(), by: ui.me.label || '' };
+  it2.back = ''; it2.backNote = '';
+  save();
+  renderService();
+  toast(`Zapsáno: ${svDevName(it2)} vyřazeno servisem (${dayText(date)}), protokol přiložen.`);
+}
+const svRejUrls = new Map();
+async function svRejBlobUrl(r) {
+  const key = r.files.join(',');
+  if (svRejUrls.has(key)) return svRejUrls.get(key);
+  const parts = [];
+  for (const f of r.files) parts.push(await Vault.loadFile(f));
+  const url = URL.createObjectURL(new Blob(parts, { type: r.type }));
+  svRejUrls.set(key, url);
+  return url;
+}
+async function svRejView(shipId, j) {
+  const x = svc().shipments.find(s => s.id === shipId);
+  const it = x && x.items[j];
+  if (!it || !it.rej) return;
+  const r = it.rej;
+  let url;
+  try { url = await svRejBlobUrl(r); } catch (error) { toast(error.status === 404 ? 'Příloha na serveru chybí (obnovená starší verze dat?).' : `Přílohu se nepodařilo načíst: ${error.message}`, true); return; }
+  const ext = r.type === 'application/pdf' ? 'pdf' : 'jpg';
+  const fname = `vyrazeni-${svNo(x).replace('/', '-')}-${String(it.iid || it.sn || it.mark || svDevName(it)).replace(/[^0-9A-Za-z_-]+/g, '-').slice(0, 40)}.${ext}`;
+  await dialog({
+    title: `Protokol k vyřazení · ${svDevName(it)}`, ok: 'Zavřít', cancel: '', wide: true,
+    html: `<p class="small">Vyřazeno servisem ${esc(dayText(r.date))}${r.note ? ` · ${esc(r.note)}` : ''}${r.by ? ` · zapsal ${esc(r.by)}` : ''} · soubor ${esc(r.name)}</p>
+      ${r.type === 'application/pdf' ? '' : `<img class="sv-rejimg" src="${esc(url)}" alt="Protokol k vyřazení">`}
+      <div class="row gap wrap"><a class="btn${r.type === 'application/pdf' ? '' : ' sec'}" href="${esc(url)}" target="_blank" rel="noopener">${r.type === 'application/pdf' ? 'Otevřít PDF' : 'Otevřít ve velkém'}</a><a class="btn sec" href="${esc(url)}" download="${esc(fname)}">Stáhnout</a></div>`,
+  });
 }
 
 /* ---------- evidence zařízení ---------- */
@@ -8974,9 +9159,9 @@ async function svDeviceDialog(id) {
     const days = daysBetween(ship.date, item.back || todayIso());
     return `<tr><td class="num" data-label="Odesláno">${esc(dayText(ship.date))}</td><td data-label="Protokol">${esc(svNo(ship))}</td><td data-label="Servis">${esc(ship.to || '—')}</td>
       <td class="sv-block" data-label="Účel a závada">${item.purpose === 'scrap' ? '<span class="tag crit">k vyřazení</span> ' : ''}${esc(svFaultText(item) || (item.purpose === 'scrap' ? '' : '—'))}</td>
-      <td class="sv-block" data-label="Vráceno">${item.back ? `${esc(dayText(item.back))} <small>(${days} ${denN(days)})</small>${item.backNote ? `<small> · ${esc(item.backNote)}</small>` : ''}` : item.purpose === 'scrap' ? '<span class="muted">—</span>' : `<span class="tag warn">na servisu ${days} ${denN(days)}</span>`}</td></tr>`;
+      <td class="sv-block" data-label="Vráceno">${item.rej ? `<span class="tag crit">vyřazeno servisem ${esc(dayText(item.rej.date))}</span>${item.rej.note ? `<small> · ${esc(item.rej.note)}</small>` : ''}` : item.back ? `${esc(dayText(item.back))} <small>(${days} ${denN(days)})</small>${item.backNote ? `<small> · ${esc(item.backNote)}</small>` : ''}` : item.purpose === 'scrap' ? '<span class="muted">—</span>' : `<span class="tag warn">na servisu ${days} ${denN(days)}</span>`}</td></tr>`;
   }).join('');
-  const sum = h.count ? [`na servisu ${h.count}× (za 12 měsíců ${h.year}×)`, h.avgDays != null ? `průměrně ${h.avgDays} ${denN(h.avgDays)} na servisu` : '', h.avgGap != null ? `odstup mezi odesláními ${h.avgGap} ${denN(h.avgGap)}` : '', h.out ? `teď na servisu ${h.outDays} ${denN(h.outDays)}` : '', h.retired ? `odesláno k vyřazení ${dayText(h.retired)}` : ''].filter(Boolean).join(' · ') : 'zatím bez odeslání';
+  const sum = h.count ? [`na servisu ${h.count}× (za 12 měsíců ${h.year}×)`, h.avgDays != null ? `průměrně ${h.avgDays} ${denN(h.avgDays)} na servisu` : '', h.avgGap != null ? `odstup mezi odesláními ${h.avgGap} ${denN(h.avgGap)}` : '', h.out ? `teď na servisu ${h.outDays} ${denN(h.outDays)}` : '', h.retired ? `${h.rejBy ? 'vyřazeno servisem' : 'odesláno k vyřazení'} ${dayText(h.retired)}` : ''].filter(Boolean).join(' · ') : 'zatím bez odeslání';
   const f = (name, label, val, max, list = '') => `<label class="field"><span>${label}</span><input type="text" name="${name}" value="${esc(val)}" maxlength="${max}"${list ? ` list="${list}"` : ''}></label>`;
   const dm = svDevDups(c).match.get(id) || [];
   const dupNote = dm.length ? `<p class="note e"><b>Duplicita v evidenci:</b> ${dm.map(m => `${esc(m.why)} má i ${esc(svLabel(c.devices.find(d => d.id === m.id)))}`).join('; ')}. Oprav číslo, které nesedí.</p>` : '';
@@ -9237,10 +9422,25 @@ function bindService() {
       save(); renderService(); return;
     }
     const lockedOf = el => { const x = svc().shipments.find(s => s.id === el); return x && x.lock ? x : null; };
-    const guard = t.closest('[data-svback], [data-svbackall], [data-svunback], [data-svedit], [data-svshipdel], [data-svsign], [data-svunsign]');
+    const rv = t.closest('[data-svrejview]');
+    if (rv) { await svRejView(rv.dataset.svrejview, +rv.dataset.j); return; }
+    const guard = t.closest('[data-svback], [data-svbackall], [data-svunback], [data-svedit], [data-svshipdel], [data-svsign], [data-svunsign], [data-svrej], [data-svunrej]');
     if (guard) {
-      const id = guard.dataset.svback || guard.dataset.svbackall || guard.dataset.svunback || guard.dataset.svedit || guard.dataset.svshipdel || guard.dataset.svsign || guard.dataset.svunsign;
+      const id = guard.dataset.svback || guard.dataset.svbackall || guard.dataset.svunback || guard.dataset.svedit || guard.dataset.svshipdel || guard.dataset.svsign || guard.dataset.svunsign || guard.dataset.svrej || guard.dataset.svunrej;
       if (lockedOf(id)) { toast('Protokol je uzamčený. Nejdřív ho odemkni.', true); return; }
+    }
+    const rej = t.closest('[data-svrej]');
+    if (rej) { await svRejDialog(rej.dataset.svrej, +rej.dataset.j); return; }
+    const unrej = t.closest('[data-svunrej]');
+    if (unrej) {
+      const x = svc().shipments.find(s => s.id === unrej.dataset.svunrej);
+      const i = x && x.items[+unrej.dataset.j];
+      if (!i || !i.rej || !(await confirmBox('Zrušit vyřazení servisem?', `${svDevName(i)} bude zase vedené jako na servisu (nebo k vyřazení). Přiložený protokol k vyřazení se smaže.`, 'Zrušit vyřazení', true))) return;
+      const files = i.rej.files;
+      delete i.rej;
+      save(); renderService();
+      svDropFiles(files);
+      return;
     }
     const back = t.closest('[data-svback]');
     if (back) { await svBackDialog(back.dataset.svback, +back.dataset.j); return; }
@@ -9270,6 +9470,7 @@ function bindService() {
       c.shipments = c.shipments.filter(s => s !== x);
       save(); renderService();
       if (x.sign) svDropSignFile(x.sign.file);
+      svDropFiles(x.items.flatMap(i => i.rej ? i.rej.files : []));
       return;
     }
     const sign = t.closest('[data-svsign]');

@@ -2,7 +2,7 @@
 // obě čísla nečitelná s dodatečným označením), PDF předávacího protokolu, druhé odeslání
 // s výběrem z evidence a párováním podle výrobního čísla, stejné zařízení dvakrát, vrácení ze
 // servisu (jedno i vše), evidence s historií a úpravou údajů, úprava a smazání protokolu,
-// historie změn. Na konci telefon a tmavý režim.
+// historie změn, Vyřazeno servisem s přílohou (2.56). Na konci telefon a tmavý režim.
 // Spuštění stejně jako e2e_browser.js:
 //   ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &
 //   curl -s -H 'X-Odmeny: 1' http://127.0.0.1:8490/api.php?action=state
@@ -423,6 +423,114 @@ async function confirm(page) {
 
   // historie změn slučuje opakované změny podpisu téhož protokolu do posledního stavu (texty hlídá test jádra)
   check(await page.evaluate(() => S.log.some(x => x.kind === 'service' && x.text === 'Servis 2026/001: podepsal předávající Jan Novák')), 'historie změn: podpis předávajícího');
+
+  // Vyřazeno servisem (2.56): vedle Vráceno, povinná příloha (PDF nebo fotka), šifrované díly,
+  // zařízení vyřazené v evidenci, protokol vyřízený, zrušení smaže přílohu.
+  const sid = await page.evaluate(() => {
+    const r = svSaveShipment(svc(), { date: '2026-10-01', to: 'Servis Test', note: '', items: [
+      { ...blankSvItem(), kind: 'Leštička', brand: 'Zeta', model: 'P1', iid: 'L-77' },
+      { ...blankSvItem(), kind: 'Leštička', brand: 'Zeta', model: 'P1', iid: 'L-78', purpose: 'scrap' }] }, { by: 'test', at: Date.now() });
+    ui.sv.tab = 'ship'; save(); renderService();
+    return r.ship.id;
+  });
+  await saved(page);
+  const card = `[data-svship="${sid}"]`;
+  check(await page.$$eval(`${card} [data-svrej]`, els => els.map(e => e.dataset.j).join(',')) === '0,1', 'Vyřazeno servisem u zařízení na servisu i u zařízení k vyřazení');
+  check(await page.$eval(`${card} [data-svback][data-j="0"]`, b => !!b.parentElement.querySelector('[data-svrej][data-j="0"]')), 'Vyřazeno servisem je vedle tlačítka Vráceno');
+  check(!(await page.$(`${card} [data-svlock]`)), 'se zařízením na servisu nejde uzamknout');
+  await page.click(`${card} [data-svrej][data-j="0"]`);
+  await page.waitForSelector('#dlg[open] input[name="file"]');
+  await page.fill('#dlg [name="date"]', '2026-10-20');
+  await page.click('#dlgOk');
+  await page.waitForTimeout(150);
+  check(await page.isVisible('#dlg[open]') && /Přilož PDF nebo fotku/.test(await page.textContent('#dlg')), 'bez přílohy se vyřazení nezapíše');
+  // „naskenované“ PDF 2,4 MB: projde po dílech do 1 MB
+  const big = Buffer.concat([Buffer.from('%PDF-1.4\n'), require('crypto').randomBytes(2400000), Buffer.from('\n%%EOF\n')]);
+  const bigSha = require('crypto').createHash('sha256').update(big).digest('hex');
+  await page.setInputFiles('#dlg input[name="file"]', { name: 'protokol-vyrazeni.pdf', mimeType: 'application/pdf', buffer: big });
+  check(/protokol-vyrazeni\.pdf \(2\.3 MB\)/.test(await page.textContent('#dlg [data-rejname]')), 'vybraný soubor je vidět v dialogu');
+  await page.fill('#dlg [name="note"]', 'oprava se nevyplatí');
+  await page.click('#dlgOk');
+  await page.waitForSelector('#dlg', { state: 'hidden' });
+  await page.waitForFunction(id => { const x = S.service.shipments.find(s => s.id === id); return x && x.items[0].rej; }, sid, { timeout: 30000 });
+  await saved(page);
+  const rej0 = await page.evaluate(id => S.service.shipments.find(s => s.id === id).items[0].rej, sid);
+  check(rej0.files.length === 3 && rej0.type === 'application/pdf' && rej0.date === '2026-10-20' && rej0.name === 'protokol-vyrazeni.pdf' && rej0.size === big.length, `příloha ve třech šifrovaných dílech: ${JSON.stringify({ n: rej0.files.length, t: rej0.type, d: rej0.date })}`);
+  const t0 = await page.textContent(card);
+  check(/vyřazeno servisem 20\. 10\. 2026/.test(t0) && /oprava se nevyplatí/.test(t0) && /vyřazeno servisem 1/.test(t0), 'vyřazení na kartě protokolu');
+  check(!(await page.$(`${card} [data-svback][data-j="0"]`)), 'vyřazené servisem už nejde vrátit');
+  check(!!(await page.$(`${card} [data-svlock]`)), 'protokol je vyřízený, jde uzamknout');
+  // příloha: otevřít a stáhnout, obsah se rovná nahranému souboru
+  await page.click(`${card} [data-svrejview][data-j="0"]`);
+  await page.waitForSelector('#dlg[open] a[download]');
+  check(await page.isVisible('#dlg a:has-text("Otevřít PDF")'), 'PDF jde otevřít');
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#dlg a[download]')]);
+  const got = path.join(S, 'vyrazeni-stazene.pdf');
+  await dl.saveAs(got);
+  check(require('crypto').createHash('sha256').update(fs.readFileSync(got)).digest('hex') === bigSha, 'stažená příloha je stejná jako nahraná');
+  check(/^vyrazeni-2026-\d{3}-L-77\.pdf$/.test(dl.suggestedFilename()), `název stažené přílohy: ${dl.suggestedFilename()}`);
+  await page.click('#dlgOk');
+  await page.waitForSelector('#dlg', { state: 'hidden' });
+  // fotka protokolu u zařízení k vyřazení: zmenší se na JPEG
+  const png = await page.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 3000; c.height = 2000;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, 3000, 2000); g.fillStyle = '#000'; g.font = '120px sans-serif'; g.fillText('PROTOKOL K VYŘAZENÍ', 200, 600);
+    const b = await new Promise(r => c.toBlob(r, 'image/png'));
+    return Array.from(new Uint8Array(await b.arrayBuffer()));
+  });
+  await page.click(`${card} [data-svrej][data-j="1"]`);
+  await page.waitForSelector('#dlg[open] input[name="file"]');
+  await page.setInputFiles('#dlg input[name="file"]', { name: 'foto.png', mimeType: 'image/png', buffer: Buffer.from(png) });
+  await page.click('#dlgOk');
+  await page.waitForSelector('#dlg', { state: 'hidden' });
+  await page.waitForFunction(id => S.service.shipments.find(s => s.id === id).items[1].rej, sid, { timeout: 20000 });
+  await saved(page);
+  const rej1 = await page.evaluate(id => S.service.shipments.find(s => s.id === id).items[1].rej, sid);
+  check(rej1.type === 'image/jpeg' && rej1.files.length === 1, `fotka jako JPEG v jednom dílu: ${rej1.type}`);
+  await page.click(`${card} [data-svrejview][data-j="1"]`);
+  await page.waitForSelector('#dlg[open] img.sv-rejimg');
+  const nat = await page.$eval('#dlg img.sv-rejimg', img => img.decode().then(() => [img.naturalWidth, img.naturalHeight]));
+  check(nat[0] === 2400 && nat[1] === 1600, `fotka zmenšená na 2400 px: ${nat}`);
+  await page.screenshot({ path: path.join(shots, '07-vyrazeni-foto.png') });
+  await page.click('#dlgOk');
+  await page.waitForSelector('#dlg', { state: 'hidden' });
+  await page.screenshot({ path: path.join(shots, '07-vyrazeno-servisem.png'), fullPage: true });
+  // evidence: zařízení vyřazené servisem
+  const devId = await page.evaluate(id => S.service.shipments.find(s => s.id === id).items[0].dev, sid);
+  const hist = await page.evaluate(id => { const h = svHistory(svc(), id); return { retired: h.retired, rejBy: h.rejBy, out: h.out }; }, devId);
+  check(hist.retired === '2026-10-20' && hist.rejBy && !hist.out, `zařízení v evidenci vyřazené servisem: ${JSON.stringify(hist)}`);
+  check(await page.evaluate(() => S.log.some(l => l.kind === 'service' && /vyřazeno servisem 20\. 10\. 2026 .*L-77.*protokol k vyřazení: protokol-vyrazeni\.pdf/.test(l.text))), 'vyřazení v historii změn');
+  check(await page.evaluate(id => svFileIds(S).includes(S.service.shipments.find(s => s.id === id).items[0].rej.files[2]), sid), 'díly přílohy jdou do zálohy');
+  // uzamčený protokol: přílohu jde otevřít, vyřazení zrušit ne
+  await page.click(`${card} [data-svlock]`);
+  await page.waitForFunction(id => !!S.service.shipments.find(s => s.id === id).lock, sid);
+  await page.click(`${card} [data-svexpand]`);
+  await page.waitForSelector(`${card}.open [data-svrejview]`);
+  check(!(await page.$(`${card} [data-svunrej]`)) && !(await page.$(`${card} [data-svrej]`)), 'uzamčený protokol: vyřazení nejde měnit');
+  await page.click(`${card} [data-svunlock]`);
+  await confirm(page);
+  await page.waitForFunction(id => !S.service.shipments.find(s => s.id === id).lock, sid);
+  await saved(page);
+  // zrušení vyřazení smaže přílohu
+  const delFiles = rej0.files;
+  await page.click(`${card} [data-svunrej][data-j="0"]`);
+  await confirm(page);
+  await page.waitForFunction(id => !S.service.shipments.find(s => s.id === id).items[0].rej, sid);
+  await saved(page);
+  check(!!(await page.$(`${card} [data-svback][data-j="0"]`)), 'po zrušení je zařízení zase na servisu (Vráceno)');
+  await page.waitForTimeout(500);
+  const goneAll = await page.evaluate(async ids => { let n = 0; for (const id of ids) { try { await Vault.loadFile(id); } catch (error) { n += 1; } } return n; }, delFiles);
+  check(goneAll === 3, `po zrušení vyřazení jsou díly přílohy smazané: ${goneAll}/3`);
+  for (let i = problems.length - 1; i >= 0; i -= 1) if (problems[i].includes('HTTP 404') && delFiles.some(f => problems[i].includes(`id=${f}`))) problems.splice(i, 1);
+  // smazání protokolu smaže i přílohu druhého zařízení
+  await page.click(`${card} [data-svshipdel]`);
+  await confirm(page);
+  await page.waitForFunction(id => !S.service.shipments.some(s => s.id === id), sid);
+  await saved(page);
+  await page.waitForTimeout(500);
+  const gone1 = await page.evaluate(async id => { try { await Vault.loadFile(id); return false; } catch (error) { return true; } }, rej1.files[0]);
+  check(gone1, 'smazaný protokol smaže i přílohu vyřazení');
+  for (let i = problems.length - 1; i >= 0; i -= 1) if (problems[i].includes('HTTP 404') && problems[i].includes(`id=${rej1.files[0]}`)) problems.splice(i, 1);
 
   // Telefon: seznam, evidence, editor a hlavní menu bez přetečení.
   await page.setViewportSize({ width: 390, height: 844 });

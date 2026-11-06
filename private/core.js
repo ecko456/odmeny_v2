@@ -2181,7 +2181,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=43;
+const DATA_VERSION=44;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -6712,8 +6712,10 @@ function cleanService(o){
       const back=iso(i.back);
       return {dev:ids.has(i.dev)?i.dev:"",...ident(i),purpose:i.purpose==="scrap"?"scrap":"repair",
         faults:SV_FAULT_KEYS.filter(k=>Array.isArray(i.faults)&&i.faults.includes(k)),
-        fault:str(i.fault,600),back:back&&back>=x.date?back:"",backNote:str(i.backNote,300)};
-    }),
+        fault:str(i.fault,600),back:back&&back>=x.date?back:"",backNote:str(i.backNote,300),
+        /* vyřazeno servisem (2.56): s přílohou protokolu k vyřazení; vrácení pak neplatí */
+        ...(svRejClean(i.rej,x.date)?{rej:svRejClean(i.rej,x.date)}:{})};
+    }).map(i=>{if(i.rej){i.back="";i.backNote="";}return i;}),
     /* digitální podpis předávajícího (2.26): obrázek je šifrovaný soubor (Vault), tady jen id, jméno a kdy */
     ...(svSignClean(x.sign)?{sign:svSignClean(x.sign)}:{}),
     /* uzamčený protokol (2.53): jen když je všechno vrácené (nebo k vyřazení) */
@@ -6925,14 +6927,28 @@ function svDevDups(svc){
 /* Podpis předávajícího (2.26): {file: id šifrovaného PNG, name, at, by}; bez platného id null. */
 const SV_FILE_ID=/^[0-9a-f]{32}$/;
 /** Protokol je vyřízený (2.53): má zařízení a každé je vrácené, nebo jde k vyřazení. Jen ten jde uzamknout. */
-function svShipDone(x){return !!(x&&x.items&&x.items.length&&x.items.every(i=>i.back||i.purpose==="scrap"));}
+function svShipDone(x){return !!(x&&x.items&&x.items.length&&x.items.every(i=>i.back||i.rej||i.purpose==="scrap"));}
+/* Vyřazeno servisem (2.56): {date, note, files[] (šifrované díly přílohy), name, type, size, at, by}.
+   Příloha je PDF nebo fotka protokolu k vyřazení, bez ní záznam neplatí. */
+const SV_REJ_TYPES=["application/pdf","image/jpeg","image/png"];
+const SV_REJ_PARTS=12;
+function svRejClean(r,shipDate){
+  if(!r||typeof r!=="object"||!SV_ISO.test(String(r.date||"")))return null;
+  const date=String(r.date);
+  if(shipDate&&date<shipDate)return null;
+  const files=(Array.isArray(r.files)?r.files:[]).map(String).filter(f=>SV_FILE_ID.test(f)).slice(0,SV_REJ_PARTS);
+  if(!files.length)return null;
+  const txt=(v,m)=>String(v==null?"":v).replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,m);
+  return {date,note:txt(r.note,300),files,name:txt(r.name,120)||"protokol",type:SV_REJ_TYPES.includes(r.type)?r.type:"application/pdf",
+    size:Number.isFinite(+r.size)?Math.max(0,Math.round(+r.size)):0,at:Number.isFinite(+r.at)?Math.max(0,+r.at):0,by:txt(r.by,60)};
+}
 function svSignClean(x){
   if(!x||typeof x!=="object"||!SV_FILE_ID.test(String(x.file||"")))return null;
   const name=String(x.name==null?"":x.name).replace(/[\u0000-\u001f\u007f]/g," ").trim().slice(0,80);
   return name?{file:String(x.file),name,at:Number.isFinite(+x.at)?Math.max(0,+x.at):0,by:String(x.by==null?"":x.by).slice(0,60)}:null;
 }
 /* Soubory Servisu (podpisy) do zálohy. */
-function svFileIds(st){return [...new Set((((st||S).service||{}).shipments||[]).map(x=>x.sign&&x.sign.file).filter(Boolean))];}
+function svFileIds(st){return [...new Set((((st||S).service||{}).shipments||[]).flatMap(x=>[x.sign&&x.sign.file,...(x.items||[]).flatMap(i=>i&&i.rej?i.rej.files:[])]).filter(Boolean))];}
 function svSaveShipment(svc,draft,meta){
   meta=meta||{};
   const clean=cleanService({devices:svc.devices,shipments:[{...draft,id:draft.id||"x",no:1,year:+String(draft.date).slice(0,4)}]});
@@ -6975,15 +6991,16 @@ function svHistory(svc,devId,today){
   today=today||todayIso();
   const list=svc.shipments.flatMap(x=>x.items.filter(i=>i.dev===devId).map(i=>({ship:x,item:i})))
     .sort((a,b)=>a.ship.date.localeCompare(b.ship.date)||a.ship.at-b.ship.at);
-  const done=list.filter(h=>h.item.back&&h.item.purpose!=="scrap");
+  const done=list.filter(h=>h.item.back&&!h.item.rej&&h.item.purpose!=="scrap");
   const days=done.map(h=>daysBetween(h.ship.date,h.item.back));
   const gaps=list.slice(1).map((h,i)=>daysBetween(list[i].ship.date,h.ship.date));
   const last=list[list.length-1]||null;
   // odesláno k vyřazení = zařízení je vyřazené (na servisu se nepočítá, pokud se nevrátilo)
-  const retired=last&&last.item.purpose==="scrap"&&!last.item.back?last.ship.date:"";
+  // vyřazeno servisem (2.56) = vyřazené ke dni z protokolu servisu
+  const retired=last&&last.item.rej?last.item.rej.date:last&&last.item.purpose==="scrap"&&!last.item.back?last.ship.date:"";
   const out=!!(last&&!last.item.back&&!retired);
   return {list,count:list.length,first:list[0]?list[0].ship.date:"",last:last?last.ship.date:"",
-    out,outDays:out?daysBetween(last.ship.date,today):0,retired,
+    out,outDays:out?daysBetween(last.ship.date,today):0,retired,rejBy:!!(last&&last.item.rej),
     avgDays:days.length?Math.round(days.reduce((a,b)=>a+b,0)/days.length):null,
     totalDays:days.reduce((a,b)=>a+b,0),
     avgGap:gaps.length?Math.round(gaps.reduce((a,b)=>a+b,0)/gaps.length):null,
@@ -7007,7 +7024,13 @@ function svChanges(A,B,add){
     if((sa&&sa.file)!==(sb&&sb.file))add("service",sb?head+": podepsal předávající "+sb.name+(sa?" (nový podpis)":""):head+": odebrán podpis předávajícího ("+sa.name+")",{m:"svsign:"+x.id});
     x.items.forEach(i=>{
       const p=o.items.find(y=>y.dev===i.dev);
-      if(!p||p.back===i.back&&p.backNote===i.backNote)return;
+      if(!p)return;
+      const ra=p.rej||null,rb=i.rej||null;
+      if(JSON.stringify(ra)!==JSON.stringify(rb)){
+        if(rb)add("service",head+": vyřazeno servisem "+dayText(rb.date)+" – "+nm(B,i)+" (protokol k vyřazení: "+rb.name+")"+(rb.note?" · "+rb.note:""),{m:"svr:"+x.id+":"+i.dev});
+        else add("service",head+": zrušeno vyřazení servisem – "+nm(B,i),{m:"svr:"+x.id+":"+i.dev});
+      }
+      if(p.back===i.back&&p.backNote===i.backNote||rb||ra&&!i.back)return;
       if(i.back)add("service",head+": vráceno ze servisu "+dayText(i.back)+" – "+nm(B,i)+(i.backNote?" ("+i.backNote+")":""),{m:"svb:"+x.id+":"+i.dev});
       else add("service",head+": zrušeno vrácení – "+nm(B,i),{m:"svb:"+x.id+":"+i.dev});
     });

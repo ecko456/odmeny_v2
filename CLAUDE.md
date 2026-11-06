@@ -34,6 +34,33 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 6. 11. 2026 (verze 2.56):
+
+- Uživatel: „do modulu servis, možnost u položek co byly odeslány na servis ‚Vyřazeno servisem‘
+  vedle tlačítka ‚Vráceno‘ a bude to chtít nahrát přílohu PDF nebo fotku protokolu k vyřazení“.
+  - Data (verze 44): položka `rej {date (≥ odeslání), note ≤ 300, files[1–12] (id šifrovaných
+    dílů, `SV_FILE_ID`), name ≤ 120, type `SV_REJ_TYPES` (pdf, jpeg, png), size, at, by}`,
+    `svRejClean` (bez souboru nebo s datem před odesláním neplatí), s `rej` je `back` prázdné.
+    `svShipDone` bere i `rej`, `svHistory` → `retired` = `rej.date`, `rejBy`, do průměru dní
+    na servisu se nepočítá. `svFileIds` přidává díly příloh (záloha). Historie `svr:`.
+  - UI: `[data-svrej]` (vedle Vráceno, `.sv-stbtns`; i u zařízení k vyřazení), `svRejDialog`
+    (datum, soubor `accept="application/pdf,image/*"`, poznámka; bez souboru hláška),
+    `svRejBytes` (PDF podle `%PDF-`, nejvýš `SV_REJ_MAX` 10 MB; fotka `shrinkPhoto(file, 2400,
+    0.85)`), nahrání po dílech `SV_REJ_PART` 1 MB (limit serveru 1,5 MB base64 na soubor),
+    `svRejView` (obrázek v dialogu, odkazy Otevřít PDF a Stáhnout s blob URL, `svRejUrls`),
+    `[data-svunrej]` (smaže díly), smazání protokolu smaže díly (`svDropFiles`,
+    `svDropSignFile` maže jen soubory, na které nic neodkazuje). Uzamčený: příloha jen ke čtení.
+    Štítek „vše vyřízeno“ místo „vše vráceno“, když je něco vyřazené servisem.
+- Uživatel: „v PC verzi přidej do menu pod Hodnocené období vyhledávací kolonku, která bude
+  vyhledávat lidi podle jména nebo ID“.
+  - `app.html` `#sideSearch` (`#sideQ`, `#sideQList`) v `.side-top`, na telefonu skryté.
+    `personFind(raw)` (společné i pro `openPersonSearch`: přesné ID bez nul, začátek jména,
+    část jména, část ID; vyřazení na konci), `openPersonKey`, `sideSearchDraw` (8 výsledků),
+    `bindSideSearch` (šipky, Enter, Escape, výběr na mousedown, zkratka „/“ mimo pole).
+  - Testy: core „Servis (2.56)“, `e2e_servis` (vyřazení s PDF 2,4 MB po dílech, fotka, otevření
+    a stažení se stejným obsahem, uzamčení, zrušení a smazání maže přílohy), nový
+    `tests/e2e_hledani.js`, `test_odmeny` (426 pro 43). `ODM_VERSION` 2.56.
+
 Stav k 5. 11. 2026 (verze 2.55):
 
 - Uživatel: „elegantní loading … při načítání přihlašovacího panelu … letící ohnivá koule co se
@@ -1819,7 +1846,7 @@ Data `S.service` (`blankService`, čištění `cleanService` v `core.js`):
   (`svTplKey`: druh|značka|model malými písmeny) čištění zahodí;
 - položka: snímek údajů v době odeslání `{dev, kind, brand, model, made, iid, sn, iidBad, snBad, mark,
   purpose 'repair'|'scrap', faults[] (SV_FAULTS: start, rpm, heat, vibr, damage), fault (jiná),
-  back (datum vrácení, ne dřív než odeslání), backNote}`. Protokol se zpětně nemění, evidence ano.
+  back (datum vrácení, ne dřív než odeslání), backNote, rej? (vyřazeno servisem s přílohou, 2.56)}`. Protokol se zpětně nemění, evidence ano.
 
 Výpočty: `svKey` (bez mezer, pomlček, teček a lomítek, velkými), `svFindDevice` (čitelné ID,
 pak výrobní číslo, pak označení), `svSaveShipment` (položky bez odkazu najdou nebo založí
@@ -2234,7 +2261,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.52 | `3f22515` | zkušební doba 3 měsíce od prvního evidovaného dne práce, ikona u jména s datem nástupu a konce |
 | 2.53 | `dc2dcf8` | plovoucí menu na telefonu s Hlavní stránkou a Ostatní, zkrácený pátek jen u odpolední sám od sebe, uzamčení vyřízeného protokolu Servisu (data verze 43) |
 | 2.54 | `3152b80` | jen vzhled Sklo (volba v Nastavení pryč), méně oranžové, lepší kontrast, čitelnější kalendář Docházky, tlumené pozadí |
-| 2.55 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvodní animace přihlášení (ohnivá koule, náraz, složení panelu), přeskočí se klepnutím nebo psaním |
+| 2.55 | `a1808ae` | úvodní animace přihlášení (ohnivá koule, náraz, složení panelu), přeskočí se klepnutím nebo psaním |
+| 2.56 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – Vyřazeno servisem s přílohou (PDF nebo fotka protokolu), hledání lidí v menu na PC (data verze 44) |
 
 Verze 2.1 přidala:
 
@@ -2346,7 +2374,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `43` (od 2.53):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `44` (od 2.56):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -2696,6 +2724,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_rucni.js` (2.51): ruční úpravy docházky, zámky, nové nahrání, šířka, požadavek pracovníka v Úkolech, telefon;
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
+  - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
   - `e2e_intro.js` (2.55): úvodní animace zámku (plná, krátká, omezit pohyb, přeskočení, přihlášení během ní, telefon);
   - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
