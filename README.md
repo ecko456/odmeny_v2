@@ -62,6 +62,11 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.58
+
+- **Úvodní animace přihlášení je pryč** (přání uživatele). Přihlašovací panel se ukáže hned
+  jako před verzí 2.55. Data beze změny.
+
 ## Co je nového ve verzi 2.57
 
 - **Nová úvodní animace přihlášení.** Místo ohnivé koule se na temném pozadí z částic

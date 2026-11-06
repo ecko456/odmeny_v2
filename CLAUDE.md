@@ -34,6 +34,15 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 6. 11. 2026 (verze 2.58):
+
+- Uživatel po zkoušce dalšího návrhu (dvě ruce z písku): „animaci můžeš odstranit. Nelíbí se mi
+  to.“ Úvodní animace zámku (2.55 ohnivá koule, 2.57 ruka z částic) je pryč: `static/intro.js`,
+  řádek v `index.php`, CSS `intro-*` v `lock.css` a `tests/e2e_intro.js` smazané. Panel má zase
+  jen původní animaci `rise`. Návrh se dvěma rukama se neodeslal. Kdyby ji chtěl zpátky,
+  je v historii gitu (2.57 = `5f8ec48`). `ODM_VERSION` 2.58, data beze změny (44).
+- Úvodní animace „HALA 2“ po přihlášení na telefonu (`playSplash`, 2.15) zůstala, to je jiná věc.
+
 Stav k 6. 11. 2026 (verze 2.57):
 
 - Uživatel: „temné pozadí a ruku inteligence tvořenou z částic z barev co používáme v panelu co se
@@ -2278,7 +2287,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.54 | `3152b80` | jen vzhled Sklo (volba v Nastavení pryč), méně oranžové, lepší kontrast, čitelnější kalendář Docházky, tlumené pozadí |
 | 2.55 | `a1808ae` | úvodní animace přihlášení (ohnivá koule, náraz, složení panelu), přeskočí se klepnutím nebo psaním |
 | 2.56 | `2afa6a0` | Servis – Vyřazeno servisem s přílohou (PDF nebo fotka protokolu), hledání lidí v menu na PC (data verze 44) |
-| 2.57 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvodní animace přihlášení – ruka z částic, která se rozevře a utvoří panel |
+| 2.57 | `5f8ec48` | úvodní animace přihlášení – ruka z částic, která se rozevře a utvoří panel |
+| 2.58 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvodní animace přihlášení odstraněná |
 
 Verze 2.1 přidala:
 
@@ -2741,7 +2751,6 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
-  - `e2e_intro.js` (2.55, ruka z částic 2.57): úvodní animace zámku (plná, krátká, omezit pohyb, přeskočení, přihlášení během ní, telefon);
   - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);

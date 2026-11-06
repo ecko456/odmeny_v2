@@ -34,7 +34,6 @@ $privateVersion = (string)max(array_map(static fn(string $file): int => (int)fil
   <link rel="manifest" href="<?= $asset('static/manifest.webmanifest') ?>">
   <link rel="stylesheet" href="<?= $asset('static/lock.css') ?>">
   <script src="<?= $asset('static/look.js') ?>"></script>
-  <script src="<?= $asset('static/intro.js') ?>"></script>
 </head>
 <body data-private-version="<?= htmlspecialchars($privateVersion, ENT_QUOTES) ?>">
   <main class="lock" id="lock">
