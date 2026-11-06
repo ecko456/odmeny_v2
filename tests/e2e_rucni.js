@@ -163,7 +163,8 @@ const KEY = 'adamek|ales';
   await page.setViewportSize({ width: 2560, height: 1300 });
   await page.waitForTimeout(200);
   const w = await page.$eval('#view-dochazka', el => el.getBoundingClientRect().width);
-  check(w > 2000, `docházka na monitoru 2560 px má jen ${Math.round(w)} px`);
+  const rail = await page.$eval('#rail', el => el.getBoundingClientRect().width);   // pravý panel (2.59)
+  check(w > 2000 - rail - 30, `docházka na monitoru 2560 px má jen ${Math.round(w)} px (panel ${Math.round(rail)} px)`);
   await page.screenshot({ path: path.join(shots, '03-siroky.png') });
   await page.setViewportSize({ width: 1440, height: 900 });
 

@@ -67,9 +67,10 @@ const chips = page => page.$$eval('#lFilters [data-lst]', els => Object.fromEntr
   const lay = await page.evaluate(() => {
     const w = s => document.querySelector(s).getBoundingClientRect().width;
     const tops = [...document.querySelectorAll('#lDetail .rate-seg')].slice(0, 2).map(g => new Set([...g.querySelectorAll('button')].map(b => Math.round(b.getBoundingClientRect().top))).size);
-    return { main: w('#main'), list: w('#peopleSplit .split-list'), detail: w('#peopleSplit .split-detail'), rows: tops };
+    return { main: w('#main'), rail: w('#rail'), list: w('#peopleSplit .split-list'), detail: w('#peopleSplit .split-detail'), rows: tops };
   });
-  check(lay.main > 2000 && lay.list >= 450 && lay.list <= 520 && lay.detail > 1300 && lay.rows.length && lay.rows.every(n => n === 1), `Lidé na velkém monitoru: ${JSON.stringify(lay)}`);
+  // od 2.59 je na širokém monitoru vpravo panel s úkoly, obsah má o jeho šířku méně
+  check(lay.main > 2000 - lay.rail - 30 && lay.list >= 450 && lay.list <= 520 && lay.detail > 1300 - lay.rail && lay.rows.length && lay.rows.every(n => n === 1), `Lidé na velkém monitoru: ${JSON.stringify(lay)}`);
   await page.screenshot({ path: path.join(shots, '10-lide-2560.png') });
 
   // Počty u filtrů.

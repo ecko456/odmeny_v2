@@ -34,6 +34,35 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 6. 11. 2026 (verze 2.59):
+
+- Uživatel (k návrhu dashboardu, 7 návrhů): „a co na širokém monitoru dát doprava náhled na úkoly?
+  ostatní body 1 až 7 můžeš také aplikovat. dám na tvé doporučení“. Jen vzhled, data beze změny (44),
+  PDF beze změny (`e2e_vzhled`).
+  - Pravý panel `#rail` (`app.html` za `</main>`): `renderRail` (volá ho `renderTaskAlert`
+    i `renderLogBadge`, překreslí se jen při změně podpisu `_railSig`), `bindRail`, `RAIL_MIN`
+    1600, `railOn()`. Obsah: přihlášený (`ui.me.label`, iniciály), `RAIL_ACTS`
+    (`[data-railact]`: task = `tkNewDialog`, jinak `showView`), úkoly (po termínu, blíží se,
+    požadavky high, další otevřené, nejvýš 6, `[data-railtask]` → `openTaskFromPerson`),
+    poslední 4 změny za 3 dny s `[data-logundo]` → `undoChange`, `[data-raillog]` → `openLog`.
+    Když je panel vidět, `#taskAlert` se nekreslí.
+  - Sbalitelné menu: `#sideMini` v `.side-foot`, `html.side-mini`, `SIDE_KEY`
+    `odmeny.side.v1:<adresa>` v localStorage (jen zařízení), `applySideMini` dá tlačítkům menu
+    `title` a `aria-label`.
+  - `statTile(label, value, note, tone, {bar, trend})`, `trendChip`, `ovPrevTotals` (Tabáky
+    a Kafe za předchozí měsíc s docházkou přes `withPeriod`, drží se podle `store.rev`).
+    Pruhy: Přehled (Tabáky, Kafe, Výdej), Úkoly (Otevřené v termínu, Hotovo), Plán kapacit (Máme,
+    Skupiny v pořádku). Kdo používá `data-w`, musí volat `setWidths`.
+  - `catBars(items, {title, sub, shareText})` (barvy `.c1`–`.c6` = `--pie-1…6`, `.co`):
+    KPI `kpHtml` (bez filtru oddělení) a `renderEnds`.
+  - `smoothPath`, `smoothArea` (Catmull-Rom, kontrolní body omezené na rozsah úseku),
+    `chartHover` (`g.hp` s `.xh`, `.xd` a `.hit`; CSS i `:has(.hit.on)`). `waLine` a `columnChart`
+    s `line: true` (profil Docházka a Výroba). Grafy PDF (`ctr*`, `dr*`, `pdf*`) beze změny.
+  - CSS na konci `app.css` „Prvky z návrhu dashboardu (2.59)“: kapsle `.stats` (monitor, sklo),
+    skleněná plocha `.main > .view.on`, panel, úzké menu.
+  - Testy: nový `tests/e2e_panel.js`, `e2e_lide` a `e2e_rucni` počítají šířku obsahu bez panelu.
+    `ODM_VERSION` 2.59.
+
 Stav k 6. 11. 2026 (verze 2.58):
 
 - Uživatel po zkoušce dalšího návrhu (dvě ruce z písku): „animaci můžeš odstranit. Nelíbí se mi
@@ -2288,7 +2317,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.55 | `a1808ae` | úvodní animace přihlášení (ohnivá koule, náraz, složení panelu), přeskočí se klepnutím nebo psaním |
 | 2.56 | `2afa6a0` | Servis – Vyřazeno servisem s přílohou (PDF nebo fotka protokolu), hledání lidí v menu na PC (data verze 44) |
 | 2.57 | `5f8ec48` | úvodní animace přihlášení – ruka z částic, která se rozevře a utvoří panel |
-| 2.58 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvodní animace přihlášení odstraněná |
+| 2.58 | `b697d6d` | úvodní animace přihlášení odstraněná |
+| 2.59 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: pravý panel s úkoly a rychlými akcemi, sbalitelné menu, souhrn v kapsli s pruhy a trendem, hladké křivky, barevná oddělení, skleněná plocha |
 
 Verze 2.1 přidala:
 
@@ -2751,6 +2781,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
+  - `e2e_panel.js` (2.59): pravý panel (úkoly, rychlé akce, Vrátit zpět), sbalitelné menu, kapsle s pruhy, hladké křivky, oddělení barevně, 1440 / 2560 / telefon;
   - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);

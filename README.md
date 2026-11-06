@@ -62,6 +62,30 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.59
+
+Vzhled převzatý z návrhu dashboardu (bez jeho obrázků). PDF a data beze změny.
+
+- **Pravý panel na širokém monitoru** (od 1600 px šířky okna). Obsahuje:
+  - kdo je přihlášený;
+  - kulatá tlačítka rychlých akcí: Nový úkol, Rychlá kontrola, Sankce, Docházka;
+  - **náhled úkolů**: nahoře po termínu (červeně), pak blížící se termín a požadavky
+    pracovníků s vysokou závažností, potom další otevřené. Klepnutím se úkol otevře.
+  - poslední změny s tlačítkem Vrátit zpět.
+
+  Na menším monitoru a na telefonu se panel neukazuje. Na širokém monitoru zmizí pruh
+  připomínek úkolů nad stránkou, protože totéž ukazuje panel.
+- **Sbalitelné menu**: tlačítko vedle Zamknout zúží menu na pruh s ikonami; popisek se ukáže
+  po najetí myší. Volba platí jen pro toto zařízení.
+- **Souhrn v jedné kapsli** místo řady samostatných dlaždic. Tabáky, Kafe, Výdej, Úkoly a Plán
+  kapacit mají oranžový pruh pokroku. Tabáky a Kafe mají zelený nebo červený štítek změny proti
+  minulému měsíci.
+- **Hladké křivky** v profilu (Docházka, Výroba) a v grafech KPI: plocha pod křivkou, po najetí
+  svislá čárkovaná linka a bublina s hodnotou.
+- **Barevné pruhy po odděleních** v KPI (Výkonnost na osobu: podíl lidí a průměr oddělení)
+  a v Koncích trestů (kdo odchází po odděleních).
+- Obsah stránky leží na **jedné velké skleněné ploše** s jemnou září.
+
 ## Co je nového ve verzi 2.58
 
 - **Úvodní animace přihlášení je pryč** (přání uživatele). Přihlašovací panel se ukáže hned

@@ -379,8 +379,58 @@ function meter(ratio, label) {
 function posOptions(sel, blankLabel) {
   return `<option value="">${esc(blankLabel || '— bez skupiny —')}</option>${S.positions.map(p => `<option value="${esc(p.id)}"${p.id === sel ? ' selected' : ''}>${esc(p.name || '(bez názvu)')}</option>`).join('')}`;
 }
-function statTile(label, value, note, tone = '') {
-  return `<div class="stat${tone ? ` ${tone}` : ''}"><div class="k">${label}</div><div class="v">${value}</div><div class="n">${note}</div></div>`;
+/* Dlaždice souhrnu. Od 2.59 volitelně pruh pokroku (bar 0–1) a štítek trendu (trend {pct, good, vs}). */
+function statTile(label, value, note, tone = '', extra = null) {
+  const x = extra || {};
+  const trend = x.trend && Number.isFinite(x.trend.pct) ? trendChip(x.trend) : '';
+  const bar = x.bar != null && Number.isFinite(x.bar) ? `<div class="stat-bar" aria-hidden="true"><i data-w="${clamp(x.bar * 100, 0, 100).toFixed(1)}"></i></div>` : '';
+  return `<div class="stat${tone ? ` ${tone}` : ''}${bar ? ' has-bar' : ''}"><div class="k">${label}${trend}</div><div class="v">${value}</div>${bar}<div class="n">${note}</div></div>`;
+}
+/** Zelený / červený štítek změny proti minulému období („+12 %“). good = růst je dobře. */
+function trendChip({ pct, good = true, vs = '' }) {
+  const r = Math.round(pct * 10) / 10;
+  const cls = r === 0 ? 'flat' : (r > 0) === good ? 'up' : 'down';
+  const txt = `${r > 0 ? '+' : r < 0 ? '−' : '±'}${nf(Math.abs(r), Math.abs(r) < 10 ? 1 : 0)} %`;
+  return `<span class="trend ${cls}" title="${esc(vs ? `Proti ${vs}` : 'Proti minulému období')}">${r > 0 ? '▲' : r < 0 ? '▼' : '•'} ${txt}</span>`;
+}
+/* Barevné pruhy po kategoriích (2.59): jeden skládaný pruh podílů a pod ním řádek za kategorii
+   s vlastní barvou (--pie-1…6, pak šedá). items [{name, share (číslo pro podíl), v (hodnota řádku),
+   text (popisek hodnoty), sub}]. Řádek je poměrně k největší hodnotě. */
+function catBars(items, { title, sub = '', shareText = '' }) {
+  const list = items.filter(x => x && x.name);
+  if (list.length < 2) return '';
+  const tot = list.reduce((a, x) => a + (x.share > 0 ? x.share : 0), 0);
+  const max = Math.max(0, ...list.map(x => (x.v > 0 ? x.v : 0)));
+  const col = i => (i < 6 ? `c${i + 1}` : 'co');
+  const stack = tot > 0 ? `<div class="cat-stack" role="img" aria-label="${esc(shareText || title)}">${list.map((x, i) => (x.share > 0 ? `<i class="${col(i)}" data-w="${(x.share / tot * 100).toFixed(2)}" title="${esc(`${x.name}: ${nf(x.share / tot * 100, 1)} %`)}"></i>` : '')).join('')}</div>` : '';
+  const rows = list.map((x, i) => `<div class="cat-row"><span class="cat-name"><i class="cat-sw ${col(i)}" aria-hidden="true"></i>${esc(x.name)}${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span>
+    <span class="cat-track"><i class="${col(i)}" data-w="${max > 0 && x.v > 0 ? Math.max(1.5, x.v / max * 100).toFixed(1) : 0}"></i></span><b class="cat-val num">${x.text}</b></div>`).join('');
+  return `<div class="card cat-card"><div class="card-head"><div><h3>${esc(title)}</h3>${sub ? `<p class="small muted">${sub}</p>` : ''}</div></div>${stack}${shareText ? `<p class="tiny muted cat-share">${esc(shareText)}</p>` : ''}<div class="cat-rows">${rows}</div></div>`;
+}
+/* Hladká křivka přes body (2.59, jen grafy v aplikaci; PDF beze změny): Catmull-Rom převedený na
+   Bézierovy oblouky, kontrolní body omezené na rozsah úseku, takže křivka nepřekmitne nad ani pod body. */
+function smoothPath(pts) {
+  if (!pts.length) return '';
+  const f = v => v.toFixed(1);
+  let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+  for (let i = 0; i < pts.length - 1; i += 1) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2;
+    const lo = Math.min(p1[1], p2[1]), hi = Math.max(p1[1], p2[1]);
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, clamp(p1[1] + (p2[1] - p0[1]) / 6, lo, hi)];
+    const c2 = [p2[0] - (p3[0] - p1[0]) / 6, clamp(p2[1] - (p3[1] - p1[1]) / 6, lo, hi)];
+    d += `C${f(c1[0])} ${f(c1[1])} ${f(c2[0])} ${f(c2[1])} ${f(p2[0])} ${f(p2[1])}`;
+  }
+  return d;
+}
+/** Plocha pod křivkou (jemný přechod barvy řady). */
+function smoothArea(pts, base) {
+  if (pts.length < 2) return '';
+  return `${smoothPath(pts)}L${pts[pts.length - 1][0].toFixed(1)} ${base}L${pts[0][0].toFixed(1)} ${base}Z`;
+}
+/** Místo pro najetí myší: svislá čárkovaná linka, zvýrazněný bod a průhledný obdélník s popiskem. */
+function chartHover(x0, w, top, base, cx, cy, tip) {
+  const dot = cy != null ? `<circle class="xd" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="5"/>` : '';
+  return `<g class="hp"><line class="xh" x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${top}" y2="${base}"/>${dot}<rect class="hit" x="${x0.toFixed(1)}" y="${top}" width="${w.toFixed(1)}" height="${(base - top).toFixed(1)}" tabindex="0" data-tip="${esc(tip)}"/></g>`;
 }
 function emptyState(title, text, action = '') {
   return `<div class="empty"><strong>${title}</strong><p>${text}</p>${action}</div>`;
@@ -1262,6 +1312,24 @@ function renderTodo(all) {
   $('#todo').innerHTML = items.length && !S.demo ? `<div class="todo"><p class="eyebrow">Co zbývá udělat</p><div class="todo-list">${items.map(([title, text, view]) => `<button type="button" class="todo-item" data-go="${view}"><span><b>${esc(title)}</b><small>${esc(text)}</small></span>${I.arrow}</button>`).join('')}</div></div>` : '';
 }
 
+/* Tabáky a Kafe za předchozí měsíc s docházkou (štítek trendu v souhrnu, 2.59). Výsledek se drží,
+   dokud se nezmění data (store.base) nebo vybrané období. */
+let _ovPrev = null;
+function ovPrevTotals() {
+  const ids = Object.keys(S.periods || {}).sort();
+  const i = ids.indexOf(S.current);
+  if (i <= 0) return null;
+  const id = ids[i - 1];
+  const sig = `${id}|${store.rev}|${S.log ? S.log.length : 0}`;
+  if (_ovPrev && _ovPrev.sig === sig) return _ovPrev.v;
+  let v = null;
+  try {
+    v = withPeriod(id, () => { const rows = activeRows(); return { tab: SUMF(rows, r => r.total), kafe: rows.filter(r => r.kafe).length }; });
+    v.name = periodName(S.periods[id]);
+  } catch (error) { v = null; }
+  _ovPrev = { sig, v };
+  return v;
+}
 function renderOverview() {
   const p = curPeriod();
   const sort = visibleColumns().some(c => c.k === P.sort.k) ? P.sort : { k: 'score', dir: -1 };
@@ -1304,14 +1372,19 @@ function renderOverview() {
   const iss = rows.filter(r => r.issued).length;
   const issOf = rows.filter(r => r.toIssue || r.issued).length;
   const chg = rows.filter(r => r.issuedChanged).length;
+  const maxSum = SUMF(rows, r => r.max);
+  const prev = filtered ? null : ovPrevTotals();
   $('#ovStats').innerHTML = [
-    statTile(`${I.tab}Tabáky celkem`, `${nf(sum, 0)}<em>/ ${nf(SUMF(rows, r => r.max), 0)}</em>`, `${filtered ? `za ${rows.length} vybraných lidí` : `za ${rows.length} lidí, z maxim skupin`}${noPos ? `, ${noPos}× bez skupiny` : ''}${noLvl ? `, ${noLvl}× skupina bez dovedností` : ''}`, 'tab'),
-    statTile(`${I.kafe}Kafe`, p ? `${kafeN}<em>/ ${kafeOf}</em>` : '—', p ? `splnili ${nf(kafeThreshold(p))} h` : 'bez docházky', 'kafe'),
+    statTile(`${I.tab}Tabáky celkem`, `${nf(sum, 0)}<em>/ ${nf(maxSum, 0)}</em>`, `${filtered ? `za ${rows.length} vybraných lidí` : `za ${rows.length} lidí, z maxim skupin`}${noPos ? `, ${noPos}× bez skupiny` : ''}${noLvl ? `, ${noLvl}× skupina bez dovedností` : ''}`, 'tab',
+      { bar: maxSum > 0 ? sum / maxSum : null, trend: prev && prev.tab > 0 ? { pct: (sum - prev.tab) / prev.tab * 100, vs: prev.name } : null }),
+    statTile(`${I.kafe}Kafe`, p ? `${kafeN}<em>/ ${kafeOf}</em>` : '—', p ? `splnili ${nf(kafeThreshold(p))} h` : 'bez docházky', 'kafe',
+      { bar: p && kafeOf ? kafeN / kafeOf : null, trend: p && prev && prev.kafe > 0 ? { pct: (kafeN - prev.kafe) / prev.kafe * 100, vs: prev.name } : null }),
     statTile('Bonus za víkendy', p ? `+${SUMF(bon, r => r.attEff)}` : '—', p ? `${bon.length} lidí, po stropu skupiny` : 'bez docházky', 'good'),
     statTile('Srážky za docházku', p ? (mal.length ? `−${Math.abs(SUMF(mal, r => r.attEff))}` : '0') : '—', p ? `${mal.length} lidí${rows.some(r => r.lost) ? `, z toho ${rows.filter(r => r.lost).length} bez nároku` : ''}` : 'bez docházky', mal.length ? 'crit' : ''),
     statTile('Sankce', `${sumPen ? `−${sumPen}` : '0'}${sumAdj ? `<em>úprava ${sgn(sumAdj)}</em>` : ''}`, sanN ? `${sanN} sankcí u ${sanPeople} lidí` : 'žádné sankce'),
-    statTile('Výdej', p ? `${iss}<em>/ ${issOf}</em>` : '—', !p ? 'bez docházky' : chg ? `${chg}× změna od výdeje` : (issOf - iss > 0 ? `zbývá vydat ${issOf - iss}` : 'vše vydáno'), chg ? 'warn' : ''),
+    statTile('Výdej', p ? `${iss}<em>/ ${issOf}</em>` : '—', !p ? 'bez docházky' : chg ? `${chg}× změna od výdeje` : (issOf - iss > 0 ? `zbývá vydat ${issOf - iss}` : 'vše vydáno'), chg ? 'warn' : '', { bar: p && issOf ? iss / issOf : null }),
   ].join('');
+  setWidths($('#ovStats'));
 
   const cols = visibleColumns();
   renderColPicker();
@@ -3746,6 +3819,7 @@ function unseenLog() {
 function renderLogBadge() {
   const badge = $('#logBadge');
   if (!badge || !S) return;
+  renderRail();
   const n = unseenLog();
   badge.hidden = !n;
   badge.textContent = n > 99 ? '99+' : String(n);
@@ -3867,6 +3941,110 @@ async function undoChange(ref) {
   save();
   renderAll();
   toast(r.skip ? `Vráceno zpět. ${r.skip} ${r.skip === 1 ? 'hodnota se mezitím znovu změnila a zůstala' : r.skip <= 4 ? 'hodnoty se mezitím znovu změnily a zůstaly' : 'hodnot se mezitím znovu změnilo a zůstalo'}.` : 'Vráceno zpět.');
+}
+
+/* ==========================================================================
+   Pravý panel na širokém monitoru (2.59): kdo je přihlášený, rychlé akce, náhled úkolů
+   (po termínu, blíží se, požadavky s vysokou závažností, další otevřené) a poslední změny
+   s Vrátit zpět. Jen od 1600 px šířky okna, na menších monitorech a v telefonu se nekreslí.
+   ========================================================================== */
+const RAIL_MIN = 1600;
+const railOn = () => window.matchMedia(`(min-width: ${RAIL_MIN}px)`).matches;
+const RAIL_ACTS = [
+  ['task', 'Nový úkol', '<path d="M12 5v14M5 12h14"/>'],
+  ['rychla', 'Rychlá kontrola', '<path d="m5 12.5 4.5 4.5L19 7.5"/>'],
+  ['sankce', 'Sankce', '<path d="M12 3.5 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/>'],
+  ['dochazka', 'Docházka', '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>'],
+];
+let _railSig = '';
+function renderRail() {
+  const box = $('#rail');
+  if (!box || !S) return;
+  const on = railOn();
+  document.body.classList.toggle('has-rail', on);
+  if (!on) { if (box.innerHTML) { box.innerHTML = ''; _railSig = ''; } return; }
+  const today = todayIso();
+  const o = tkOverview(S, today);
+  const open = tkSort(tkList().filter(t => TK_OPEN.has(t.state)));
+  const seen = new Set();
+  const pick = [];
+  const add = (t, why) => { if (!seen.has(t.id)) { seen.add(t.id); pick.push([t, why]); } };
+  o.late.forEach(t => add(t, 'late'));
+  o.soon.forEach(t => add(t, 'soon'));
+  open.filter(t => tkIsReq(t) && t.sev === 'high').forEach(t => add(t, 'high'));
+  open.forEach(t => add(t, ''));
+  const shown = pick.slice(0, 6);
+  const from = Date.now() - UNDO_DAYS * 864e5;
+  const logs = (S.log || []).filter(x => x.at >= from).slice(-4).reverse();
+  const h = new Date().getHours();
+  const sig = JSON.stringify([today, h < 10 ? 0 : h < 18 ? 1 : 2, ui.view, shown.map(([t, w]) => [t.id, t.state, t.due, t.title, t.owner, t.sev, w]), logs.map(x => [x.at, x.text, !!x.un, undoable(x)]), o.open, o.late.length, o.soon.length, ui.me && ui.me.label]);
+  if (sig === _railSig && box.innerHTML) return;
+  _railSig = sig;
+  const name = (ui.me && ui.me.label) || 'Přihlášený';
+  const ini = name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
+  const dayText = new Date().toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' });
+  const taskRow = ([t, why]) => {
+    const d = tkDue(t, today);
+    const when = t.due ? tkDueText(t, today) : tkIsReq(t) && t.sev ? `${tkSevName(t.sev).toLowerCase()} závažnost` : 'bez termínu';
+    const who = tkIsReq(t) ? tkPersonName(t) : t.owner;
+    return `<button type="button" class="rail-task ${why || (d.late ? 'late' : d.soon ? 'soon' : '')}" data-railtask="${esc(t.id)}">
+      <span class="rail-tdot" aria-hidden="true"></span><span class="rail-tmain"><b>${esc(t.title)}</b><small>${esc(when)}${who ? ` · ${esc(who)}` : ''}</small></span></button>`;
+  };
+  const logRow = x => `<div class="rail-log"><span class="log-ico">${LOG_ICON[x.kind] || LOG_ICON.data}</span><div><p>${esc(x.text.length > 110 ? `${x.text.slice(0, 110)}…` : x.text)}</p>
+      <small>${esc(new Date(x.at).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }))} · ${esc(x.by || '')}${x.un ? ' · vráceno' : ''}</small></div>${undoable(x) ? `<button class="icon-btn" type="button" data-logundo="${esc(`${x.at}|${x.u.join(',')}`)}" title="Vrátit zpět" aria-label="Vrátit zpět">${I.undo}</button>` : ''}</div>`;
+  box.innerHTML = `<div class="rail-in">
+    <section class="rail-card rail-me"><span class="rail-av" aria-hidden="true">${esc(ini)}</span><div><p class="rail-hi">${esc(greeting(h))}</p><b>${esc(name)}</b><small>${esc(dayText)}</small></div></section>
+    <section class="rail-card"><h2 class="rail-h">Rychlé akce</h2><div class="rail-acts">${RAIL_ACTS.map(([k, l, d]) => `<button type="button" class="rail-act${ui.view === k ? ' on' : ''}" data-railact="${k}"><span class="rail-ic" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg></span><span>${l}</span></button>`).join('')}</div></section>
+    <section class="rail-card rail-tasks"><div class="rail-hrow"><h2 class="rail-h">Úkoly</h2><button class="link small" type="button" data-railgo="ukoly">Vše (${o.open})</button></div>
+      ${o.late.length || o.soon.length ? `<p class="rail-sum">${o.late.length ? `<span class="tag crit">${o.late.length} po termínu</span>` : ''}${o.soon.length ? `<span class="tag warn">${o.soon.length} blíží se</span>` : ''}</p>` : ''}
+      ${shown.length ? `<div class="rail-tlist">${shown.map(taskRow).join('')}</div>${pick.length > shown.length ? `<p class="tiny muted">a další otevřené (${pick.length - shown.length})</p>` : ''}` : `<p class="small muted">${tkList().length ? 'Žádný otevřený úkol.' : 'Zatím žádné úkoly.'}</p>`}</section>
+    <section class="rail-card rail-logs"><div class="rail-hrow"><h2 class="rail-h">Poslední změny</h2><button class="link small" type="button" data-raillog>Vše</button></div>
+      ${logs.length ? logs.map(logRow).join('') : '<p class="small muted">Za poslední 3 dny žádné změny.</p>'}</section>
+  </div>`;
+}
+function bindRail() {
+  const box = $('#rail');
+  if (!box) return;
+  box.addEventListener('click', event => {
+    const t = event.target;
+    const task = t.closest('[data-railtask]');
+    if (task) { openTaskFromPerson(task.dataset.railtask); return; }
+    const act = t.closest('[data-railact]');
+    if (act) { if (act.dataset.railact === 'task') tkNewDialog(); else showView(act.dataset.railact); return; }
+    const go = t.closest('[data-railgo]');
+    if (go) { ui.tk.sel = null; showView(go.dataset.railgo); return; }
+    if (t.closest('[data-raillog]')) { openLog(); return; }
+    const undo = t.closest('[data-logundo]');
+    if (undo) undoChange(undo.dataset.logundo);
+  });
+  window.matchMedia(`(min-width: ${RAIL_MIN}px)`).addEventListener('change', () => { _railSig = ''; renderTaskAlert(); });
+  // pozdrav a „dnes“ se mění s časem
+  setInterval(() => { if (railOn()) renderRail(); }, 5 * 60 * 1000);
+}
+
+/* Sbalitelné boční menu (2.59): úzká kapsle jen s ikonami, popisky po najetí. Volba je jen pro
+   toto zařízení (localStorage podle adresy aplikace), ne v datech ani v osobním nastavení. */
+const SIDE_KEY = `odmeny.side.v1:${location.pathname.replace(/[^/]*$/, '')}`;
+function sideMiniGet() { try { return localStorage.getItem(SIDE_KEY) === 'mini'; } catch (error) { return false; } }
+function sideMiniSet(on) {
+  try { if (on) localStorage.setItem(SIDE_KEY, 'mini'); else localStorage.removeItem(SIDE_KEY); } catch (error) { /* soukromé okno: volba platí jen do zavření */ }
+  applySideMini(on);
+}
+function applySideMini(on) {
+  document.documentElement.classList.toggle('side-mini', on);
+  const b = $('#sideMini');
+  if (b) { b.setAttribute('aria-pressed', String(on)); b.title = on ? 'Rozbalit menu' : 'Sbalit menu'; b.setAttribute('aria-label', b.title); const t = b.querySelector('span'); if (t) t.textContent = b.title; }
+  // v úzkém menu je popisek jen v title (najetí myší) a aria-label
+  $$('#nav button').forEach(button => {
+    const label = (button.querySelector('span') || button).textContent.trim();
+    if (on) { button.title = label; button.setAttribute('aria-label', label); } else { button.removeAttribute('title'); button.removeAttribute('aria-label'); }
+  });
+}
+function bindSideMini() {
+  const b = $('#sideMini');
+  if (!b) return;
+  b.onclick = () => sideMiniSet(!document.documentElement.classList.contains('side-mini'));
+  applySideMini(sideMiniGet());
 }
 
 /* ==========================================================================
@@ -4786,7 +4964,7 @@ function niceMax(v, integer = false) {
 }
 
 /** Sloupcový graf jedné řady po měsících (SVG). Hodnoty ukazuje tooltip i tabulka pod grafy. */
-function columnChart({ title, sub, months, value, tip, tone, yMax = null, fmt = v => nf(v, 1), ref = null, integer = false }) {
+function columnChart({ title, sub, months, value, tip, tone, yMax = null, fmt = v => nf(v, 1), ref = null, integer = false, line = false }) {
   const W = 340;
   const H = 168;
   const L = 34;
@@ -4824,6 +5002,24 @@ function columnChart({ title, sub, months, value, tip, tone, yMax = null, fmt = 
   }).join('');
   const grid = ticks.map(t => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t).toFixed(1)}" y2="${y(t).toFixed(1)}"/><text class="yl" x="${L - 6}" y="${(y(t) + 3.5).toFixed(1)}">${esc(fmt(t))}</text>`).join('');
   const refLine = ref != null && ref <= top ? `<line class="ref" x1="${L}" x2="${W - R}" y1="${y(ref).toFixed(1)}" y2="${y(ref).toFixed(1)}"/>` : '';
+  if (line) {
+    // hladká křivka (2.59): úseky bez mezery v datech, plocha pod křivkou, při najetí linka a bod
+    const base = T + plotH;
+    const cx = i => L + i * band + band / 2;
+    const runs = [];
+    let cur = null;
+    vals.forEach((v, i) => { if (v == null) { cur = null; return; } if (!cur) { cur = []; runs.push(cur); } cur.push([cx(i), y(v)]); });
+    const dots = vals.map((v, i) => (v == null ? '' : `<circle class="wa-dot" cx="${cx(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${months.length > 18 ? 2.5 : 3.5}"/>`)).join('');
+    const marks = vals.map((v, i) => {
+      const label = i % every === 0 || i === months.length - 1
+        ? `<text class="xl" x="${cx(i).toFixed(1)}" y="${H - 8}">${esc(MON[+months[i].id.slice(5, 7) - 1])}${i === 0 || months[i].id.slice(5, 7) === '01' ? ` ${months[i].id.slice(2, 4)}` : ''}</text>` : '';
+      const cap = i === lastIdx && v != null ? `<text class="cap" x="${cx(i).toFixed(1)}" y="${(y(v) - 8).toFixed(1)}">${esc(fmt(v))}</text>` : '';
+      return label + cap;
+    }).join('');
+    const hits = vals.map((v, i) => chartHover(L + i * band, band, T, base, cx(i), v == null ? null : y(v), tip(months[i], v))).join('');
+    return `<figure class="chart ${tone} ch-smooth"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}${refLine}<path class="ch-area" d="${runs.map(r => smoothArea(r, base)).join('')}"/><path class="wa-line" d="${runs.map(smoothPath).join('')}"/>${dots}${marks}${hits}</svg></figure>`;
+  }
   return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}${refLine}${bars}</svg></figure>`;
 }
@@ -4904,10 +5100,10 @@ function renderProfile() {
       ${columnChart({ title: 'Tabáky po měsících', sub: 'výpočet podle úrovně, docházky a sankcí', tone: 'c-tab', months: chartMonths,
         value: m => (m.hasAtt ? m.total : null), fmt: v => nf(v, 0), integer: true,
         tip: (m, v) => (m.hasAtt ? `${m.label}: ${v} z ${m.max} ${tabW(m.max)}${m.issued ? `, vydáno ${issueWhat(m.issued.tabaky, m.issued.kafe)}` : ''}` : `${m.label}: bez docházky`) })}
-      ${columnChart({ title: 'Docházka', sub: 'odpracováno z fondu hodin (%)', tone: 'c-acc', months: chartMonths, yMax: 100, ref: 100,
+      ${columnChart({ title: 'Docházka', sub: 'odpracováno z fondu hodin (%)', tone: 'c-acc', months: chartMonths, yMax: 100, ref: 100, line: true,
         value: m => (m.hasAtt && m.fund ? Math.round(Math.min(1, m.capped / m.fund) * 100) : null), fmt: v => `${nf(v, 0)} %`,
         tip: (m, v) => (m.hasAtt ? `${m.label}: ${v} % (${nf(m.hours)} h z fondu ${nf(m.fund)} h), absence ${m.absence} ${dnW(m.absence)}, víkend ${m.wkDays}×` : `${m.label}: bez docházky`) })}
-      ${columnChart({ title: 'Výroba', sub: 'Ø kusů na odpracovaný den', tone: 'c-prod', months: chartMonths,
+      ${columnChart({ title: 'Výroba', sub: 'Ø kusů na odpracovaný den', tone: 'c-prod', months: chartMonths, line: true,
         value: m => (m.prod && m.prod.perDay != null ? m.prod.perDay : null), fmt: v => nf(v, v >= 100 ? 0 : v < 1 ? 2 : 1),
         tip: (m, v) => (m.prod ? `${m.label}: ${v != null ? `${nf(v, 1)} ks/den` : '—'}, celkem ${nf(m.prod.total, 0)} ks za ${m.prod.days} dnů` : `${m.label}: bez záznamu ve výrobě`) })}
       <div class="chart-tip" id="pfTip" role="status" hidden></div>
@@ -7401,6 +7597,8 @@ function bindEvents() {
   document.addEventListener('keydown', event => { if (event.key === 'Escape') $('#colPick').open = false; });
   $('#periodSel').onchange = event => { setPeriod(event.target.value); renderAll(); };
   bindSideSearch();
+  bindSideMini();
+  bindRail();
   $('#lockBtn').onclick = () => lockApp();
   $('#lockBtnTop').onclick = () => lockApp();
   $('#logBtn').onclick = () => openLog();
@@ -7967,6 +8165,8 @@ function renderEnds() {
       ${statTile(`Za ${ov.months.length} měsíců`, String(ov.leaving), `zůstane ${ov.head - ov.overdue.length - ov.leaving}`)}
       ${statTile('Po termínu', String(ov.overdue.length), ov.overdue.length ? 'konec trestu už minul' : 'nikdo', ov.overdue.length ? 'crit' : 'good')}
       ${statTile('Bez data', String(ov.noEnd.length), ov.noEnd.length ? 'nahraj tabulku v Docházce' : 'všichni mají datum', ov.noEnd.length ? 'warn' : '')}</div>
+    ${anyEnd ? catBars(ov.depts.map(d => { const gone = d.overdue + d.leave.reduce((a, b) => a + b, 0); return { name: d.name, share: gone, v: d.head ? gone / d.head : 0, text: `${gone} z ${d.head}`, sub: `zůstane ${d.remain[d.remain.length - 1]}` }; }),
+      { title: 'Kdo odchází po odděleních', sub: `Odchody za ${ov.months.length} měsíců včetně lidí po termínu; délka pruhu = podíl z dnešního počtu lidí oddělení.`, shareText: 'Podíl odchodů po odděleních' }) : ''}
     ${!anyEnd ? `<div class="note w">Zatím nikdo nemá konec trestu. Nahraj tabulku (A příjmení, B jméno, C konec trestu, D směnnost) tlačítkem nahoře nebo v Docházce.</div>` : ''}
     <div class="card"><h3>Odchody po měsících a odděleních</h3><p class="small muted">Počet lidí, kterým v daném měsíci končí trest. Zůstane = dnešní počet bez lidí po termínu a bez odchodů do konce vybraného období.</p>
       <div class="table-card flat end-gridwrap"><table class="end-grid"><thead><tr><th>Oddělení</th><th class="r">Teď</th><th class="r">Zůstane</th>${ov.overdue.length ? '<th class="r">Po termínu</th>' : ''}${ov.months.map(x => `<th class="r">${esc(monthLabel(x.m).replace(/ (\d{4})$/, ' ’$1').replace(/’(\d\d)(\d\d)$/, '’$2'))}</th>`).join('')}<th class="r">Později</th></tr></thead><tbody>
@@ -7977,6 +8177,7 @@ function renderEnds() {
     ${ov.months.filter(x => x.total).map(x => `<div class="card end-month"><h3>${esc(monthLabel(x.m))} <span class="tag">${x.total} ${lidiN(x.total)}</span></h3>
       ${ov.depts.filter(d => x.byDept[d.name].length).map(d => `<h4>${esc(d.name)} <small class="muted">${x.byDept[d.name].length} z ${d.head}</small></h4><ul class="end-list">${x.byDept[d.name].map(endWhoHtml).join('')}</ul>`).join('')}</div>`).join('')}
     ${ov.noEnd.length ? `<details class="card end-month"><summary><b>Bez data konce trestu</b> <span class="tag">${ov.noEnd.length}</span></summary><p class="small">${ov.noEnd.map(x => esc(x.name)).join(', ')}</p></details>` : ''}`;
+  setWidths(box);
 }
 async function exportEndsXlsx() {
   const ov = endsOverview(todayIso(), (ui.end && ui.end.n) || 12);
@@ -11214,23 +11415,27 @@ function waLine({ title, sub, points, value, tone, tip, cap = null }) {
   const y = v => T + plotH - (Math.min(v, top) / top) * plotH;
   const cx = i => L + i * band + band / 2;
   const every = Math.ceil(points.length / 10);
-  let d = '';
-  let pen = false;
+  // úseky bez mezery v datech, každý jako hladká křivka (2.59)
+  const runs = [];
+  let cur = null;
   let last = -1;
   vals.forEach((v, i) => {
-    if (v == null) { pen = false; return; }
-    d += `${pen ? 'L' : 'M'}${cx(i).toFixed(1)} ${y(v).toFixed(1)}`;
-    pen = true;
+    if (v == null) { cur = null; return; }
+    if (!cur) { cur = []; runs.push(cur); }
+    cur.push([cx(i), y(v)]);
     last = i;
   });
+  const base = T + plotH;
+  const d = runs.map(smoothPath).join('');
+  const area = runs.map(r => smoothArea(r, base)).join('');
   const r = points.length > 30 ? 2.5 : 4;
   const dots = vals.map((v, i) => (v == null ? '' : `<circle class="wa-dot" cx="${cx(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${r}"/>`)).join('');
   const labels = points.map((p, i) => ((points.length - 1 - i) % every === 0 ? `<text class="xl" x="${cx(i).toFixed(1)}" y="${H - 8}">${esc(p.label)}</text>` : '')).join('');
-  const hits = points.map((p, i) => `<rect class="hit" x="${(L + i * band).toFixed(1)}" y="${T}" width="${band.toFixed(1)}" height="${plotH}" tabindex="0" data-tip="${esc(tip(p))}"/>`).join('');
+  const hits = points.map((p, i) => chartHover(L + i * band, band, T, base, cx(i), vals[i] == null ? null : y(vals[i]), tip(p))).join('');
   const capT = cap && last >= 0 ? `<text class="cap" x="${cx(last).toFixed(1)}" y="${(y(vals[last]) - 9).toFixed(1)}">${esc(cap(vals[last]))}</text>` : '';
   const grid = [0, top / 2, top].map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="yl" x="${L - 6}" y="${(y(v) + 3.5).toFixed(1)}">${esc(nf(v, top < 10 ? 1 : 0))}</text>`).join('');
   return `<figure class="chart ${tone}"><figcaption><b>${esc(title)}</b><span>${esc(sub)}</span></figcaption>
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}<path class="wa-line" d="${d}"/>${dots}${labels}${capT}${hits}</svg></figure>`;
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(title)}">${grid}<path class="ch-area" d="${area}"/><path class="wa-line" d="${d}"/>${dots}${labels}${capT}${hits}</svg></figure>`;
 }
 
 /* ==========================================================================
@@ -12319,11 +12524,11 @@ function renderCapPlan() {
   const pres = all.pres;
   const tiles = `<div class="stats">${[
     statTile('Potřeba', String(t.need.n), `${all.setN} z ${gs.length} ${gs.length === 1 ? 'skupiny' : 'skupin'} s plánem`),
-    statTile('Máme', String(t.have.n), t.sick ? `ve skupinách s plánem, z toho nemocní ${t.sick}` : 'lidí ve skupinách s plánem'),
+    statTile('Máme', String(t.have.n), t.sick ? `ve skupinách s plánem, z toho nemocní ${t.sick}` : 'lidí ve skupinách s plánem', '', { bar: t.need.n ? t.have.n / t.need.n : null }),
     ...(pres ? [statTile('Ø v práci', nf(t.pres || 0, 1), `podle docházky, ${pres.days} ${pres.days === 1 ? 'pracovní den' : pres.days <= 4 ? 'pracovní dny' : 'pracovních dní'}`)] : []),
     statTile('Doplnit', String(t.hire), t.hire ? `${lidiAcc(t.hire)} náborem` : 'nábor není potřeba', t.hire ? 'crit' : all.setN ? 'good' : ''),
     statTile('Doškolit', String(t.trainN), t.trainN ? `${lidiAcc(t.trainN)} na vyšší úroveň` : 'zkušenosti stačí', t.trainN ? 'warn' : all.setN ? 'good' : ''),
-    statTile('Skupiny v pořádku', `${all.okN}<em>/ ${all.setN}</em>`, all.setN ? 'potřeba pokrytá lidmi i zkušenostmi' : 'zatím bez plánu', all.setN && all.okN === all.setN ? 'good' : ''),
+    statTile('Skupiny v pořádku', `${all.okN}<em>/ ${all.setN}</em>`, all.setN ? 'potřeba pokrytá lidmi i zkušenostmi' : 'zatím bez plánu', all.setN && all.okN === all.setN ? 'good' : '', { bar: all.setN ? all.okN / all.setN : null }),
   ].join('')}</div>`;
   const head = `<thead><tr><th rowspan="2">Skupina</th><th colspan="4" class="c cp-need-h">Potřeba</th><th colspan="4" class="c">Máme</th>${pres ? '<th rowspan="2" class="r" title="Průměrný počet lidí skupiny v práci podle docházky z KPI">Ø v práci</th>' : ''}<th rowspan="2" class="r">Doplnit</th><th rowspan="2" class="r">Doškolit</th><th rowspan="2">Stav</th></tr>
     <tr>${CP_COLS.map(c => `<th class="r cp-need-h" title="${esc(c[2])}">${c[1]}</th>`).join('')}${CP_COLS.map(c => `<th class="r" title="${esc(c[2])}">${c[1]}</th>`).join('')}</tr></thead>`;
@@ -12354,6 +12559,7 @@ function renderCapPlan() {
     ${depts}
     <div class="card"><h3>Poznámka k plánu</h3><p class="small muted">Uloží se a vytiskne s plánem (např. termíny náboru a zaškolení).</p>
       <textarea id="cpNote" rows="3" maxlength="4000" placeholder="např. Nábor 2 brusičů do konce listopadu, zaučit Nováka na Seřízení.">${esc(S.capPlan.note)}</textarea></div>`;
+  setWidths(box);
 }
 /* ---------- PDF plánu kapacit (2.44.2): jedno oddělení = jeden list A4 na výšku ----------
    Bez jmen i ID, skoro bez textu: záhlaví se stavem, dlaždice (potřeba, máme, doplnit,
@@ -12782,6 +12988,9 @@ function renderTaskBadge() {
 function renderTaskAlert() {
   const box = $('#taskAlert');
   if (!box || !S) return;
+  renderRail();
+  // na širokém monitoru připomínky ukazuje pravý panel (2.59), pruh by je opakoval
+  if (railOn()) { box.innerHTML = ''; return; }
   const o = tkOverview(S, todayIso());
   const high = tkList().filter(t => tkIsReq(t) && t.sev === 'high' && TK_OPEN.has(t.state) && !o.late.includes(t) && !o.soon.includes(t));
   const sig = [...o.late, ...o.soon, ...high].map(t => t.id + t.due).join(',');
@@ -12853,10 +13062,10 @@ function renderTasks() {
   if (t) { box.innerHTML = tkDetailHtml(t, today); return; }
   const o = tkOverview(S, today);
   const tiles = `<div class="stats">${[
-    statTile('Otevřené', String(o.open), `z ${o.all} ${o.all === 1 ? 'úkolu' : 'úkolů'}`),
+    statTile('Otevřené', String(o.open), `z ${o.all} ${o.all === 1 ? 'úkolu' : 'úkolů'}${o.open ? `, v termínu ${o.open - o.late.length}` : ''}`, '', { bar: o.open ? (o.open - o.late.length) / o.open : null }),
     statTile('Po termínu', String(o.late.length), o.late.length ? 'termín už uplynul' : 'nic nemešká', o.late.length ? 'crit' : o.open ? 'good' : ''),
     statTile('Blíží se termín', String(o.soon.length), 'podle připomenutí u úkolu', o.soon.length ? 'warn' : ''),
-    statTile('Hotovo za 30 dní', String(o.done30), 'dokončené úkoly', o.done30 ? 'good' : ''),
+    statTile('Hotovo za 30 dní', String(o.done30), o.done30 + o.open ? `${nf(o.done30 / (o.done30 + o.open) * 100, 0)} % z dokončených a otevřených` : 'dokončené úkoly', o.done30 ? 'good' : '', { bar: o.done30 + o.open ? o.done30 / (o.done30 + o.open) : null }),
     ...(o.req || tkList().some(tkIsReq) ? [statTile('Požadavky pracovníků', String(o.req), o.reqHigh ? `${o.reqHigh} s vysokou závažností` : 'otevřené požadavky', o.reqHigh ? 'crit' : o.req ? 'warn' : '')] : []),
   ].join('')}</div>`;
   const owners = o.owners;
@@ -12868,6 +13077,7 @@ function renderTasks() {
       <input type="search" class="grow" id="tkQ" value="${esc(ui.tk.q)}" placeholder="Hledat v úkolech a komentářích…" aria-label="Hledat v úkolech">
     </div>
     <div id="tkList">${tkListHtml(today)}</div>`;
+  setWidths(box);
   $$('.chips', box).forEach(showActiveChip);
 }
 function tkTlHtml(t) {
@@ -14017,7 +14227,12 @@ function kpHtml() {
       <div class="table-card flat"><table class="stack kp-tab"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody>
       <tfoot><tr class="kp-avg"><td></td><td class="name" data-label="">Průměr oddělení</td><td></td><td class="r num" data-label="Dny">${nf(d.avg.days, 1)}</td>${KP_COLS.map(([k, l]) => `<td class="r num${k === x.sort ? ' kp-on' : ''}" data-label="${l}">${kpVal(k, d.avg[k === 'ks' ? 'ks1' : k])}</td>`).join('')}</tr></tfoot></table></div></div>`;
   }).join('');
+  // oddělení vedle sebe barevně (2.59): podíl lidí a průměr oddělení podle zvoleného řazení
+  const sk = x.sort === 'ks' ? 'ks1' : x.sort;
+  const cats = kp.dept ? '' : catBars(x.depts.map(d => ({ name: d.name, share: d.people.length, v: d.avg[sk], text: d.avg[sk] != null ? KP_FMT[x.sort](d.avg[sk]) : '—', sub: `${d.people.length} ${d.people.length === 1 ? 'člověk' : d.people.length <= 4 ? 'lidé' : 'lidí'}` })),
+    { title: 'Oddělení vedle sebe', sub: `Průměr oddělení · ${esc(lab[x.sort])}`, shareText: 'Podíl lidí po odděleních' });
   return `${bar}${tiles}${notes.length ? `<div class="note i">${notes.map(esc).join(' ')}</div>` : ''}
+    ${cats}
     ${cards || '<p class="small muted">Za měsíc nikdo s vykázanou prací.</p>'}
     <p class="hint">Odpracované dny = hodiny z docházky přepočtené na směnu: celá směna (${nf(S.settings.shift, 1)} h) = 1 den, kratší den = hodiny ÷ ${nf(S.settings.shift, 1)} (např. 3,75 h = 0,5 dne), víc než směna = 1 den, den s kódem nepřítomnosti se nepočítá. Ø ks na den = dokončené kusy ÷ odpracované dny. Ø h na den = vykázaný čas ÷ odpracované dny. Kusy za hodinu = kusy ÷ vykázaný čas. Plnění normy = norma ÷ čas u řádků s normou. Využití fondu = vykázaný čas ÷ hodiny v práci. Průměr oddělení je vážený (součty, ne průměr průměrů). Vedoucí a vyřazení se nepočítají, oddělení podle skupiny v Matici ke konci měsíce. Klik na člověka otevře profil.</p>`;
 }
