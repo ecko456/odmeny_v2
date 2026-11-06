@@ -34,6 +34,18 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 6. 11. 2026 (verze 2.60.1):
+
+- Uživatel: „přihlašovací kartu udělal více skleněnou a takové matnější sklo, aby se ty barevné
+  přechody více rozlévali“. První pokus (tmavé matné sklo se zrnem) odmítl: „moc tmavé
+  a nepřirozené … zachovej efekt glass liquid“. Teď `lock.css` za `.lock-bg-on .lock-card`:
+  tekuté sklo, `backdrop-filter: blur(44px) saturate(165%)` bez ztmavení, podklad jen
+  rgba(24, 22, 22, .18) + bílé odlesky (radial nahoře vlevo, dole vpravo), hrana rgba(255,255,255,.34),
+  vnitřní stíny jako lom světla, světlejší `--ink-2/--ink-3` a jemný `text-shadow` kvůli čitelnosti
+  na světlých místech. Bez WebGL (bez `lock-bg-on`) panel beze změny.
+- Uživatel: „jde zlepšit rozlišení toho pozadí?“ `lockbg.js` kreslí v rozlišení displeje
+  (`devicePixelRatio`, nejvýš 2×) místo 0,6. `e2e_lockbg` to hlídá.
+
 Stav k 6. 11. 2026 (verze 2.60):
 
 - Uživatel poslal ukázku „Shader R“ (WebGL, Gaussova barevná pole bílá / tmavá / oranžová v
@@ -2331,7 +2343,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.57 | `5f8ec48` | úvodní animace přihlášení – ruka z částic, která se rozevře a utvoří panel |
 | 2.58 | `b697d6d` | úvodní animace přihlášení odstraněná |
 | 2.59 | `ce2ac43` | pravý panel s úkoly a rychlými akcemi, sbalitelné menu, souhrn v kapsli s pruhy a trendem, hladké křivky, barevná oddělení, skleněná plocha |
-| 2.60 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: pozadí přihlašovací stránky z barevných polí (WebGL) |
+| 2.60 | `83eedbb` | pozadí přihlašovací stránky z barevných polí (WebGL) |
+| 2.60.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: přihlašovací panel z matného skla |
 
 Verze 2.1 přidala:
 

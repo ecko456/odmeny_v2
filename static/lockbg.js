@@ -2,7 +2,7 @@
    teplá bílá) se zrnem, kreslená WebGL shaderem na celou plochu za panelem zámku.
    - Plátno je uvnitř #lock: po odemčení se #lock odstraní a kreslení se samo zastaví.
    - „Omezit pohyb“ = jeden stojící snímek; skrytá karta = pauza; bez WebGL zůstane CSS pozadí.
-   - Kreslí se v nižším rozlišení (pozadí je rozmazané), ať to šetří baterii i slabší počítače.
+   - Kreslí se v rozlišení displeje (nejvýš 2×), jen jedna plocha, výkon to nezatíží.
    Inspirace: ukázka „Shader R“, kterou poslal uživatel (Gaussova barevná pole v deformovaném
    prostoru). Barvy jsou z tokenů vzhledu Sklo. */
 (function () {
@@ -31,7 +31,8 @@
     '}'].join('\n');
   // teplá bílá místo čisté (panel je skleněný, čistá bílá za ním by bila do očí), oranžová akcentu
   const COLORS = { cW: [0.96, 0.92, 0.88], cD: [0.063, 0.063, 0.063], cO: [1.0, 0.475, 0.0] };
-  const SCALE = 0.6;   // rozlišení kreslení vůči obrazovce (rozmazané pozadí, šetří výkon)
+  // rozlišení kreslení: plné rozlišení displeje, na ostrých displejích nejvýš 2× (2.60.1)
+  const scale = () => Math.min(window.devicePixelRatio || 1, 2);
 
   function start() {
     const lock = document.getElementById('lock');
@@ -65,7 +66,8 @@
     const state = { frames: 0, running: false };
     function draw() {
       if (lost) return;
-      const w = Math.max(1, Math.round(canvas.clientWidth * SCALE)), h = Math.max(1, Math.round(canvas.clientHeight * SCALE));
+      const k = scale();
+      const w = Math.max(1, Math.round(canvas.clientWidth * k)), h = Math.max(1, Math.round(canvas.clientHeight * k));
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       gl.viewport(0, 0, w, h);
       gl.uniform2f(u.res, w, h);

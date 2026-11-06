@@ -274,6 +274,26 @@ textarea { resize: vertical; min-height: 76px; }
 .lock-bg-on .lock::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
   background: radial-gradient(60% 55% at 50% 50%, rgba(8, 9, 12, .38), rgba(8, 9, 12, .12) 70%, transparent 100%); }
 .lock-bg-on .lock-card { z-index: 1; }
+/* tekuté sklo (liquid glass, 2.60.1): průzračné a jasné, barvy pozadí se rozlijí silným
+   rozmazáním, ale bez ztmavení; lesklá hrana (odlesk nahoře vlevo, lom světla na okrajích) */
+:root[data-look="glass"].lock-bg-on .lock-card {
+  background:
+    radial-gradient(120% 60% at 0% 0%, rgba(255, 255, 255, .22), transparent 55%),
+    radial-gradient(90% 50% at 100% 100%, rgba(255, 255, 255, .10), transparent 60%),
+    linear-gradient(160deg, rgba(255, 255, 255, .14) 0%, rgba(255, 255, 255, .05) 45%, rgba(255, 255, 255, .08) 100%),
+    rgba(24, 22, 22, .18);
+  border: 1px solid rgba(255, 255, 255, .34);
+  -webkit-backdrop-filter: blur(44px) saturate(165%);
+  backdrop-filter: blur(44px) saturate(165%);
+  box-shadow:
+    0 30px 70px -24px rgba(0, 0, 0, .55),
+    inset 1.5px 1.5px 1px -0.5px rgba(255, 255, 255, .75),
+    inset -1px -1px 1px -0.5px rgba(255, 255, 255, .35),
+    inset 0 0 22px rgba(255, 255, 255, .10),
+    inset 0 -40px 60px -50px rgba(255, 255, 255, .25); }
+:root[data-look="glass"].lock-bg-on .lock-card { --ink-2: #f1ede9; --ink-3: #e2ddd8; text-shadow: 0 1px 10px rgba(0, 0, 0, .28); }
+:root[data-look="glass"].lock-bg-on .lock-card .btn { text-shadow: none; }
+:root[data-look="glass"].lock-bg-on .lock-card input:not([type="checkbox"]):not([type="radio"]) { background-color: rgba(16, 14, 14, .30); border-color: rgba(255, 255, 255, .28); text-shadow: none; }
 
 /* PIN */
 .pin-dots { display: flex; justify-content: center; gap: 12px; margin: 6px 0 18px; }

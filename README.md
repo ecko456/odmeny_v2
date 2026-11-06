@@ -62,6 +62,13 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.60.1
+
+- **Přihlašovací panel jako tekuté sklo** (liquid glass): průzračné a jasné, barevné přechody
+  pozadí se v něm měkce rozlijí, lesklá hrana s odleskem světla.
+- **Pozadí v plném rozlišení displeje** (na ostrých displejích až 2×), přechody a zrno jsou jemné.
+- Data beze změny.
+
 ## Co je nového ve verzi 2.60
 
 - **Nové pozadí přihlašovací stránky**: pomalu se přelévající barevná pole (tmavá, oranžová

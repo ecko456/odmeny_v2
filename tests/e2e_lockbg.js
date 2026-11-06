@@ -55,8 +55,10 @@ const dist = (a, b) => a.reduce((s, p, i) => s + Math.abs(p[0] - b[i][0]) + Math
     const c = document.querySelector('#lock .lock-bg').getBoundingClientRect(), card = document.querySelector('.lock-card');
     const mid = card.getBoundingClientRect();
     const top = document.elementFromPoint(mid.left + mid.width / 2, mid.top + 20);
-    return { w: c.width, h: c.height, on: document.documentElement.classList.contains('lock-bg-on'), cardTop: card.contains(top), running: window.OdmLockBg.running };
+    const cv = document.querySelector('#lock .lock-bg');
+    return { w: c.width, h: c.height, px: cv.width, dpr: devicePixelRatio, on: document.documentElement.classList.contains('lock-bg-on'), cardTop: card.contains(top), running: window.OdmLockBg.running };
   });
+  check(box.px >= Math.round(1440 * Math.min(box.dpr, 2)) - 1, `plné rozlišení displeje: ${box.px} px`);
   check(box.w >= 1440 - 1 && box.h >= 899 && box.on && box.cardTop && box.running, `plátno za panelem přes celou plochu: ${JSON.stringify(box)}`);
   const a = await pixels(page);
   await page.screenshot({ path: path.join(shots, '01-zamek.png') });
