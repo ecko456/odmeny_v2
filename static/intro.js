@@ -1,8 +1,9 @@
 'use strict';
 
 /*
- * Úvodní animace zámku (2.55): ohnivá koule přiletí po dráze, narazí do středu panelu,
- * rozletí se na jiskry s rázovou vlnou a z nárazu se složí přihlašovací panel.
+ * Úvodní animace zámku (2.55, od 2.57 ruka z částic): na temném pozadí se z částic v barvách
+ * panelu složí ruka „inteligence“ (body propojené jako neuronová síť), rozevře dlaň a částice
+ * odletí a postupně utvoří přihlašovací panel, který se z nich zhmotní.
  * Kreslí se na <canvas> (CSP: žádné inline styly ani skripty), nic neblokuje:
  * přihlášení se mezitím načítá a pole s PINem má fokus, takže psaní nebo klepnutí
  * animaci přeskočí.
@@ -66,11 +67,52 @@
     return;
   }
 
-  /* ------------------------------------------------------------ plná animace */
+  /* ------------------------------------------------------------ plná animace (2.57)
+     Ruka „inteligence“ z částic v barvách panelu: částice se slétnou do sevřené ruky, ta se
+     rozevře (prsty se natáhnou a rozprostřou, body jsou propojené jako neuronová síť) a pak
+     částice odletí a postupně utvoří obrys a plochu přihlašovacího panelu, který se z nich
+     zhmotní. */
 
-  const T_FLY0 = 0.28;   // start letu (s)
-  const T_HIT = 1.3;     // náraz
-  const T_END = 2.75;    // konec plátna
+  const T_FORM = 0.75;   // částice se slétnou do ruky
+  const T_OPEN0 = 0.45;  // ruka se začne rozevírat
+  const T_OPEN1 = 1.35;  // ruka je otevřená
+  const T_FLY0 = 1.45;   // částice letí k panelu
+  const T_FLY1 = 2.35;   // poslední dorazí
+  const T_SHOW = 2.1;    // panel se začne zhmotňovat
+  const T_END = 3.05;    // konec plátna
+
+  /* barvy panelu: oranžový akcent, jeho světlejší tón, jantar, teplá bílá, tyrkys z pozadí */
+  const COLORS = [[255, 122, 46, 40], [255, 145, 80, 24], [242, 176, 78, 16], [255, 222, 196, 15], [44, 213, 196, 5]];
+  const ease = x => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  const easeOut = x => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+  const easeIo = x => { x = Math.min(1, Math.max(0, x)); return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; };
+
+  /* Ruka v jednotkách: dlaň kolem počátku, y dolů, výška dlaně 1. Prsty jsou úsečky od kloubu,
+     úhel od svislice (záporný = doleva), délka; „pose“ 0 = sevřená, 1 = otevřená. */
+  const FINGERS = [
+    { bx: -0.37, by: -0.47, len: 0.72, w: 0.2, a0: 0.05, a1: -0.24 },
+    { bx: -0.12, by: -0.52, len: 0.9, w: 0.21, a0: 0.02, a1: -0.08 },
+    { bx: 0.13, by: -0.51, len: 0.84, w: 0.21, a0: -0.02, a1: 0.08 },
+    { bx: 0.37, by: -0.44, len: 0.66, w: 0.19, a0: -0.05, a1: 0.25 },
+    { bx: -0.47, by: 0.12, len: 0.62, w: 0.22, a0: -0.35, a1: -1.05, thumb: true },
+  ];
+  function inPalm(x, y) {
+    // zaoblený obdélník dlaně a zápěstí
+    if (y > 0.5 && y < 1.15) return Math.abs(x) < 0.33 - (y - 0.5) * 0.05;
+    if (y < -0.5 || y > 0.5) return false;
+    const hw = 0.5 - Math.max(0, y - 0.25) * 0.55;
+    return Math.abs(x) < hw - (y < -0.38 ? (y + 0.38) * (y + 0.38) * 4 : 0);
+  }
+  function fingerAt(f, pose, t, s) {
+    const a = f.a0 + (f.a1 - f.a0) * pose;
+    const L = f.len * (0.5 + 0.5 * pose);
+    // kloub prstu se při rozevření mírně ohne (oblouk), u sevřené ruky leží konec přes dlaň
+    const bend = (1 - pose) * (f.thumb ? 0.5 : 0.9) * t;
+    const ang = a + (f.thumb ? -bend : bend * Math.sign(-f.bx || 1) * 0.2);
+    const dx = Math.sin(ang), dy = -Math.cos(ang);
+    const w = f.w * (1 - 0.3 * t) / 2;
+    return [f.bx + dx * L * t - dy * w * s, f.by + dy * L * t + dx * w * s + (1 - pose) * (f.thumb ? 0 : 0.18) * t];
+  }
 
   function run() {
     const lock = document.getElementById('lock');
@@ -92,287 +134,225 @@
     }
     size();
     window.addEventListener('resize', size);
-
-    // cíl = střed panelu (panel je zatím neviditelný, ale rozložený)
-    function target() {
-      const r = card.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + Math.min(r.height, 420) / 2 };
-    }
-    let aim = target();
     const small = W < 640;
-    const scale = small ? 0.75 : 1;
-    // dráha: z pravého horního rohu (odtud svítí oranžová záře pozadí) obloukem do cíle
-    const P0 = { x: W * 1.08, y: -H * 0.12 };
-    const P1 = { x: W * 0.78, y: H * 0.55 };
 
-    const parts = [];   // částice: x, y, vx, vy, life, max, r, kind (t = ohon, s = jiskra, e = žhavý uhlík, m = kouř)
-    const rings = [];
-    let flash = 0;
-    let shake = 0;
-    let hit = false;
-    let last = 0;
+    // zářící body jako předkreslené obrázky (rychlé i při tisíci částicích)
+    const sprites = COLORS.map(([r, g, b]) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 32;
+      const x = c.getContext('2d');
+      const gr = x.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gr.addColorStop(0, 'rgba(255,255,255,1)');
+      gr.addColorStop(0.18, `rgba(${r},${g},${b},0.95)`);
+      gr.addColorStop(0.5, `rgba(${r},${g},${b},0.28)`);
+      gr.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      x.fillStyle = gr;
+      x.fillRect(0, 0, 32, 32);
+      return c;
+    });
+    const pickColor = () => {
+      let v = Math.random() * 100;
+      for (let i = 0; i < COLORS.length; i++) { v -= COLORS[i][3]; if (v <= 0) return i; }
+      return 0;
+    };
+
+    // panel: obrys (zaoblený obdélník), hlavička a plocha; ruka stojí tam, kde bude panel
+    const box = () => {
+      const r = card.getBoundingClientRect();
+      const top = Math.max(r.top, 8), bottom = Math.min(r.bottom, H - 8);
+      return { x: r.left, y: top, w: r.width, h: Math.max(120, bottom - top), r: Math.min(30, r.width / 8), full: r };
+    };
+    let B = box();
+    const hand = () => {
+      const hs = Math.min(B.h * 0.36, H * 0.3, W * (small ? 0.34 : 0.22));
+      return { cx: B.x + B.w / 2, cy: B.y + B.h * 0.52, s: hs };
+    };
+    function rectPoint(u) {
+      // bod na obvodu zaobleného obdélníku, u ∈ [0, 1)
+      const { x, y, w, h, r } = B;
+      const seg = [w - 2 * r, Math.PI * r / 2, h - 2 * r, Math.PI * r / 2, w - 2 * r, Math.PI * r / 2, h - 2 * r, Math.PI * r / 2];
+      let d = u * seg.reduce((a, b) => a + b, 0);
+      const arc = (cx, cy, a0, t) => [cx + r * Math.cos(a0 + t * Math.PI / 2), cy + r * Math.sin(a0 + t * Math.PI / 2)];
+      for (let i = 0; i < 8; i++) {
+        if (d <= seg[i] || i === 7) {
+          const t = seg[i] ? d / seg[i] : 0;
+          switch (i) {
+            case 0: return [x + r + t * (w - 2 * r), y];
+            case 1: return arc(x + w - r, y + r, -Math.PI / 2, t);
+            case 2: return [x + w, y + r + t * (h - 2 * r)];
+            case 3: return arc(x + w - r, y + h - r, 0, t);
+            case 4: return [x + w - r - t * (w - 2 * r), y + h];
+            case 5: return arc(x + r, y + h - r, Math.PI / 2, t);
+            case 6: return [x, y + h - r - t * (h - 2 * r)];
+            default: return arc(x + r, y + r, Math.PI, t);
+          }
+        }
+        d -= seg[i];
+      }
+      return [x, y];
+    }
+
+    // částice: kde v ruce leží (dlaň nebo prst s parametry), odkud přiletí a kam v panelu míří
+    const N = small ? 620 : 1050;
+    const parts = [];
+    for (let i = 0; i < N; i++) {
+      let kind, fx = 0, fy = 0, fi = 0, t = 0, s = 0;
+      if (i < N * 0.42) {
+        kind = 'palm';
+        do { fx = (Math.random() - 0.5) * 1.05; fy = -0.52 + Math.random() * 1.65; } while (!inPalm(fx, fy));
+        // víc bodů u okraje dlaně = čitelnější obrys
+        if (Math.random() < 0.35) { for (let k = 0; k < 6 && inPalm(fx * 1.06, fy); k++) fx *= 1.06; }
+      } else {
+        kind = 'finger';
+        fi = Math.floor(Math.random() * FINGERS.length);
+        t = Math.pow(Math.random(), 0.8);
+        s = Math.random() < 0.45 ? (Math.random() < 0.5 ? -1 : 1) * (0.85 + Math.random() * 0.15) : Math.random() * 2 - 1;
+      }
+      const u = i / N;
+      const slot = Math.random();
+      parts.push({
+        kind, fx, fy, fi, t, s, c: pickColor(), size: (small ? 2.2 : 2.6) + Math.random() * 2.4,
+        a: 0.55 + Math.random() * 0.45, tw: Math.random() * Math.PI * 2,
+        // start: rozptýlené po obrazovce, pomalý drift
+        sx: Math.random(), sy: Math.random(),
+        // cíl v panelu: 58 % obrys, 12 % hlavička (linka pod logem), zbytek plocha
+        dest: slot < 0.58 ? { k: 'edge', u: (u * 7.31 + Math.random() * 0.002) % 1 } : slot < 0.7 ? { k: 'head', u: Math.random() } : { k: 'fill', u: Math.random(), v: Math.random() },
+        delay: Math.random() * 0.28,
+        x: 0, y: 0,
+      });
+    }
+    function handPos(p, pose, tm, hd) {
+      let x, y;
+      if (p.kind === 'palm') { x = p.fx; y = p.fy; }
+      else [x, y] = fingerAt(FINGERS[p.fi], pose, p.t, p.s);
+      // jemné dýchání a pootočení ruky při rozevírání
+      const rot = (1 - pose) * 0.18 - 0.04 + Math.sin(tm * 1.6) * 0.015;
+      const cs = Math.cos(rot), sn = Math.sin(rot);
+      const k = hd.s * (0.92 + 0.08 * pose);
+      return [hd.cx + (x * cs - y * sn) * k, hd.cy + (x * sn + y * cs) * k];
+    }
+    function destPos(p) {
+      const d = p.dest;
+      if (d.k === 'edge') return rectPoint(d.u);
+      if (d.k === 'head') return [B.x + 26 + d.u * (B.w - 52), B.y + Math.min(86, B.h * 0.2)];
+      return [B.x + 18 + d.u * (B.w - 36), B.y + 18 + d.v * (B.h - 36)];
+    }
+
+    // sousedé pro „neuronovou síť“ spočítaní jednou v otevřené ruce (kreslí se jen čáry mezi nimi)
+    const links = [];
+    {
+      const hd0 = { cx: 0, cy: 0, s: 100 };
+      const pts = parts.map(p => handPos(p, 1, 0, hd0));
+      const cell = 14, grid = new Map();
+      pts.forEach(([x, y], i) => { const k = `${Math.floor(x / cell)},${Math.floor(y / cell)}`; (grid.get(k) || grid.set(k, []).get(k)).push(i); });
+      const maxL = small ? 700 : 1300;
+      for (let i = 0; i < pts.length && links.length < maxL; i += 1) {
+        if (Math.random() > 0.55) continue;
+        const [x, y] = pts[i], gx = Math.floor(x / cell), gy = Math.floor(y / cell);
+        let best = null, bd = 1e9;
+        for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+          for (const j of grid.get(`${gx + ox},${gy + oy}`) || []) {
+            if (j <= i) continue;
+            const d = (pts[j][0] - x) ** 2 + (pts[j][1] - y) ** 2;
+            if (d > 25 && d < bd) { bd = d; best = j; }
+          }
+        }
+        if (best != null && bd < cell * cell) links.push([i, best, Math.random()]);
+      }
+    }
+
     let t0 = 0;
-    let prevBall = null;
-
-    const easeIn = x => x * x * (1.6 - 0.6 * x);
-    function ballAt(t) {
-      const k = Math.max(0, Math.min(1, (t - T_FLY0) / (T_HIT - T_FLY0)));
-      const e = easeIn(k);
-      const u = 1 - e;
-      return {
-        k,
-        x: u * u * P0.x + 2 * u * e * P1.x + e * e * aim.x,
-        y: u * u * P0.y + 2 * u * e * P1.y + e * e * aim.y,
-        r: (7 + 17 * e) * scale,
-      };
-    }
-
-    function spawn(kind, x, y, vx, vy, life, r) {
-      if (parts.length > 900) return;
-      parts.push({ kind, x, y, vx, vy, life, max: life, r });
-    }
-
-    function explode(x, y) {
-      hit = true;
-      flash = 1;
-      shake = 14 * scale;
-      rings.push({ x, y, t: 0, dur: 0.75, max: Math.max(W, H) * 0.75, w: 3 });
-      rings.push({ x, y, t: -0.08, dur: 1.0, max: Math.max(W, H) * 0.5, w: 1.4 });
-      const n = Math.round((small ? 110 : 170));
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const v = (260 + Math.random() * 900) * scale;
-        spawn('s', x, y, Math.cos(a) * v, Math.sin(a) * v, 0.45 + Math.random() * 0.7, 1 + Math.random() * 1.6);
-      }
-      for (let i = 0; i < n * 0.45; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const v = (60 + Math.random() * 320) * scale;
-        spawn('e', x, y, Math.cos(a) * v, Math.sin(a) * v, 0.8 + Math.random() * 1.0, 1.5 + Math.random() * 2.5);
-      }
-      for (let i = 0; i < 26; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const v = (30 + Math.random() * 120) * scale;
-        spawn('m', x, y, Math.cos(a) * v, Math.sin(a) * v, 0.9 + Math.random() * 0.6, (18 + Math.random() * 26) * scale);
-      }
-      reveal();
-    }
-
-    // barva ohně podle stáří částice (0 = nová): bílá → žlutá → oranžová → červená
-    function fire(age, alpha) {
-      const r = 255;
-      const g = Math.round(Math.max(40, 245 - age * 230));
-      const b = Math.round(Math.max(0, 200 - age * 520));
-      return `rgba(${r},${g},${b},${alpha})`;
-    }
-
-    /* HUD: mřížka obzoru, zaměřovač na cíli a telemetrie v rozích */
-    function hud(t, fade) {
-      if (fade <= 0) return;
-      ctx.save();
-      ctx.globalAlpha = fade;
-      // perspektivní mřížka u spodního okraje
-      const hy = H * 0.7;
-      ctx.strokeStyle = 'rgba(255,122,46,.10)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      for (let i = -12; i <= 12; i++) {
-        ctx.moveTo(W / 2 + i * 18, hy);
-        ctx.lineTo(W / 2 + i * W * 0.16, H);
-      }
-      const drift = (t * 0.6) % 1;
-      for (let j = 0; j < 9; j++) {
-        const q = (j + drift) / 9;
-        const y = hy + (H - hy) * q * q;
-        ctx.moveTo(0, y); ctx.lineTo(W, y);
-      }
-      ctx.stroke();
-      const grd = ctx.createLinearGradient(0, hy - 2, 0, hy + 60);
-      grd.addColorStop(0, 'rgba(11,12,16,0)');
-      grd.addColorStop(0.02, 'rgba(255,140,60,.18)');
-      grd.addColorStop(1, 'rgba(11,12,16,0)');
-      ctx.fillStyle = grd;
-      ctx.fillRect(0, hy - 2, W, 62);
-
-      // zaměřovač: oblouky se stahují k cíli, při zásahu zmizí
-      if (!hit) {
-        const k = Math.max(0, Math.min(1, (t - 0.1) / (T_HIT - 0.15)));
-        const R = (150 - 95 * k) * scale;
-        ctx.strokeStyle = `rgba(255,145,80,${0.35 + 0.45 * k})`;
-        ctx.lineWidth = 1.5;
-        const rot = t * 1.8;
-        for (let i = 0; i < 4; i++) {
-          const a = rot + i * Math.PI / 2;
-          ctx.beginPath();
-          ctx.arc(aim.x, aim.y, R, a, a + Math.PI / 4);
-          ctx.stroke();
-        }
-        ctx.strokeStyle = 'rgba(255,255,255,.28)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        const g = 10 * scale, L = 22 * scale;
-        ctx.moveTo(aim.x - R - L, aim.y); ctx.lineTo(aim.x - R + g, aim.y);
-        ctx.moveTo(aim.x + R - g, aim.y); ctx.lineTo(aim.x + R + L, aim.y);
-        ctx.moveTo(aim.x, aim.y - R - L); ctx.lineTo(aim.x, aim.y - R + g);
-        ctx.moveTo(aim.x, aim.y + R - g); ctx.lineTo(aim.x, aim.y + R + L);
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(255,145,80,.9)';
-        ctx.beginPath(); ctx.arc(aim.x, aim.y, 2, 0, Math.PI * 2); ctx.fill();
-        // předpověď dráhy (čárkovaně)
-        ctx.setLineDash([4, 7]);
-        ctx.strokeStyle = 'rgba(255,255,255,.18)';
-        ctx.beginPath();
-        for (let s = 0; s <= 24; s++) {
-          const b = ballAt(T_FLY0 + (T_HIT - T_FLY0) * (s / 24));
-          if (b.k < ballAt(t).k) continue;
-          ctx.lineTo(b.x, b.y);
-        }
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
-
-      // telemetrie
-      const font = small ? 10 : 11;
-      ctx.font = `600 ${font}px "Jakarta", "Segoe UI", system-ui, sans-serif`;
-      ctx.textBaseline = 'top';
-      const k = Math.max(0, Math.min(1, (t - T_FLY0) / (T_HIT - T_FLY0)));
-      const pad = small ? 16 : 28;
-      ctx.fillStyle = 'rgba(255,255,255,.55)';
-      ctx.textAlign = 'left';
-      ctx.fillText('HALA 2 · ODMĚNY v2', pad, pad);
-      ctx.fillStyle = 'rgba(255,145,80,.85)';
-      ctx.fillText(hit ? 'KONTAKT · PANEL AKTIVNÍ' : 'NAVÁDĚNÍ NA CÍL', pad, pad + font + 6);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = 'rgba(255,255,255,.55)';
-      const mach = (0.4 + 2.2 * easeIn(k)).toFixed(2);
-      const alt = Math.round(12000 * (1 - k)).toString().padStart(5, '0');
-      ctx.fillText(`M ${mach}   ALT ${alt} m`, W - pad, pad);
-      ctx.fillText(`HDG ${String(Math.round(218 + 14 * k)).padStart(3, '0')}°   AES-256`, W - pad, pad + font + 6);
-      ctx.restore();
-    }
-
     function frame(now) {
       if (ended) return;
-      if (!t0) { t0 = now; last = now; }
+      if (!t0) t0 = now;
       const t = (now - t0) / 1000;
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-      if (t < T_HIT) aim = target();
+      if (t < T_FLY0) B = box();
+      const hd = hand();
+      const pose = easeIo((t - T_OPEN0) / (T_OPEN1 - T_OPEN0));
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, W, H);
-      // ztmavení: plné na začátku, po nárazu odchází a odkryje panel
-      const dim = hit ? Math.max(0, 1 - (t - T_HIT) / 0.5) : Math.min(1, t / 0.15);
-      if (dim > 0) { ctx.fillStyle = `rgba(7,8,11,${0.82 * dim})`; ctx.fillRect(0, 0, W, H); }
-
-      if (shake > 0.2) {
-        ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
-        shake *= Math.pow(0.0009, dt);
+      // temné pozadí: odchází, až se panel zhmotní
+      const dim = t < T_SHOW ? Math.min(1, t / 0.2) : Math.max(0, 1 - (t - T_SHOW) / 0.7);
+      if (dim > 0) {
+        ctx.fillStyle = `rgba(5,6,9,${0.9 * dim})`;
+        ctx.fillRect(0, 0, W, H);
+        // tlumená záře pod rukou
+        const g = ctx.createRadialGradient(hd.cx, hd.cy, 0, hd.cx, hd.cy, hd.s * 2.4);
+        g.addColorStop(0, `rgba(255,110,30,${0.13 * dim * (0.5 + 0.5 * pose)})`);
+        g.addColorStop(1, 'rgba(255,110,30,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, W, H);
       }
 
-      const hudFade = hit ? Math.max(0, 1 - (t - T_HIT) / 0.6) : Math.min(1, t / 0.35);
-      hud(t, hudFade);
-
-      // koule
-      if (!hit && t >= T_FLY0) {
-        const b = ballAt(t);
-        // ohon: částice podél dráhy od minulé polohy (souvislý i při trhání snímků)
-        const from = prevBall || b;
-        const steps = 6;
-        for (let s = 0; s < steps; s++) {
-          const q = s / steps;
-          const x = from.x + (b.x - from.x) * q, y = from.y + (b.y - from.y) * q;
-          const sp = 40 * scale;
-          spawn('t', x + (Math.random() - 0.5) * b.r * 0.8, y + (Math.random() - 0.5) * b.r * 0.8,
-            (Math.random() - 0.5) * sp, (Math.random() - 0.5) * sp - 10, 0.28 + Math.random() * 0.35, b.r * (0.5 + Math.random() * 0.5));
-        }
-        if (Math.random() < 0.6) spawn('m', b.x, b.y, (Math.random() - 0.5) * 30, -20, 0.7, b.r * 1.2);
-        prevBall = b;
-        if (b.k >= 1) explode(b.x, b.y);
-      }
-
-      // kouř (normální míchání), pak oheň (sčítání světla)
-      for (let pass = 0; pass < 2; pass++) {
-        ctx.globalCompositeOperation = pass ? 'lighter' : 'source-over';
-        for (const p of parts) {
-          if ((p.kind === 'm') !== (pass === 0)) continue;
-          const age = 1 - p.life / p.max;
-          if (p.kind === 'm') {
-            ctx.fillStyle = `rgba(40,30,28,${0.22 * (1 - age)})`;
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + age * 1.5), 0, Math.PI * 2); ctx.fill();
-          } else if (p.kind === 't') {
-            const r = p.r * (1 - age * 0.6);
-            const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-            g.addColorStop(0, fire(age, 0.55 * (1 - age)));
-            g.addColorStop(1, fire(age + 0.3, 0));
-            ctx.fillStyle = g;
-            ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
-          } else {
-            // jiskra = krátká čárka ve směru letu, uhlík = tečka
-            ctx.strokeStyle = fire(age * 0.9, 1 - age);
-            ctx.lineWidth = p.r;
-            ctx.lineCap = 'round';
-            const len = p.kind === 's' ? 0.022 : 0.008;
-            ctx.beginPath();
-            ctx.moveTo(p.x, p.y);
-            ctx.lineTo(p.x - p.vx * len, p.y - p.vy * len);
-            ctx.stroke();
-          }
+      // poloha částic
+      const formK = easeOut(t / T_FORM);
+      for (const p of parts) {
+        const [hx, hy] = handPos(p, pose, t, hd);
+        if (t < T_FLY0) {
+          const sx = p.sx * W + Math.sin(t * 0.9 + p.tw) * 12, sy = p.sy * H + Math.cos(t * 0.7 + p.tw) * 12;
+          const k = Math.min(1, Math.max(0, (formK - p.delay * 0.6) / (1 - p.delay * 0.6)));
+          p.x = sx + (hx - sx) * easeOut(k); p.y = sy + (hy - sy) * easeOut(k);
+          p.hx = hx; p.hy = hy;
+        } else {
+          const k = easeIo((t - T_FLY0 - p.delay) / (T_FLY1 - T_FLY0 - 0.28));
+          const [dx, dy] = destPos(p);
+          // oblouk letu: střed dráhy vybočí do strany podle polohy v ruce
+          const mx = (p.hx + dx) / 2 + (p.hy - dy) * 0.18, my = (p.hy + dy) / 2 - (p.hx - dx) * 0.12;
+          const u = 1 - k;
+          p.x = u * u * p.hx + 2 * u * k * mx + k * k * dx;
+          p.y = u * u * p.hy + 2 * u * k * my + k * k * dy;
+          p.k = k;
         }
       }
+
+      // síť: čáry mezi sousedy, nejvýraznější v otevřené ruce, při letu mizí
+      const net = (t < T_FLY0 ? formK * (0.35 + 0.65 * pose) : Math.max(0, 1 - (t - T_FLY0) / 0.45)) * dim;
+      if (net > 0.02) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineWidth = small ? 0.6 : 0.7;
+        ctx.beginPath();
+        for (const [i, j] of links) { ctx.moveTo(parts[i].x, parts[i].y); ctx.lineTo(parts[j].x, parts[j].y); }
+        ctx.strokeStyle = `rgba(255,150,90,${0.22 * net})`;
+        ctx.stroke();
+        // vzruchy: pár spojů se rozsvítí jako signál v síti
+        ctx.beginPath();
+        for (const [i, j, ph] of links) {
+          const pulse = Math.sin(t * 5 + ph * 40);
+          if (pulse < 0.93) continue;
+          ctx.moveTo(parts[i].x, parts[i].y); ctx.lineTo(parts[j].x, parts[j].y);
+        }
+        ctx.strokeStyle = `rgba(255,220,180,${0.75 * net})`;
+        ctx.lineWidth = 1.1;
+        ctx.stroke();
+      }
+
+      // body
       ctx.globalCompositeOperation = 'lighter';
-      // jádro koule s ohnivou září
-      if (!hit && t >= T_FLY0 && prevBall) {
-        const b = prevBall;
-        const glow = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r * 4.2);
-        glow.addColorStop(0, 'rgba(255,170,90,.55)');
-        glow.addColorStop(0.35, 'rgba(255,100,20,.25)');
-        glow.addColorStop(1, 'rgba(255,80,0,0)');
-        ctx.fillStyle = glow;
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 4.2, 0, Math.PI * 2); ctx.fill();
-        const core = ctx.createRadialGradient(b.x - b.r * 0.2, b.y - b.r * 0.2, 0, b.x, b.y, b.r);
-        core.addColorStop(0, 'rgba(255,255,245,1)');
-        core.addColorStop(0.45, 'rgba(255,215,120,1)');
-        core.addColorStop(1, 'rgba(255,110,20,.0)');
-        ctx.fillStyle = core;
-        ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2); ctx.fill();
+      const fade = t < T_FLY1 ? 1 : Math.max(0, 1 - (t - T_FLY1) / (T_END - T_FLY1));
+      for (const p of parts) {
+        let a = p.a * (0.75 + 0.25 * Math.sin(t * 3 + p.tw)) * fade;
+        if (t < T_FLY0) a *= 0.25 + 0.75 * formK;
+        else if (p.dest.k === 'fill') a *= 1 - 0.6 * (p.k || 0);
+        if (a <= 0.01) continue;
+        const sz = p.size * (t >= T_FLY0 && p.dest.k === 'edge' ? 1 + 0.4 * (p.k || 0) : 1);
+        ctx.globalAlpha = a;
+        ctx.drawImage(sprites[p.c], p.x - sz * 2, p.y - sz * 2, sz * 4, sz * 4);
       }
-      // rázové vlny
-      for (const ring of rings) {
-        ring.t += dt;
-        if (ring.t <= 0 || ring.t > ring.dur) continue;
-        const q = ring.t / ring.dur;
-        const r = ring.max * (1 - Math.pow(1 - q, 3));
-        ctx.strokeStyle = `rgba(255,${Math.round(200 - 90 * q)},${Math.round(140 - 120 * q)},${0.8 * (1 - q)})`;
-        ctx.lineWidth = ring.w * (1 + 3 * (1 - q));
-        ctx.beginPath(); ctx.arc(ring.x, ring.y, r, 0, Math.PI * 2); ctx.stroke();
-      }
-      // záblesk
-      if (flash > 0.01) {
-        const f = ctx.createRadialGradient(aim.x, aim.y, 0, aim.x, aim.y, Math.max(W, H) * 0.7);
-        f.addColorStop(0, `rgba(255,250,235,${0.95 * flash})`);
-        f.addColorStop(0.25, `rgba(255,160,70,${0.45 * flash})`);
-        f.addColorStop(1, 'rgba(255,90,0,0)');
-        ctx.fillStyle = f;
-        ctx.fillRect(-20, -20, W + 40, H + 40);
-        flash *= Math.pow(0.002, dt);
+      ctx.globalAlpha = 1;
+      // obrys panelu se rozsvítí, když ho částice dotvoří
+      if (t > T_FLY1 - 0.4) {
+        const q = Math.min(1, (t - (T_FLY1 - 0.4)) / 0.4) * fade;
+        ctx.strokeStyle = `rgba(255,150,80,${0.55 * q})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(B.x, B.y, B.w, B.h, B.r) : ctx.rect(B.x, B.y, B.w, B.h);
+        ctx.stroke();
       }
       ctx.globalCompositeOperation = 'source-over';
 
-      // pohyb částic
-      for (let i = parts.length - 1; i >= 0; i--) {
-        const p = parts[i];
-        p.life -= dt;
-        if (p.life <= 0) { parts.splice(i, 1); continue; }
-        const drag = p.kind === 's' ? 2.6 : p.kind === 'e' ? 1.6 : 1.2;
-        p.vx *= Math.exp(-drag * dt);
-        p.vy *= Math.exp(-drag * dt);
-        if (p.kind === 'e') p.vy += 160 * dt * scale;
-        if (p.kind === 'm') p.vy -= 18 * dt;
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-      }
-
-      if (t >= T_END || (hit && t > T_HIT + 0.4 && !parts.length)) { stop(); return; }
+      if (t >= T_SHOW) reveal();
+      if (t >= T_END) { stop(); return; }
       requestAnimationFrame(frame);
     }
 
@@ -386,7 +366,7 @@
     function stop() {
       end();
     }
-    // přeskočení ukáže panel hned: složení (oříznutí kruhem) by kliku pod prstem uhnulo
+    // přeskočení ukáže panel hned: skládání by kliku pod prstem uhnulo
     function skip() { if (!ended) { root.classList.add('intro-skip'); stop(); } }
     window.OdmIntro.skip = skip;
     // klepnutí nebo psaní (PIN má fokus) animaci přeskočí; plátno samo kliky nebere

@@ -34,6 +34,21 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 6. 11. 2026 (verze 2.57):
+
+- Uživatel: „temné pozadí a ruku inteligence tvořenou z částic z barev co používáme v panelu co se
+  rozevře a částice utvoří postupně přihlašovací panel“. Nahradilo to ohnivou kouli z 2.55.
+  - `static/intro.js` plná animace: `FINGERS` (4 prsty a palec: kloub, délka, úhel sevřený
+    `a0` a otevřený `a1`), `inPalm`, `fingerAt(f, pose, t, s)`; částice (1050, telefon 620)
+    mají místo v ruce, start rozptýlený po obrazovce a cíl v panelu (`dest`: 58 % obrys
+    `rectPoint`, 12 % linka pod hlavičkou, zbytek plocha). Časy `T_FORM` 0,75 s, rozevření
+    `T_OPEN0`–`T_OPEN1` 0,45–1,35 s, let `T_FLY0`–`T_FLY1` 1,45–2,35 s (oblouk, zpoždění do
+    0,28 s), panel `T_SHOW` 2,1 s, konec `T_END` 3,05 s. Síť = sousedé spočítaní jednou
+    (mřížka, `links`), vzruchy podle `sin`. Body jsou předkreslené sprity (`COLORS` z tokenů
+    skla), `lighter`. Panel `introCard` už bez ořezu kruhem (průhlednost, rozmazání, 0,975).
+  - Režimy, přeskočení a pojistka 4 s beze změny. `e2e_intro` (snímky po snímcích).
+    `ODM_VERSION` 2.57, data beze změny (44).
+
 Stav k 6. 11. 2026 (verze 2.56):
 
 - Uživatel: „do modulu servis, možnost u položek co byly odeslány na servis ‚Vyřazeno servisem‘
@@ -2262,7 +2277,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.53 | `dc2dcf8` | plovoucí menu na telefonu s Hlavní stránkou a Ostatní, zkrácený pátek jen u odpolední sám od sebe, uzamčení vyřízeného protokolu Servisu (data verze 43) |
 | 2.54 | `3152b80` | jen vzhled Sklo (volba v Nastavení pryč), méně oranžové, lepší kontrast, čitelnější kalendář Docházky, tlumené pozadí |
 | 2.55 | `a1808ae` | úvodní animace přihlášení (ohnivá koule, náraz, složení panelu), přeskočí se klepnutím nebo psaním |
-| 2.56 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Servis – Vyřazeno servisem s přílohou (PDF nebo fotka protokolu), hledání lidí v menu na PC (data verze 44) |
+| 2.56 | `2afa6a0` | Servis – Vyřazeno servisem s přílohou (PDF nebo fotka protokolu), hledání lidí v menu na PC (data verze 44) |
+| 2.57 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: úvodní animace přihlášení – ruka z částic, která se rozevře a utvoří panel |
 
 Verze 2.1 přidala:
 
@@ -2725,7 +2741,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
-  - `e2e_intro.js` (2.55): úvodní animace zámku (plná, krátká, omezit pohyb, přeskočení, přihlášení během ní, telefon);
+  - `e2e_intro.js` (2.55, ruka z částic 2.57): úvodní animace zámku (plná, krátká, omezit pohyb, přeskočení, přihlášení během ní, telefon);
   - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
   - `e2e_ukoly.js` (2.46): Úkoly (zadání, stavy, časová osa, opakování, připomínky, historie, Excel, telefon);
   - `e2e_undo.js` (2.45): Poslední změny za 3 dny, Vrátit zpět (částečně, potvrzení, vrácení vrácení, sloučený záznam, telefon);

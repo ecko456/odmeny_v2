@@ -1,4 +1,4 @@
-// Prohlížečový průchod 2.55: úvodní animace zámku (ohnivá koule, náraz, složení panelu).
+// Prohlížečový průchod 2.55, od 2.57 ruka z částic: úvodní animace zámku (částice utvoří panel).
 // Ověří: plná animace při prvním otevření karty (plátno, panel skrytý do nárazu, pak vidět
 // a plátno pryč), po znovu načtení jen krátké složení, s „omezit pohyb“ žádná animace,
 // přeskočení klepnutím i psaním, přihlášení během animace, telefon, CSP bez chyb.
@@ -37,7 +37,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const early = await state(page);
   check(early.mode === 'full' && /intro-on/.test(early.cls) && early.canvas, `plná animace běží: ${JSON.stringify(early)}`);
   check(early.op < 0.05, `panel před nárazem skrytý: ${early.op}`);
-  const frames = [250, 600, 950, 1200, 1380, 1550, 1800, 2200];
+  const frames = [150, 450, 800, 1150, 1450, 1750, 2050, 2350, 2700];
   for (const at of frames) {
     const wait = at - (Date.now() - t0);
     if (wait > 0) await sleep(wait);
@@ -106,7 +106,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await watch(mpage);
   await mpage.goto(BASE, { waitUntil: 'domcontentloaded' });
   const m0 = Date.now();
-  for (const at of [700, 1300, 1600, 2400]) {
+  for (const at of [600, 1200, 1800, 2300]) {
     const wait = at - (Date.now() - m0);
     if (wait > 0) await sleep(wait);
     await mpage.screenshot({ path: path.join(shots, `mobil-${String(at).padStart(4, '0')}.png`) });

@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.57
+
+- **Nová úvodní animace přihlášení.** Místo ohnivé koule se na temném pozadí z částic
+  v barvách aplikace (oranžová, jantarová, teplá bílá a pár tyrkysových) složí ruka. Body jsou
+  propojené jako neuronová síť, ruka rozevře dlaň a částice pak odletí a postupně utvoří obrys
+  a plochu přihlašovacího panelu, ze kterého se panel zhmotní. Trvá asi 2,5 s.
+- Jinak beze změny: celá animace jednou za otevření karty, klepnutí nebo psaní PINu ji
+  přeskočí, s „omezit pohyb“ se neukáže. Data beze změny.
+
 ## Co je nového ve verzi 2.56
 
 - **Servis: Vyřazeno servisem.** U zařízení na servisu je vedle tlačítka Vráceno nové

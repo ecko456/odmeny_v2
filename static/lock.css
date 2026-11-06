@@ -316,8 +316,8 @@ textarea { resize: vertical; min-height: 76px; }
 @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 @keyframes scan { 0%, 100% { transform: translateY(-120%); opacity: .4; } 50% { transform: translateY(120%); opacity: 1; } }
 
-/* Úvodní animace zámku (2.55, static/intro.js): ohnivá koule narazí do středu panelu
-   a z nárazu se panel složí. Do té doby je panel rozložený, ale neviditelný
+/* Úvodní animace zámku (2.55, static/intro.js; od 2.57 ruka z částic, která utvoří panel):
+   panel se z částic zhmotní. Do té doby je panel rozložený, ale neviditelný
    (pole s PINem má fokus, psaní animaci přeskočí). */
 .intro-canvas { position: fixed; inset: 0; z-index: 90; width: 100%; height: 100%; pointer-events: none; transition: opacity .25s ease; }
 .intro-canvas.out { opacity: 0; }
@@ -337,9 +337,9 @@ html.intro-reveal .lock-brand { animation-delay: .2s; }
 html.intro-reveal #lockBody { animation-delay: .32s; }
 html.intro-reveal .brand-mark { animation: introMark .9s .15s ease-out both; }
 @keyframes introCard {
-  0% { opacity: 0; transform: scale(.35); filter: blur(14px) brightness(2.2); clip-path: circle(6% at 50% 50%); }
-  45% { opacity: 1; filter: blur(2px) brightness(1.35); }
-  100% { opacity: 1; transform: none; filter: none; clip-path: circle(250% at 50% 50%); }
+  0% { opacity: 0; transform: scale(.975); filter: blur(10px) brightness(1.5); }
+  55% { opacity: 1; filter: blur(1.5px) brightness(1.15); }
+  100% { opacity: 1; transform: none; filter: none; }
 }
 @keyframes introEdge { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes introScan { 0% { top: 0; opacity: 0; } 15% { opacity: 1; } 100% { top: 100%; opacity: 0; } }
