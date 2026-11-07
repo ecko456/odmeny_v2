@@ -3086,3 +3086,10 @@ h1 .prob-ic .icon, h2 .prob-ic .icon { width: 16px; height: 16px; }
   .sh-rzgrid { grid-template-columns: minmax(0, 1fr); }
   .sh-rzsubs { display: block; overflow-x: auto; }
 }
+
+/* ---------- Sloučení změn dvou lidí (2.62) ---------- */
+.merge-tab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.merge-tab th, .merge-tab td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.merge-tab th { font-size: 11px; color: var(--ink-3); font-weight: 600; }
+.merge-tab td:first-child { color: var(--ink-2); max-width: 260px; }
+.merge-box .row { margin: 8px 0; }

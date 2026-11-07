@@ -171,6 +171,12 @@ try {
         }
     }
 
+    // Jen číslo poslední verze a kdo ji uložil (2.62): průběžná kontrola, jestli někdo jiný mezitím uložil.
+    if ($action === 'rev' && $method === 'GET') {
+        $row = odm_one('SELECT v.rev, v.created_at, v.card_id, c.label AS card_label FROM versions v LEFT JOIN cards c ON c.id = v.card_id ORDER BY v.rev DESC LIMIT 1');
+        odm_json(['rev' => $row === null ? 0 : (int)$row['rev'], 'saved_at' => $row['created_at'] ?? null, 'by' => $row['card_label'] ?? '', 'mine' => $row !== null && ($row['card_id'] ?? '') === ($session['card_id'] ?? '')]);
+    }
+
     if ($action === 'data' && $method === 'GET') {
         $current = odm_current_version();
         odm_json(['rev' => $current === null ? 0 : (int)$current['rev'], 'blob' => $current['blob'] ?? null, 'saved_at' => $current['created_at'] ?? null]);

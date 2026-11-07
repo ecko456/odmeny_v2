@@ -4782,6 +4782,51 @@ test('Shortage (2.61): sloupce importů, barvy EANu, evidence pohybu a rozbor po
   assert.deepStrictEqual(out.idx, ['FF0000', '', '']);
 });
 
+test('Sloučení změn dvou lidí (2.62): různá místa samo, seznamy s id po položkách, střet jen u stejného údaje, zápis na místě', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const base = sharedState(sanitizeState(demoData()));
+    const keys = Object.keys(base.employees).sort();
+    const [a, b, c] = keys;
+    const mine = JSON.parse(JSON.stringify(base)), theirs = JSON.parse(JSON.stringify(base));
+    mine.employees[a].note = 'moje';
+    theirs.employees[b].note = 'jejich';
+    mine.sanctions.push({ id: 'sM', key: a, period: base.current || '2026-10', name: 'X', pct: 10, note: 'm', at: 1 });
+    theirs.sanctions.push({ id: 'sT', key: b, period: base.current || '2026-10', name: 'Y', pct: 10, note: 't', at: 2 });
+    theirs.log = [...(theirs.log || []), { at: 5, by: 'T', card: '', kind: 'person', text: 'jejich záznam' }];
+    const r = mergeStates(base, mine, theirs);
+    // smazání: já smažu nezměněnou položku = pryč; oni změní, já smažu = střet
+    const b2 = { list: [{ id: 'x', v: 1 }, { id: 'y', v: 1 }, { id: 'z', v: 1 }], n: 1 };
+    const m2 = { list: [{ id: 'y', v: 1 }, { id: 'x', v: 1 }, { id: 'z', v: 2 }, { id: 'q', v: 1 }], n: 2 };
+    const t2 = { list: [{ id: 'x', v: 3 }, { id: 'y', v: 1 }], n: 3 };
+    const r2 = mergeStates(b2, m2, t2);
+    const r3 = mergeStates(b2, m2, t2, Object.fromEntries(r2.conflicts.map(x => [x.key, 'theirs'])));
+    const r4 = mergeStates(base, (() => { const x = JSON.parse(JSON.stringify(base)); x.employees[c].note = 'A'; return x; })(), (() => { const x = JSON.parse(JSON.stringify(base)); x.employees[c].note = 'B'; return x; })());
+    // zápis na místě
+    const tgt = { e: { k: { note: 'a', rate: { s: 1 } } }, list: [{ id: 'x', v: 1 }, { id: 'y', v: 1 }], gone: 1 };
+    const refE = tgt.e.k, refX = tgt.list[0], refL = tgt.list;
+    mergeInto(tgt, { e: { k: { note: 'b', rate: { s: 2 } } }, list: [{ id: 'y', v: 2 }, { id: 'x', v: 5 }, { id: 'n', v: 1 }] });
+    return JSON.stringify({ notes: [r.state.employees[a].note, r.state.employees[b].note], san: r.state.sanctions.slice(-2).map(x => x.id), log: r.state.log.slice(-1)[0].text, conf: r.conflicts.length, v: r.state.v,
+      r2: { list: r2.state.list, n: r2.state.n, conf: r2.conflicts.map(x => [x.path, x.mine === undefined ? 'smazáno' : x.mine.v !== undefined ? x.mine.v : x.mine, x.theirs && x.theirs.v !== undefined ? x.theirs.v : x.theirs]) },
+      r3: r3.state, r4: r4.conflicts.map(x => [x.path.split(' › ')[0], x.path.split(' › ').pop(), x.mine, x.theirs]), r4label: r4.conflicts[0].path.includes(base.employees[c].last),
+      into: { same: tgt.e.k === refE && tgt.list[1] === refX && tgt.list === refL, tgt, gone: 'gone' in tgt },
+      show: [undefined, '', 'x', true, [1, 2], { name: 'Kryt' }, {}].map(mergeShow) });
+  })()`));
+  assert.deepStrictEqual(out.notes, ['moje', 'jejich'], 'změny u různých lidí se sloučí');
+  assert.deepStrictEqual(out.san.slice().sort(), ['sM', 'sT'], 'obě nové sankce zůstanou');
+  assert.strictEqual(out.log, 'jejich záznam', 'historie ze serveru, moje změny se zapíšou až při uložení');
+  assert.deepStrictEqual([out.conf, out.v], [0, 45]);
+  assert.deepStrictEqual(out.r2.list, [{ id: 'y', v: 1 }, { id: 'x', v: 3 }, { id: 'z', v: 2 }, { id: 'q', v: 1 }], 'moje pořadí (jen já přeřadil), jejich změna x, moje přidaná q; z: smazali, já změnil → střet, výchozí moje');
+  assert.deepStrictEqual(out.r2.conf, [['list › z', 2, null], ['n', 2, 3]], 'střety: změněná položka, kterou druhý smazal, a stejné číslo');
+  assert.deepStrictEqual(out.r3.list.map(x => x.id), ['y', 'x', 'q'], 'jejich volba: smazaná zůstane smazaná');
+  assert.strictEqual(out.r3.n, 3);
+  assert.deepStrictEqual(out.r4.map(x => [x[0], x[1], x[2], x[3]]), [['Lidé', 'poznámka', 'A', 'B']], 'stejný údaj = jeden střet s čitelnou cestou');
+  assert.ok(out.r4label, 'cesta se jménem člověka');
+  assert.ok(out.into.same, 'zápis na místě: stejné objekty a pole');
+  assert.deepStrictEqual(out.into.tgt, { e: { k: { note: 'b', rate: { s: 2 } } }, list: [{ id: 'y', v: 2 }, { id: 'x', v: 5 }, { id: 'n', v: 1 }] });
+  assert.deepStrictEqual(out.show, ['(smazáno)', '(prázdné)', 'x', 'ano', '2 položky', 'Kryt', 'změněno']);
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 7. 11. 2026 (verze 2.62):
+
+- Uživatel: „pokud pracuji v systému dva lidé, tak nemohou současně pracovat, protože to uzná data
+  jen jednoho“. Navrženo 1. sloučení v prohlížeči, 2. průběžná aktualizace, 3. kdo je v aplikaci,
+  4. data po modulech; vybral 1 a 2. Na dotaz, jestli šifrovat jen jména: ne, plynulost to samo
+  nezlepší a odkryla by se hodnocení, sankce, docházka (vysvětleno, souhlasil).
+  - Core (před `applyHist`): `mergeStates(base, mine, theirs, picks)` (tříbodově; objekty po
+    klíčích, pole objektů s jedinečným `id` po položkách včetně přidání, smazání a pořadí, jinak
+    hodnota; střet = oba změnili jinak, `picks[key]` mine|theirs, výchozí moje; `conflicts[{key,
+    path (čitelně, `MERGE_TOP`, `MERGE_FIELD`, jméno člověka, název položky), mine, theirs}]`),
+    `mergeIdArr`, `mergeInto` (zápis na místě: obsluha polí drží odkazy na objekty v S),
+    `mergeShow`. Log a undo se slučují obecně (moje = base → jejich).
+  - Server: akce `rev` (GET, `{rev, saved_at, by, mine}`, bez dat), `Vault.dataRev`.
+  - UI (před `renderSaveState`): `resolveConflict` = `waitNoDialog` → `loadData` → `mergeTheirs`
+    (`mergeDialog` jen při střetu) → `refreshView` (při rozepsaném poli až po blur) → `flushSave`;
+    při chybě starý dialog `resolveConflictOld`. `syncCheck` každých `SYNC_EVERY` 20 s (test
+    `window.ODM_SYNC_EVERY`), na focus a návrat do karty; bez mých změn rovnou načte, s nimi
+    uloží (409 → sloučení), při otevřeném okně čeká. `describeChanges` při dalším uložení proti
+    jejich verzi zapíše do historie jen moje změny.
+  - Testy: core „Sloučení změn dvou lidí (2.62)“, `test_odmeny` `test_rev_without_data`, nový
+    `tests/e2e_soubeh.js` (dvě okna se stejnou kartičkou). `ODM_VERSION` 2.62, data beze změny (45).
+
 Stav k 7. 11. 2026 (verze 2.61):
 
 - Uživatel: „zlepšit modul shortage, aby tam byly 3. kroky. 1. krok import tabulky urgentních dílů
@@ -2377,7 +2399,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.59 | `ce2ac43` | pravý panel s úkoly a rychlými akcemi, sbalitelné menu, souhrn v kapsli s pruhy a trendem, hladké křivky, barevná oddělení, skleněná plocha |
 | 2.60 | `83eedbb` | pozadí přihlašovací stránky z barevných polí (WebGL) |
 | 2.60.1 | `5325fd4` | přihlašovací panel z tekutého skla, pozadí v plném rozlišení |
-| 2.61 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage ve třech krocích (barvy EANu, výrobní plán, evidence pohybu), sloupce importů přes AI, rozbor položek se všemi poddíly (data verze 45) |
+| 2.61 | `b12a82a` | Shortage ve třech krocích (barvy EANu, výrobní plán, evidence pohybu), sloupce importů přes AI, rozbor položek se všemi poddíly (data verze 45) |
+| 2.62 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: souběžná práce víc lidí (sloučení změn, okno jen u stejného údaje, průběžná aktualizace) |
 
 Verze 2.1 přidala:
 
@@ -2840,6 +2863,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
+  - `e2e_soubeh.js` (2.62): dva lidé současně (sloučení, sankce obou, střet, průběžné načtení, rozepsané pole, otevřené okno, telefon);
   - `e2e_shkroky.js` (2.61): Shortage ve třech krocích (sloupce, vzorník barev, plán, evidence pohybu, AI, rozbor, telefon);
   - `e2e_lockbg.js` (2.60): pozadí zámku (kreslí, hýbe se, pauza, omezit pohyb, bez WebGL, po odemčení pryč, telefon);
   - `e2e_panel.js` (2.59): pravý panel (úkoly, rychlé akce, Vrátit zpět), sbalitelné menu, kapsle s pruhy, hladké křivky, oddělení barevně, 1440 / 2560 / telefon;

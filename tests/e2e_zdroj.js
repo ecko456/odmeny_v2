@@ -14,7 +14,8 @@ const NOW = new Date(2026, 10, 3, 10, 0);
 
 async function watch(page, label) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
-  page.on('response', r => { if (r.status() >= 400) problems.push(`${label} HTTP ${r.status()} ${r.url()}`); });
+  // průběžná kontrola verze (2.62) po skončení relace v jiném okně smí dostat 401
+  page.on('response', r => { if (r.status() >= 400 && !(r.status() === 401 && /action=rev\b/.test(r.url()))) problems.push(`${label} HTTP ${r.status()} ${r.url()}`); });
   page.on('pageerror', err => problems.push(`${label} pageerror: ${err.message}`));
   await page.addInitScript(() => {
     document.addEventListener('securitypolicyviolation', e => console.error(`CSP ${e.violatedDirective} ${e.blockedURI}`));

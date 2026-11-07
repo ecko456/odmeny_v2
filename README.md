@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.62
+
+- **Víc lidí může pracovat současně.** Když mezitím uložil někdo jiný, aplikace si jeho verzi
+  stáhne a **sama ji sloučí s tvými změnami**. Změny v různých místech (jiný člověk, jiný modul,
+  jiná položka seznamu) se sloučí bez ptaní, nové položky obou zůstanou. Okno se ukáže, jen když
+  oba změníte **stejný údaj**: u něj vybereš svou, nebo jeho hodnotu (nebo Všude moje / Všude jeho).
+- **Průběžná aktualizace**: každých 20 s a při návratu do okna se aplikace podívá, jestli někdo
+  neuložil novější verzi, a sama ji načte („Data aktualizoval …“). Rozepsané pole se nepřekreslí
+  a psaní se neztratí; otevřené okno počká, až ho zavřeš.
+- Šifrování beze změny: slučuje prohlížeč, server dál vidí jen zašifrovaná data. Data beze změny.
+
 ## Co je nového ve verzi 2.61
 
 - **Shortage ve třech krocích** (panel nahoře ukazuje, co je hotové):

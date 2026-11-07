@@ -360,6 +360,9 @@
     return { rev: result.rev, savedAt: result.saved_at, state: result.blob ? await openData(requireDek(), result.blob) : null };
   }
 
+  /** Číslo poslední uložené verze a kdo ji uložil (2.62), bez stahování dat. */
+  function dataRev() { return api('rev'); }
+
   async function saveData(state, baseRev) {
     const blob = await sealData(requireDek(), state);
     return api('data', { method: 'POST', body: { base_rev: baseRev, blob } });
@@ -490,7 +493,7 @@
     newAccessKey, parseAccessKey, normalizeKey, formatKey, qrText,
     readDevice, forgetDevice, deviceLabel, deviceStorageKey,
     setup, loginWithKey, unlockWithPin, enrollDevice, createCard,
-    loadData, saveData, loadVersion, backup, openBackup, lock, loadPrefs, savePrefs, me,
+    loadData, saveData, dataRev, loadVersion, backup, openBackup, lock, loadPrefs, savePrefs, me,
     saveFile, loadFile, deleteFile, restoreFiles,
     newDek, sealData, openData, cardSecrets, toBase64, fromBase64,
   };

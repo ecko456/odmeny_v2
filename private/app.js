@@ -293,7 +293,120 @@ async function flushSave() {
   }
 }
 
+/* ---------- Souběžná práce víc lidí (2.62) ----------
+   Když mezitím uložil někdo jiný, aplikace stáhne jeho verzi a sloučí ji s mými změnami
+   (mergeStates). Okno se ukáže, jen když oba změnili stejný údaj. Navíc se každých 20 s
+   (a při návratu do okna) podívá, jestli není novější verze, a sama ji načte. Překreslí se
+   až po opuštění rozepsaného pole, otevřené okno počká. */
+const SYNC_EVERY = 20000;
+const sync = { busy: false, last: 0, waitBlur: false };
+const dlgOpenNow = () => !!document.querySelector('dialog[open]');
+function editingNow() {
+  const a = document.activeElement;
+  return !!a && a !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !a.closest('dialog') && !['button', 'checkbox', 'radio', 'file'].includes(a.type);
+}
+function refreshView() {
+  if (!S) return;
+  if (editingNow()) {
+    if (!sync.waitBlur) { sync.waitBlur = true; document.activeElement.addEventListener('blur', () => { sync.waitBlur = false; setTimeout(refreshView, 0); }, { once: true }); }
+    return;
+  }
+  const y = window.scrollY;
+  renderAll();
+  window.scrollTo(0, y);
+}
+async function waitNoDialog(ms = 120000) {
+  const end = Date.now() + ms;
+  while (dlgOpenNow() && Date.now() < end) await new Promise(r => setTimeout(r, 400));
+}
+/** Okno střetu: u každého údaje, který změnili oba, vybrat moje, nebo jejich hodnotu. */
+async function mergeDialog(conflicts, by) {
+  const who = by || 'Druhý uživatel';
+  const list = conflicts.slice(0, 60);
+  const rows = list.map((c, i) => `<tr><td>${esc(c.path)}</td>
+      <td><label class="check"><input type="radio" name="m${i}" value="mine" checked><span>${esc(mergeShow(c.mine))}</span></label></td>
+      <td><label class="check"><input type="radio" name="m${i}" value="theirs"><span>${esc(mergeShow(c.theirs))}</span></label></td></tr>`).join('');
+  const res = await dialog({
+    title: 'Stejný údaj změnili dva lidé', ok: 'Uložit vybrané', cancel: '', wide: true,
+    html: `<div class="merge-box"><p><b>${esc(who)}</b> mezitím uložil změny. Všechno ostatní se sloučilo samo. ${conflicts.length === 1 ? 'Jen u tohoto údaje' : `Jen u ${conflicts.length} údajů`} vyber, která hodnota platí.</p>
+      <div class="row gap wrap"><button type="button" class="btn sec small" data-mpick="mine">Všude moje</button><button type="button" class="btn sec small" data-mpick="theirs">Všude ${esc(who)}</button></div>
+      <div class="table-card flat"><table class="merge-tab"><thead><tr><th>Údaj</th><th>Moje</th><th>${esc(who)}</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${conflicts.length > list.length ? `<p class="small muted">U dalších ${conflicts.length - list.length} údajů platí moje hodnota.</p>` : ''}</div>`,
+    onOpen: dlg => dlg.querySelector('.merge-box').addEventListener('click', event => {
+      const b = event.target.closest('[data-mpick]');
+      if (b) dlg.querySelectorAll(`.merge-tab input[value="${b.dataset.mpick}"]`).forEach(x => { x.checked = true; });
+    }),
+  });
+  const picks = {};
+  list.forEach((c, i) => { const el = res.form.querySelector(`input[name="m${i}"]:checked`); picks[c.key] = el ? el.value : 'mine'; });
+  return picks;
+}
+/** Načtená verze ze serveru sloučená s mými změnami; S, základ a číslo verze se přepnou na ni. */
+async function mergeTheirs(loaded, by) {
+  const theirs = sharedState(sanitizeState(loaded.state || {}));
+  const base = store.base || theirs;
+  let r = mergeStates(base, sharedState(S), theirs);
+  if (r.conflicts.length) {
+    const picks = await mergeDialog(r.conflicts, by);
+    r = mergeStates(base, sharedState(S), theirs, picks);
+  }
+  // na místě: obsluha rozepsaných polí drží odkazy na objekty v S a musí psát dál do platných dat
+  const keep = { current: S.current, demoIssue: S._demoIssue, hidden: S.settings && S.settings.hiddenCols, lock: S.settings && S.settings.lockMinutes };
+  mergeInto(S, sanitizeState(r.state));
+  if (keep.current !== undefined) S.current = keep.current;
+  if (keep.demoIssue !== undefined) S._demoIssue = keep.demoIssue;
+  if (S.settings && keep.hidden !== undefined) S.settings.hiddenCols = keep.hidden;
+  if (S.settings && keep.lock !== undefined) S.settings.lockMinutes = keep.lock;
+  if (!S.periods[S.current]) applyPeriodPref();
+  Object.assign(store, { rev: loaded.rev, savedAt: loaded.savedAt, base: theirs, error: null });
+  store.dirty = !undoEq(sharedState(S), theirs);
+  if (store.dirty && !store.firstDirty) store.firstDirty = Date.now();
+  return r;
+}
 async function resolveConflict() {
+  try {
+    await waitNoDialog(60000);
+    const loaded = await Vault.loadData();
+    const info = await Vault.dataRev().catch(() => ({}));
+    const by = info.rev === loaded.rev ? info.by : '';
+    const r = await mergeTheirs(loaded, by);
+    store.conflict = false;
+    refreshView();
+    if (r.theirs) toast(`Sloučeno se změnami, které mezitím uložil ${by || 'někdo jiný'}.`);
+    if (store.dirty) flushSave();
+    return;
+  } catch (error) {
+    console.warn('Sloučení se nepovedlo', error);
+  }
+  await resolveConflictOld();
+}
+/** Průběžná kontrola: je na serveru novější verze? Bez mých změn ji rovnou načte. */
+async function syncCheck(force = false) {
+  if (!S || sync.busy || sync.dead || ui.locking || document.hidden || store.saving || store.conflict) return;
+  if (!force && Date.now() - sync.last < 3000) return;
+  sync.last = Date.now();
+  sync.busy = true;
+  try {
+    const info = await Vault.dataRev();
+    if (!S || !info || info.rev === store.rev) return;
+    if (store.dirty) { flushSave(); return; }   // uložení narazí na novou verzi a sloučí se
+    if (dlgOpenNow()) return;                    // otevřené okno: příště
+    const loaded = await Vault.loadData();
+    if (!S || store.dirty || store.saving || store.conflict || loaded.rev === store.rev) return;
+    await mergeTheirs(loaded, info.by);
+    refreshView();
+    renderSaveState();
+    if (!info.mine) toast(`Data aktualizoval ${info.by || 'jiný uživatel'}.`);
+    if (store.dirty) onStateChange();
+  } catch (error) {
+    // relace skončila: přestat se ptát, uložení ukáže okno Aplikace se zamkla; síť: zkusí se příště
+    if (error && error.status === 401) sync.dead = true;
+  } finally {
+    sync.busy = false;
+  }
+}
+
+async function resolveConflictOld() {
   const result = await dialog({
     title: 'Data se mezitím změnila',
     html: '<p>Na jiném zařízení někdo uložil novější verzi. Můžeš ji načíst (tvoje poslední změny se zahodí), nebo ji přepsat svými změnami.</p>',
@@ -7807,9 +7920,11 @@ function bindEvents() {
 
   ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(type => document.addEventListener(type, () => { lastActivity = Date.now(); }, { passive: true }));
   setInterval(checkIdle, 15000);
+  setInterval(() => syncCheck(), window.ODM_SYNC_EVERY || SYNC_EVERY);
+  window.addEventListener('focus', () => syncCheck());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') { flushSave(); flushPrefs(); }
-    else checkIdle();
+    else { checkIdle(); syncCheck(true); }
   });
   bindExtraEvents();
   bindTop5Events();

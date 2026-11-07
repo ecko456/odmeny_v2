@@ -2972,6 +2972,117 @@ function undoApply(st,ids,meta){
   return {done,skip,entries,recs:recs.length};
 }
 
+/* ==========================================================================
+   Sloučení souběžných změn (2.62). Když mezitím uložil někdo jiný (409), prohlížeč stáhne
+   jeho verzi a sloučí ji s mými změnami tříbodově: base = verze, ze které jsem vycházel,
+   mine = moje data, theirs = data ze serveru. Co změnil jen jeden, platí; objekty se slučují
+   po klíčích, seznamy objektů s id po položkách (přidání, smazání, změna i pořadí). Střet je
+   jen tam, kde oba změnili totéž jinak; pak rozhodne picks[cesta] = "mine" | "theirs"
+   (bez volby platí moje). Data zůstávají šifrovaná, server nic neslučuje.
+   ========================================================================== */
+const MERGE_MAX_CONFLICTS=200;
+function mergeIdArr(x){
+  if(!Array.isArray(x))return false;
+  const ids=new Set();
+  for(const e of x){if(!isPlain(e)||typeof e.id!=="string"||!e.id||ids.has(e.id))return false;ids.add(e.id);}
+  return true;
+}
+const MERGE_TOP={employees:"Lidé",positions:"Skupiny a pravidla",sanctions:"Sankce",sanReasons:"Důvody sankcí",periods:"Docházka",production:"Evidence práce",prodMap:"Spárování evidence práce",
+  adjust:"Ruční úpravy",kafe:"Kafe",issued:"Výdej",marks:"Body prémie",capReport:"Směny a kapacita",settings:"Nastavení",eff:"Top 5",audit:"Kontroly",logbooks:"Protokoly",
+  workAudit:"KPI",service:"Servis",shortage:"Shortage",capPlan:"Plán kapacit",tasks:"Úkoly",attEdits:"Úpravy docházky",attLocks:"Zámky docházky",leadSkills:"Dovednosti vedoucích",
+  normCutDone:"Srážky za neproduktivitu",demo:"Ukázková data"};
+const MERGE_FIELD={note:"poznámka",rate:"hodnocení",positionId:"skupina",shift:"směna",sick:"nemoc od",end:"konec trestu",wid:"ID v evidenci práce",excluded:"vyřazen",
+  first:"jméno",last:"příjmení",lead:"vedoucí oddělení",title:"název",name:"název",due:"termín",owner:"zodpovědná osoba",state:"stav",desc:"popis",qty:"množství",pct:"procento",
+  text:"text",items:"položky",list:"seznam",lists:"seznamy",tl:"časová osa",repeat:"opakování",remind:"připomínka",order:"číslo objednávky",ean:"EAN",index:"index",op:"operace",
+  top:"TOP",top2:"TOP 2",dept:"oddělení",subs:"poddíly",rec:"poslední záznam",max:"strop",maxTab:"tabáky za dovednosti",skillset:"dovednosti",tiers:"varianty prémie",
+  devices:"zařízení",shipments:"odeslání",back:"vráceno",date:"datum",h:"hodiny",c:"kódy",rows:"řádky"};
+function mergeSeg(k,v,parent){
+  if(parent==="employees"&&isPlain(v))return ((v.last||"")+" "+(v.first||"")).trim()||k;
+  if(k.startsWith("#")){const e=isPlain(v)?v:{};return String(e.name||e.title||e.text||e.ean||e.no||e.label||k.slice(1)).slice(0,60);}
+  return MERGE_FIELD[k]||k;
+}
+/**
+ * Tříbodové sloučení. Vrací {state, conflicts: [{key, path (čitelně), mine, theirs}], mine (počet
+ * mých změn, které se přenesly), theirs (počet jejich)}.
+ */
+function mergeStates(base,mine,theirs,picks){
+  picks=picks||{};
+  const conflicts=[];let nMine=0,nTheirs=0;
+  const merge=(b,m,t,p,lab)=>{
+    if(undoEq(m,t))return m;
+    if(undoEq(b,m)){nTheirs++;return t;}
+    if(undoEq(b,t)){nMine++;return m;}
+    if(isPlain(m)&&isPlain(t)){
+      const bb=isPlain(b)?b:{},out={};
+      new Set([...Object.keys(t),...Object.keys(m),...Object.keys(bb)]).forEach(k=>{
+        if(!p.length&&k==="v")return;
+        const r=merge(bb[k],m[k],t[k],[...p,k],[...lab,p.length?mergeSeg(k,m[k]!==undefined?m[k]:t[k],p[p.length-1]):(MERGE_TOP[k]||k)]);
+        if(r!==undefined)out[k]=r;
+      });
+      return out;
+    }
+    if(Array.isArray(m)&&Array.isArray(t)&&(b===undefined||!b.length||mergeIdArr(b))&&(!m.length||mergeIdArr(m))&&(!t.length||mergeIdArr(t))&&(m.length||t.length)){
+      const bb=Array.isArray(b)?b:[];
+      const B=new Map(bb.map(e=>[e.id,e])),M=new Map(m.map(e=>[e.id,e])),T=new Map(t.map(e=>[e.id,e]));
+      const order=(x,y)=>x.map(e=>e.id).filter(id=>y.has(id)).join("\u0001");
+      // moje pořadí platí, když jsem přeřadil já a oni ne
+      const mineMoved=order(m,B)!==order(bb,M),theirsMoved=order(t,B)!==order(bb,T);
+      const [first,second]=mineMoved&&!theirsMoved?[m,t]:[t,m];
+      const ids=first.map(e=>e.id),have=new Set(ids);
+      second.forEach((e,i)=>{
+        if(have.has(e.id))return;
+        let at=-1;for(let j=i-1;j>=0;j--){const k=ids.indexOf(second[j].id);if(k>=0){at=k;break;}}
+        ids.splice(at+1,0,e.id);have.add(e.id);
+      });
+      bb.forEach(e=>{if(!have.has(e.id)){ids.push(e.id);have.add(e.id);}});
+      const out=[];
+      ids.forEach(id=>{const v=merge(B.get(id),M.get(id),T.get(id),[...p,"#"+id],[...lab,mergeSeg("#"+id,M.get(id)||T.get(id)||B.get(id))]);if(v!==undefined)out.push(v);});
+      return out;
+    }
+    // oba změnili totéž jinak
+    const key=JSON.stringify(p);
+    if(conflicts.length<MERGE_MAX_CONFLICTS)conflicts.push({key,path:lab.join(" › "),mine:m,theirs:t});
+    return picks[key]==="theirs"?t:m;
+  };
+  const state=merge(base||{},mine||{},theirs||{},[],[]);
+  state.v=DATA_VERSION;
+  return {state,conflicts,mine:nMine,theirs:nTheirs};
+}
+/**
+ * Zapíše src do target na místě: stejné objekty a pole zůstanou (položky seznamů s id podle id),
+ * jen se změní hodnoty. Obsluha formuláře, která drží odkaz na člověka nebo položku, tak dál
+ * píše do platných dat.
+ */
+function mergeInto(target,src){
+  if(isPlain(target)&&isPlain(src)){
+    Object.keys(target).forEach(k=>{if(!(k in src))delete target[k];});
+    Object.keys(src).forEach(k=>{
+      const a=target[k],b=src[k];
+      if((isPlain(a)&&isPlain(b))||(Array.isArray(a)&&Array.isArray(b)))target[k]=mergeInto(a,b);
+      else target[k]=b;
+    });
+    return target;
+  }
+  if(Array.isArray(target)&&Array.isArray(src)){
+    if(mergeIdArr(src)&&mergeIdArr(target)){
+      const old=new Map(target.map(e=>[e.id,e]));
+      const next=src.map(e=>old.has(e.id)?mergeInto(old.get(e.id),e):e);
+      target.length=0;next.forEach(e=>target.push(e));
+    }else{target.length=0;src.forEach(e=>target.push(e));}
+    return target;
+  }
+  return src;
+}
+/** Krátký text hodnoty do okna střetu. */
+function mergeShow(v){
+  if(v===undefined||v===null)return "(smazáno)";
+  if(typeof v==="string")return v.length>80?v.slice(0,79)+"…":v||"(prázdné)";
+  if(typeof v==="number"||typeof v==="boolean")return v===true?"ano":v===false?"ne":String(v);
+  if(Array.isArray(v))return v.length+" "+(v.length===1?"položka":v.length>=2&&v.length<=4?"položky":"položek");
+  const t=v.name||v.title||v.text||v.note||"";
+  return t?String(t).slice(0,80):"změněno";
+}
+
 /* Nové stavy zařazení do historie lidí (pro profil a vyhodnocení starších měsíců). */
 function applyHist(st,hist){
   hist.forEach(([k,h])=>{

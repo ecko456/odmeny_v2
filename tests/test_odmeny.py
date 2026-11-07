@@ -261,6 +261,20 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertNotIn(value, ids)
         self.assertEqual(len(ids[0]), 64)
 
+    def test_rev_without_data(self):
+        status, _ = self.client.api("GET", "rev")
+        self.assertIn(status, (401, 403), "bez přihlášení nic")
+        self.client.setup()
+        status, result = self.client.api("GET", "rev")
+        self.assertEqual(status, 200, result)
+        start = result["rev"]
+        status, saved = self.client.api("POST", "data", {"blob": b64(40), "base_rev": start})
+        self.assertEqual(status, 200, saved)
+        status, result = self.client.api("GET", "rev")
+        self.assertEqual((result["rev"], result["mine"]), (saved["rev"], True), "číslo verze a že ji uložila tahle kartička")
+        self.assertIsInstance(result["by"], str)
+        self.assertNotIn("blob", result, "bez dat")
+
     def test_conflict_and_history_thinning(self):
         self.client.setup()
         rev = 0
@@ -444,7 +458,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.61")
+        self.assertEqual(result["version"], "2.62")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

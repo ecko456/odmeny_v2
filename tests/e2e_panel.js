@@ -171,7 +171,7 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   await page.click('#nav [data-view="lide"]');
   await page.waitForSelector('#view-lide.on');
   await page.click('#sideMini');
-  await page.waitForTimeout(250);
+  await page.waitForFunction(() => document.querySelector('.side').getBoundingClientRect().width > 200, null, { timeout: 5000 }).catch(() => {});
   const back = await page.evaluate(() => ({ on: document.documentElement.classList.contains('side-mini'), title: document.querySelector('#nav [data-view="lide"]').title, w: document.querySelector('.side').getBoundingClientRect().width, stored: Object.keys(localStorage).filter(k => k.startsWith('odmeny.side.v1')).length }));
   check(!back.on && back.title === '' && back.w > 200 && back.stored === 0, `menu zase rozbalené: ${JSON.stringify(back)}`);
 
