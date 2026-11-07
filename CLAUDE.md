@@ -34,6 +34,16 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 7. 11. 2026 (ostrá verze se ruší):
+
+- Uživatel: „verzi /odmeny/ už můžeš smazat. využíváme už jen v2“. Dostal příkazy pro server:
+  záloha (`/root/odmeny-ostra-zaloha-RRRR-MM-DD.tar.gz`: `/var/www/odmeny`, `/var/lib/odmeny`,
+  `odmeny.conf`), vypnutí (`a2disconf odmeny`, reload Apache), smazání kódu, dat, konfigurace
+  a klonu `/root/odmeny`. Repozitář `ecko456/odmeny` na GitHubu zůstává (smazat ho může jen on).
+  - Od teď platí: jediná běžící verze je `/odmeny_v2/`. `ODMENY_KOPIE=1` už nemá z čeho kopírovat
+    (`install.sh` to ohlásí a nic nezmění). Pravidlo „ostrou verzi neměň“ je bezpředmětné.
+  - Zapamatovaná zařízení a záložky prohlížeče na `/odmeny/` přestanou fungovat (pro V2 jsou zvlášť).
+
 Stav k 7. 11. 2026 (verze 2.62.1):
 
 - Uživatel: „Udělej ještě kompletní audit aplikace“ a „jak hodnotíš bezpečnost?“ (odpověď: vysoká,
