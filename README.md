@@ -62,6 +62,15 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.63
+
+- **Kód aplikace rozdělený po modulech** (Shortage, Servis, KPI, Úkoly…) do samostatných souborů.
+  Prohlížeč dostává stejný kód jako dřív, jen se v něm lépe orientuje a další úpravy jsou bezpečnější.
+- **Rychlejší testy**: průchody v prohlížeči běží souběžně, každý s vlastním serverem a daty
+  (`bash tests/run_e2e.sh`).
+- Opraveno: verze souborů pro prohlížeč teď pozná změnu v kterémkoli dílu kódu.
+- Pro uživatele beze změny, data beze změny.
+
 ## Co je nového ve verzi 2.62.1
 
 - **Audit aplikace** (zabezpečení serveru, šifrování, ochrana stránky, data, nové funkce):
@@ -1881,8 +1890,11 @@ node tests/test_core.js
 Přibalené knihovny serveru (`lib/vendor`: oficiální SDK Anthropicu pro PHP a Guzzle) obnoví
 `bash deploy/vendor.sh` podle `lib/composer.lock`; `--update` vezme novější verze.
 
-Průchody v prohlížeči (Playwright) na čistých datech lokálního serveru, návod je
-v hlavičce každého skriptu:
+Průchody v prohlížeči (Playwright) na čistých datech lokálního serveru. Všechny najednou
+(souběžně, každý s vlastním serverem a daty) spustí `bash tests/run_e2e.sh`, jednotlivé
+`bash tests/run_e2e.sh e2e_shortage e2e_servis`; návod pro ruční spuštění je v hlavičce
+každého skriptu. Kód aplikace je v `private/app/` a `private/core/` (díly s číslem pořadí,
+server je vydává spojené):
 
 - `tests/e2e_browser.js`: celá aplikace (první spuštění, import, zařazení, sankce, výdej,
   zálohy, mobil, tmavý režim);

@@ -13,7 +13,7 @@ $asset = static function (string $path): string {
     $file = __DIR__ . '/' . $path;
     return htmlspecialchars($path . '?v=' . (is_file($file) ? (string)filemtime($file) : '1'), ENT_QUOTES);
 };
-$privateVersion = (string)max(array_map(static fn(string $file): int => (int)filemtime($file), glob(__DIR__ . '/private/*') ?: [__FILE__]));
+$privateVersion = (string)max(array_map(static fn(string $file): int => (int)filemtime($file), array_merge(glob(__DIR__ . '/private/*') ?: [__FILE__], glob(__DIR__ . '/private/*/*') ?: [])));
 ?><!doctype html>
 <html lang="cs">
 <head>

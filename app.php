@@ -10,8 +10,10 @@ odm_security_headers();
 const ODM_PRIVATE_FILES = [
     'app.html' => ['private/app.html', 'text/html; charset=utf-8'],
     'app.css' => ['private/app.css', 'text/css; charset=utf-8'],
-    'core.js' => ['private/core.js', 'text/javascript; charset=utf-8'],
-    'app.js' => ['private/app.js', 'text/javascript; charset=utf-8'],
+    // Kód aplikace je rozdělený po modulech (private/core/*.js, private/app/*.js, 2.63); vydává se
+    // spojený v pořadí čísel souborů, takže prohlížeč dostane stejný jeden skript jako dřív.
+    'core.js' => ['private/core', 'text/javascript; charset=utf-8'],
+    'app.js' => ['private/app', 'text/javascript; charset=utf-8'],
     'xlsx.js' => ['private/vendor/xlsx.full.min.js', 'text/javascript; charset=utf-8'],
     // Export pravidel do PDF vzniká v prohlížeči (data jsou šifrovaná, server je nevidí).
     'jspdf.js' => ['private/vendor/jspdf.umd.min.js', 'text/javascript; charset=utf-8'],
@@ -36,7 +38,11 @@ if (odm_session() === null) {
 }
 [$path, $type] = ODM_PRIVATE_FILES[$name];
 $file = __DIR__ . '/' . $path;
+$files = is_dir($file) ? (glob($file . '/[0-9][0-9]-*.js') ?: []) : [$file];
+sort($files, SORT_STRING);
 header('Content-Type: ' . $type);
-header('Content-Length: ' . (string)filesize($file));
+header('Content-Length: ' . (string)array_sum(array_map('filesize', $files)));
 header('Cache-Control: private, max-age=86400');
-readfile($file);
+foreach ($files as $part) {
+    readfile($part);
+}

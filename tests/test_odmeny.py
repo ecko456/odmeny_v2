@@ -148,7 +148,7 @@ class OdmenyHttpTests(unittest.TestCase):
             self.assertEqual(body, b"")
         status, _, _ = self.client.request("GET", "/app.php?f=../lib/odmeny.php")
         self.assertEqual(status, 404)
-        for path in ("/private/app.js", "/private/core.js", "/lib/odmeny.php", "/bin/setup-token.php", "/data/odmeny.sqlite3",
+        for path in ("/private/app/01-zaklad.js", "/private/core/01-zaklad-stav.js", "/private/app", "/lib/odmeny.php", "/bin/setup-token.php", "/data/odmeny.sqlite3",
                      "/tests/test_odmeny.py", "/deploy/install.sh", "/dev-router.php", "/.gitignore", "/static/vendor/LICENSE-jsqr.txt",
                      "/private/vendor/jspdf.umd.min.js", "/private/vendor/plex-sans-regular.ttf", "/private/vendor/plex-mono-medium.ttf", "/private/vendor/zxing.min.js", "/CLAUDE.md"):
             status, _, _ = self.client.request("GET", path)
@@ -158,6 +158,23 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("javascript", headers["Content-Type"])
         self.assertIn(b"OdmApp", body)
+        # Kód je rozdělený po modulech (2.63): vydaný skript je přesně spojení dílů v pořadí čísel.
+        for name, folder in (("app.js", "app"), ("core.js", "core")):
+            parts = sorted((APP / "private" / folder).glob("[0-9][0-9]-*.js"))
+            self.assertGreater(len(parts), 10, folder)
+            status, headers, served = self.client.request("GET", f"/app.php?f={name}")
+            self.assertEqual(served, b"".join(p.read_bytes() for p in parts), name)
+            self.assertEqual(int(headers["Content-Length"]), len(served), name)
+        # Změna jednoho dílu změní verzi souborů pro prohlížeč (jinak by zůstal starý kód v mezipaměti).
+        part = sorted((APP / "private" / "core").glob("[0-9][0-9]-*.js"))[-1]
+        before = re.search(rb'data-private-version="(\d+)"', self.client.request("GET", "/")[2]).group(1)
+        old = part.stat()
+        try:
+            os.utime(part, (old.st_atime, int(before) + 100))
+            after = re.search(rb'data-private-version="(\d+)"', self.client.request("GET", "/")[2]).group(1)
+        finally:
+            os.utime(part, (old.st_atime, old.st_mtime))
+        self.assertEqual(int(after), int(before) + 100)
         # Knihovna a písma pro PDF s pravidly (PDF vzniká v prohlížeči).
         status, headers, body = self.client.request("GET", "/app.php?f=jspdf.js")
         self.assertEqual(status, 200)
@@ -468,7 +485,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.62.1")
+        self.assertEqual(result["version"], "2.63")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -886,7 +903,7 @@ class OdmenyAiTests(unittest.TestCase):
 class OdmenyStaticTests(unittest.TestCase):
     def test_no_inline_styles_or_handlers(self):
         # Přísná CSP by inline styly a handlery zablokovala; aplikace je nesmí potřebovat.
-        for path in list((APP / "private").glob("*.html")) + list((APP / "private").glob("*.js")) + list((APP / "static").glob("*.js")) + [APP / "index.php"]:
+        for path in list((APP / "private").glob("*.html")) + list((APP / "private" / "app").glob("*.js")) + list((APP / "private" / "core").glob("*.js")) + list((APP / "static").glob("*.js")) + [APP / "index.php"]:
             text = path.read_text(encoding="utf-8")
             self.assertNotIn(' style="', text, path.name)
             self.assertNotRegex(text, r'\son(click|load|error|change|input)="', path.name)

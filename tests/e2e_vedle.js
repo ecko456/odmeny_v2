@@ -118,7 +118,7 @@ const summary = page => page.evaluate(() => ({ people: Object.keys(S.employees).
     check(v2.status === 200 && v2.body.setup_required === false && v2.body.version === '2.1', `verze 2 neběží s kopií dat: ${JSON.stringify(v2)}`);
     const live = await state(LIVE);
     check(live.status === 200 && live.body.setup_required === false && live.body.version === undefined, `ostrá verze se chová jinak: ${JSON.stringify(live)}`);
-    for (const hidden of ['CLAUDE.md', 'README.md', 'bin/copy-db.php', 'lib/odmeny.php', 'private/app.js', 'deploy/install.sh', 'tests/e2e_vedle.js']) {
+    for (const hidden of ['CLAUDE.md', 'README.md', 'bin/copy-db.php', 'lib/odmeny.php', 'private/app/01-zaklad.js', 'deploy/install.sh', 'tests/e2e_vedle.js']) {
       const code = await status(`${V2}${hidden}`);
       check(code === 403 || code === 404, `z webu je vidět ${hidden} (${code})`);
     }

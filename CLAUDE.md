@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 7. 11. 2026 (verze 2.63):
+
+- Uživatel si z hodnocení aplikace (8 úhlů, pořadí návrhů) vybral bod 7: rozdělení kódu po
+  modulech a rychlejší testy.
+  - **`private/app.js` a `private/core.js` už nejsou.** Kód je v `private/app/NN-nazev.js`
+    (32 dílů) a `private/core/NN-nazev.js` (24 dílů), rozdělený na hranicích oddílů (`/* ===`).
+    `app.php` vydá `app.js` / `core.js` jako spojení dílů v pořadí čísel (`glob('[0-9][0-9]-*.js')`,
+    `sort`), takže prohlížeč dostane stejný jeden skript; při rozdělení ověřeno, že spojení je
+    bajt po bajtu původní soubor. Všechno sdílí jeden globální rozsah jako dřív (pořadí dílů
+    je pořadí kódu, nic se nepřesouvalo).
+  - **Nový díl** = nový soubor s číslem na správném místě (třeba `26b-…` nejde, jen `NN-`;
+    přečíslovat). Hledej přes `grep -rn … private/app private/core`.
+  - `index.php`: `privateVersion` bere i `private/*/*` (bez toho by změna dílu nezměnila verzi
+    a prohlížeč by držel starý kód 24 h).
+  - Testy: `test_core.js` `coreSource()` spojí díly; `test_odmeny` ověří, že vydaný skript je
+    přesně spojení dílů a že změna dílu změní verzi; CSP test čte díly.
+  - **Souběžné testy:** `bash tests/run_e2e.sh [testy…]` (`JOBS`, `OUT`, `PW`, `CHROME`): každý
+    test vlastní adresář, data a PHP server na portu 8500 + pořadí; `e2e_ai` s náhradním API
+    (port 8598, jen jeden najednou). Bez `e2e_upgrade*` a `e2e_vedle` (Apache). Souhrn
+    `$OUT/summary.txt`, výstupy `$OUT/<test>/out.log`, snímky v `$OUT/<test>/oshots-*`.
+  - `ODM_VERSION` 2.63, data beze změny (45).
+
 Stav k 7. 11. 2026 (ostrá verze se ruší):
 
 - Uživatel: „verzi /odmeny/ už můžeš smazat. využíváme už jen v2“. Dostal příkazy pro server:
@@ -2427,7 +2449,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.60.1 | `5325fd4` | přihlašovací panel z tekutého skla, pozadí v plném rozlišení |
 | 2.61 | `b12a82a` | Shortage ve třech krocích (barvy EANu, výrobní plán, evidence pohybu), sloupce importů přes AI, rozbor položek se všemi poddíly (data verze 45) |
 | 2.62 | `b3eefb4` | souběžná práce víc lidí (sloučení změn, okno jen u stejného údaje, průběžná aktualizace) |
-| 2.62.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: audit (relace při průběžné kontrole, stálé čištění dat, test podvrženého HTML, SheetJS 0.20.3) |
+| 2.62.1 | `5752b91` | audit (relace při průběžné kontrole, stálé čištění dat, test podvrženého HTML, SheetJS 0.20.3) |
+| 2.63 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kód rozdělený po modulech (`private/app/`, `private/core/`), souběžné testy v prohlížeči (`tests/run_e2e.sh`) |
 
 Verze 2.1 přidala:
 
@@ -2509,7 +2532,8 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
 **Klient.**
 
 - `index.php` je jen zámek (`static/lock.js`, `static/vault.js`, QR knihovna).
-- Po odemčení `lock.js` stáhne `app.php?f=app.html|app.css|core.js|app.js`. Bez relace dostane
+- Po odemčení `lock.js` stáhne `app.php?f=app.html|app.css|core.js|app.js` (od 2.63 jsou
+  `core.js` a `app.js` spojené díly z `private/core/` a `private/app/`). Bez relace dostane
   401, takže zamčená stránka nic z aplikace neprozradí.
 - Líně se načítají `xlsx.js`, `jspdf.js` a `pdf-regular/semibold.ttf`.
 
@@ -2624,7 +2648,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
    - **test aktualizace z předchozí verze**.
 7. `README.md` (Co je nového).
 
-## Výpočty (`private/core.js`)
+## Výpočty (`private/core/*.js`)
 
 - `attendance(p, key)` vrací `workDays/Hours`, `cappedHours` (nejvýš směna za den), `wkDays`,
   `absDays`, `excused…`, `fund`, `fundRatio`, `totalHours` a `friDiff`.
@@ -2677,7 +2701,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 - **Zařazení** (`rosterSheets`, `applyRoster`): export a import Excelu. Záloha JSON z původní
   aplikace se načte přes `importLegacy`.
 
-## UI (`private/app.html`, `private/app.js`, `private/app.css`)
+## UI (`private/app.html`, `private/app/*.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
   `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
@@ -2821,7 +2845,8 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 30 testů: server, šifrovaný tok, výpočty, kopie dat, oddělení od ostré verze, přeformulování (náhradní API), šifrované fotky
-node tests/test_core.js                 # 96 testů: proti původní aplikaci + opravy + 2.1 až 2.42
+node tests/test_core.js                 # 113 testů: proti původní aplikaci + opravy + 2.1 až 2.62
+bash tests/run_e2e.sh                   # 2.63: všechny průchody v prohlížeči souběžně (vlastní servery a data)
 
 # lokální server s čistými daty ($S = scratchpad session), z kořene repozitáře
 ODMENY_DATA_DIR=$S/odme2e php -S 127.0.0.1:8490 -t . dev-router.php &

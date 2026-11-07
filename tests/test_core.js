@@ -1,7 +1,7 @@
 'use strict';
 
 /*
- * Výpočty v private/core.js proti původní aplikaci (hodnoceni-operatoru.html):
+ * Výpočty v private/core/*.js (spojené jako core.js) proti původní aplikaci (hodnoceni-operatoru.html):
  * na datech, kde se opravy neprojeví, musí vyjít totéž. Pak testy samotných oprav.
  * node tests/test_core.js
  */
@@ -37,9 +37,14 @@ function context(extra = {}) {
   });
 }
 
+/** core.js je od 2.63 rozdělený po modulech (private/core/NN-*.js); server je vydává spojené v pořadí čísel. */
+function coreSource() {
+  const dir = path.join(ROOT, 'private', 'core');
+  return fs.readdirSync(dir).filter(f => /^\d\d-.*\.js$/.test(f)).sort().map(f => fs.readFileSync(path.join(dir, f), 'utf8')).join('');
+}
 function loadCore() {
   const ctx = context();
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'private', 'core.js'), 'utf8'), ctx, { filename: 'core.js' });
+  vm.runInContext(coreSource(), ctx, { filename: 'core.js' });
   return ctx;
 }
 
