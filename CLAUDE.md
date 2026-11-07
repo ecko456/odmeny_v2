@@ -34,6 +34,22 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 7. 11. 2026 (verze 2.62.1):
+
+- Uživatel: „Udělej ještě kompletní audit aplikace“ a „jak hodnotíš bezpečnost?“ (odpověď: vysoká,
+  server data nevidí; omezení: všechny kartičky mají stejná práva, ztráta všech kartiček = ztráta
+  přístupu, bezpečnost serveru mimo aplikaci).
+  - Opraveno: akce `rev` neprodlužuje nečinnost relace (`$GLOBALS['odm_passive']` v api.php,
+    `odm_session` pak nepíše `last_seen_at`; test v `test_rev_without_data`); `sanitizeState`
+    kód docházky prázdný → null hned; `cleanWorkAudit` duplicita id podle textu;
+    `blankWorkAudit` výchozí skupiny s `mg: []`. Test core „Audit (2.62)“ (dvakrát čištění =
+    jednou, 40 náhodně poškozených stavů), nový `tests/e2e_xss.js` (podvržené HTML ve všech
+    částech, ověří i, že text je vidět jako text).
+  - SheetJS 0.18.5 → **0.20.3** (`private/vendor/xlsx.full.min.js`, z cdn.sheetjs.com
+    `/xlsx-0.20.3/package/dist/`, Apache-2.0; uživatel výslovně souhlasil): opravuje CVE-2023-30533
+    (prototype pollution) a CVE-2024-22363 (ReDoS). Prošla celá sada. Zmínky „SheetJS 0.18.5“
+    ve starších poznámkách výš jsou historické; `shUnxml` a čtení `dense` zůstaly (neškodí).
+
 Stav k 7. 11. 2026 (verze 2.62):
 
 - Uživatel: „pokud pracuji v systému dva lidé, tak nemohou současně pracovat, protože to uzná data
@@ -2400,7 +2416,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.60 | `83eedbb` | pozadí přihlašovací stránky z barevných polí (WebGL) |
 | 2.60.1 | `5325fd4` | přihlašovací panel z tekutého skla, pozadí v plném rozlišení |
 | 2.61 | `b12a82a` | Shortage ve třech krocích (barvy EANu, výrobní plán, evidence pohybu), sloupce importů přes AI, rozbor položek se všemi poddíly (data verze 45) |
-| 2.62 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: souběžná práce víc lidí (sloučení změn, okno jen u stejného údaje, průběžná aktualizace) |
+| 2.62 | `b3eefb4` | souběžná práce víc lidí (sloučení změn, okno jen u stejného údaje, průběžná aktualizace) |
+| 2.62.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: audit (relace při průběžné kontrole, stálé čištění dat, test podvrženého HTML, SheetJS 0.20.3) |
 
 Verze 2.1 přidala:
 
@@ -2863,6 +2880,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
+  - `e2e_xss.js` (2.62.1): podvržené HTML v datech se nikde nevykreslí;
   - `e2e_soubeh.js` (2.62): dva lidé současně (sloučení, sankce obou, střet, průběžné načtení, rozepsané pole, otevřené okno, telefon);
   - `e2e_shkroky.js` (2.61): Shortage ve třech krocích (sloupce, vzorník barev, plán, evidence pohybu, AI, rozbor, telefon);
   - `e2e_lockbg.js` (2.60): pozadí zámku (kreslí, hýbe se, pauza, omezit pohyb, bez WebGL, po odemčení pryč, telefon);

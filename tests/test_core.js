@@ -4827,6 +4827,40 @@ test('Sloučení změn dvou lidí (2.62): různá místa samo, seznamy s id po p
   assert.deepStrictEqual(out.show, ['(smazáno)', '(prázdné)', 'x', 'ano', '2 položky', 'Kryt', 'změněno']);
 });
 
+test('Audit (2.62): čištění dat je stálé (dvakrát = jednou) a nespadne na poškozených datech', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const canon = x => undoCanon(x);
+    const a = sharedState(sanitizeState(demoData()));
+    const b = sharedState(sanitizeState(JSON.parse(JSON.stringify(a))));
+    // náhodně poškozená data: hodnoty nahrazené jiným typem, nesmí to spadnout
+    let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    const junk = [null, 0, -1, 1e308, '', 'x'.repeat(5000), [], {}, [null], { id: 1 }, true, '<b>', NaN];
+    const errors = [];
+    const mutate = (o, depth) => {
+      if (!o || typeof o !== 'object' || depth > 6) return;
+      Object.keys(o).forEach(k => {
+        if (rnd() < 0.08) o[k] = junk[Math.floor(rnd() * junk.length)];
+        else mutate(o[k], depth + 1);
+      });
+    };
+    let stable = 0;
+    for (let i = 0; i < 40; i++) {
+      const x = JSON.parse(JSON.stringify(a));
+      mutate(x, 0);
+      try {
+        const s1 = sharedState(sanitizeState(x));
+        const s2 = sharedState(sanitizeState(JSON.parse(JSON.stringify(s1))));
+        if (canon(s1) === canon(s2)) stable++; else errors.push('nestálé ' + i + ': ' + undoDiff(s1, s2).slice(0, 3).map(c => c.p.join('.')).join(', '));
+      } catch (e) { errors.push(i + ': ' + e.message); }
+    }
+    return JSON.stringify({ same: canon(a) === canon(b), diff: undoDiff(a, b).slice(0, 5).map(c => c.p.join('.')), stable, errors: errors.slice(0, 8) });
+  })()`));
+  assert.ok(out.same, 'ukázková data: čištění podruhé nic nemění, rozdíl: ' + out.diff.join(', '));
+  assert.deepStrictEqual(out.errors, [], 'poškozená data');
+  assert.strictEqual(out.stable, 40);
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

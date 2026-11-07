@@ -62,6 +62,18 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.62.1
+
+- **Audit aplikace** (zabezpečení serveru, šifrování, ochrana stránky, data, nové funkce):
+  - průběžná kontrola nových verzí už neprodlužuje přihlášení: po 60 minutách bez práce
+    relace na serveru zase vyprší;
+  - čištění dat je stálé (prázdný kód v docházce, výchozí skupiny KPI), takže slučování změn
+    dvou lidí nedostává falešné rozdíly;
+  - nový test ověřuje, že podvržené HTML v textech (jména, názvy, poznámky…) se nikde nevykreslí.
+  - knihovna pro čtení Excelu (SheetJS) aktualizovaná z 0.18.5 na **0.20.3**: opravuje dvě známé
+    zranitelnosti při čtení podvrženého souboru (CVE-2023-30533, CVE-2024-22363).
+- Data beze změny.
+
 ## Co je nového ve verzi 2.62
 
 - **Víc lidí může pracovat současně.** Když mezitím uložil někdo jiný, aplikace si jeho verzi

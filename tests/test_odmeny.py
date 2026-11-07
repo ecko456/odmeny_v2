@@ -274,6 +274,16 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertEqual((result["rev"], result["mine"]), (saved["rev"], True), "číslo verze a že ji uložila tahle kartička")
         self.assertIsInstance(result["by"], str)
         self.assertNotIn("blob", result, "bez dat")
+        # průběžná kontrola neprodlužuje nečinnost relace
+        with sqlite3.connect(self.server.data / "odmeny.sqlite3") as db:
+            old = (datetime.now(timezone.utc) - timedelta(minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            db.execute("UPDATE sessions SET last_seen_at = ?", (old,))
+        self.assertEqual(self.client.api("GET", "rev")[0], 200)
+        with sqlite3.connect(self.server.data / "odmeny.sqlite3") as db:
+            self.assertEqual(db.execute("SELECT last_seen_at FROM sessions").fetchone()[0], old, "rev nečinnost neprodlouží")
+        self.assertEqual(self.client.api("GET", "me")[0], 200)
+        with sqlite3.connect(self.server.data / "odmeny.sqlite3") as db:
+            self.assertNotEqual(db.execute("SELECT last_seen_at FROM sessions").fetchone()[0], old, "jiná akce ano")
 
     def test_conflict_and_history_thinning(self):
         self.client.setup()
@@ -458,7 +468,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.62")
+        self.assertEqual(result["version"], "2.62.1")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

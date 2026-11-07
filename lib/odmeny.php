@@ -18,7 +18,7 @@ declare(strict_types=1);
 
 // Verze aplikace. Klient posílá verzi svého tvaru dat v hlavičce X-Odmeny-Client;
 // stránka otevřená ještě před aktualizací už nesmí uložit data ve starém tvaru.
-const ODM_VERSION = '2.62';
+const ODM_VERSION = '2.62.1';
 const ODM_MIN_CLIENT = 45;
 const ODM_SESSION_COOKIE = 'odmeny_session';
 const ODM_SESSION_HOURS = 12;
@@ -425,7 +425,8 @@ function odm_session(): ?array
         odm_exec('DELETE FROM sessions WHERE id = ?', [$id]);
         return null;
     }
-    if (strtotime((string)$session['last_seen_at']) < time() - 60) {
+    // Průběžná kontrola verze (2.62) není práce uživatele: nečinnost relace neprodlužuje.
+    if (empty($GLOBALS['odm_passive']) && strtotime((string)$session['last_seen_at']) < time() - 60) {
         odm_exec('UPDATE sessions SET last_seen_at = ? WHERE id = ?', [odm_now(), $id]);
     }
     return $GLOBALS['odm_session'] = $session;

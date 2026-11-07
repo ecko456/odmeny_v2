@@ -2345,7 +2345,7 @@ function sanitizeState(input){
       if(!r||typeof r!=="object"||!key(k,200))return;
       rows[key(k,200)]={first:str(r.first,80),last:str(r.last,80),
         h:days.map((_,i)=>num(arr(r.h)[i],0,0,24)),
-        c:days.map((_,i)=>{const c=arr(r.c)[i];return c==null||c===""?null:str(c,16);})};
+        c:days.map((_,i)=>{const c=arr(r.c)[i];const t=c==null?"":str(c,16);return t?t:null;})};   // prázdný kód = null hned (stálé čištění, audit 2.62)
     });
     const codes={};Object.entries(obj(p.codes)).slice(0,200).forEach(([c,n])=>{if(key(c,16))codes[key(c,16)]=int(n,0,0,100000);});
     out.periods[id]={id,y:+id.slice(0,4),m:+id.slice(5,7),days,rows,codes,file:str(p.file,200),at:num(p.at,0,0,1e15),headerRow:int(p.headerRow,1,1,1000)};
@@ -4442,7 +4442,7 @@ const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
 /* Požadavek lidí na pracovní den (2.18.1): pevně 100 lidí, null = podle plánu v souboru obsazenosti. */
 const WA_TARGET=100;
-function blankWorkAudit(){return {groups:JSON.parse(JSON.stringify(WA_GROUPS)),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null,dv:blankDv(),drep:blankDrep()};}
+function blankWorkAudit(){return {groups:WA_GROUPS.map(g=>({...g,mg:[]})),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null,dv:blankDv(),drep:blankDrep()};}
 /* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
    jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
 function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}
@@ -4456,7 +4456,7 @@ function cleanWorkAudit(o){
   const out=blankWorkAudit();
   if(Array.isArray(o.groups)){
     const seen=new Set();
-    out.groups=o.groups.filter(g=>g&&typeof g==="object"&&/^[A-Za-z0-9_]{1,20}$/.test(String(g.id||""))).filter(g=>!seen.has(g.id)&&seen.add(g.id)).slice(0,20)
+    out.groups=o.groups.filter(g=>g&&typeof g==="object"&&/^[A-Za-z0-9_]{1,20}$/.test(String(g.id||""))).filter(g=>!seen.has(String(g.id))&&seen.add(String(g.id))).slice(0,20)
       .map(g=>({id:String(g.id),name:str(g.name,80)||String(g.id),am:waLetter(g.am),pm:waLetter(g.pm),unprod:!!g.unprod,noIs:!!g.noIs,
         /* skupiny Matice, jejichž lidé se počítají do skupiny KPI (2.42, soubor docházky a výkonů) */
         mg:[...new Set((Array.isArray(g.mg)?g.mg:[]).filter(x=>typeof x==="string"&&SAFE_ID.test(x)))].slice(0,40)}));

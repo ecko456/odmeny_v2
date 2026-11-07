@@ -109,6 +109,7 @@ try {
 
     /* ---------- přihlášený */
 
+    $GLOBALS['odm_passive'] = $action === 'rev' && $method === 'GET';
     $session = odm_require_session();
 
     if ($action === 'me' && $method === 'GET') {
