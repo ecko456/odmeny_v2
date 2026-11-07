@@ -81,7 +81,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "44", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "45", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -429,6 +429,9 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.55 by zahodila „Vyřazeno servisem“ s přílohou z verze 2.56.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "43"})
         self.assertEqual(status, 426)
+        # Stránka verze 2.60.1 by zahodila sloupce importů, barvy EANu a evidenci pohybu Shortage z verze 2.61.
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "44"})
+        self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
         # Čtení a přihlášení staré stránce nevadí, jen zápis.
@@ -441,7 +444,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.60.1")
+        self.assertEqual(result["version"], "2.61")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -605,6 +608,12 @@ class FakeAnthropic:
                     return self.reply(200, {"id": "msg_test", "type": "message", "role": "assistant", "model": body.get("model"),
                                             "content": [{"type": "text", "text": json.dumps(reply, ensure_ascii=False)}], "stop_reason": "end_turn",
                                             "stop_sequence": None, "usage": {"input_tokens": 12, "output_tokens": 9}})
+                if "shortage" in sent:   # sloupce importů Shortage (2.61)
+                    reply = {"cols": {"order": "a", "name": "B", "ean": "C", "index": "D", "qty": "E", "top": "", "op": "H1x"}, "header": 9, "sheet": "List1", "note": "TOP nevidím."} \
+                        if sent["shortage"]["druh"] == "list" else {"cols": {"code": "B", "when": "C", "qty": "D", "state": "E", "op": "F"}, "header": 1, "sheet": "", "note": ""}
+                    return self.reply(200, {"id": "msg_test", "type": "message", "role": "assistant", "model": body.get("model"),
+                                            "content": [{"type": "text", "text": json.dumps(reply, ensure_ascii=False)}], "stop_reason": "end_turn",
+                                            "stop_sequence": None, "usage": {"input_tokens": 12, "output_tokens": 9}})
                 if "listy" in sent:   # nastavení sloupců (2.42.2)
                     reply = owner.columns if owner.columns is not None else {
                         "att": {"id": "A", "first": "C"},
@@ -686,6 +695,23 @@ class OdmenyAiTests(unittest.TestCase):
         status, result = self.client.api("POST", "ai_columns", sample)
         self.assertEqual(status, 200, result)
         self.assertEqual((result["att"]["id"], result["unit"], result["work"]["time"]), ("", "auto", ""), "nesmysly z odpovědi se zahodí")
+
+    def test_shortage_columns(self):
+        sample = {"kind": "list", "sheets": [{"name": "List1", "rows": [{"A": "Objednávka", "B": "Název", "C": "EAN"}, {"A": "<celé číslo>", "B": "<text>", "C": "<text s číslicemi>"}]}]}
+        self.client.setup()
+        self.assertEqual(self.client.api("POST", "ai_shcols", sample)[0], 503)
+        self.enable()
+        status, result = self.client.api("POST", "ai_shcols", sample)
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["cols"], {"order": "A", "name": "B", "ean": "C", "index": "D", "qty": "E", "top": "", "op": ""}, "malé písmeno se převede, nesmysl zahodí")
+        self.assertEqual((result["header"], result["sheet"], result["note"]), (0, "List1", "TOP nevidím."), "řádek mimo 0–6 = 0")
+        sent = json.loads(self.api_mock.requests[-1]["body"]["messages"][0]["content"])
+        self.assertEqual(sent["shortage"]["druh"], "list")
+        self.assertEqual(sent["shortage"]["listy"][0]["radky"][0], {"A": "Objednávka", "B": "Název", "C": "EAN"})
+        status, result = self.client.api("POST", "ai_shcols", {**sample, "kind": "move"})
+        self.assertEqual((status, result["cols"]["code"], result["header"]), (200, "B", 1))
+        for bad in ({**sample, "kind": "nic"}, {"kind": "plan"}, {"kind": "plan", "sheets": []}):
+            self.assertEqual(self.client.api("POST", "ai_shcols", bad)[0], 400, bad)
 
     def test_ends_check(self):
         body = {"sheet": {"name": "List1", "rows": [{"A": "Příjmení", "B": "Jméno", "C": "Konec trestu", "D": "Směnnost"}, {"A": "<text>", "C": "<datum>", "D": "<text>"}]},

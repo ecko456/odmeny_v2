@@ -368,18 +368,20 @@
         <div>
           <p class="eyebrow">Chybějící díly</p>
           <h1 id="shTitle">Shortage</h1>
-          <p class="lede">Seznam chybějících dílů z Excelu: A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index, E urgentní množství, G „TOP“ (TOP SHORTAGE, vždy nahoře) a H probíhající operace. PDF na šířku má u každé položky QR kód s activeBarcode z odkazu, kolonky Stav k 10:00 a Stav k 13:00 a místo na poznámky.</p>
-        </div>
-        <div class="page-actions noprint">
-          <button class="btn sec" type="button" id="shPlanBtn" title="Poddíly sestav z 2. listu výrobního plánu (A EAN sestavy, E EAN poddílu, H index, M objednávka, AM operace)">Výrobní plán</button>
-          <input type="file" id="shPlanFile" accept=".xlsx,.xlsm,.xls,.ods" hidden>
-          <button class="btn" type="button" id="shImport">Nahrát Excel</button>
-          <input type="file" id="shFile" accept=".xlsx,.xls,.xlsm,.ods" hidden>
+          <p class="lede">Kompletní rozbor urgentních dílů ve třech krocích: tabulka urgentních dílů (barvy EANu určí TOP a TOP 2), výrobní plán (poddíly sestav a probíhající operace) a evidence pohybu (poslední interní záznam). Sloupce každého souboru navrhne AI podle prvních řádků. PDF na šířku má u položky QR kód, kolonky Stav k 10:00 a 13:00 a místo na poznámky.</p>
         </div>
       </header>
+      <ol class="sh-steps noprint" aria-label="Rozbor shortage ve třech krocích">
+        <li class="sh-step" data-step="1"><span class="sh-stepn" aria-hidden="true">1</span><div><b>Urgentní díly</b><p class="small muted" id="shSt1">Tabulka z Excelu (soubor nebo Ctrl+V)</p></div>
+          <button class="btn small" type="button" id="shImport">Nahrát Excel</button><input type="file" id="shFile" accept=".xlsx,.xls,.xlsm,.ods" hidden></li>
+        <li class="sh-step" data-step="2"><span class="sh-stepn" aria-hidden="true">2</span><div><b>Výrobní plán</b><p class="small muted" id="shSt2">Poddíly sestav a probíhající operace</p></div>
+          <button class="btn sec small" type="button" id="shPlanBtn">Výrobní plán</button><input type="file" id="shPlanFile" accept=".xlsx,.xlsm,.xls,.ods" hidden></li>
+        <li class="sh-step" data-step="3"><span class="sh-stepn" aria-hidden="true">3</span><div><b>Evidence pohybu</b><p class="small muted" id="shSt3">Poslední interní záznamy (soubor nebo Ctrl+V)</p></div>
+          <button class="btn sec small" type="button" id="shMoveBtn">Evidence pohybu</button><input type="file" id="shMoveFile" accept=".xlsx,.xls,.xlsm,.ods,.csv,.txt" hidden></li>
+      </ol>
       <div id="shMergeBar" class="sh-mergebar noprint" role="status" hidden></div>
       <label class="sh-paste noprint" for="shPaste">
-        <span><b>Vložit z Excelu</b> · označ v Excelu řádky (i s nadpisy), Ctrl+C, klikni sem a Ctrl+V. Seznam dílů se vloží i s odkazy z EANu. Poslední záznamy (A QR kód, B datum a čas, C počet ks, D stav) se přiřadí k položkám otevřeného seznamu.</span>
+        <span><b>Vložit z Excelu</b> · označ v Excelu řádky (i s nadpisy), Ctrl+C, klikni sem a Ctrl+V. Seznam dílů se vloží i s odkazy z EANu. Evidence pohybu (QR kód, datum a čas, počet ks, stav) se přiřadí k položkám otevřeného seznamu.</span>
         <textarea id="shPaste" rows="1" placeholder="Sem vlož tabulku (Ctrl+V)" autocomplete="off" spellcheck="false"></textarea>
       </label>
       <div id="shMsg" class="sh-msg noprint" aria-live="polite"></div>

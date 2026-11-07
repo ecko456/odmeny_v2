@@ -232,6 +232,25 @@ try {
         }
     }
 
+    // Sloupce importů Shortage (2.61): jen nadpisy a typy buněk, nic se neukládá.
+    if ($action === 'ai_shcols' && $method === 'POST') {
+        $input = odm_input(ODM_MAX_SMALL_JSON_BYTES);
+        $kind = is_string($input['kind'] ?? null) ? $input['kind'] : '';
+        if (!isset(ODM_AI_SH_FIELDS[$kind])) {
+            odm_fail('Neznámý druh importu.', 400);
+        }
+        $sheets = odm_ai_clean_sample($input);
+        if (!odm_ai_available()) {
+            odm_fail('AI není na serveru zapnutá.', 503);
+        }
+        odm_ai_throttle($session['card_id'], strlen(json_encode($sheets, JSON_UNESCAPED_UNICODE)));
+        try {
+            odm_json(odm_ai_shcols($kind, $sheets));
+        } catch (RuntimeException $error) {
+            odm_fail($error->getMessage(), $error->getCode() >= 400 && $error->getCode() < 600 ? $error->getCode() : 502);
+        }
+    }
+
     // Kontrola souboru Konce trestů a směnnost (2.43): nadpisy, typy buněk a texty směnnosti, nic se neukládá.
     if ($action === 'ai_ends' && $method === 'POST') {
         $input = odm_input(ODM_MAX_SMALL_JSON_BYTES);

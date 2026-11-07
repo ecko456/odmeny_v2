@@ -3053,3 +3053,36 @@ h1 .prob-ic .icon, h2 .prob-ic .icon { width: 16px; height: 16px; }
 @media print {
   :root[data-look="glass"] .main > .view.on { padding: 0; border: 0; background: none; box-shadow: none; }
 }
+
+/* ---------- Shortage ve třech krocích (2.61) ---------- */
+.sh-steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.sh-step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
+.sh-step p { margin: 2px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-stepn { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px; border: 1px solid var(--line); color: var(--ink-2); }
+.sh-step.done .sh-stepn { background: var(--ok, #2e9e6a); border-color: transparent; color: #fff; }
+.sh-mode { margin: 0 0 12px; }
+.sh-colgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 12px; }
+.sh-colprev td, .sh-colprev th { white-space: nowrap; }
+.sh-ainote { color: var(--warn-ink, var(--ink)); }
+.sh-colsnote .link { margin-left: 4px; }
+.sh-colors { display: grid; gap: 8px; }
+.sh-colorrow { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.sh-swatch { width: 34px; height: 24px; border-radius: 6px; border: 1px solid var(--line); }
+.sh-rzlist { display: grid; gap: 10px; }
+.sh-rz { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.sh-rz.sh-top { border-left: 4px solid var(--crit, #d64545); }
+.sh-rz.sh-top2 { border-left: 4px solid var(--warn, #d9922b); }
+.sh-rzgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 14px; margin: 10px 0 6px; }
+.sh-rzgrid dt { font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.sh-rzgrid dd { margin: 2px 0 0; }
+.sh-rzwarn { color: var(--crit, #d64545); }
+.sh-rzsubs { width: 100%; border-collapse: collapse; font-size: 13px; margin: 6px 0; }
+.sh-rzsubs th, .sh-rzsubs td { text-align: left; padding: 5px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+.sh-rzsubs th { font-size: 11px; color: var(--ink-3); font-weight: 600; }
+.sh-rzother td { color: var(--ink-2); }
+.sh-rznote { margin: 6px 0 0; }
+@media (max-width: 900px) {
+  .sh-steps { grid-template-columns: minmax(0, 1fr); }
+  .sh-rzgrid { grid-template-columns: minmax(0, 1fr); }
+  .sh-rzsubs { display: block; overflow-x: auto; }
+}

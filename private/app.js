@@ -21,7 +21,7 @@ const ui = {
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
-  sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null },
+  sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null, mode: 'list', last: null },
   tk: { sel: null, filter: 'open', owner: '', q: '', draft: {}, alertOff: '', listY: 0, dueTimer: null, lastDue: '' },
   wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '', dvMode: 'day', dvDay: '', dvMonth: '', dvSort: 'group', kp: { month: '', sort: 'ks', dir: 'best', dept: '' } },
 };
@@ -9903,23 +9903,195 @@ function shCellLink(cell) {
   const m = String(cell.f || '').match(/HYPERLINK\(\s*"([^"]+)"/i);
   return m ? shUnxml(m[1]) : '';
 }
-/** List sešitu → řádky pro shBuild: sloupce A–H (text a cíl odkazu buňky). */
-function shSheetRows(X, ws) {
+/** Barva výplně buňky (2.61): RGB, z motivu (SheetJS převede) nebo z palety Excelu, jinak "". */
+function shCellFill(cell) {
+  const st = cell && cell.s;
+  if (!st || !st.patternType || st.patternType === 'none') return '';
+  const c = st.fgColor || {};
+  return shHex(c.rgb) || (c.indexed != null && c.indexed !== 64 ? shHex(shIndexed(c.indexed)) : '');
+}
+/**
+ * Výplně z palety Excelu (indexed): SheetJS je u buněk zahodí (fgColor je prázdný), proto je
+ * dočteme ze styles.xml a XML listů. Vrací {list: Map(adresa → HEX)}; když se nic nepovede, prázdné.
+ */
+async function shIndexedFills(b) {
+  const out = {};
+  try {
+    if (!(b[0] === 0x50 && b[1] === 0x4b) || !waDeflateRaw) return out;
+    const zip = waZip(b);
+    const st = zip.get('xl/styles.xml');
+    if (!st) return out;
+    const xml = await waZipText(b, st);
+    const pal = [...((/<(?:\w+:)?indexedColors>([\s\S]*?)<\/(?:\w+:)?indexedColors>/.exec(xml) || [])[1] || '').matchAll(/rgb="([0-9A-Fa-f]{6,8})"/g)].map(m => shHex(m[1]));
+    const fillsXml = (/<(?:\w+:)?fills\b[^>]*>([\s\S]*?)<\/(?:\w+:)?fills>/.exec(xml) || [])[1] || '';
+    const fills = [...fillsXml.matchAll(/<(?:\w+:)?fill\b[^>]*?(?:\/>|>([\s\S]*?)<\/(?:\w+:)?fill>)/g)].map(m => {
+      const f = /<(?:\w+:)?fgColor\b([^>]*)\/?>/.exec(m[1] || '');
+      const ix = f && /\bindexed="(\d+)"/.exec(f[1]);
+      if (!ix || /\b(rgb|theme)="/.test(f[1]) || +ix[1] === 64) return '';
+      return pal[+ix[1]] || shHex(shIndexed(+ix[1]));
+    });
+    if (!fills.some(Boolean)) return out;
+    const xfsXml = (/<(?:\w+:)?cellXfs\b[^>]*>([\s\S]*?)<\/(?:\w+:)?cellXfs>/.exec(xml) || [])[1] || '';
+    const xfFill = [...xfsXml.matchAll(/<(?:\w+:)?xf\b([^>]*?)\/?>/g)].map(m => fills[+((/\bfillId="(\d+)"/.exec(m[1]) || [])[1] || 0)] || '');
+    const rels = {};
+    const relXml = await waZipText(b, zip.get('xl/_rels/workbook.xml.rels'));
+    for (const m of relXml.matchAll(/<(?:\w+:)?Relationship\b([^>]*?)\/?>/g)) rels[waAttr(m[1], 'Id')] = waAttr(m[1], 'Target');
+    const wb = await waZipText(b, zip.get('xl/workbook.xml'));
+    for (const m of wb.matchAll(/<(?:\w+:)?sheet\b([^>]*?)\/?>/g)) {
+      const id = (/\s\w+:id="([^"]+)"/.exec(m[1]) || [])[1];
+      const target = String(rels[id] || '');
+      const ent = zip.get((target.startsWith('/') ? target.slice(1) : `xl/${target}`).replace(/\/\.\//g, '/').toLowerCase());
+      if (!ent || ent.csize > 30e6) continue;
+      const sx = await waZipText(b, ent);
+      const map = new Map();
+      for (const c of sx.matchAll(/<(?:\w+:)?c\b([^>]*?)\/?>/g)) {
+        const sIx = /\bs="(\d+)"/.exec(c[1]);
+        const hex = sIx && xfFill[+sIx[1]];
+        if (hex) map.set(waAttr(c[1], 'r'), hex);
+      }
+      if (map.size) out[waAttr(m[1], 'name')] = map;
+    }
+  } catch (error) { console.warn('Shortage: barvy z palety se nepodařilo přečíst', error); }
+  return out;
+}
+/** List sešitu → řádky pro shBuild: sloupce A až `width` (text, cíl odkazu a barva výplně buňky). */
+function shSheetRows(X, ws, width = 40, qtyCol = 4) {
   const ref = ws && ws['!ref'];
   if (!ref) return [];
   const range = X.utils.decode_range(ref);
   const rows = [];
+  const last = Math.min(range.e.c, width - 1);
   for (let r = range.s.r; r <= Math.min(range.e.r, range.s.r + 20000); r += 1) {
     const row = [];
-    for (let c = 0; c <= 7; c += 1) {
+    for (let c = 0; c <= Math.max(7, last); c += 1) {
       const cell = ws[X.utils.encode_cell({ r, c })];
-      row.push({ text: shCellText(cell, c === 4), link: shCellLink(cell) });
+      row.push({ text: shCellText(cell, c === qtyCol), link: shCellLink(cell), fill: shCellFill(cell) });
     }
     rows.push(row);
   }
   return rows;
 }
 const shPl = (n, one, few, many) => (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
+
+/* ---------- Tři kroky (2.61): sloupce každého importu navrhne AI z nadpisů ----------
+   AI dostane jen první řádky souboru, kde jsou hodnoty nahrazené typem (dvAiSample), a vrátí
+   písmena sloupců. Bez AI se sloupce odhadnou podle nadpisů (shColsGuess). Okno se sloupci se
+   ukáže, když se návrh liší od uloženého nastavení nebo AI něco nejistého napsala; jinak se
+   soubor načte rovnou a ve zprávě je tlačítko Upravit sloupce. */
+const SH_KIND_NAME = { list: 'urgentních dílů', plan: 'výrobního plánu', move: 'evidence pohybu' };
+const shTextRows = rows => (rows || []).slice(0, 8).map(r => (r || []).map(c => (c && typeof c === 'object' ? c.text : c)));
+async function shAiCols(kind, sheets) {
+  if (!(ui.me && ui.me.ai) || window.SH_NO_AI) return null;
+  const sample = shAiSample(sheets).filter(x => x.rows.length);
+  if (!sample.length) return null;
+  try { return await Vault.api('ai_shcols', { method: 'POST', body: { kind, sheets: sample } }); } catch (error) { toast(`AI: ${error.message} Sloupce se odhadnou podle nadpisů.`, true); return null; }
+}
+const shColsText = (kind, cols) => Object.keys(SH_COL_NAMES[kind]).filter(f => cols[f]).map(f => `${SH_COL_NAMES[kind][f].split(' (')[0]} ${cols[f]}`).join(', ');
+/**
+ * Sloupce pro import: AI (když je zapnutá), jinak odhad podle nadpisů. sheets = [{name, rows}]
+ * (rows = první řádky jako pole hodnot), pick = index listu, který se čte. Vrací {cols, sheet,
+ * how, note} nebo null (zrušeno).
+ */
+async function shColsFor(kind, sheets, { file = '', pick = 0, force = false } = {}) {
+  const c = shc();
+  const saved = c.cols && c.cols[kind];
+  const base = saved || SH_COLS[kind];
+  let sheetI = Math.min(Math.max(0, pick), Math.max(0, sheets.length - 1));
+  const guess = shColsGuess(kind, (sheets[sheetI] || {}).rows || [], base);
+  let cols = guess.cols;
+  let how = guess.found.length ? 'odhad podle nadpisů' : saved ? 'uložené nastavení' : 'výchozí sloupce';
+  let note = '';
+  let header = guess.header;
+  const ai = await shAiCols(kind, sheets.map(sh => ({ name: sh.name, rows: sh.rows })));
+  if (ai) {
+    cols = shColsFromAi(kind, ai, cols);
+    how = 'návrh AI';
+    note = ai.note || '';
+    if (ai.header > 0) header = ai.header - 1;
+    if (kind === 'plan' && cols.sheet) { const k = sheets.findIndex(sh => sh.name === cols.sheet); if (k >= 0) sheetI = k; }
+  }
+  if (kind === 'plan') cols.sheet = (sheets[sheetI] || {}).name || '';
+  const noSheet = x => { const { sheet, ...rest } = shColsClean(kind, x); return JSON.stringify(rest); };   // list plánu se vybírá sám
+  const same = noSheet(cols) === noSheet(base);
+  if (force || !same || note) {
+    const res = await shColsDialog(kind, sheets, { cols, sheetI, header, how, note, file });
+    if (!res) return null;
+    ({ cols, sheetI } = res);
+    how = res.changed ? 'upraveno ručně' : how;
+  }
+  cols = shColsClean(kind, cols);
+  if (JSON.stringify(saved || null) !== JSON.stringify(cols)) { c.cols = { ...(c.cols || {}), [kind]: cols }; }
+  return { cols, sheetI, sheet: (sheets[sheetI] || {}).name || '', how, note };
+}
+/** Okno se sloupci: výběr písmen, u plánu i listu, a vzor prvních řádků podle výběru. */
+async function shColsDialog(kind, sheets, { cols, sheetI, header, how, note, file }) {
+  const fields = Object.keys(SH_COL_NAMES[kind]);
+  const width = sh => Math.max(8, ...((sh && sh.rows) || []).map(r => (r || []).length));
+  const letters = sh => Array.from({ length: Math.min(80, width(sh)) }, (x, i) => colLetter(i));
+  const opts = (sh, v, f) => `${SH_COL_NEED[kind].includes(f) ? '' : `<option value=""${v ? '' : ' selected'}>— v souboru není —</option>`}${letters(sh).map(L => `<option value="${L}"${L === v ? ' selected' : ''}>${L}${(() => { const h = sh && sh.rows && sh.rows[Math.max(0, header)] && sh.rows[Math.max(0, header)][waIndex(L)]; return h != null && String(h).trim() ? ` · ${esc(String(h).slice(0, 30))}` : ''; })()}</option>`).join('')}`;
+  const prev = (sh, cl) => {
+    const rows = ((sh && sh.rows) || []).slice(Math.max(0, header + 1)).filter(r => (r || []).some(v => v != null && String(v).trim() !== '')).slice(0, 4);
+    const use = fields.filter(f => cl[f]);
+    if (!rows.length) return '<p class="small muted">Pod nadpisy nejsou žádné řádky.</p>';
+    return `<div class="dv-prevwrap"><table class="dv-prevtab sh-colprev"><thead><tr>${use.map(f => `<th>${esc(SH_COL_NAMES[kind][f].split(' (')[0])} <small class="muted">${cl[f]}</small></th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${use.map(f => { const v = r[waIndex(cl[f])]; return `<td>${v == null || String(v).trim() === '' ? '<span class="muted">—</span>' : esc(String(v).slice(0, 40))}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+  };
+  let changed = false;
+  const res = await dialog({
+    title: `Jak se načte soubor ${SH_KIND_NAME[kind]}`, ok: 'Načíst', wide: true,
+    html: `<div class="sh-coldlg"><p class="small">${file ? `<b>${esc(file)}</b> · ` : ''}sloupce: <b>${esc(how)}</b>${note ? ` · <span class="sh-ainote">${esc(note)}</span>` : ''}. Zkontroluj vzor dole a případně oprav písmeno sloupce. Nastavení se zapamatuje pro další import.</p>
+      ${kind === 'plan' && sheets.length > 1 ? `<label class="field"><span>List s plánem</span><select name="sheet">${sheets.map((sh, i) => `<option value="${i}"${i === sheetI ? ' selected' : ''}>${esc(sh.name)}</option>`).join('')}</select></label>` : ''}
+      <div class="sh-colgrid">${fields.map(f => `<label class="field"><span>${esc(SH_COL_NAMES[kind][f])}${SH_COL_NEED[kind].includes(f) ? ' *' : ''}</span><select name="c-${f}" data-shcol="${f}">${opts(sheets[sheetI], cols[f], f)}</select></label>`).join('')}</div>
+      <h4>Vzor prvních řádků</h4><div id="shColPrev">${prev(sheets[sheetI], cols)}</div>
+      <p class="tiny muted">AI vidí jen nadpisy a druh hodnot (číslo, text, datum), žádné EANy ani názvy dílů. * = povinné.</p></div>`,
+    onOpen: dlg => {
+      const read = () => { const o = {}; fields.forEach(f => { o[f] = dlg.querySelector(`[name="c-${f}"]`).value; }); return o; };
+      const sel = dlg.querySelector('[name="sheet"]');
+      dlg.querySelector('.sh-coldlg').addEventListener('change', event => {
+        changed = true;
+        if (event.target === sel) {
+          sheetI = +sel.value;
+          const g = shColsGuess(kind, sheets[sheetI].rows || [], cols);
+          header = g.header;
+          fields.forEach(f => { dlg.querySelector(`[name="c-${f}"]`).innerHTML = opts(sheets[sheetI], g.cols[f], f); });
+        }
+        dlg.querySelector('#shColPrev').innerHTML = prev(sheets[sheetI], read());
+      });
+    },
+  });
+  if (res.value !== 'ok') return null;
+  const out = {};
+  fields.forEach(f => { out[f] = res.form.elements.namedItem(`c-${f}`).value; });
+  return { cols: { ...cols, ...out }, sheetI, changed };
+}
+/** Vzorník barev (2.61): barvy výplně buněk EANu z importu a jejich přiřazení TOP / TOP 2 / běžná shortage. */
+async function shColorDialog(r) {
+  const c = shc();
+  const list = [...r.fills.entries()].sort((a, b) => b[1] - a[1]);
+  if (!list.length) return true;
+  const ex = hex => r.items.find(i => i.fill === hex);
+  const TIERS = [['top', 'TOP SHORTAGE'], ['top2', 'TOP 2 (hned po TOP)'], ['none', 'Běžná shortage']];
+  const res = await dialog({
+    title: 'Barvy v buňkách EANu', ok: 'Použít barvy', cancel: 'Bez barev', wide: true,
+    html: `<p class="small">V buňkách s EANem jsou tyhle barvy výplně. Přiřaď každé, co znamená; aplikace si to zapamatuje i pro další import. Text TOP ve sloupci TOP má přednost.</p>
+      <div class="sh-colors">${list.map(([hex, n]) => { const i = ex(hex) || {}; const t = (c.colors || {})[hex] || shColorGuess(hex); return `<div class="sh-colorrow"><span class="sh-swatch" data-swatch="${hex}" aria-hidden="true"></span><div><b>#${hex}</b> <span class="small muted">${n} ${shItemsN(n)}${i.ean ? ` · např. ${esc(i.ean)}${i.name ? ` ${esc(i.name)}` : ''}` : ''}</span></div>
+        <select name="k-${hex}" aria-label="Barva #${hex}">${TIERS.map(([k, l]) => `<option value="${k}"${k === t ? ' selected' : ''}>${l}</option>`).join('')}</select></div>`; }).join('')}</div>`,
+    onOpen: dlg => { dlg.querySelectorAll('[data-swatch]').forEach(x => { x.style.background = `#${x.dataset.swatch}`; }); },
+  });
+  if (res.value !== 'ok') return false;
+  const map = { ...(c.colors || {}) };
+  list.forEach(([hex]) => { map[hex] = res.form.elements.namedItem(`k-${hex}`).value; });
+  c.colors = map;
+  shApplyColors(r.items, map);
+  const all = shTopFirst(r.items);
+  r.items = all;
+  r.top = all.filter(i => i.top).length;
+  r.top2 = all.filter(i => i.top2).length;
+  return true;
+}
+/** Řádek do zprávy: jak se sloupce načetly, s tlačítkem Upravit sloupce. */
+function shColsNote(kind, x) {
+  return x ? `<div class="note i sh-colsnote">Sloupce ${SH_KIND_NAME[kind]} (${esc(x.how)}): ${esc(shColsText(kind, x.cols))}${x.sheet && kind === 'plan' ? `, list ${esc(x.sheet)}` : ''}. <button class="link" type="button" data-shrecols="${kind}">Upravit sloupce</button></div>` : '';
+}
 
 /** Nový seznam z výsledku shBuild: uloží, ukáže a napíše, co se načetlo. */
 function shAddList(r, src) {
@@ -9944,7 +10116,7 @@ function shAddList(r, src) {
     w.noEan ? `${w.noEan} ${shPl(w.noEan, 'položka nemá', 'položky nemají', 'položek nemá')} EAN (je jen název dílu).` : '',
     r.more ? `Načetlo se prvních ${SH_MAX_ITEMS} položek, ${r.more} dalších se nevešlo.` : '',
     dropped ? `Drží se posledních ${SH_MAX_LISTS} seznamů, nejstarší se smazal.` : '',
-  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}${planRes ? shPlanNote(planRes, ui.sh.plan, true) : ''}`;
+  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}${shColsNote('list', src.cols)}${planRes ? shPlanNote(planRes, ui.sh.plan, true) : ''}`;
 }
 /** Nový seznam, nebo v režimu Doplnit chybějící (2.36) jen chybějící položky do vybraného seznamu. */
 function shTake(r, src) {
@@ -10011,26 +10183,35 @@ function shMergeBar() {
 }
 const SH_NONE = 'Čeká se číslo objednávky ve sloupci A, název dílu v B a EAN s odkazem v C (D index, E urgentní množství, G TOP, H probíhající operace).';
 
-async function shImportFile(file) {
+async function shImportFile(file, force = false) {
   if (!file) return;
   const msg = $('#shMsg');
   if (/\.(csv|txt)$/i.test(file.name)) {
     msg.innerHTML = '<div class="note w">CSV neobsahuje hypertextové odkazy, takže by v PDF chyběly QR kódy. Nahraj soubor Excelu (xlsx), nebo tabulku z Excelu vlož přes Ctrl+V.</div>';
     return;
   }
+  ui.sh.last = { ...(ui.sh.last || {}), list: { file } };
   try {
     const X = await xlsx();
-    const wb = X.read(new Uint8Array(await file.arrayBuffer()), { type: 'array', cellHTML: false, cellStyles: false });
-    let best = null;
-    wb.SheetNames.forEach(name => {
-      const r = shBuild(shSheetRows(X, wb.Sheets[name]));
-      if (!best || r.items.length > best.r.items.length) best = { name, r };
-    });
-    if (!best || !best.r.items.length) {
-      msg.innerHTML = `<div class="note w">V souboru <b>${esc(file.name)}</b> není žádná položka. ${esc(SH_NONE)}</div>`;
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const wb = X.read(bytes, { type: 'array', cellHTML: false, cellStyles: true });
+    // barvy z palety Excelu SheetJS nepřečte, doplní je shIndexedFills
+    const idx = await shIndexedFills(bytes);
+    Object.entries(idx).forEach(([name, map]) => { const ws = wb.Sheets[name]; if (ws) map.forEach((hex, ref) => { const c = ws[ref]; if (c && !(c.s && c.s.fgColor && c.s.fgColor.rgb)) c.s = { ...(c.s || {}), patternType: 'solid', fgColor: { rgb: hex } }; }); });
+    const sheets = wb.SheetNames.map(name => ({ name, all: shSheetRows(X, wb.Sheets[name]) })).map(sh => ({ ...sh, rows: shTextRows(sh.all) }));
+    // list s nejvíc položkami podle uložených (výchozích) sloupců
+    let pick = 0, most = -1;
+    sheets.forEach((sh, i) => { const n = shBuild(sh.all, shColsGuess('list', sh.rows, shColsOf('list')).cols).items.length; if (n > most) { most = n; pick = i; } });
+    const how = await shColsFor('list', sheets, { file: file.name, pick, force });
+    if (!how) return;
+    const best = sheets[how.sheetI];
+    const r = shBuild(best.all, how.cols);   // barvy přiřadí až vzorník
+    if (!r.items.length) {
+      msg.innerHTML = `<div class="note w">V souboru <b>${esc(file.name)}</b> není žádná položka. ${esc(SH_NONE)}</div>${shColsNote('list', how)}`;
       return;
     }
-    shTake(best.r, { file: file.name, sheet: wb.SheetNames.length > 1 ? best.name : '' });
+    if (r.fills.size) await shColorDialog(r);   // Bez barev = TOP jen podle textu ve sloupci TOP
+    shTake(r, { file: file.name, sheet: wb.SheetNames.length > 1 ? best.name : '', cols: how });
   } catch (error) {
     msg.innerHTML = `<div class="note w">Soubor se nepodařilo otevřít: ${esc(error.message)}</div>`;
   }
@@ -10042,7 +10223,10 @@ async function shImportFile(file) {
 function shClipRows(html, text) {
   if (html && /<t[dh][\s>]/i.test(html)) {
     // styly a skripty pryč: netečný dokument by je stejně nepoužil, jen by CSP hlásila porušení
-    let src = html.replace(/<(style|script)[\s\S]*?<\/\1\s*>/gi, '').replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    // barvy buněk (2.61): Excel je dává do tříd v <style> (.xl65 {background:#FF0000}) nebo do atributu style
+    const cls = {};
+    for (const m of html.matchAll(/\.(xl\d+)\s*\{([^}]*)\}/gi)) { const b = /background(?:-color)?\s*:\s*([^;]+)/i.exec(m[2]); if (b) cls[m[1].toLowerCase()] = b[1].trim(); }
+    let src = html.replace(/<(style|script)[\s\S]*?<\/\1\s*>/gi, '').replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (m, v) => ` data-st=${v}`);
     // jen řádky bez <table> (výřez mezi StartFragment a EndFragment) by DOMParser zahodil
     if (!/<table[\s>]/i.test(src)) {
       const m = src.match(/<!--StartFragment-->([\s\S]*?)<!--EndFragment-->/i);
@@ -10055,7 +10239,9 @@ function shClipRows(html, text) {
         [...tr.cells].forEach(td => {
           td.querySelectorAll('br').forEach(br => br.replaceWith(' '));
           const a = td.querySelector('a[href]');
-          row.push({ text: td.textContent, link: a ? a.getAttribute('href').trim() : '' });
+          const st = /background(?:-color)?\s*:\s*([^;"']+)/i.exec(td.getAttribute('data-st') || '');
+          const bg = st ? st[1].trim() : cls[String(td.className || '').toLowerCase().split(/\s+/).find(k => cls[k]) || ''] || '';
+          row.push({ text: td.textContent, link: a ? a.getAttribute('href').trim() : '', fill: shCssHex(bg) });
           for (let i = 1; i < Math.min(td.colSpan || 1, 8); i += 1) row.push({ text: '', link: '' });
         });
         return row.slice(0, 8);
@@ -10064,23 +10250,64 @@ function shClipRows(html, text) {
   }
   return { plain: true, rows: shTsv(text).slice(0, 20001).map(r => r.slice(0, 8).map(t => ({ text: t, link: '' }))) };
 }
-function shPaste(html, text) {
+/** Barva z CSS (#f00, #FF0000, red, rgb(…)) → HEX, jinak "". */
+function shCssHex(v) {
+  const t = String(v || '').trim();
+  if (!t || /^(transparent|none|inherit|initial|white|#fff(fff)?)$/i.test(t)) return '';
+  const h = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(t);
+  if (h) return shHex(h[1].length === 3 ? h[1].split('').map(x => x + x).join('') : h[1]);
+  const probe = document.createElement('span');
+  probe.style.color = t;
+  if (!probe.style.color) return '';
+  document.body.append(probe);
+  const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(probe).color);
+  probe.remove();
+  return m ? shHex([m[1], m[2], m[3]].map(x => (+x).toString(16).padStart(2, '0')).join('')) : '';
+}
+async function shPaste(html, text, force = false) {
   const msg = $('#shMsg');
   const clip = shClipRows(html, text);
+  ui.sh.last = { ...(ui.sh.last || {}), [shLooksLikeRecs(clip.rows) ? 'move' : 'list']: { html, text } };
   // poslední záznamy (A QR kód, B datum a čas, C ks, D stav) se poznají podle data ve sloupci B
-  if (shLooksLikeRecs(clip.rows)) { shPasteRecs(clip.rows); return; }
-  const r = shBuild(clip.rows);
+  if (shLooksLikeRecs(clip.rows)) {
+    const how = await shColsFor('move', [{ name: 'schránka', rows: shTextRows(clip.rows) }], { file: 'vloženo ze schránky', force });
+    if (how) shPasteRecs(clip.rows, { file: 'vloženo ze schránky', paste: true, cols: how });
+    return;
+  }
+  const how = await shColsFor('list', [{ name: 'schránka', rows: shTextRows(clip.rows) }], { file: 'vloženo ze schránky', force });
+  if (!how) return;
+  const r = shBuild(clip.rows, how.cols);
   if (!r.items.length) {
     msg.innerHTML = `<div class="note w">Ve schránce není tabulka se seznamem. Označ v Excelu řádky seznamu (klidně i s nadpisy), zkopíruj je (Ctrl+C) a vlož sem (Ctrl+V). ${esc(SH_NONE)}</div>`;
     return;
   }
-  shTake(r, { file: 'vloženo ze schránky', paste: true, plain: clip.plain });
+  if (r.fills.size) await shColorDialog(r);
+  shTake(r, { file: 'vloženo ze schránky', paste: true, plain: clip.plain, cols: how });
 }
-/** Poslední záznamy ze schránky k položkám otevřeného seznamu (podle QR kódu). */
-function shPasteRecs(rows) {
+/** Evidence pohybu ze souboru (2.61, 3. krok): xlsx i csv, sloupce navrhne AI z nadpisů. */
+async function shMoveImport(file, force = false) {
+  if (!file) return;
+  const msg = $('#shMsg');
+  ui.sh.last = { ...(ui.sh.last || {}), move: { file } };
+  try {
+    const X = await xlsx();
+    const buf = new Uint8Array(await file.arrayBuffer());
+    const wb = /\.(csv|txt)$/i.test(file.name) ? X.read(decodeText(buf.buffer), { type: 'string', raw: true }) : X.read(buf, { type: 'array', cellHTML: false, cellStyles: false });
+    const sheets = wb.SheetNames.map(name => ({ name, all: shSheetRows(X, wb.Sheets[name], 40, -1) })).map(sh => ({ ...sh, rows: shTextRows(sh.all) }));
+    let pick = 0, most = -1;
+    sheets.forEach((sh, i) => { const n = shRecBuild(sh.all, shColsGuess('move', sh.rows, shColsOf('move')).cols).recs.size; if (n > most) { most = n; pick = i; } });
+    const how = await shColsFor('move', sheets, { file: file.name, pick, force });
+    if (!how) return;
+    shPasteRecs(sheets[how.sheetI].all, { file: file.name, cols: how });
+  } catch (error) {
+    msg.innerHTML = `<div class="note w">Evidenci pohybu se nepodařilo otevřít: ${esc(error.message)}</div>`;
+  }
+}
+/** Poslední záznamy (schránka nebo soubor evidence pohybu) k položkám otevřeného seznamu (podle QR kódu). */
+function shPasteRecs(rows, src = {}) {
   const msg = $('#shMsg');
   const l = shList();
-  const r = shRecBuild(rows);
+  const r = shRecBuild(rows, src.cols ? src.cols.cols : shColsOf('move'));
   if (!l) {
     msg.innerHTML = '<div class="note w">Vložené řádky vypadají jako poslední záznamy (A QR kód, B datum a čas, C počet ks, D stav), ale zatím tu není žádný seznam. Nejdřív nahraj nebo vlož seznam dílů.</div>';
     return;
@@ -10090,8 +10317,10 @@ function shPasteRecs(rows) {
     return;
   }
   const res = shApplyRecs(l, r.recs, { at: Date.now(), by: ui.me.label || '' });
-  if (res.added) S.shortage = cleanShortage(S.shortage);   // id nově přidaných poddílů
-  if (res.updated || res.added) save();
+  // 3. krok (2.61): odkud jsou záznamy
+  if (res.matched) l.moves = { file: (src.file || 'vloženo ze schránky').slice(0, 160), at: Date.now(), by: ui.me.label || '', rows: r.rows };
+  S.shortage = cleanShortage(S.shortage);   // id nově přidaných poddílů, sloupce
+  if (res.updated || res.added || res.matched) save();
   renderShortage();
   const other = !res.matched ? shc().lists.find(x => x !== l && x.items.some(i => i.code && r.recs.has(i.code))) : null;
   const miss = res.missing.slice(0, 5).join(', ') + (res.missing.length > 5 ? ` a ${res.missing.length - 5} dalších` : '');
@@ -10102,8 +10331,8 @@ function shPasteRecs(rows) {
     res.older ? `${res.older} ${shPl(res.older, 'vložený záznam je starší', 'vložené záznamy jsou starší', 'vložených záznamů je starších')} než uložený, ${res.older === 1 ? 'nepoužil se' : 'nepoužily se'}.` : '',
     res.missing.length ? `${res.missing.length} ${shPl(res.missing.length, 'kód v seznamu není', 'kódy v seznamu nejsou', 'kódů v seznamu není')}: ${miss}.` : '',
     other ? `Kódy patří k seznamu z ${shWhen(other)}. Otevři ho dole v Seznamech a vlož záznamy znovu.` : '',
-    r.bad ? `${r.bad} ${shPl(r.bad, 'řádek nemá', 'řádky nemají', 'řádků nemá')} platný QR kód ve sloupci A.` : '',
-  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}`;
+    r.bad ? `${r.bad} ${shPl(r.bad, 'řádek nemá', 'řádky nemají', 'řádků nemá')} platný QR kód ve sloupci ${esc((src.cols && src.cols.cols.code) || 'A')}.` : '',
+  ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}${shColsNote('move', src.cols)}`;
 }
 
 /* ---------- Poddíly z výrobního plánu (2.29) ----------
@@ -10113,7 +10342,7 @@ function shPasteRecs(rows) {
    podle kódu). Jiné soubory (xls, ods) přečte SheetJS.
    Nahraný plán zůstane v paměti okna (ui.sh.plan) a prohledá se i u dalších seznamů. */
 const SH_PC = { a: 0, e: 4, h: 7, m: 12, am: 38 };
-async function shPlanFast(b, plan, progress) {
+async function shPlanFast(b, plan, progress, SH_PC = shPcOf(), sheetName = '') {
   const zip = waZip(b);
   const rels = {};
   const relXml = await waZipText(b, zip.get('xl/_rels/workbook.xml.rels'));
@@ -10124,7 +10353,8 @@ async function shPlanFast(b, plan, progress) {
     const target = String(rels[id] || '');
     return { name: waAttr(m[1], 'name'), path: (target.startsWith('/') ? target.slice(1) : `xl/${target}`).replace(/\/\.\//g, '/').toLowerCase() };
   });
-  const sh = sheets[1] || sheets[0];
+  const sh = (sheetName && sheets.find(x => x.name === sheetName)) || sheets[1] || sheets[0];
+  const L = colLetter(SH_PC.e);   // sloupec EANu poddílu (odkazy)
   if (!sh || !zip.get(sh.path)) throw new Error('list nenalezen');
   plan.sheet = sh.name;
   const sst = await waXlsxSst(b, zip.get('xl/sharedstrings.xml'));
@@ -10145,12 +10375,12 @@ async function shPlanFast(b, plan, progress) {
       if (a == null || e == null || e === '') continue;
       const x = { a, e, h: v[SH_PC.h], m: v[SH_PC.m], op, rid: '', link: '' };
       // vzorec HYPERLINK("…") v buňce E (hledá se jen v řádku, který nějaký vzorec má)
-      const cell = (m[2] || '').includes('<f') && new RegExp(`<(?:\\w+:)?c\\b[^>]*\\br="E${i + 1}"[^>]*>([\\s\\S]*?)</(?:\\w+:)?c>`).exec(m[2] || '');
+      const cell = (m[2] || '').includes('<f') && new RegExp(`<(?:\\w+:)?c\\b[^>]*\\br="${L}${i + 1}"[^>]*>([\\s\\S]*?)</(?:\\w+:)?c>`).exec(m[2] || '');
       const f = cell && /<(?:\w+:)?f\b[^>]*>([\s\S]*?)<\/(?:\w+:)?f>/.exec(cell[1]);
       const hl = f && /HYPERLINK\(\s*"([^"]+)"/i.exec(waXml(f[1]));
       if (hl) x.link = hl[1];
       keep.push(x);
-      byRef.set(`E${i + 1}`, x);
+      byRef.set(`${L}${i + 1}`, x);
     }
   };
   const links = block => {
@@ -10160,9 +10390,9 @@ async function shPlanFast(b, plan, progress) {
       if (!rid) continue;
       const [p, q] = ref.split(':');
       if (!q) { const x = byRef.get(p); if (x && !x.link) x.rid = rid; continue; }
-      // oblast (E12:E20): jen sloupec E
-      const r0 = /^E(\d+)$/.exec(p), r1 = /^E(\d+)$/.exec(q);
-      if (r0 && r1) byRef.forEach((x, k) => { const n = +k.slice(1); if (n >= +r0[1] && n <= +r1[1] && !x.link) x.rid = rid; });
+      // oblast (E12:E20): jen sloupec EANu poddílu
+      const re = new RegExp(`^${L}(\\d+)$`), r0 = re.exec(p), r1 = re.exec(q);
+      if (r0 && r1) byRef.forEach((x, k) => { const n = +k.slice(L.length); if (n >= +r0[1] && n <= +r1[1] && !x.link) x.rid = rid; });
     }
   };
   const r = waZipReader(b, zip.get(sh.path));
@@ -10198,21 +10428,30 @@ async function shPlanFast(b, plan, progress) {
   }
   keep.forEach(x => shPlanRow(plan, x.a, x.e, x.h, x.m, x.op, x.link));
 }
-async function shPlanRead(file, progress) {
+/** Sloupce plánu jako indexy {a, e, h, m, am} (2.61: podle nastavení). */
+function shPcOf(cols) {
+  const x = shColIdx('plan', cols || shColsOf('plan'));
+  return { a: x.asm, e: x.sub, h: x.index, m: x.order, am: x.op };
+}
+async function shPlanRead(file, progress, cols = null) {
   const b = new Uint8Array(await file.arrayBuffer());
   const plan = shPlanBlank(file.name);
+  const pc = shPcOf(cols);
+  const want = (cols || shColsOf('plan')).sheet || '';
   if (b[0] === 0x50 && b[1] === 0x4b && waDeflateRaw && !window.SH_PLAN_SHEETJS) {
-    try { await shPlanFast(b, plan, progress); return plan; } catch (error) { console.warn('Poddíly: rychlé čtení nevyšlo, čte SheetJS', error); }
+    try { await shPlanFast(b, plan, progress, pc, want); return plan; } catch (error) { console.warn('Poddíly: rychlé čtení nevyšlo, čte SheetJS', error); }
   }
   const fresh = shPlanBlank(file.name);
   const X = await xlsx();
   const wb = X.read(b, { type: 'array', cellHTML: false, cellStyles: false });
-  const name = wb.SheetNames[1] || wb.SheetNames[0];
+  const name = (want && wb.SheetNames.includes(want) && want) || wb.SheetNames[1] || wb.SheetNames[0];
+  const SH_PC = pc;
+  const at0 = (r, c) => (c < 0 ? null : wb.Sheets[name][X.utils.encode_cell({ r, c })]);
   fresh.sheet = name || '';
   const ws = wb.Sheets[name];
   if (!ws || !ws['!ref']) return fresh;
   const range = X.utils.decode_range(ws['!ref']);
-  const at = (r, c) => ws[X.utils.encode_cell({ r, c })];
+  const at = at0;
   for (let r = range.s.r; r <= range.e.r; r += 1) {
     const e = at(r, SH_PC.e);
     fresh.total += 1;
@@ -10242,30 +10481,54 @@ function shPlanNote(res, plan, auto) {
     !plan.rows.size && !plan.other.size ? `Ve ${plan.sheet ? `listu ${plan.sheet}` : 'souboru'} nejsou řádky plánu. Čeká se A EAN sestavy, E EAN poddílu, H index, M číslo objednávky a AM probíhající operace.` : '',
   ].filter(Boolean).map(t => `<div class="note w">${esc(t)}</div>`).join('')}`;
 }
-async function shPlanImport(file) {
+async function shPlanImport(file, force = false) {
   if (!file) return;
   const msg = $('#shMsg');
   if (/\.(csv|txt)$/i.test(file.name)) { msg.innerHTML = '<div class="note w">Výrobní plán nahraj jako soubor Excelu (xlsx): CSV nemá odkazy u EANů poddílů.</div>'; return; }
+  ui.sh.last = { ...(ui.sh.last || {}), plan: { file } };
+  // sloupce plánu (2.61): z prvních řádků listů navrhne AI, jinak odhad podle nadpisů
+  msg.innerHTML = `<div class="note i">Čtu nadpisy výrobního plánu <b>${esc(file.name)}</b>…</div>`;
+  let sheets = [];
+  try {
+    const book = await waPlanOpen(file, { quick: true });
+    for (const sh of book) { const { head } = await sh.read({ top: 8 }); sheets.push({ name: sh.name, rows: head }); }
+  } catch (error) { msg.innerHTML = `<div class="note w">Výrobní plán se nepodařilo otevřít: ${esc(error.message)}</div>`; return; }
+  const saved = shColsOf('plan');
+  let pick = saved.sheet ? sheets.findIndex(x => x.name === saved.sheet) : -1;
+  if (pick < 0) pick = sheets.length > 1 ? 1 : 0;
+  const how = await shColsFor('plan', sheets, { file: file.name, pick, force });
+  if (!how) { msg.innerHTML = ''; return; }
   let tick = 0;
   msg.innerHTML = `<div class="note i">Čtu výrobní plán <b>${esc(file.name)}</b>…</div>`;
   const progress = async n => { if (Date.now() - tick > 250) { tick = Date.now(); msg.innerHTML = `<div class="note i">Čtu výrobní plán <b>${esc(file.name)}</b>: ${nf(n)} řádků…</div>`; await new Promise(res => setTimeout(res, 0)); } };
   let plan;
-  try { plan = await shPlanRead(file, progress); } catch (error) { msg.innerHTML = `<div class="note w">Výrobní plán se nepodařilo přečíst: ${esc(error.message)}</div>`; return; }
+  try { plan = await shPlanRead(file, progress, how.cols); } catch (error) { msg.innerHTML = `<div class="note w">Výrobní plán se nepodařilo přečíst: ${esc(error.message)}</div>`; return; }
   ui.sh.plan = plan;
   const l = shList();
-  if (!l) { renderShortage(); msg.innerHTML = `<div class="note i">Výrobní plán <b>${esc(plan.file)}</b> je načtený (${nf(plan.total)} řádků). Poddíly se doplní k seznamu, který nahraješ nebo vložíš.</div>`; return; }
+  if (!l) { S.shortage = cleanShortage(S.shortage); save(); renderShortage(); msg.innerHTML = `<div class="note i">Výrobní plán <b>${esc(plan.file)}</b> je načtený (${nf(plan.total)} řádků). Poddíly se doplní k seznamu, který nahraješ nebo vložíš.</div>${shColsNote('plan', how)}`; return; }
   const res = shUsePlan(l, plan);
-  if (!res.kept) save();
+  save();
   renderShortage();
-  msg.innerHTML = shPlanNote(res, plan, false);
+  msg.innerHTML = shPlanNote(res, plan, false) + shColsNote('plan', how);
 }
 
+/** Stav tří kroků nad seznamem (2.61). */
+function shStepsDraw(l) {
+  const st = (n, done, text) => { const el = $(`#shSt${n}`); if (!el) return; el.textContent = text; el.closest('.sh-step').classList.toggle('done', !!done); };
+  const pl = ui.sh.plan;
+  st(1, l, l ? `${l.items.length} ${shItemsN(l.items.length)} · ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}` : 'Tabulka z Excelu (soubor nebo Ctrl+V)');
+  const subsN = l ? l.items.reduce((a, i) => a + (i.subs || []).length + (i.cands || []).length, 0) : 0;
+  st(2, l && l.plan, l && l.plan ? `${l.plan.file} · ${subsN} ${shSubsN(subsN)}` : pl ? `${pl.file} načtený, čeká na seznam` : 'Poddíly sestav a probíhající operace');
+  const recs = l ? l.items.filter(i => i.rec).length : 0;
+  st(3, l && l.moves, l && l.moves ? `${l.moves.file} · záznam u ${recs} z ${l.items.length}` : 'Poslední interní záznamy (soubor nebo Ctrl+V)');
+}
 function renderShortage() {
   const box = $('#shView');
   if (!box || !S) return;
   shMergeBar();
   const c = shc();
   const l = shList();
+  shStepsDraw(l);
   if (!l) {
     box.innerHTML = `<div class="card">${emptyState('Zatím žádný seznam', 'Tabulku z Excelu vlož přes Ctrl+V (do pole nahoře), nebo ji načti tlačítkem Nahrát Excel: ve sloupci A číslo objednávky, v B název dílu, v C EAN s vloženým odkazem, v D index, v E urgentní množství, v G „TOP“ pro TOP SHORTAGE a v H probíhající operace. Do QR kódu v PDF jde activeBarcode z odkazu.', '<button class="btn" type="button" data-shimport>Nahrát Excel</button>')}</div>`;
     return;
@@ -10359,7 +10622,9 @@ function renderShortage() {
   const planUse = pl && (!l.plan || l.plan.at !== pl.at) ? ` <button class="btn sec small" type="button" data-shplanuse>Najít poddíly v plánu ${esc(pl.file)}</button>` : '';
   const older = c.lists.length > 1 ? `<section class="card sh-lists"><h3>Seznamy</h3><div class="chips">${c.lists.map(x => `<button type="button" class="chip${x.id === l.id ? ' on' : ''}" data-shopen="${esc(x.id)}" aria-pressed="${x.id === l.id}">${esc(shWhen(x))} · ${x.items.length}</button>`).join('')}</div>
       <p class="tiny muted">Drží se posledních ${SH_MAX_LISTS} nahraných seznamů.</p></section>` : '';
-  box.innerHTML = `${tiles}${deptPanel}<article class="card sh-card">
+  const mode = `<div class="chips sh-mode noprint" role="group" aria-label="Pohled"><button type="button" class="chip${ui.sh.mode === 'rozbor' ? '' : ' on'}" data-shmode="list" aria-pressed="${ui.sh.mode !== 'rozbor'}">Seznam a tisk</button><button type="button" class="chip${ui.sh.mode === 'rozbor' ? ' on' : ''}" data-shmode="rozbor" aria-pressed="${ui.sh.mode === 'rozbor'}">Rozbor položek</button></div>`;
+  if (ui.sh.mode === 'rozbor') { box.innerHTML = `${tiles}${mode}${shRozborHtml(l)}${older}`; return; }
+  box.innerHTML = `${tiles}${mode}${deptPanel}<article class="card sh-card">
       <div class="card-head"><div><h2>Seznam z ${esc(shWhen(l))}</h2>
         <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}${hidN ? ` · <b>${hidN} skryt${hidN === 1 ? 'á' : hidN <= 4 ? 'é' : 'ých'} v PDF</b>` : ''}</p></div>
         <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat objednávku, díl, EAN, operaci" autocomplete="off"></label>
@@ -10374,6 +10639,56 @@ function renderShortage() {
       <p class="tiny muted sh-none"${n ? ' hidden' : ''}>${n ? 'Nic neodpovídá hledání.' : 'V seznamu nezbyla žádná položka.'}</p>
     </article>${older}`;
   shFilter();
+}
+/* ---------- Rozbor položek (2.61): ke každé položce probíhající operace, poslední záznam,
+   interní záznam ano / ne a všechny poddíly sestavy (i s jinou operací než Hala 2). ---------- */
+function shRozborHtml(l) {
+  const items = l.items;
+  const withRec = items.filter(i => i.rec).length;
+  const asm = items.filter(i => shAnalysis(i).subs.length).length;
+  const empty = items.filter(i => !i.note).length;
+  const recLine = (r, a) => (r ? `<span class="tag ok">záznam</span> ${esc(a.recText(r))}${r.n > 1 ? ` <span class="muted">(${r.n} ${r.n <= 4 ? 'záznamy' : 'záznamů'})</span>` : ''}` : '<span class="tag warn">bez záznamu</span>');
+  const cards = items.map((i, j) => {
+    const a = shAnalysis(i);
+    const subs = a.subs.length ? `<table class="sh-rzsubs"><thead><tr><th>Poddíl · EAN</th><th>Operace</th><th>Poslední záznam</th></tr></thead><tbody>${a.subs.map((x, k) => `<tr class="${x.hall ? '' : 'sh-rzother'}"><td><span class="muted">${j + 1}.${k + 1}</span> ${esc(x.ean || '—')}${x.code ? ` <span class="tag sh-code">${esc(x.code)}</span>` : ''}${x.byRec ? ' <span class="tag sh-rectag">podle záznamu</span>' : ''}</td><td>${esc(x.op || '—')}${x.hall ? '' : ' <span class="small muted">mimo Halu 2</span>'}</td><td>${recLine(x.rec, a)}</td></tr>`).join('')}</tbody></table>` : '';
+    return `<article class="sh-rz${i.top ? ' sh-top' : i.top2 ? ' sh-top2' : ''}" data-shrz="${esc(i.id)}">
+      <header><span class="muted">${j + 1}.</span> ${i.top ? '<span class="tag crit sh-toptag">TOP SHORTAGE</span>' : i.top2 ? '<span class="tag sh-top2tag">TOP 2</span>' : ''} <b>${esc(i.name || '—')}</b> <span class="small muted">EAN ${esc(i.ean || '—')} · obj. ${esc(i.order || '—')}${i.index ? ` · index ${esc(i.index)}` : ''} · ${esc(i.qty || '—')} ks</span></header>
+      <dl class="sh-rzgrid">
+        <div><dt>Probíhající operace</dt><dd>${a.cur ? esc(a.cur) : '<span class="muted">neuvedena</span>'}</dd></div>
+        <div><dt>Poslední dokončená · interní záznam</dt><dd>${recLine(i.rec, a)}</dd></div>
+        <div><dt>Poddíly</dt><dd>${a.subs.length ? `${a.subs.length}${a.noRec ? ` · <span class="sh-rzwarn">${a.noRec} bez záznamu</span>` : ' · všechny se záznamem'}` : '<span class="muted">díl bez poddílů</span>'}</dd></div>
+      </dl>
+      ${subs}
+      <p class="small sh-rznote"><b>Poznámka:</b> ${i.note ? esc(i.note) : `<span class="muted">prázdná · návrh: ${esc(a.note)}</span>`}</p>
+    </article>`;
+  }).join('');
+  return `<section class="card sh-rozbor">
+    <div class="card-head"><div><h2>Rozbor položek</h2><p class="small muted">${items.length} ${shItemsN(items.length)} · interní záznam u ${withRec} · ${asm} ${asm === 1 ? 'sestava' : asm <= 4 && asm ? 'sestavy' : 'sestav'} s poddíly${l.plan ? '' : ' · výrobní plán nenahrán (krok 2)'}${l.moves ? '' : ' · evidence pohybu nenahrána (krok 3)'}</p></div>
+      <div class="row gap wrap"><button class="btn sec small" type="button" data-shanote${empty ? '' : ' disabled'} title="Do prázdných poznámek zapíše rozbor (probíhá, poslední záznam, poddíly); vyplněné poznámky zůstanou">Zapsat rozbor do prázdných poznámek${empty ? ` (${empty})` : ''}</button><button class="btn small" type="button" data-shaxlsx>Rozbor do Excelu</button></div></div>
+    <div class="sh-rzlist">${cards}</div></section>`;
+}
+function shAnalysisToNotes() {
+  const l = shList();
+  if (!l) return;
+  let n = 0;
+  l.items.forEach(i => { if (!i.note) { i.note = shAnalysis(i).note; n += 1; } });
+  if (!n) { toast('Všechny položky už poznámku mají.'); return; }
+  save();
+  renderShortage();
+  toast(`Rozbor zapsán do ${n} ${shPl(n, 'poznámky', 'poznámek', 'poznámek')}.`);
+}
+async function exportShAnalysisXlsx() {
+  const l = shList();
+  if (!l) return;
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    const sh = shAnalysisSheet(l);
+    const ws = X.utils.aoa_to_sheet(sh.rows.map(row => row.map(safeCell)));
+    ws['!cols'] = sh.cols.map(wch => ({ wch }));
+    X.utils.book_append_sheet(wb, ws, sh.name);
+    downloadFile(`shortage-rozbor-${todayIso(l.at)}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
 }
 /* Rychlé tlačítko „Skrýt v PDF“ (2.29.1): položka i poddíl zůstanou v aplikaci, jen se nevytisknou. */
 const SH_EYE = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg>';
@@ -10538,12 +10853,26 @@ function bindShortage() {
   $('#shFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; shImportFile(f); };
   $('#shPlanBtn').onclick = () => $('#shPlanFile').click();
   $('#shPlanFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; shPlanImport(f); };
+  $('#shMoveBtn').onclick = () => $('#shMoveFile').click();
+  $('#shMoveFile').onchange = event => { const f = event.target.files[0]; event.target.value = ''; shMoveImport(f); };
   const view = $('#view-shortage');
   view.addEventListener('pointerdown', shDragDown);
   view.addEventListener('keydown', shGripKey);
   view.addEventListener('click', async event => {
     const t = event.target;
     if (t.closest('[data-shimport]')) { $('#shFile').click(); return; }
+    // 2.61: znovu načíst se sloupci, přepnout Seznam / Rozbor, rozbor do poznámek a do Excelu
+    const rc = t.closest('[data-shrecols]');
+    if (rc) {
+      const k = rc.dataset.shrecols, x = (ui.sh.last || {})[k];
+      if (!x) { toast('Soubor nahraj znovu, okno se sloupci se ukáže.'); return; }
+      if (x.file) { if (k === 'list') shImportFile(x.file, true); else if (k === 'plan') shPlanImport(x.file, true); else shMoveImport(x.file, true); } else shPaste(x.html, x.text, true);
+      return;
+    }
+    const md = t.closest('[data-shmode]');
+    if (md) { ui.sh.mode = md.dataset.shmode; renderShortage(); return; }
+    if (t.closest('[data-shanote]')) { shAnalysisToNotes(); return; }
+    if (t.closest('[data-shaxlsx]')) { exportShAnalysisXlsx(); return; }
     const pdf = t.closest('[data-shpdf]');
     if (pdf) { exportShortagePdf(pdf.dataset.shpdf, pdf); return; }
     const mg = t.closest('[data-shmerge]');

@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.61
+
+- **Shortage ve třech krocích** (panel nahoře ukazuje, co je hotové):
+  1. **Urgentní díly**: tabulka z Excelu (soubor nebo Ctrl+V). Po importu vyskočí **vzorník barev**,
+     které jsou v buňkách s EANem. U každé barvy zvolíš TOP SHORTAGE, TOP 2, nebo běžná shortage.
+     Aplikace si volbu zapamatuje a příště ji předvyplní. Funguje s barvami RGB, z motivu
+     i z palety Excelu. Text TOP ve sloupci TOP platí dál.
+  2. **Výrobní plán**: poddíly sestav a probíhající operace sestavy.
+  3. **Evidence pohybu**: poslední interní záznam ke každé položce a poddílu (soubor xlsx či csv,
+     nebo Ctrl+V), i s operací a počtem záznamů.
+- **Sloupce každého importu navrhne AI** podle prvních řádků. AI dostane jen nadpisy a druh hodnot
+  (číslo, text, datum), žádné EANy, kódy ani názvy dílů. Bez AI se sloupce odhadnou podle nadpisů.
+  Když návrh nesedí na uložené nastavení, ukáže se okno se sloupci a vzorem prvních řádků.
+  Pod zprávou po importu je odkaz Upravit sloupce.
+- **Rozbor položek**: ke každé položce probíhající operace, poslední dokončený záznam, zda máme
+  interní záznam, a **všechny poddíly sestavy** (i s operací mimo Halu 2) s jejich záznamy.
+  Tlačítkem se rozbor zapíše do prázdných poznámek, jde stáhnout i do Excelu.
+- Verze dat 45 (stránka 2.60.1 nové nastavení neuloží, obnov ji Ctrl+Shift+R).
+
 ## Co je nového ve verzi 2.60.1
 
 - **Přihlašovací panel jako tekuté sklo** (liquid glass): průzračné a jasné, barevné přechody

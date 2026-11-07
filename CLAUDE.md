@@ -34,6 +34,38 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 7. 11. 2026 (verze 2.61):
+
+- Uživatel: „zlepšit modul shortage, aby tam byly 3. kroky. 1. krok import tabulky urgentních dílů
+  (… když je v excelu vyplň v buňce eanu červena, je to TOP shortage … vzorník barev … TOP nebo TOP2
+  případně jen Shortage) 2. import výrobního plánu 3. import evidence o pohybu … ke každé položce
+  … poznámky, právě probíhající operace a poslední dokončena, zda máme nějaký záznam interní. A u
+  sestav bych viděl všechny poddily“ a „při každém importu … aby AI nadefinovala sloupce podle
+  prvních dvou řádku“.
+  - Data (verze 45): `S.shortage.cols {list, plan (+ sheet), move}` (`shColsClean`, výchozí
+    `SH_COLS`), `S.shortage.colors {HEX: top|top2|none}`, seznam `moves {file, at, by, rows}`,
+    položka `pop` (operace sestavy z plánu, jen když je), záznam `rec.op`, `rec.n`; `cands` drží
+    i poddíly bez kódu (rozbor), `res.cands` počítá jen s kódem, `candsAll` všechny.
+  - Core (blok „Shortage ve třech krocích (2.61)“): `shColsGuess` (nadpisy, `SH_COL_WORDS`),
+    `shColsFromAi`, `shColIdx`, `shColsOf`, `shBuild(rows, cols, colors)` (vrací `fills`),
+    `shApplyColors`, `shColorGuess`, `SH_INDEXED`, `shRecBuild(rows, cols)`, `shAiSample`
+    (vlastní hranice nadpisů: nad 1. řádkem s číslem/datem/3+ číslicemi, nejvýš 3 řádky; zbytek
+    jen typy), `shAnalysis`, `shAnalysisSheet`. Historie `shc:`, `shk:`, `shv:`.
+  - Server: `odm_ai_shcols`, `ODM_AI_SH_SYSTEM`, akce `ai_shcols` (`{kind, sheets}`).
+  - UI: panel `.sh-steps` (`#shSt1–3`, `shStepsDraw`, `#shMoveBtn`/`#shMoveFile`), `shColsFor`
+    (AI nebo odhad; okno `shColsDialog` jen když se liší od uloženého bez ohledu na list, nebo AI
+    napsala poznámku), `shColorDialog` (vzorník, swatch přes `style` z JS kvůli CSP),
+    `shIndexedFills` (SheetJS barvy z palety zahodí, čte se `styles.xml` přes `waZip`),
+    `shCellFill`, `shCssHex` (barvy ze schránky), `shMoveImport`, `shPasteRecs(rows, src)`,
+    plán podle sloupců (`shPcOf`, `shPlanFast(…, pc, sheet)`), `ui.sh.last` + `[data-shrecols]`
+    (Upravit sloupce), pohled `ui.sh.mode` `list|rozbor` (`shRozborHtml`, `[data-shanote]`
+    `shAnalysisToNotes`, `[data-shaxlsx]` `exportShAnalysisXlsx`). PDF beze změny.
+  - Testy: core „Shortage (2.61)“, `test_odmeny` `test_shortage_columns` (mock pozná `shortage`,
+    426 pro 44), nový `tests/e2e_shkroky.js` (openpyxl: výplně RGB, motiv, paleta; plán; pohyb;
+    AI přes `page.route`). `ODM_VERSION` 2.61.
+- Uživatel se mezitím ptal na současnou práci dvou lidí (409 a Přepsat / Načíst). Dostal návrhy,
+  čeká se na volbu.
+
 Stav k 6. 11. 2026 (verze 2.60.1):
 
 - Uživatel: „přihlašovací kartu udělal více skleněnou a takové matnější sklo, aby se ty barevné
@@ -1957,7 +1989,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36)
+## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -2344,7 +2376,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.58 | `b697d6d` | úvodní animace přihlášení odstraněná |
 | 2.59 | `ce2ac43` | pravý panel s úkoly a rychlými akcemi, sbalitelné menu, souhrn v kapsli s pruhy a trendem, hladké křivky, barevná oddělení, skleněná plocha |
 | 2.60 | `83eedbb` | pozadí přihlašovací stránky z barevných polí (WebGL) |
-| 2.60.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: přihlašovací panel z matného skla |
+| 2.60.1 | `5325fd4` | přihlašovací panel z tekutého skla, pozadí v plném rozlišení |
+| 2.61 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage ve třech krocích (barvy EANu, výrobní plán, evidence pohybu), sloupce importů přes AI, rozbor položek se všemi poddíly (data verze 45) |
 
 Verze 2.1 přidala:
 
@@ -2456,7 +2489,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `44` (od 2.56):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `45` (od 2.61):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -2807,6 +2840,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_jmena.js` (2.48): kontrola jmen při nahrání docházky postaru (prohozené, překlep, neznámý, dvojí přiřazení, nikdo nový, telefon);
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
+  - `e2e_shkroky.js` (2.61): Shortage ve třech krocích (sloupce, vzorník barev, plán, evidence pohybu, AI, rozbor, telefon);
   - `e2e_lockbg.js` (2.60): pozadí zámku (kreslí, hýbe se, pauza, omezit pohyb, bez WebGL, po odemčení pryč, telefon);
   - `e2e_panel.js` (2.59): pravý panel (úkoly, rychlé akce, Vrátit zpět), sbalitelné menu, kapsle s pruhy, hladké křivky, oddělení barevně, 1440 / 2560 / telefon;
   - `e2e_vzhled.js` (2.47, 2.54): vzhled Sklo, bez volby vzhledu, stará volba se zahodí, doladění, PDF nezávisí na CSS;
