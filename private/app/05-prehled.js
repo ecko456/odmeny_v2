@@ -219,7 +219,7 @@ function renderOverview() {
   $('#ovOnlyImported').checked = P.onlyImported;
   $('#ovOnlyOpen').checked = P.onlyOpen;
   $('#ovFilterDot').hidden = !(select.value || !P.onlyImported || P.onlyOpen);   // na telefonu jsou filtry schované
-  $('#ovTitle').textContent = p ? periodName(p) : 'Zatím bez docházky';
+  $('#ovTitle').innerHTML = p ? perPickHtml('ov') : 'Zatím bez docházky';
   const meta = p ? periodMeta(p) : null;
   $('#ovLede').innerHTML = p
     ? `Pracovních dnů ${meta.work}, fond ${nf(meta.fund)} h (směna ${nf(S.settings.shift)} h), sobot ${meta.sats}${meta.hols ? `, svátků ve všední den ${meta.hols}` : ''}. Tabáky = dovednosti ± docházka − sankce ± ruční úprava.${cutoffDays() ? ` Od ${cutoffDays()} dní absence bez nároku na tabák i kafe.` : ''}`

@@ -163,6 +163,7 @@ function dvPeriodsText(list) {
 function renderAttendance() {
   const p = curPeriod();
   const box = $('#attView');
+  $('#attPick').innerHTML = p ? perPickHtml('att') : '';
   if (!p) { box.innerHTML = `<div class="card">${emptyState('Zatím nic nahráno', 'Po nahrání tu uvidíš každého člověka po dnech.')}</div>`; return; }
   const meta = periodMeta(p);
   const rows = Object.keys(p.rows).map(k => ({ k, r: p.rows[k], a: attendance(p, k) })).sort((a, b) => norm(a.r.last).localeCompare(norm(b.r.last), 'cs'));

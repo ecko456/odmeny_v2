@@ -16,7 +16,7 @@ function bindEvents() {
     if (pick.open && !pick.contains(event.target)) pick.open = false;
   });
   document.addEventListener('keydown', event => { if (event.key === 'Escape') $('#colPick').open = false; });
-  $('#periodSel').onchange = event => { setPeriod(event.target.value); renderAll(); };
+  bindPerPick();
   bindSideSearch();
   bindSideMini();
   bindRail();

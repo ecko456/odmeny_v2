@@ -34,6 +34,30 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 8. 11. 2026 (verze 2.64):
+
+- Uživatel: „pro širokoúhlé monitory … adaptivní šířky toho panelu napravo … aktuální šířku bych
+  definoval jako minimální“, „do rychlé akce … sub menu pro ‚Nový úkol‘ … ‚Požadavek pracovníka‘“,
+  „v hlavním menu nalevo bych odstranil možnost přepínat ‚Hodnocené období‘ … přepínat měsíce jen
+  v přehledu a docházce … skleněné buňky se šipkou dolu“ a „pokud tam zůstane místo … panel se
+  Shortage“.
+  - Pravý panel: mřížka `.shell` od 1600 px `254px minmax(0, var(--main-max, 1920px)) minmax(312px,
+    1fr)`, `--main-max` 2400 px pro datové pohledy (`.shell:has(> .main > #view-….on)`, stejný
+    seznam jako `max-width` `.main`, plus Lidé). Střed tedy nikdy není užší než dřív a panel
+    vezme zbytek. `.rail` má `container-type: inline-size`, od 640 px karty `auto-fill
+    minmax(290px, 1fr)`.
+  - Rychlá akce Nový úkol: `railActHtml`, `.rail-split` s podnabídkou `.rail-sub` (najetí nebo
+    fokus), `[data-railact="taskreq"]` → `tkReqDialog(null)`: pole Pracovník s nabídkou
+    (`tkReqWhoText`, `tkReqPerson` = přesný text z nabídky, jinak jednoznačný `personFind`,
+    vyřazení ne), zbytek jako požadavek u člověka.
+  - Karta Shortage v panelu (`railShortage`, `.rail-short`): nejnovější seznam, počty, prvních
+    5 položek (TOP, TOP 2, ostatní), klepnutí = Shortage. Jen v širším panelu (container ≥ 640 px).
+  - Levé menu: `#periodNow` = dnešní měsíc (jen text, `.period-box > b`), `#periodSel` pryč.
+    Výběr měsíce `perPickHtml(key)` v `#ovTitle` (Přehled) a `#attPick` (Docházka),
+    `bindPerPick` (klik, mimo = zavřít, Escape, šipky), `setPeriod` + `renderAll`.
+  - Testy: `e2e_panel` (podnabídka, požadavek s výběrem pracovníka, šířky 2560/3840, Nastavení
+    do 1920, Shortage jen v širokém, výběr měsíce v Přehledu a Docházce). Data beze změny (45).
+
 Stav k 7. 11. 2026 (verze 2.63):
 
 - Uživatel si z hodnocení aplikace (8 úhlů, pořadí návrhů) vybral bod 7: rozdělení kódu po
@@ -2450,7 +2474,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.61 | `b12a82a` | Shortage ve třech krocích (barvy EANu, výrobní plán, evidence pohybu), sloupce importů přes AI, rozbor položek se všemi poddíly (data verze 45) |
 | 2.62 | `b3eefb4` | souběžná práce víc lidí (sloučení změn, okno jen u stejného údaje, průběžná aktualizace) |
 | 2.62.1 | `5752b91` | audit (relace při průběžné kontrole, stálé čištění dat, test podvrženého HTML, SheetJS 0.20.3) |
-| 2.63 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kód rozdělený po modulech (`private/app/`, `private/core/`), souběžné testy v prohlížeči (`tests/run_e2e.sh`) |
+| 2.63 | `7fe5cad` | kód rozdělený po modulech (`private/app/`, `private/core/`), souběžné testy v prohlížeči (`tests/run_e2e.sh`) |
+| 2.64 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: pravý panel se roztáhne do volného místa (se Shortage), Nový úkol s Požadavkem pracovníka, výběr měsíce jen v Přehledu a Docházce |
 
 Verze 2.1 přidala:
 

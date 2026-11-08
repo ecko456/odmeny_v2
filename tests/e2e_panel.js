@@ -36,11 +36,38 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   const saved = () => page.waitForFunction(() => !store.dirty && !store.saving, null, { timeout: 15000 });
   const over = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
+  // ---------- 2.64: výběr měsíce jen v Přehledu a Docházce ----------
+  const curMon = await page.evaluate(() => monthLabel(todayIso().slice(0, 7)));
+  check(await page.textContent('#periodNow') === curMon && !(await page.$('.side select')), `v menu jen dnešní měsíc: ${await page.textContent('#periodNow')}`);
+  await page.evaluate(() => { const id = S.current, [y, m] = id.split('-').map(Number); const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`; S.periods[prev] = { ...JSON.parse(JSON.stringify(S.periods[id])), id: prev, y: +prev.slice(0, 4), m: +prev.slice(5) }; renderAll(); });
+  const perOpts = async () => page.$$eval('[data-perwrap].open .per-opt', els => els.map(e => e.dataset.perset));
+  await page.click('#ovTitle [data-perpick]');
+  await page.waitForSelector('#ovTitle [data-perwrap].open .per-menu:not([hidden])');
+  const opts = await perOpts();
+  check(opts.length === 2 && opts[0] > opts[1], `nabídka měsíců nejnovější nahoře: ${opts}`);
+  await page.screenshot({ path: path.join(shots, '00-mesic.png') });
+  await page.keyboard.press('Escape');
+  check(await page.$eval('#ovTitle .per-menu', el => el.hidden), 'Escape nabídku zavře');
+  await page.click('#ovTitle [data-perpick]');
+  await page.click(`#ovTitle [data-perset="${opts[1]}"]`);
+  await page.waitForFunction(id => S.current === id, opts[1]);
+  check((await page.textContent('#ovTitle')).includes(await page.evaluate(() => periodName(curPeriod()))), 'nadpis Přehledu ukazuje vybraný měsíc');
+  await page.click('#nav [data-view="dochazka"]');
+  await page.waitForSelector('#view-dochazka.on #attPick [data-perpick]');
+  await page.click('#attPick [data-perpick]');
+  await page.click(`#attPick [data-perset="${opts[0]}"]`);
+  await page.waitForFunction(id => S.current === id, opts[0]);
+  await page.screenshot({ path: path.join(shots, '00b-dochazka-mesic.png') });
+  await page.click('body', { position: { x: 900, y: 900 } });
+  await page.evaluate(id => { delete S.periods[id]; renderAll(); }, opts[1]);
+  await page.click('#nav [data-view="prehled"]');
+  await page.waitForSelector('#view-prehled.on');
+
   // ---------- pravý panel ----------
   await page.waitForSelector('#rail .rail-me');
   const rail = await page.evaluate(() => {
     const r = document.querySelector('#rail').getBoundingClientRect(), m = document.querySelector('#main').getBoundingClientRect();
-    return { w: r.width, right: r.right, left: r.left, mainRight: m.right, me: document.querySelector('#rail .rail-me').textContent, acts: document.querySelectorAll('#rail [data-railact]').length };
+    return { w: r.width, right: r.right, left: r.left, mainRight: m.right, me: document.querySelector('#rail .rail-me').textContent, acts: document.querySelectorAll('#rail .rail-acts > *').length };
   });
   check(rail.w > 250 && rail.left >= rail.mainRight - 1 && rail.right <= 1920, `pravý panel vpravo vedle obsahu: ${JSON.stringify(rail)}`);
   check(/Mistr haly/.test(rail.me), `přihlášená kartička v panelu: ${rail.me}`);
@@ -101,6 +128,31 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     await saved();
     await page.waitForFunction(() => /Vráceno zpět/.test(document.querySelector('#rail .rail-logs').textContent));
   }
+  // 2.64: Nový úkol má po najetí podnabídku Nový úkol / Požadavek pracovníka
+  check(await page.$eval('#rail .rail-sub', el => getComputedStyle(el).visibility === 'hidden'), 'podnabídka bez najetí schovaná');
+  await page.hover('#rail .rail-split > .rail-act');
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('#rail .rail-sub')).visibility === 'visible');
+  const sub = await page.$$eval('#rail .rail-sub button', els => els.map(e => e.textContent.trim()));
+  check(sub.join('|') === 'Nový úkol|Požadavek pracovníka', `dvojtlačítko: ${sub}`);
+  await page.screenshot({ path: path.join(shots, '02b-podnabidka.png') });
+  await page.click('#rail [data-railact="taskreq"]');
+  await page.waitForSelector('#dlg[open] [name="who"]');
+  await page.screenshot({ path: path.join(shots, '02c-pozadavek.png') });
+  await page.fill('#dlg[open] [name="title"]', 'Nové pracovní boty');
+  await page.click('#dlgOk');
+  check(/Vyber pracovníka/.test(await page.textContent('#dlg[open] .dlg-error')), 'bez pracovníka chyba');
+  await page.fill('#dlg[open] [name="who"]', 'xyz neexistuje');
+  await page.click('#dlgOk');
+  check(/nenašel/.test(await page.textContent('#dlg[open] .dlg-error')), 'neznámý pracovník chyba');
+  const reqWho = await page.evaluate(() => { const e = Object.values(S.employees).find(x => !x.excluded && !x.lead); return { key: e.key, text: tkReqWhoText(e) }; });
+  await page.fill('#dlg[open] [name="who"]', reqWho.text);
+  await page.selectOption('#dlg[open] [name="sev"]', 'high');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => tkList().some(t => t.title === 'Nové pracovní boty'));
+  await saved();
+  const req = await page.evaluate(() => tkList().find(t => t.title === 'Nové pracovní boty'));
+  check(req && req.person === reqWho.key && req.sev === 'high', `požadavek uložený u pracovníka: ${JSON.stringify(req)}`);
+  await page.waitForFunction(() => /Nové pracovní boty/.test(document.querySelector('#rail .rail-tasks').textContent));
   // rychlá akce přepne část
   await page.click('#rail [data-railact="sankce"]');
   await page.waitForSelector('#view-sankce.on');
@@ -180,8 +232,46 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   await page.setViewportSize({ width: 2560, height: 1440 });
   await page.waitForTimeout(300);
   check(await page.$eval('#rail', el => el.getBoundingClientRect().width > 250), 'panel na 2560');
+  // 2.64: Přehled má střed nejvýš 2400 px, panel vyplní zbytek a je hned vedle středu
+  const fit = () => page.evaluate(() => { const r = document.querySelector('#rail').getBoundingClientRect(), m = document.querySelector('#main').getBoundingClientRect(); return { rail: Math.round(r.width), gap: Math.round(r.left - m.right), right: Math.round(innerWidth - r.right), main: Math.round(m.width) }; });
+  let f = await fit();
+  check(f.rail >= 296 && f.gap >= 0 && f.gap <= 2 && f.right <= 16, `2560 Přehled bez mezery: ${JSON.stringify(f)}`);
+  await page.setViewportSize({ width: 3840, height: 1600 });
+  await page.waitForTimeout(300);
+  f = await fit();
+  check(f.main <= 2400 && f.rail > 1000 && f.gap <= 2 && f.right <= 16, `3840 Přehled: panel se roztáhl: ${JSON.stringify(f)}`);
+  check(await page.$eval('#rail .rail-in', el => getComputedStyle(el).gridTemplateColumns.split(' ').length >= 2), 'široký panel ve více sloupcích');
+  check(await over() <= 1, '3840 bez přetečení');
+  await page.screenshot({ path: path.join(shots, '07b-3840.png') });
+  await page.click('#nav [data-view="nastaveni"]');
+  await page.waitForSelector('#view-nastaveni.on');
+  await page.waitForFunction(() => document.querySelector('#main').getBoundingClientRect().width <= 1920, null, { timeout: 5000 }).catch(() => {});
+  f = await fit();
+  if (f.main > 1920) console.log('debug', await page.evaluate(() => ({ view: ui.view, mw: getComputedStyle(document.querySelector('#main')).maxWidth, cols: getComputedStyle(document.querySelector('.shell')).gridTemplateColumns, on: [...document.querySelectorAll('.view.on')].map(v => v.id) })));
+  check(f.main <= 1920 && f.gap <= 2 && f.right <= 16, `3840 Nastavení (střed do 1920): ${JSON.stringify(f)}`);
+  await page.screenshot({ path: path.join(shots, '07c-3840-nastaveni.png') });
+  // 2.64: Shortage v panelu jen se zbývajícím místem
+  await page.evaluate(() => {
+    S.shortage = cleanShortage({ ...S.shortage, lists: [{ id: 'shtest', at: Date.now(), by: 'test', file: 'urgenty.xlsx', items: [
+      { order: '4500001', name: 'Lopatka turbíny', ean: '0001', index: 'A', qty: '12', top: true, op: 'Broušení' },
+      { order: '4500002', name: 'Kryt ložiska', ean: '0002', index: 'B', qty: '4', top2: true, op: 'Frézování' },
+      { order: '4500003', name: 'Hřídel', ean: '0003', index: 'C', qty: '2' }] }] });
+    save(); renderTaskAlert();
+  });
+  await page.waitForSelector('#rail .rail-short');
+  const shCard = await page.$eval('#rail .rail-short', el => ({ vis: getComputedStyle(el).display !== 'none', text: el.textContent.replace(/\s+/g, ' ') }));
+  check(shCard.vis && /1 TOP/.test(shCard.text) && /1 TOP 2/.test(shCard.text) && /Lopatka turbíny/.test(shCard.text), `Shortage v širokém panelu: ${JSON.stringify(shCard)}`);
+  await page.screenshot({ path: path.join(shots, '07d-3840-shortage.png') });
+  await page.click('#rail .rail-short .rail-sh');
+  await page.waitForSelector('#view-shortage.on');
+  await page.click('#nav [data-view="prehled"]');
+  await page.setViewportSize({ width: 2560, height: 1440 });
+  await page.waitForTimeout(300);
   check(await over() <= 1, '2560 bez přetečení');
   await page.screenshot({ path: path.join(shots, '07-2560.png') });
+  await page.setViewportSize({ width: 1700, height: 1000 });
+  await page.waitForTimeout(300);
+  check(await page.$eval('#rail .rail-short', el => getComputedStyle(el).display === 'none'), 'v úzkém panelu Shortage není');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.waitForTimeout(300);
   check(await page.$eval('#rail', el => getComputedStyle(el).display === 'none' && el.innerHTML === ''), 'na 1440 panel není');

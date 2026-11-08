@@ -603,12 +603,59 @@ function renderDemoBanner() {
   };
 }
 
+/* Výběr hodnoceného měsíce (2.64): jen v Přehledu (nadpis) a v Docházce, skleněná buňka se šipkou,
+   klepnutím se rozbalí nabídka měsíců s docházkou (nejnovější nahoře). Levé menu ukazuje jen dnešní měsíc. */
+const PER_CHEV = '<svg class="icon per-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+const PER_TICK = '<svg class="icon per-tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+function perPickHtml(key) {
+  const p = curPeriod();
+  if (!p) return '';
+  const ids = Object.keys(S.periods).sort().reverse();
+  return `<span class="per-pick" data-perwrap="${key}"><button type="button" class="per-btn" data-perpick="${key}" aria-haspopup="listbox" aria-expanded="false" title="Změnit měsíc"><span>${esc(periodName(p))}</span>${PER_CHEV}</button>
+    <span class="per-menu" role="listbox" aria-label="Hodnocený měsíc" hidden>${ids.map(id => `<button type="button" role="option" class="per-opt${id === S.current ? ' on' : ''}" data-perset="${esc(id)}" aria-selected="${id === S.current}"><span>${esc(periodName(S.periods[id]))}</span>${id === S.current ? PER_TICK : ''}</button>`).join('')}</span></span>`;
+}
+function perClose(except) {
+  document.querySelectorAll('[data-perwrap].open').forEach(w => {
+    if (w === except) return;
+    w.classList.remove('open');
+    w.querySelector('.per-menu').hidden = true;
+    w.querySelector('[data-perpick]').setAttribute('aria-expanded', 'false');
+  });
+}
+function bindPerPick() {
+  document.addEventListener('click', event => {
+    const set = event.target.closest('[data-perset]');
+    if (set) {
+      perClose();
+      if (set.dataset.perset !== S.current) { setPeriod(set.dataset.perset); renderAll(); }
+      return;
+    }
+    const btn = event.target.closest('[data-perpick]');
+    const wrap = btn ? btn.closest('[data-perwrap]') : null;
+    perClose(wrap);
+    if (!wrap) return;
+    const menu = wrap.querySelector('.per-menu');
+    menu.hidden = !menu.hidden;
+    btn.setAttribute('aria-expanded', String(!menu.hidden));
+    wrap.classList.toggle('open', !menu.hidden);
+    if (!menu.hidden) (menu.querySelector('.per-opt.on') || menu.querySelector('.per-opt')).focus();
+  });
+  document.addEventListener('keydown', event => {
+    const open = document.querySelector('[data-perwrap].open');
+    if (!open) return;
+    if (event.key === 'Escape') { perClose(); open.querySelector('[data-perpick]').focus(); return; }
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+    const opts = [...open.querySelectorAll('.per-opt')];
+    const i = opts.indexOf(document.activeElement);
+    if (i < 0) return;
+    event.preventDefault();
+    opts[Math.max(0, Math.min(opts.length - 1, i + (event.key === 'ArrowDown' ? 1 : -1)))].focus();
+  });
+}
+
 function renderPeriodBits() {
   const p = curPeriod();
-  const select = $('#periodSel');
-  const ids = Object.keys(S.periods).sort().reverse();
-  select.innerHTML = ids.length ? ids.map(id => `<option value="${esc(id)}"${id === S.current ? ' selected' : ''}>${esc(periodName(S.periods[id]))}</option>`).join('') : '<option value="">— žádné období —</option>';
-  select.disabled = !ids.length;
+  $('#periodNow').textContent = monthLabel(todayIso().slice(0, 7));
   $('#btnDelPeriod').disabled = !p;
   const unassigned = Object.values(S.employees).filter(e => !e.excluded && !isLead(e) && (!e.positionId || (posOf(e) && !isGroup(posOf(e)) && !e.level))).length;
   const badge = $('#navPeople');

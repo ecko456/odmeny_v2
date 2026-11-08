@@ -105,11 +105,27 @@ function openTaskFromPerson(id) {
   showView('ukoly');
   tkOpen(id);
 }
+// Výběr pracovníka v požadavku z pravého panelu (2.64): text „Příjmení Jméno · ID 123“ z nabídky,
+// nebo cokoli, co jednoznačně najde personFind (jméno, ID).
+const tkReqWhoText = e => `${e.last} ${e.first}`.trim() + (e.wid ? ` · ID ${e.wid}` : '');
+function tkReqPerson(raw) {
+  const v = String(raw || '').trim();
+  if (!v) return null;
+  const all = Object.values(S.employees).filter(e => !e.excluded);
+  const exact = all.find(e => tkReqWhoText(e) === v);
+  if (exact) return exact;
+  const found = personFind(v, all);
+  return found.length === 1 ? found[0] : null;
+}
 async function tkReqDialog(e) {
-  const who = `${e.first} ${e.last}`.trim();
+  const pick = !e;
+  let who = pick ? '' : `${e.first} ${e.last}`.trim();
+  const people = pick ? personFind('', Object.values(S.employees).filter(x => !x.excluded)) : [];
   const res = await dialog({
-    title: `Požadavek pracovníka · ${who}`, ok: 'Přidat požadavek', wide: true,
-    html: `<label class="field"><span>Co pracovník chce</span><input name="title" maxlength="200" required autofocus placeholder="třeba přeřazení na ranní směnu, nové pracovní boty"></label>
+    title: pick ? 'Požadavek pracovníka' : `Požadavek pracovníka · ${who}`, ok: 'Přidat požadavek', wide: true,
+    html: `${pick ? `<label class="field"><span>Pracovník</span><input name="who" list="tkReqWho" autocomplete="off" autofocus placeholder="jméno nebo ID"></label>
+      <datalist id="tkReqWho">${people.map(x => `<option value="${esc(tkReqWhoText(x))}"></option>`).join('')}</datalist>` : ''}
+      <label class="field"><span>Co pracovník chce</span><input name="title" maxlength="200" required${pick ? '' : ' autofocus'} placeholder="třeba přeřazení na ranní směnu, nové pracovní boty"></label>
       <label class="field"><span>Podrobnosti</span><textarea name="desc" rows="3" maxlength="4000" placeholder="volitelné"></textarea></label>
       <div class="form-grid tk-grid">
         <label class="field"><span>Termín</span><input type="date" name="due"></label>
@@ -117,14 +133,23 @@ async function tkReqDialog(e) {
         <label class="field"><span>Zodpovídá</span><input name="owner" list="tkPeopleReq" maxlength="80" value="${esc(ui.me.label || '')}" placeholder="kdo to vyřeší"></label>
         <label class="field"><span>Připomenout</span><select name="remind">${TK_REMIND.map(n => `<option value="${n}"${n === TK_REMIND_DEF ? ' selected' : ''}>${tkRemindText(n)}</option>`).join('')}</select></label>
       </div><datalist id="tkPeopleReq">${tkPeopleOptions()}</datalist>`,
-    validate: form => (form.elements.title.value.trim() ? '' : 'Napiš, co pracovník chce.'),
+    validate: form => {
+      if (pick) {
+        const w = form.elements.who.value.trim();
+        if (!w) return 'Vyber pracovníka.';
+        if (!tkReqPerson(w)) return `Pracovníka „${w}“ jsem nenašel jednoznačně, vyber ho z nabídky.`;
+      }
+      return form.elements.title.value.trim() ? '' : 'Napiš, co pracovník chce.';
+    },
   });
   if (res.value !== 'ok') return null;
   const f = res.form.elements;
+  if (pick) { e = tkReqPerson(f.who.value); if (!e) return null; who = `${e.first} ${e.last}`.trim(); }
   const t = tkAdd(S, { title: f.title.value, desc: f.desc.value, due: f.due.value, owner: f.owner.value, remind: f.remind.value, sev: f.sev.value, person: e.key, pname: who }, tkMeta());
   if (t.err) { toast(t.err, true); return null; }
   save();
   renderTaskBadge(); renderTaskAlert();
+  if (pick && ui.view === 'lide') renderPeople();
   toast(`Požadavek „${t.title}“ přidán, najdeš ho i v Úkolech.`);
   return t;
 }

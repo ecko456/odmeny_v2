@@ -62,6 +62,16 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.64
+
+- Pravý panel na širokém monitoru se roztáhne do volného místa vedle obsahu (dnešní šířka je
+  nejmenší). Když je širší, karty jsou vedle sebe a přibude karta Shortage (nejnovější seznam,
+  TOP a TOP 2).
+- Rychlá akce Nový úkol: po najetí myší se rozbalí Nový úkol a Požadavek pracovníka (výběr
+  pracovníka podle jména nebo ID, pak stejně jako požadavek u člověka).
+- Levé menu ukazuje jen aktuální měsíc. Hodnocený měsíc se mění v Přehledu (nadpis) a v Docházce
+  klepnutím na skleněnou buňku se šipkou.
+
 ## Co je nového ve verzi 2.63
 
 - **Kód aplikace rozdělený po modulech** (Shortage, Servis, KPI, Úkoly…) do samostatných souborů.
