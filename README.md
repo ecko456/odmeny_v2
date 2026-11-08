@@ -62,6 +62,12 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.68
+
+- Na tabletu a menším monitoru (pod 1600 px šířky) je u pravého okraje tlačítko, které vysune
+  pravý panel (úkoly, rychlé akce, kalendář, časová osa, poslední změny). Zavře se křížkem,
+  klávesou Esc nebo klepnutím mimo panel. Číslo na tlačítku ukazuje úkoly po termínu a blížící se.
+
 ## Co je nového ve verzi 2.67
 
 - Modul Úkoly má dvě části: Běžné úkoly a Úkoly na časové ose. Ve druhé je přehled všech úkolů

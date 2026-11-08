@@ -4,7 +4,33 @@
    s Vrátit zpět. Jen od 1600 px šířky okna, na menších monitorech a v telefonu se nekreslí.
    ========================================================================== */
 const RAIL_MIN = 1600;
-const railOn = () => window.matchMedia(`(min-width: ${RAIL_MIN}px)`).matches;
+// 2.68: na tabletu a menším monitoru (901 až 1599 px) jde panel vysunout tlačítkem u pravého okraje
+const RAIL_DRAWER_MIN = 901;
+const railWide = () => window.matchMedia(`(min-width: ${RAIL_MIN}px)`).matches;
+const railDrawerOk = () => !railWide() && window.matchMedia(`(min-width: ${RAIL_DRAWER_MIN}px)`).matches;
+const railIsOpen = () => document.documentElement.classList.contains('rail-open');
+const railOn = () => railWide() || (railDrawerOk() && railIsOpen());
+function railDrawer(on) {
+  const was = railIsOpen();
+  on = !!on && railDrawerOk();
+  document.documentElement.classList.toggle('rail-open', on);
+  const tab = $('#railTab'), scrim = $('#railScrim');
+  if (tab) tab.setAttribute('aria-expanded', String(on));
+  if (scrim) scrim.hidden = !on;
+  if (was === on) return;
+  _railSig = '';
+  renderTaskAlert();
+  if (on) { const c = $('#rail [data-railclose]'); if (c) c.focus(); } else if (tab && railDrawerOk()) tab.focus({ preventScroll: true });
+}
+function railTabDraw() {
+  const tab = $('#railTab');
+  if (!tab || !S) return;
+  const o = tkOverview(S, todayIso());
+  const n = o.late.length + o.soon.length;
+  tab.classList.toggle('late', o.late.length > 0);
+  tab.querySelector('.rail-tab-n').textContent = n ? String(n) : '';
+  tab.title = n ? `Otevřít panel (${o.late.length ? `${o.late.length} po termínu` : ''}${o.late.length && o.soon.length ? ', ' : ''}${o.soon.length ? `${o.soon.length} blíží se` : ''})` : 'Otevřít panel';
+}
 const RAIL_ACTS = [
   ['task', 'Nový úkol', '<path d="M12 5v14M5 12h14"/>'],
   ['rychla', 'Rychlá kontrola', '<path d="m5 12.5 4.5 4.5L19 7.5"/>'],
@@ -192,7 +218,8 @@ function renderRail() {
   const box = $('#rail');
   if (!box || !S) return;
   const on = railOn();
-  document.body.classList.toggle('has-rail', on);
+  document.body.classList.toggle('has-rail', on && railWide());
+  railTabDraw();
   if (!on) { if (box.innerHTML) { box.innerHTML = ''; _railSig = ''; } return; }
   const today = todayIso();
   const o = tkOverview(S, today);
@@ -211,7 +238,7 @@ function renderRail() {
   const sh = railShortage();
   const cal = railCalendar(today);
   const ag = railAgenda(Date.now());
-  const sig = JSON.stringify([sh.sig, cal.sig, ag.sig, today, h < 10 ? 0 : h < 18 ? 1 : 2, ui.view, shown.map(([t, w]) => [t.id, t.state, t.due, t.title, t.owner, t.sev, w]), logs.map(x => [x.at, x.text, !!x.un, undoable(x)]), o.open, o.late.length, o.soon.length, ui.me && ui.me.label]);
+  const sig = JSON.stringify([sh.sig, cal.sig, ag.sig, today, h < 10 ? 0 : h < 18 ? 1 : 2, ui.view, railWide(), shown.map(([t, w]) => [t.id, t.state, t.due, t.title, t.owner, t.sev, w]), logs.map(x => [x.at, x.text, !!x.un, undoable(x)]), o.open, o.late.length, o.soon.length, ui.me && ui.me.label]);
   if (sig === _railSig && box.innerHTML) return;
   _railSig = sig;
   const popWas = $('#railCalPop');
@@ -231,7 +258,7 @@ function renderRail() {
   // Pevné skupiny karet (2.65): a = kdo, akce, kalendář; b = úkoly, Shortage; c = poslední změny.
   // V úzkém panelu pod sebou v tomto pořadí, v širším ve sloupcích (CSS), nic se nepřeskupuje podle výšky.
   box.innerHTML = `<div class="rail-in"><div class="rail-col rail-ca">
-    <section class="rail-card rail-me"><span class="rail-av" aria-hidden="true">${esc(ini)}</span><div><p class="rail-hi">${esc(greeting(h))}</p><b>${esc(name)}</b><small>${esc(dayText)}</small></div></section>
+    <section class="rail-card rail-me"><span class="rail-av" aria-hidden="true">${esc(ini)}</span><div><p class="rail-hi">${esc(greeting(h))}</p><b>${esc(name)}</b><small>${esc(dayText)}</small></div>${railWide() ? '' : `<button class="icon-btn rail-close" type="button" data-railclose title="Zavřít panel (Esc)" aria-label="Zavřít panel">${I.x}</button>`}</section>
     <section class="rail-card"><h2 class="rail-h">Rychlé akce</h2><div class="rail-acts">${RAIL_ACTS.map(railActHtml).join('')}</div></section>
     ${cal.html}${ag.html}</div><div class="rail-col rail-cb">
     <section class="rail-card rail-tasks"><div class="rail-hrow"><h2 class="rail-h">Úkoly</h2><button class="link small" type="button" data-railgo="ukoly">Vše (${o.open})</button></div>
@@ -314,25 +341,37 @@ function bindRail() {
       });
       return;
     }
+    if (t.closest('[data-railclose]')) { railDrawer(false); return; }
     const ct = t.closest('[data-caltask]');
-    if (ct) { railCalHide(true); openTaskFromPerson(ct.dataset.caltask); return; }
+    if (ct) { railCalHide(true); railDrawer(false); openTaskFromPerson(ct.dataset.caltask); return; }
     const cp = t.closest('[data-calperson]');
-    if (cp) { railCalHide(true); openPersonKey(cp.dataset.calperson); return; }
+    if (cp) { railCalHide(true); railDrawer(false); openPersonKey(cp.dataset.calperson); return; }
     const task = t.closest('[data-railtask]');
-    if (task) { openTaskFromPerson(task.dataset.railtask); return; }
+    if (task) { railDrawer(false); openTaskFromPerson(task.dataset.railtask); return; }
     const act = t.closest('[data-railact]');
     if (act) {
       const k = act.dataset.railact;
-      if (k === 'task' || k === 'taskreq') { act.blur(); (k === 'task' ? tkNewDialog() : tkReqDialog(null)); } else showView(k);
+      if (k === 'task' || k === 'taskreq') { act.blur(); (k === 'task' ? tkNewDialog() : tkReqDialog(null)); } else { railDrawer(false); showView(k); }
       return;
     }
     const go = t.closest('[data-railgo]');
-    if (go) { ui.tk.sel = null; showView(go.dataset.railgo); return; }
+    if (go) { railDrawer(false); ui.tk.sel = null; showView(go.dataset.railgo); return; }
     if (t.closest('[data-raillog]')) { openLog(); return; }
     const undo = t.closest('[data-logundo]');
     if (undo) undoChange(undo.dataset.logundo);
   });
-  window.matchMedia(`(min-width: ${RAIL_MIN}px)`).addEventListener('change', () => { _railSig = ''; renderTaskAlert(); });
+  const onWidth = () => { if (!railDrawerOk()) railDrawer(false); _railSig = ''; renderTaskAlert(); };
+  window.matchMedia(`(min-width: ${RAIL_MIN}px)`).addEventListener('change', onWidth);
+  window.matchMedia(`(min-width: ${RAIL_DRAWER_MIN}px)`).addEventListener('change', onWidth);
+  const tab = $('#railTab'), scrim = $('#railScrim');
+  if (tab) tab.onclick = () => railDrawer(!railIsOpen());
+  if (scrim) scrim.onclick = () => railDrawer(false);
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || !railIsOpen() || document.querySelector('dialog[open]')) return;
+    const pop = $('#railCalPop');
+    if (pop && !pop.hidden) { railCalHide(true); return; }
+    railDrawer(false);
+  });
   // pozdrav a „dnes“ se mění s časem
   // pozdrav, „dnes“ a okno časové osy se mění s časem (podpis se mění po minutách, jinak nic nepřekreslí)
   setInterval(() => { if (railOn()) renderRail(); }, 60 * 1000);

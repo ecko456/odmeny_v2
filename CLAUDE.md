@@ -34,6 +34,20 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 8. 11. 2026 (verze 2.68):
+
+- Uživatel: „pro tablety nebo pc s menším monitorem … ten pravý panel budou moct rozevřít a poté
+  opět zavřít“.
+  - 901 až 1599 px: tlačítko `#railTab` u pravého okraje (počet úkolů po termínu a blížících se,
+    `railTabDraw`), úzké (28 px), leží v pravém okraji stránky (Shortage na 1440 px by s vyhrazeným místem přetekla). Klepnutí → `railDrawer(true)` (`html.rail-open`,
+    panel `position: fixed` zprava, šířka do 440 px, závoj `#railScrim`). Zavře Esc (nejdřív
+    bublina kalendáře), závoj, křížek `[data-railclose]` (jen ve vysunutém panelu) a přechod na
+    stránku nebo úkol z panelu. Dialogy z panelu (nový úkol, poznámka, časová osa) ho nezavřou.
+  - `railOn()` = široký monitor (`railWide`) nebo vysunutý panel; při změně šířky mimo rozsah se
+    panel zavře. Stav vysunutí se nikam neukládá. Telefon beze změny.
+  - Testy: `e2e_panel` (1440 a 1024: otevření, zavření Esc, závojem, křížkem, přechodem; 1700 bez
+    tlačítka; telefon). `ODM_VERSION` 2.68, data beze změny (47).
+
 Stav k 8. 11. 2026 (verze 2.67):
 
 - Uživatel: „do ‚úkol na časové ose‘ nějaký přehled zadaných úkolů s možností úprav … do modulu
@@ -2538,7 +2552,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.64 | `3600e58` | pravý panel se roztáhne do volného místa (se Shortage), Nový úkol s Požadavkem pracovníka, výběr měsíce jen v Přehledu a Docházce |
 | 2.65 | `d45d394` | kalendář v pravém panelu s poznámkami, pevné rozložení karet, stav položek Shortage (modul, panel, PDF), ruční přidání položky (data verze 46) |
 | 2.66 | `78ff72c` | časová osa v pravém panelu (2 h zpět, 3 h dopředu, opakování, jen pracovní dny, splněno) (data verze 47) |
-| 2.67 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Úkoly na časové ose jako samostatná část modulu Úkoly (přehled, hledání, úpravy, smazání) |
+| 2.67 | `178d8f0` | Úkoly na časové ose jako samostatná část modulu Úkoly (přehled, hledání, úpravy, smazání) |
+| 2.68 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: vysouvací pravý panel na tabletu a menším monitoru (tlačítko u pravého okraje) |
 
 Verze 2.1 přidala:
 

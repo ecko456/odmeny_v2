@@ -3261,3 +3261,30 @@ button.rail-cpi { cursor: pointer; } button.rail-cpi:hover { background: color-m
 .tk-aghelp { margin: 0 0 10px; }
 .tk-agacts { white-space: nowrap; }
 .tk-agacts .btn { margin-right: 6px; }
+
+/* Vysouvací pravý panel na tabletu a menším monitoru (2.68): tlačítko u pravého okraje,
+   panel přes obsah zprava, závoj, Esc / klepnutí mimo / křížek zavře. Na telefonu ani od 1600 px není. */
+.rail-tab, .rail-scrim { display: none; }
+.rail-close { flex: none; margin-left: auto; align-self: flex-start; }
+@media screen and (min-width: 901px) and (max-width: 1599.98px) {
+  .rail-tab { position: fixed; right: 0; top: 50%; z-index: 55; display: grid; justify-items: center; gap: 6px; width: 28px; padding: 12px 0 10px 1px; transform: translateY(-50%);
+    border: 1px solid var(--line); border-right: 0; border-radius: 16px 0 0 16px; background: var(--surface); color: var(--ink-2); box-shadow: var(--shadow-2, 0 8px 24px rgb(0 0 0 / .18)); cursor: pointer;
+    transition: width .15s ease, color .15s ease, background .15s ease; }
+  :root[data-look="glass"] .rail-tab { border-color: var(--glass-line); background: rgba(40, 40, 48, .82); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    box-shadow: 0 12px 30px -6px rgba(0, 0, 0, .55), inset 0 1px 1px rgba(255, 255, 255, .22); }
+  .rail-tab:hover, .rail-tab:focus-visible { width: 36px; color: var(--ink); }
+  .rail-tab .icon { width: 18px; height: 18px; }
+  .rail-tab-n { min-width: 18px; padding: 2px 4px; border-radius: 999px; background: var(--warn, #c98a12); color: #fff; font: 700 11px/1.2 var(--body); text-align: center; }
+  .rail-tab-n:empty { display: none; }
+  .rail-tab.late .rail-tab-n { background: var(--crit, #c0392b); }
+  html.rail-open .rail-tab { display: none; }
+  html.rail-open .rail-scrim { position: fixed; inset: 0; z-index: 64; display: block; background: rgba(8, 8, 12, .46); animation: railFade .18s ease; }
+  html.rail-open .rail { position: fixed; top: 12px; right: 12px; bottom: 12px; z-index: 65; display: block; width: min(440px, calc(100vw - 96px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+    border: 1px solid var(--line); border-radius: 26px; background: var(--surface); box-shadow: 0 30px 70px -10px rgba(0, 0, 0, .6); animation: railIn .22s cubic-bezier(.2, .8, .2, 1); }
+  :root[data-look="glass"].rail-open .rail { border-color: var(--glass-line); background: rgba(30, 30, 37, .94); -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+    box-shadow: 0 30px 70px -10px rgba(0, 0, 0, .7), inset 0 1.5px 2px rgba(255, 255, 255, .22); }
+}
+@keyframes railIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+@keyframes railFade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { html.rail-open .rail, html.rail-open .rail-scrim { animation: none; } }
+@media print { .rail-tab, .rail-scrim { display: none !important; } }
