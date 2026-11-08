@@ -60,6 +60,11 @@ function agWindow(list,now,back=AG_BACK,ahead=AG_AHEAD){
   });
   return {from,to,items:out.sort((a,b)=>a.ts-b.ts||a.x.title.localeCompare(b.x.title,"cs"))};
 }
+/** Nejbližší den (od `from` včetně, nejvýš 400 dní dopředu), kdy úkol připadá; "" = už nikdy */
+function agNext(x,from){
+  for(let t=utcOf(from>x.date?from:x.date),i=0;i<400;i++,t+=DAY_MS){const iso=isoOf(t);if(agOn(x,iso))return iso;if(x.rep==="once")break;}
+  return "";
+}
 function agAdd(st,v,meta){
   const title=String(v.title||"").replace(/\s+/g," ").trim().slice(0,200);
   if(!title)return {err:"Napiš, co je třeba udělat."};

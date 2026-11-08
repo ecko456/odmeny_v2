@@ -62,6 +62,12 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.67
+
+- Modul Úkoly má dvě části: Běžné úkoly a Úkoly na časové ose. Ve druhé je přehled všech úkolů
+  z časové osy (čas, opakování, od kdy, kdy příště, jestli je dnes splněný) s hledáním, úpravou
+  a smazáním.
+
 ## Co je nového ve verzi 2.66
 
 - Časová osa v pravém panelu pod kalendářem: úkoly na čas, vidět jsou 2 hodiny zpět a 3 hodiny

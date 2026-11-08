@@ -34,6 +34,18 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 8. 11. 2026 (verze 2.67):
+
+- Uživatel: „do ‚úkol na časové ose‘ nějaký přehled zadaných úkolů s možností úprav … do modulu
+  ‚Úkoly‘ … pod skupinu ‚Úkoly na časové ose‘ ať se to nemotá do běžných úkolů“.
+  - Modul Úkoly má přepínač `[data-tkpart]` `list|agenda` (`ui.tk.part`, jen v paměti okna):
+    Běžné úkoly beze změny, Úkoly na časové ose = `tkAgendaHtml` (dlaždice, hledání `#tkAgQ`
+    překreslí jen `#tkAgBody`, tabulka čas, úkol, opakování, od, příště `agNext`, dnes,
+    `[data-agtedit]` → `agDialog`, `[data-agtdel]` s potvrzením, `[data-agtnew]`; `#tkNew`
+    v této části přidá úkol na časovou osu). `agDialog` po uložení obnoví i Úkoly.
+  - Core `agNext(x, od)` (nejbližší den výskytu, nejvýš 400 dní). Data beze změny (47).
+  - Testy: `e2e_panel` (přehled, oddělení od běžných, hledání, úprava, smazání). `ODM_VERSION` 2.67.
+
 Stav k 8. 11. 2026 (verze 2.66):
 
 - Uživatel: „pod kalendář … vertikální časovou osu, kde bych mohl přidat úkol na nějaký čas
@@ -2525,7 +2537,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.63 | `7fe5cad` | kód rozdělený po modulech (`private/app/`, `private/core/`), souběžné testy v prohlížeči (`tests/run_e2e.sh`) |
 | 2.64 | `3600e58` | pravý panel se roztáhne do volného místa (se Shortage), Nový úkol s Požadavkem pracovníka, výběr měsíce jen v Přehledu a Docházce |
 | 2.65 | `d45d394` | kalendář v pravém panelu s poznámkami, pevné rozložení karet, stav položek Shortage (modul, panel, PDF), ruční přidání položky (data verze 46) |
-| 2.66 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: časová osa v pravém panelu (2 h zpět, 3 h dopředu, opakování, jen pracovní dny, splněno) (data verze 47) |
+| 2.66 | `78ff72c` | časová osa v pravém panelu (2 h zpět, 3 h dopředu, opakování, jen pracovní dny, splněno) (data verze 47) |
+| 2.67 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Úkoly na časové ose jako samostatná část modulu Úkoly (přehled, hledání, úpravy, smazání) |
 
 Verze 2.1 přidala:
 

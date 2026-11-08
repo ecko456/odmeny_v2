@@ -22,7 +22,7 @@ const ui = {
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
   sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null, mode: 'list', last: null },
-  tk: { sel: null, filter: 'open', owner: '', q: '', draft: {}, alertOff: '', listY: 0, dueTimer: null, lastDue: '' },
+  tk: { part: 'list', agQ: '', sel: null, filter: 'open', owner: '', q: '', draft: {}, alertOff: '', listY: 0, dueTimer: null, lastDue: '' },
   wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '', dvMode: 'day', dvDay: '', dvMonth: '', dvSort: 'group', kp: { month: '', sort: 'ks', dir: 'best', dept: '' } },
 };
 /* base = poslední stav uložený na serveru; změny proti němu se při uložení zapíšou do historie. */

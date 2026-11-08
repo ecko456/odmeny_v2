@@ -167,6 +167,11 @@ function renderTasks() {
   if (ui.tk.sel && !t) ui.tk.sel = null;
   $('#view-ukoly').classList.toggle('tk-in-detail', !!t);
   if (t) { box.innerHTML = tkDetailHtml(t, today); return; }
+  // 2.67: dvě části – běžné úkoly a úkoly na časové ose (pravý panel), ať se nepletou
+  const partBar = `<div class="chips tk-part" role="tablist" aria-label="Druh úkolů">
+      <button type="button" class="chip${ui.tk.part !== 'agenda' ? ' on' : ''}" data-tkpart="list" role="tab" aria-selected="${ui.tk.part !== 'agenda'}">Běžné úkoly <em class="t5-count">${tkList().length}</em></button>
+      <button type="button" class="chip${ui.tk.part === 'agenda' ? ' on' : ''}" data-tkpart="agenda" role="tab" aria-selected="${ui.tk.part === 'agenda'}">Úkoly na časové ose <em class="t5-count">${(S.agenda || []).length}</em></button></div>`;
+  if (ui.tk.part === 'agenda') { box.innerHTML = partBar + tkAgendaHtml(today); return; }
   const o = tkOverview(S, today);
   const tiles = `<div class="stats">${[
     statTile('Otevřené', String(o.open), `z ${o.all} ${o.all === 1 ? 'úkolu' : 'úkolů'}${o.open ? `, v termínu ${o.open - o.late.length}` : ''}`, '', { bar: o.open ? (o.open - o.late.length) / o.open : null }),
@@ -177,7 +182,7 @@ function renderTasks() {
   ].join('')}</div>`;
   const owners = o.owners;
   if (ui.tk.owner && !owners.includes(ui.tk.owner)) ui.tk.owner = '';
-  box.innerHTML = `${tiles}
+  box.innerHTML = `${partBar}${tiles}
     <div class="toolbar tk-tools">
       <div class="chips" role="group" aria-label="Filtr úkolů">${TK_FILTERS.map(([k, l]) => { const n = tkCount(k, today); return `<button type="button" class="chip${ui.tk.filter === k ? ' on' : ''}" data-tkf="${k}" aria-pressed="${ui.tk.filter === k}">${l} <em class="t5-count${k === 'late' && n ? ' late' : ''}">${n}</em></button>`; }).join('')}</div>
       <select id="tkOwnerF" aria-label="Zodpovědná osoba"><option value="">Všichni zodpovědní</option>${owners.map(n => `<option value="${esc(n)}"${ui.tk.owner === n ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>
@@ -308,9 +313,45 @@ function tkClose() {
   window.scrollTo({ top: ui.tk.listY || 0, behavior: 'instant' });
   syncHistory();
 }
+// Přehled úkolů na časové ose (2.67): stejná data jako karta v pravém panelu (S.agenda)
+function tkAgendaHtml(today) {
+  const q = norm(ui.tk.agQ || '');
+  const all = (S.agenda || []).slice().sort((a, b) => a.time.localeCompare(b.time) || a.title.localeCompare(b.title, 'cs'));
+  const list = q ? all.filter(x => norm(`${x.title} ${x.note} ${x.time} ${agRepName(x.rep)}`).includes(q)) : all;
+  const todayN = all.filter(x => agOn(x, today)).length, doneN = all.filter(x => agOn(x, today) && x.done && x.done[today]).length;
+  const tiles = `<div class="stats">${[
+    statTile('Na časové ose', String(all.length), `${all.filter(x => x.rep !== 'once').length} opakovaných`),
+    statTile('Dnes', String(todayN), todayN ? `splněno ${doneN} z ${todayN}` : 'dnes nic', todayN && doneN === todayN ? 'good' : '', { bar: todayN ? doneN / todayN : null }),
+    statTile('Jen pracovní dny', String(all.filter(x => x.work && x.rep !== 'once').length), 'bez víkendů a svátků'),
+  ].join('')}</div>`;
+  const row = x => {
+    const next = agNext(x, today), on = agOn(x, today), done = on && x.done && x.done[today];
+    return `<tr data-agrow="${esc(x.id)}">
+      <td data-label="Čas" class="num"><b>${esc(x.time)}</b></td>
+      <td data-label="Úkol" class="name"><b>${esc(x.title)}</b>${x.note ? `<div class="small muted">${esc(x.note)}</div>` : ''}</td>
+      <td data-label="Opakování">${esc(agRepName(x.rep))}${x.work && x.rep !== 'once' ? '<div class="small muted">jen pracovní dny</div>' : ''}</td>
+      <td data-label="Od">${esc(dayText(x.date))}</td>
+      <td data-label="Příště">${next ? (next === today ? '<span class="tag">dnes</span>' : esc(dayText(next))) : '<span class="muted">už ne</span>'}</td>
+      <td data-label="Dnes">${on ? (done ? '<span class="tag ok">splněno</span>' : '<span class="tag warn">čeká</span>') : '<span class="muted">—</span>'}</td>
+      <td data-label="" class="r tk-agacts"><button class="btn sec small" type="button" data-agtedit="${esc(x.id)}">Upravit</button><button class="icon-btn small" type="button" data-agtdel="${esc(x.id)}" title="Smazat" aria-label="Smazat ${esc(x.title)}">${I.x}</button></td></tr>`;
+  };
+  return `${tiles}
+    <div class="toolbar tk-tools"><input type="search" class="grow" id="tkAgQ" value="${esc(ui.tk.agQ || '')}" placeholder="Hledat v úkolech na časové ose…" aria-label="Hledat v úkolech na časové ose"><button class="btn" type="button" data-agtnew>Nový na časové ose</button></div>
+    <p class="small muted tk-aghelp">Úkoly na čas s opakováním. V pravém panelu se ukazují 2 hodiny zpět a 3 hodiny dopředu od teď, tam se i odškrtávají jako splněné.</p>
+    <div class="table-card"><table class="stack tk-agtab"><thead><tr><th>Čas</th><th>Úkol</th><th>Opakování</th><th>Od</th><th>Příště</th><th>Dnes</th><th class="r"><span class="sr-only">Akce</span></th></tr></thead>
+    <tbody id="tkAgBody">${list.length ? list.map(row).join('') : `<tr><td colspan="7">${emptyState(all.length ? 'Nic neodpovídá hledání' : 'Zatím žádné úkoly na časové ose', all.length ? 'Zkus jiné slovo.' : 'Přidej úkol na čas, třeba denní kontrolu tlaku nebo poradu směny.', all.length ? '' : '<button class="btn" type="button" data-agtnew>Nový na časové ose</button>')}</td></tr>`}</tbody></table></div>`;
+}
 function bindTasks() {
   const view = $('#tkView');
-  $('#tkNew').onclick = () => tkNewDialog();
+  view.addEventListener('input', event => {
+    if (event.target.id !== 'tkAgQ') return;
+    ui.tk.agQ = event.target.value;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = tkAgendaHtml(todayIso());
+    const body = $('#tkAgBody', tmp), cur = $('#tkAgBody');
+    if (body && cur) cur.replaceWith(body);
+  });
+  $('#tkNew').onclick = () => (ui.tk.part === 'agenda' && !ui.tk.sel ? agDialog(null) : tkNewDialog());
   $('#tkXlsx').onclick = () => exportTasksXlsx();
   view.addEventListener('click', async event => {
     const t = event.target;
@@ -321,6 +362,18 @@ function bindTasks() {
     if (pp) { if (S.employees[pp.dataset.tkperson]) openPersonFromTask(pp.dataset.tkperson); else toast('Člověk už v Lidech není.', true); return; }
     const f = t.closest('[data-tkf]');
     if (f) { ui.tk.filter = f.dataset.tkf; renderTasks(); return; }
+    const part = t.closest('[data-tkpart]');
+    if (part) { ui.tk.part = part.dataset.tkpart; renderTasks(); return; }
+    if (t.closest('[data-agtnew]')) { agDialog(null); return; }
+    const age = t.closest('[data-agtedit]');
+    if (age) { const x = (S.agenda || []).find(a => a.id === age.dataset.agtedit); if (x) agDialog(x); return; }
+    const agd = t.closest('[data-agtdel]');
+    if (agd) {
+      const x = (S.agenda || []).find(a => a.id === agd.dataset.agtdel);
+      if (!x || !(await confirmBox('Smazat úkol z časové osy?', `${x.time} ${x.title} zmizí i z pravého panelu.`, 'Smazat', true))) return;
+      agDel(S, x.id); save(); _railSig = ''; renderRail(); renderTasks();
+      return;
+    }
     if (t.closest('[data-tkback]')) { navBack(prev => prev.odmView === 'ukoly' && !prev.sub, tkClose); return; }
     const st = t.closest('[data-tkstate]');
     if (st) {

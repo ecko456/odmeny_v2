@@ -176,6 +176,7 @@ async function agDialog(x) {
   if (x && f.del && f.del.checked) {
     agDel(S, x.id);
     save(); _railSig = ''; renderRail();
+    if (ui.view === 'ukoly') renderTasks();
     toast('Úkol z časové osy smazán.');
     return;
   }
@@ -183,6 +184,7 @@ async function agDialog(x) {
   const r = x ? agSet(S, x.id, v) : agAdd(S, v, { at: Date.now(), by: ui.me.label || '' });
   if (r.err) { toast(r.err, true); return; }
   save(); _railSig = ''; renderRail();
+  if (ui.view === 'ukoly') renderTasks();
   toast(x ? 'Úkol upraven.' : `Přidáno na ${r.time}${r.rep !== 'once' ? `, ${agRepName(r.rep).toLowerCase()}` : ''}.`);
 }
 let _railSig = '';
@@ -275,7 +277,7 @@ function bindRail() {
       if (!x) return;
       if (t.closest('[data-agdone]')) {
         const on = !(x.done && x.done[agRow.dataset.agday]);
-        if (agDone(S, x.id, agRow.dataset.agday, on, { at: Date.now(), by: ui.me.label || '' })) { save(); _railSig = ''; renderRail(); }
+        if (agDone(S, x.id, agRow.dataset.agday, on, { at: Date.now(), by: ui.me.label || '' })) { save(); _railSig = ''; renderRail(); if (ui.view === 'ukoly' && ui.tk.part === 'agenda') renderTasks(); }
       } else if (t.closest('[data-agedit]')) agDialog(x);
       return;
     }

@@ -3255,3 +3255,9 @@ button.rail-cpi { cursor: pointer; } button.rail-cpi:hover { background: color-m
 .ag-empty { margin: 8px 0 0; }
 .ag-delchk { margin-top: 6px; color: var(--crit); }
 .ag-workchk { margin: 4px 0 10px; }
+
+/* Úkoly na časové ose v modulu Úkoly (2.67) */
+.tk-part { margin: 0 0 14px; }
+.tk-aghelp { margin: 0 0 10px; }
+.tk-agacts { white-space: nowrap; }
+.tk-agacts .btn { margin-right: 6px; }
