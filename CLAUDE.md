@@ -34,6 +34,34 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 8. 11. 2026 (verze 2.65):
+
+- Uživatel: „napravo přidat ještě kalendář … události, svátky, víkendy a při najetí na datum
+  … soupis události … ‚Přidat poznámku‘“, „kompletně projeď všechny panely … někdy to panel hodí
+  zbytečně na spodek … řád a pořádek“, „v panelu napravo ‚Shortage‘ … prokliknout na odkaz a při
+  najetí … status ‚Rozpracováno‘ ‚Hotovo‘ ‚Bude rozpracováno‘ ‚Čekáme na díl‘ … i v modulu shortage.
+  Jen v PDF … jen zvolený status“ a „přidávat položky do shortage manuálně“.
+  - Data (verze 46): `S.calNotes[≤ 3000] = {id 'cn…', date, text ≤ 1000, at, by}` (`cleanCalNotes`),
+    položka i poddíl Shortage `st` (`SH_ST`: plan, run, wait, done) + `stAt`, `stBy` (jen když je
+    stav, `shStClean`). Historie: `calChanges` (kind task, m `cal:`), Shortage `shst:` (p/v0/v1).
+  - Core nový díl `private/core/25-kalendar.js`: `calNoteAdd`, `calNoteDel`, `calHoliday`,
+    `calEvents(od, do, st, dnes)` (svátky, otevřené úkoly s termínem, konce trestů, poznámky),
+    `calGrid(měsíc)` (týdny od pondělí). Shortage `shSetStatus(list, id, st, meta)`, `shStName`.
+  - Pravý panel: karta Kalendář (`railCalendar`, `ui.railCal`, `[data-calday]`, `[data-calmove]`
+    −1/0/1, bublina `#railCalPop` po najetí, klepnutí ji připíchne, `[data-calnote]` →
+    `railCalNote`, `[data-calnotedel]`, `[data-caltask]`, `[data-calperson]`). Karty v pevných
+    skupinách `.rail-col` a (kdo, akce, kalendář), b (úkoly, Shortage), c (poslední změny); úzký
+    panel pod sebou, od 640 px dva sloupce (a | b nad c), od 980 px tři.
+  - Shortage v panelu: název otevře modul, EAN je odkaz (`target=_blank`), po najetí čtyři stavy
+    `[data-railshst]` (znovu klepnutí stav zruší). Modul: výběr `.sh-stsel[data-shst]` nad
+    poznámkou (položka i poddíl), `[data-shmanual]` → `shManualDialog` (EAN, objednávka, název,
+    index, množství, operace, odkaz, priorita, stav, poznámka; bez seznamu založí „zadáno
+    ručně“). PDF: v Poznámkách „Stav: …“ před dopsanou poznámkou.
+  - Řád karet na stránkách: `.settings-grid`, `.kt-depts`, `.dv-projs` vícesloupcová sazba
+    (`columns`, `break-inside: avoid`), `.rule-grid` stejná výška.
+  - Testy: core „Kalendář (2.65)“ a „Shortage (2.65)“, `e2e_panel` (kalendář), nový
+    `tests/e2e_shstav.js`, `test_odmeny` (426 pro 45). `ODM_VERSION` 2.65.
+
 Stav k 8. 11. 2026 (verze 2.64):
 
 - Uživatel: „pro širokoúhlé monitory … adaptivní šířky toho panelu napravo … aktuální šířku bych
@@ -2475,7 +2503,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.62 | `b3eefb4` | souběžná práce víc lidí (sloučení změn, okno jen u stejného údaje, průběžná aktualizace) |
 | 2.62.1 | `5752b91` | audit (relace při průběžné kontrole, stálé čištění dat, test podvrženého HTML, SheetJS 0.20.3) |
 | 2.63 | `7fe5cad` | kód rozdělený po modulech (`private/app/`, `private/core/`), souběžné testy v prohlížeči (`tests/run_e2e.sh`) |
-| 2.64 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: pravý panel se roztáhne do volného místa (se Shortage), Nový úkol s Požadavkem pracovníka, výběr měsíce jen v Přehledu a Docházce |
+| 2.64 | `3600e58` | pravý panel se roztáhne do volného místa (se Shortage), Nový úkol s Požadavkem pracovníka, výběr měsíce jen v Přehledu a Docházce |
+| 2.65 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kalendář v pravém panelu s poznámkami, pevné rozložení karet, stav položek Shortage (modul, panel, PDF), ruční přidání položky (data verze 46) |
 
 Verze 2.1 přidala:
 
@@ -2588,7 +2617,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `45` (od 2.61):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `46` (od 2.65):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

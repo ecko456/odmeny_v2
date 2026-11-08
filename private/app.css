@@ -3099,8 +3099,14 @@ h1 .prob-ic .icon, h2 .prob-ic .icon { width: 16px; height: 16px; }
 
 /* Pravý panel širší než minimum (2.64): karty ve dvou sloupcích; podnabídka Nového úkolu */
 .rail { container-type: inline-size; }
+.rail-col { display: grid; gap: 14px; align-content: start; min-width: 0; }
+.rail-col:empty { display: none; }
 @container (min-width: 640px) {
-  .rail-in { grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); align-items: start; }
+  .rail-in { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 1fr; grid-template-areas: "a b" "a c"; align-items: start; }
+  .rail-ca { grid-area: a; } .rail-cb { grid-area: b; } .rail-cc { grid-area: c; }
+}
+@container (min-width: 980px) {
+  .rail-in { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: auto; grid-template-areas: "a b c"; }
 }
 .rail-split { position: relative; display: grid; }
 .rail-sub { position: absolute; z-index: 5; top: 0; left: 50%; display: grid; gap: 4px; width: max-content; min-width: 190px; padding: 5px;
@@ -3147,3 +3153,76 @@ h1 .prob-ic .icon, h2 .prob-ic .icon { width: 16px; height: 16px; }
 .rail-sh.top .rail-shtag { background: color-mix(in srgb, var(--crit) 22%, transparent); color: var(--crit); }
 .rail-sh.top2 .rail-shtag { background: color-mix(in srgb, var(--warn) 22%, transparent); color: var(--warn); }
 .rail-shfile { margin: 8px 0 0; overflow-wrap: anywhere; }
+
+/* Kalendář v pravém panelu (2.65) */
+.rail-cal { position: relative; }
+.rail-calnav { display: inline-flex; align-items: center; gap: 2px; }
+.rail-calnav .icon-btn { width: 28px; height: 28px; }
+.rail-calnav .icon-btn .icon { width: 15px; height: 15px; }
+.rail-calm { min-width: 104px; text-align: center; color: var(--ink) !important; font-weight: 600 !important; }
+.rail-calgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.rail-cdow { padding: 2px 0 4px; color: var(--ink-3); font: 600 10.5px/1 var(--disp); text-align: center; letter-spacing: .06em; }
+.rail-cdow.we { color: color-mix(in srgb, var(--acc) 70%, var(--ink-3)); }
+.rail-cd { position: relative; display: grid; place-items: center; aspect-ratio: 1 / 1; max-height: 44px; padding: 0; border: 1px solid transparent; border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent); color: var(--ink); font: 600 12.5px/1 var(--body); cursor: pointer; transition: background .12s ease, border-color .12s ease; }
+.rail-cd > span { transform: translateY(-2px); }
+.rail-cd.we { background: color-mix(in srgb, var(--acc) 8%, transparent); color: var(--ink-2); }
+.rail-cd.hol { background: color-mix(in srgb, var(--crit) 16%, transparent); color: var(--crit); }
+.rail-cd.out { opacity: .38; }
+.rail-cd.today { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc) inset; }
+.rail-cd:hover, .rail-cd:focus-visible, .rail-cd.sel { border-color: color-mix(in srgb, var(--ink) 30%, transparent); background: color-mix(in srgb, var(--ink) 12%, transparent); }
+.rail-cdots { position: absolute; bottom: 4px; left: 0; right: 0; display: flex; justify-content: center; gap: 2px; }
+.rail-cdots b, .rail-calleg b { display: inline-block; width: 5px; height: 5px; border-radius: 50%; }
+.k-task { background: var(--warn); } .k-task.late { background: var(--crit); }
+.k-end { background: var(--pie-3, #7aa2ff); }
+.k-note { background: var(--good, #3fb984); }
+.rail-calleg { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 10px 0 0; color: var(--ink-3); font-size: 11.5px; }
+.rail-calleg span { display: inline-flex; align-items: center; gap: 5px; }
+.rail-calleg i.hol { display: inline-block; width: 10px; height: 10px; border-radius: 3px; background: color-mix(in srgb, var(--crit) 30%, transparent); }
+.rail-calpop { position: absolute; z-index: 20; width: min(300px, calc(100% - 16px)); padding: 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-2); }
+.rail-calpop[hidden] { display: none; }
+:root[data-look="glass"] .rail-calpop { border-color: var(--glass-line); background: #24242b; box-shadow: 0 24px 50px -10px rgba(0, 0, 0, .65); }
+.rail-cph { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; font-size: 13.5px; }
+.rail-cplist { display: grid; gap: 4px; margin-bottom: 10px; max-height: 260px; overflow-y: auto; }
+.rail-cpi { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--ink) 5%, transparent); color: inherit; font: 500 12.5px/1.35 var(--body); text-align: left; }
+button.rail-cpi { cursor: pointer; } button.rail-cpi:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.rail-cpi > span:not(.rail-cpk) { flex: 1; min-width: 0; overflow-wrap: anywhere; white-space: pre-line; }
+.rail-cpi small { display: block; margin-top: 2px; color: var(--ink-3); font-size: 11px; }
+.rail-cpi em.late { color: var(--crit); font-style: normal; font-weight: 600; }
+.rail-cpk { flex: none; padding: 2px 6px; border-radius: 6px; font: 700 10px/1.3 var(--disp); letter-spacing: .03em; color: #fff; }
+.rail-cpk.k-hol { background: color-mix(in srgb, var(--crit) 75%, #000); }
+.rail-cpk.k-task { color: #2a1d00; } .rail-cpk.k-end { color: #fff; } .rail-cpk.k-note { color: #062a1b; }
+.rail-cpdel { width: 24px; height: 24px; flex: none; font-size: 16px; line-height: 1; }
+.rail-cpadd { width: 100%; }
+
+/* Řád karet (2.65): karty různé výšky v mřížce nechávaly díry a poslední karta „spadla“ dolů
+   pod nejkratší sloupec. Sloupce se teď plní shora dolů těsně pod sebou (vícesloupcová sazba),
+   pořadí karet zůstává stejné. Na telefonu vše v jednom sloupci jako dřív. */
+.settings-grid, .kt-depts, .dv-projs { display: block; column-gap: 16px; }
+.settings-grid { columns: 360px 4; }
+.rule-grid { align-items: stretch; }   /* jen dvě karty vedle sebe: stejná výška */
+.kt-depts { columns: 480px 3; }
+.dv-projs { columns: 320px 5; column-gap: 12px; }
+.settings-grid > *, .kt-depts > *, .dv-projs > * { break-inside: avoid; margin: 0 0 16px; width: 100%; }
+.dv-projs > * { margin-bottom: 12px; }
+@media screen and (max-width: 900px) { .settings-grid, .kt-depts, .dv-projs { columns: 1; } }
+
+/* Stav položky Shortage (2.65): v modulu výběr nad poznámkou, v pravém panelu po najetí */
+.sh-stpick { display: block; margin-bottom: 6px; }
+.sh-stsel { width: 100%; min-height: 30px; padding: 3px 26px 3px 8px; font: 600 12px/1.2 var(--body); border-radius: 9px; }
+.sh-stsel.st-plan, .rail-shst.st-plan { color: var(--ink); background-color: color-mix(in srgb, var(--pie-3, #7aa2ff) 20%, transparent); }
+.sh-stsel.st-run, .rail-shst.st-run { color: var(--ink); background-color: color-mix(in srgb, var(--warn) 24%, transparent); }
+.sh-stsel.st-wait, .rail-shst.st-wait { color: var(--ink); background-color: color-mix(in srgb, var(--crit) 22%, transparent); }
+.sh-stsel.st-done, .rail-shst.st-done { color: var(--ink); background-color: color-mix(in srgb, var(--good, #3fb984) 24%, transparent); }
+.rail-sh { flex-wrap: nowrap; cursor: default; }
+.rail-shname { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding: 0; border: 0; background: none; color: inherit; font: 600 13.5px/1.3 var(--body); text-align: left; cursor: pointer; }
+.rail-shname:hover { text-decoration: underline; text-underline-offset: 2px; }
+.rail-sh small a { color: var(--acc-2, var(--acc)); text-decoration: none; }
+.rail-sh small a:hover { text-decoration: underline; }
+.rail-shst { display: inline-block; margin-top: 5px; padding: 2px 8px; border-radius: 7px; font: 600 11px/1.3 var(--body); }
+.rail-shstset { display: none; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
+.rail-sh:hover .rail-shstset, .rail-sh:focus-within .rail-shstset { display: flex; }
+.rail-shstset button { padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: color-mix(in srgb, var(--ink) 5%, transparent); color: var(--ink-2); font: 600 11px/1.2 var(--body); cursor: pointer; }
+:root[data-look="glass"] .rail-shstset button { border-color: var(--glass-line); }
+.rail-shstset button:hover { color: var(--ink); border-color: color-mix(in srgb, var(--acc) 55%, transparent); }
+.rail-shstset button.on { color: #fff; border-color: transparent; background: var(--acc-grad, var(--acc)); }

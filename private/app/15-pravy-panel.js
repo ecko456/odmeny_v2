@@ -29,12 +29,99 @@ function railShortage() {
   const top = items.filter(i => i.top), top2 = items.filter(i => !i.top && i.top2);
   const rec = items.filter(i => i.rec).length;
   const shown = [...top, ...top2, ...items.filter(i => !i.top && !i.top2)].slice(0, 5);
-  const row = i => `<button type="button" class="rail-sh ${i.top ? 'top' : i.top2 ? 'top2' : ''}" data-railgo="shortage"><span class="rail-shtag">${i.top ? 'TOP' : i.top2 ? 'TOP 2' : '·'}</span><span class="rail-tmain"><b>${esc(i.name || i.ean || '—')}</b><small>${esc([i.qty ? `${i.qty} ks` : '', i.op || '', i.rec && i.rec.state ? i.rec.state : ''].filter(Boolean).join(' · '))}</small></span></button>`;
+  // položka (2.65): název otevře Shortage, EAN je odkaz, po najetí se rozbalí volba stavu
+  const row = i => `<div class="rail-sh ${i.top ? 'top' : i.top2 ? 'top2' : ''}${i.st ? ` st-${i.st}` : ''}" data-railshid="${esc(i.id)}"><span class="rail-shtag">${i.top ? 'TOP' : i.top2 ? 'TOP 2' : '·'}</span><span class="rail-tmain"><button type="button" class="rail-shname" data-railgo="shortage">${esc(i.name || i.ean || '—')}</button>
+      <small>${i.ean ? (i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="Otevřít odkaz">EAN ${esc(i.ean)} ↗</a>` : `EAN ${esc(i.ean)}`) : ''}${[i.qty ? `${i.qty} ks` : '', i.op || ''].filter(Boolean).map(x => ` · ${esc(x)}`).join('')}</small>
+      ${i.st ? `<span class="rail-shst st-${i.st}">${esc(shStName(i.st))}</span>` : ''}
+      <span class="rail-shstset" role="group" aria-label="Stav položky ${esc(i.ean || i.name)}">${SH_ST.map(([k, n]) => `<button type="button" class="${i.st === k ? 'on' : ''}" data-railshst="${k}" aria-pressed="${i.st === k}">${n}</button>`).join('')}</span></span></div>`;
   const html = `<section class="rail-card rail-short"><div class="rail-hrow"><h2 class="rail-h">Shortage</h2><button class="link small" type="button" data-railgo="shortage">Otevřít</button></div>
     <p class="rail-sum"><span class="tag">${items.length} ${items.length === 1 ? 'položka' : items.length <= 4 && items.length ? 'položky' : 'položek'}</span>${top.length ? `<span class="tag crit">${top.length} TOP</span>` : ''}${top2.length ? `<span class="tag warn">${top2.length} TOP 2</span>` : ''}${rec ? `<span class="tag">se záznamem ${rec}</span>` : ''}</p>
     ${shown.length ? `<div class="rail-tlist">${shown.map(row).join('')}</div>` : '<p class="small muted">Seznam je prázdný.</p>'}
     <p class="tiny muted rail-shfile">${esc(l.file || '')}${l.at ? ` · ${esc(tsText(l.at))}` : ''}</p></section>`;
-  return { sig: [l.id, l.at, items.length, top.length, top2.length, rec, shown.map(i => [i.id, i.name, i.qty, i.op, i.rec && i.rec.state])], html };
+  return { sig: [l.id, l.at, items.length, top.length, top2.length, rec, shown.map(i => [i.id, i.name, i.qty, i.op, i.link, i.st, i.rec && i.rec.state])], html };
+}
+// Kalendář (2.65): měsíc po dnech, svátky, víkendy a tečky událostí (úkoly s termínem, konce trestů,
+// poznámky). Po najetí (nebo klepnutí) na den bublina se soupisem a tlačítkem Přidat poznámku.
+const CAL_DOW = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne'];
+const CAL_KIND = { hol: 'Svátek', task: 'Úkol', end: 'Konec trestu', note: 'Poznámka' };
+let _railCalEv = {};
+function railCalMonth() {
+  if (!ui.railCal || !/^\d{4}-\d{2}$/.test(ui.railCal)) ui.railCal = todayIso().slice(0, 7);
+  return ui.railCal;
+}
+function railCalendar(today) {
+  const month = railCalMonth();
+  const grid = calGrid(month);
+  const ev = calEvents(grid[0].iso, grid[grid.length - 1].iso, S, today);
+  _railCalEv = ev;
+  const cell = d => {
+    const list = ev[d.iso] || [];
+    const kinds = ['task', 'end', 'note'].filter(k => list.some(e => e.k === k));
+    const late = list.some(e => e.k === 'task' && e.late);
+    const cls = ['rail-cd', d.out ? 'out' : '', d.we ? 'we' : '', d.hol ? 'hol' : '', d.iso === today ? 'today' : '', list.length ? 'has' : ''].filter(Boolean).join(' ');
+    const label = `${dayText(d.iso)}${d.hol ? `, ${d.hol}` : ''}${list.filter(e => e.k !== 'hol').length ? `, událostí ${list.filter(e => e.k !== 'hol').length}` : ''}`;
+    return `<button type="button" class="${cls}" data-calday="${d.iso}" aria-label="${esc(label)}"><span>${d.d}</span>${kinds.length ? `<i class="rail-cdots">${kinds.map(k => `<b class="k-${k}${k === 'task' && late ? ' late' : ''}"></b>`).join('')}</i>` : ''}</button>`;
+  };
+  const html = `<section class="rail-card rail-cal"><div class="rail-hrow"><h2 class="rail-h">Kalendář</h2>
+      <span class="rail-calnav"><button type="button" class="icon-btn" data-calmove="-1" aria-label="Předchozí měsíc" title="Předchozí měsíc"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg></button><button type="button" class="link small rail-calm" data-calmove="0" title="Zpět na dnešek">${esc(ctrCap(monthLabel(month)))}</button><button type="button" class="icon-btn" data-calmove="1" aria-label="Další měsíc" title="Další měsíc"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></svg></button></span></div>
+    <div class="rail-calgrid" role="grid" aria-label="${esc(monthLabel(month))}">${CAL_DOW.map((d, i) => `<span class="rail-cdow${i >= 5 ? ' we' : ''}">${d}</span>`).join('')}${grid.map(cell).join('')}</div>
+    <p class="rail-calleg"><span><b class="k-task"></b>úkol</span><span><b class="k-end"></b>konec trestu</span><span><b class="k-note"></b>poznámka</span><span><i class="hol"></i>svátek</span></p>
+    <div class="rail-calpop" id="railCalPop" role="dialog" aria-label="Události dne" hidden></div></section>`;
+  return { sig: [month, ev], html };
+}
+function railCalPopHtml(iso) {
+  const list = _railCalEv[iso] || [];
+  const d = new Date(`${iso}T12:00:00`);
+  const head = d.toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' });
+  const we = d.getDay() === 0 || d.getDay() === 6;
+  const row = e => {
+    const tag = `<span class="rail-cpk k-${e.k}">${CAL_KIND[e.k]}</span>`;
+    if (e.k === 'task') return `<button type="button" class="rail-cpi" data-caltask="${esc(e.id)}">${tag}<span>${esc(e.text)}${e.late ? ' <em class="late">po termínu</em>' : ''}</span></button>`;
+    if (e.k === 'end') return `<button type="button" class="rail-cpi" data-calperson="${esc(e.key)}">${tag}<span>${esc(e.text)}</span></button>`;
+    if (e.k === 'note') return `<div class="rail-cpi">${tag}<span>${esc(e.text)}<small>${esc(e.by || '')}${e.at ? ` · ${esc(tsText(e.at))}` : ''}</small></span><button type="button" class="icon-btn rail-cpdel" data-calnotedel="${esc(e.id)}" aria-label="Smazat poznámku" title="Smazat poznámku">×</button></div>`;
+    return `<div class="rail-cpi">${tag}<span>${esc(e.text)}</span></div>`;
+  };
+  return `<p class="rail-cph"><b>${esc(ctrCap(head))}</b>${we ? '<span class="tag">víkend</span>' : ''}</p>
+    ${list.length ? `<div class="rail-cplist">${list.map(row).join('')}</div>` : '<p class="small muted">Žádné události.</p>'}
+    <button type="button" class="btn sec small rail-cpadd" data-calnote="${iso}">+ Přidat poznámku</button>`;
+}
+let _calHide = 0;
+function railCalShow(iso, pin) {
+  const pop = $('#railCalPop'), btn = $(`#rail [data-calday="${iso}"]`);
+  if (!pop || !btn) return;
+  clearTimeout(_calHide);
+  if (pop.dataset.iso !== iso || pop.hidden) pop.innerHTML = railCalPopHtml(iso);
+  pop.dataset.iso = iso;
+  if (pin) pop.dataset.pin = '1';
+  pop.hidden = false;
+  $$('#rail .rail-cd.sel').forEach(b => b.classList.remove('sel'));
+  btn.classList.add('sel');
+  const card = pop.parentElement.getBoundingClientRect(), r = btn.getBoundingClientRect();
+  const w = pop.offsetWidth;
+  pop.style.left = `${Math.max(8, Math.min(card.width - w - 8, r.left - card.left + r.width / 2 - w / 2))}px`;
+  pop.style.top = `${r.bottom - card.top + 6}px`;
+}
+function railCalHide(now) {
+  const pop = $('#railCalPop');
+  if (!pop) return;
+  clearTimeout(_calHide);
+  const go = () => { pop.hidden = true; delete pop.dataset.pin; delete pop.dataset.iso; $$('#rail .rail-cd.sel').forEach(b => b.classList.remove('sel')); };
+  if (now) go(); else _calHide = setTimeout(() => { if (!pop.dataset.pin) go(); }, 280);
+}
+async function railCalNote(iso) {
+  const res = await dialog({
+    title: `Poznámka na ${dayText(iso)}`, ok: 'Přidat poznámku',
+    html: `<label class="field"><span>Poznámka</span><textarea name="text" rows="4" maxlength="${CAL_NOTE_LEN}" autofocus placeholder="třeba návštěva auditora, inventura, porada"></textarea></label>`,
+    validate: form => (form.elements.text.value.trim() ? '' : 'Napiš text poznámky.'),
+  });
+  if (res.value !== 'ok') return;
+  const n = calNoteAdd(S, iso, res.form.elements.text.value, { at: Date.now(), by: ui.me.label || '' });
+  if (n.err) { toast(n.err, true); return; }
+  save();
+  _railSig = '';
+  renderRail();
+  railCalShow(iso, true);
+  toast('Poznámka přidána do kalendáře.');
 }
 let _railSig = '';
 function renderRail() {
@@ -58,9 +145,12 @@ function renderRail() {
   const logs = (S.log || []).filter(x => x.at >= from).slice(-4).reverse();
   const h = new Date().getHours();
   const sh = railShortage();
-  const sig = JSON.stringify([sh.sig, today, h < 10 ? 0 : h < 18 ? 1 : 2, ui.view, shown.map(([t, w]) => [t.id, t.state, t.due, t.title, t.owner, t.sev, w]), logs.map(x => [x.at, x.text, !!x.un, undoable(x)]), o.open, o.late.length, o.soon.length, ui.me && ui.me.label]);
+  const cal = railCalendar(today);
+  const sig = JSON.stringify([sh.sig, cal.sig, today, h < 10 ? 0 : h < 18 ? 1 : 2, ui.view, shown.map(([t, w]) => [t.id, t.state, t.due, t.title, t.owner, t.sev, w]), logs.map(x => [x.at, x.text, !!x.un, undoable(x)]), o.open, o.late.length, o.soon.length, ui.me && ui.me.label]);
   if (sig === _railSig && box.innerHTML) return;
   _railSig = sig;
+  const popWas = $('#railCalPop');
+  const keepIso = popWas && !popWas.hidden && popWas.dataset.pin ? popWas.dataset.iso : '';
   const name = (ui.me && ui.me.label) || 'Přihlášený';
   const ini = name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase() || '?';
   const dayText = new Date().toLocaleDateString('cs-CZ', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -73,22 +163,85 @@ function renderRail() {
   };
   const logRow = x => `<div class="rail-log"><span class="log-ico">${LOG_ICON[x.kind] || LOG_ICON.data}</span><div><p>${esc(x.text.length > 110 ? `${x.text.slice(0, 110)}…` : x.text)}</p>
       <small>${esc(new Date(x.at).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }))} · ${esc(x.by || '')}${x.un ? ' · vráceno' : ''}</small></div>${undoable(x) ? `<button class="icon-btn" type="button" data-logundo="${esc(`${x.at}|${x.u.join(',')}`)}" title="Vrátit zpět" aria-label="Vrátit zpět">${I.undo}</button>` : ''}</div>`;
-  box.innerHTML = `<div class="rail-in">
+  // Pevné skupiny karet (2.65): a = kdo, akce, kalendář; b = úkoly, Shortage; c = poslední změny.
+  // V úzkém panelu pod sebou v tomto pořadí, v širším ve sloupcích (CSS), nic se nepřeskupuje podle výšky.
+  box.innerHTML = `<div class="rail-in"><div class="rail-col rail-ca">
     <section class="rail-card rail-me"><span class="rail-av" aria-hidden="true">${esc(ini)}</span><div><p class="rail-hi">${esc(greeting(h))}</p><b>${esc(name)}</b><small>${esc(dayText)}</small></div></section>
     <section class="rail-card"><h2 class="rail-h">Rychlé akce</h2><div class="rail-acts">${RAIL_ACTS.map(railActHtml).join('')}</div></section>
+    ${cal.html}</div><div class="rail-col rail-cb">
     <section class="rail-card rail-tasks"><div class="rail-hrow"><h2 class="rail-h">Úkoly</h2><button class="link small" type="button" data-railgo="ukoly">Vše (${o.open})</button></div>
       ${o.late.length || o.soon.length ? `<p class="rail-sum">${o.late.length ? `<span class="tag crit">${o.late.length} po termínu</span>` : ''}${o.soon.length ? `<span class="tag warn">${o.soon.length} blíží se</span>` : ''}</p>` : ''}
       ${shown.length ? `<div class="rail-tlist">${shown.map(taskRow).join('')}</div>${pick.length > shown.length ? `<p class="tiny muted">a další otevřené (${pick.length - shown.length})</p>` : ''}` : `<p class="small muted">${tkList().length ? 'Žádný otevřený úkol.' : 'Zatím žádné úkoly.'}</p>`}</section>
+    ${sh.html}</div><div class="rail-col rail-cc">
     <section class="rail-card rail-logs"><div class="rail-hrow"><h2 class="rail-h">Poslední změny</h2><button class="link small" type="button" data-raillog>Vše</button></div>
       ${logs.length ? logs.map(logRow).join('') : '<p class="small muted">Za poslední 3 dny žádné změny.</p>'}</section>
-    ${sh.html}
-  </div>`;
+  </div></div>`;
+  if (keepIso && $(`#rail [data-calday="${keepIso}"]`)) railCalShow(keepIso, true);
 }
 function bindRail() {
   const box = $('#rail');
   if (!box) return;
+  box.addEventListener('mouseover', event => {
+    const d = event.target.closest('[data-calday]');
+    const pop = $('#railCalPop');
+    if (d) { if (!pop || !pop.dataset.pin || pop.dataset.iso === d.dataset.calday) railCalShow(d.dataset.calday); return; }
+    if (event.target.closest('#railCalPop')) clearTimeout(_calHide);
+  });
+  box.addEventListener('mouseout', event => {
+    const from = event.target.closest('[data-calday], #railCalPop');
+    const to = event.relatedTarget && event.relatedTarget.closest && event.relatedTarget.closest('[data-calday], #railCalPop');
+    if (from && !to) railCalHide();
+  });
+  document.addEventListener('click', event => {
+    const pop = $('#railCalPop');
+    if (pop && !pop.hidden && !event.target.closest('#railCalPop, [data-calday]') && !event.target.closest('#dlg')) railCalHide(true);
+  });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && $('#railCalPop') && !$('#railCalPop').hidden && !$('#dlg[open]')) railCalHide(true); });
   box.addEventListener('click', event => {
     const t = event.target;
+    const day = t.closest('[data-calday]');
+    if (day) {
+      const pop = $('#railCalPop');
+      if (pop && !pop.hidden && pop.dataset.pin && pop.dataset.iso === day.dataset.calday) railCalHide(true); else railCalShow(day.dataset.calday, true);
+      return;
+    }
+    const sst = t.closest('[data-railshst]');
+    if (sst) {
+      const l = ((S.shortage && S.shortage.lists) || [])[0], row = sst.closest('[data-railshid]');
+      const it = l && row && l.items.find(x => x.id === row.dataset.railshid);
+      if (!it) return;
+      const st = it.st === sst.dataset.railshst ? '' : sst.dataset.railshst;   // znovu klepnutí stav zruší
+      if (shSetStatus(l, it.id, st, { at: Date.now(), by: ui.me.label || '' })) {
+        save(); _railSig = ''; renderRail();
+        if (ui.view === 'shortage') renderShortage();
+        toast(st ? `${it.ean || it.name}: ${shStName(st)}` : `${it.ean || it.name}: stav zrušen`);
+      }
+      return;
+    }
+    const mv = t.closest('[data-calmove]');
+    if (mv) {
+      const n = +mv.dataset.calmove, m = railCalMonth();
+      if (!n) ui.railCal = todayIso().slice(0, 7);
+      else { const d = new Date(Date.UTC(+m.slice(0, 4), +m.slice(5, 7) - 1 + n, 1)); ui.railCal = d.toISOString().slice(0, 7); }
+      renderRail();
+      return;
+    }
+    const cn = t.closest('[data-calnote]');
+    if (cn) { railCalNote(cn.dataset.calnote); return; }
+    const cdel = t.closest('[data-calnotedel]');
+    if (cdel) {
+      const iso = $('#railCalPop').dataset.iso;
+      confirmBox('Smazat poznámku?', 'Poznámka zmizí z kalendáře (v historii změn zůstane záznam).', 'Smazat', true).then(ok => {
+        if (!ok || !calNoteDel(S, cdel.dataset.calnotedel)) return;
+        save(); _railSig = ''; renderRail();
+        if (iso) railCalShow(iso, true);
+      });
+      return;
+    }
+    const ct = t.closest('[data-caltask]');
+    if (ct) { railCalHide(true); openTaskFromPerson(ct.dataset.caltask); return; }
+    const cp = t.closest('[data-calperson]');
+    if (cp) { railCalHide(true); openPersonKey(cp.dataset.calperson); return; }
     const task = t.closest('[data-railtask]');
     if (task) { openTaskFromPerson(task.dataset.railtask); return; }
     const act = t.closest('[data-railact]');

@@ -625,6 +625,8 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
     && /ručně/.test(await page.textContent(`#shView tr[data-shid="${id8}"]`)), 'výběrem do Brusu, štítek „ručně“');
   // ruční přesun přetažením: nezařazená položka (CNC frézování) na nadpis Nezařazeno = na konec bloku Montáž a elox nad ním
   const id13 = await idOf(ITEMS[13].ean);
+  // od 2.65 je v řádku i výběr stavu (řádky jsou vyšší): nadpis i položka se musí vejít do okna
+  await page.setViewportSize({ width: 1440, height: 1500 });
   const headNz = page.locator('#shView tr.sh-depthead[data-shdepthead="-"]');
   await headNz.evaluate(el => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 160));
   await page.locator(`#shView tr[data-shid="${id13}"]`).scrollIntoViewIfNeeded();
@@ -639,6 +641,7 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   await page.mouse.up();
   await page.waitForFunction(([id, m]) => shDeptOf(S.shortage, S.shortage.lists[0].items.find(i => i.id === id)) === m, [id13, mont], { timeout: 5000 }).catch(() => {});
   const dragged = await page.evaluate(([id, m]) => { const x = shSections(S.shortage, S.shortage.lists[0].items).find(q => q.id === m).items.map(i => i.id); return [x.indexOf(id), x.length, S.shortage.lists[0].items.find(i => i.id === id).dept === m]; }, [id13, mont]);
+  await page.setViewportSize({ width: 1440, height: 900 });
   check(markedHead && dragged[2] && dragged[0] === dragged[1] - 1, `přetažením na nadpis dalšího bloku = na konec oddělení nad ním: ${JSON.stringify([markedHead, ...dragged])}`);
   await saved(page);
   // filtr oddělení a PDF po blocích

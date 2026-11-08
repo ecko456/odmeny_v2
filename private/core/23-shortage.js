@@ -237,13 +237,26 @@ function shOpPick(items,keys){
   if(!keys||!keys.size)return items;
   return items.map(i=>{const subs=(i.subs||[]).filter(x=>keys.has(shOpKey(x.op)));return keys.has(shOpKey(i.op))||subs.length?{...i,subs}:null;}).filter(Boolean);
 }
+function shStClean(x,line){return SH_ST_KEYS.has(x.st)?{st:x.st,stAt:Number.isFinite(+x.stAt)?Math.max(0,+x.stAt):0,stBy:line(x.stBy,60)}:{};}
+/* Stav položky nebo poddílu (2.65): zadává se ručně v modulu i v pravém panelu, v PDF je vidět jen zvolený stav */
+const SH_ST=[["plan","Bude rozpracováno"],["run","Rozpracováno"],["wait","Čekáme na díl"],["done","Hotovo"]];
+const SH_ST_KEYS=new Set(SH_ST.map(x=>x[0]));
+const shStName=k=>(SH_ST.find(x=>x[0]===k)||["",""])[1];
+function shSetStatus(list,id,st,meta){
+  const hit=shEntry(list,id);
+  if(!hit)return false;
+  const e=hit.entry,v=SH_ST_KEYS.has(st)?st:"";
+  if((e.st||"")===v)return false;
+  if(v){e.st=v;e.stAt=(meta&&meta.at)||Date.now();e.stBy=(meta&&meta.by)||"";}else{delete e.st;delete e.stAt;delete e.stBy;}
+  return true;
+}
 function cleanShortage(o){
   o=o&&typeof o==="object"?o:{};
   const line=(v,max)=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().slice(0,max);
   const num=v=>Number.isFinite(+v)?Math.max(0,+v):0;
   const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
   // poddíl z výrobního plánu (2.29): EAN a odkaz poddílu, kód do QR, operace, poznámka, poslední záznam
-  const sub=s=>({id:"",ean:line(s.ean,60),link:shLink(s.link),code:"code" in s?shCodeClean(s.code):shCode(s.link),op:line(s.op,300),note:line(s.note,300),rec:shRecClean(s.rec,line),byRec:s.byRec===true,pdfHide:s.pdfHide===true,_id:s.id});
+  const sub=s=>({id:"",ean:line(s.ean,60),link:shLink(s.link),code:"code" in s?shCodeClean(s.code):shCode(s.link),op:line(s.op,300),note:line(s.note,300),rec:shRecClean(s.rec,line),byRec:s.byRec===true,pdfHide:s.pdfHide===true,...shStClean(s,line),_id:s.id});
   // čekající poddíl s jinou operací (2.29.1): přidá ho až poslední záznam s jeho kódem
   const cand=c=>({ean:line(c.ean,60),link:shLink(c.link),code:shCodeClean(c.code),op:line(c.op,300)});
   const meta=m=>m&&typeof m==="object"?{file:line(m.file,160),at:num(m.at),by:line(m.by,60),rows:Math.round(num(m.rows))}:null;
@@ -258,7 +271,7 @@ function cleanShortage(o){
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,top2:i.top2===true&&i.top!==true,op:line(i.op,300),link:shLink(i.link),
       code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,300),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,
-      dept:i.dept==="-"||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),
+      dept:i.dept==="-"||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),
       subs:(Array.isArray(i.subs)?i.subs:[]).filter(s=>s&&typeof s==="object").map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),
       cands:(Array.isArray(i.cands)?i.cands:[]).filter(c=>c&&typeof c==="object").map(cand).filter(c=>c.code||c.ean).slice(0,SH_MAX_CANDS),_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));

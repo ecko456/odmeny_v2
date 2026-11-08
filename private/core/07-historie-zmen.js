@@ -313,6 +313,7 @@ function describeChanges(a,b,meta){
   cpChanges(a.capPlan,b.capPlan,add,b);
   tkChanges(a.tasks,b.tasks,add);
   attEditChanges(a,b,add);
+  calChanges(a.calNotes,b.calNotes,add);
   return {entries,hist};
 }
 

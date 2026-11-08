@@ -62,6 +62,16 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.65
+
+- Kalendář v pravém panelu: svátky, víkendy, úkoly s termínem, konce trestů a vlastní poznámky.
+  Po najetí na den se ukáže soupis událostí a tlačítko Přidat poznámku.
+- Karty v pravém panelu mají pevné pořadí a na širokém monitoru úhledné sloupce; v Nastavení,
+  Kontrolách a Lidech v práci se karty skládají těsně pod sebe bez děr.
+- Shortage: stav položky (Bude rozpracováno, Rozpracováno, Čekáme na díl, Hotovo) v modulu
+  i v pravém panelu po najetí, v PDF je vidět jen zvolený stav. Položku jde přidat ručně
+  (EAN, číslo objednávky, odkaz…). V panelu je EAN odkaz.
+
 ## Co je nového ve verzi 2.64
 
 - Pravý panel na širokém monitoru se roztáhne do volného místa vedle obsahu (dnešní šířka je

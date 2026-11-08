@@ -153,6 +153,41 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   const req = await page.evaluate(() => tkList().find(t => t.title === 'Nové pracovní boty'));
   check(req && req.person === reqWho.key && req.sev === 'high', `požadavek uložený u pracovníka: ${JSON.stringify(req)}`);
   await page.waitForFunction(() => /Nové pracovní boty/.test(document.querySelector('#rail .rail-tasks').textContent));
+  // 2.65: kalendář v panelu – svátky, víkendy, úkol s termínem, poznámka přes bublinu
+  const calInfo = await page.evaluate(() => ({ today: todayIso(), n: document.querySelectorAll('#rail .rail-cd').length, todayCell: !!document.querySelector(`#rail .rail-cd.today[data-calday="${todayIso()}"]`) }));
+  check(calInfo.n >= 28 && calInfo.todayCell, `kalendář s dneškem: ${JSON.stringify(calInfo)}`);
+  const taskDue = await page.evaluate(() => (tkList().find(t => t.due && TK_OPEN.has(t.state)) || {}).due);
+  if (taskDue && taskDue.slice(0, 7) === calInfo.today.slice(0, 7)) {
+    check(await page.$(`#rail [data-calday="${taskDue}"] .k-task`), 'den s termínem úkolu má tečku');
+  }
+  await page.hover(`#rail [data-calday="${calInfo.today}"]`);
+  await page.waitForSelector('#railCalPop:not([hidden]) [data-calnote]');
+  await page.screenshot({ path: path.join(shots, '02d-kalendar.png') });
+  await page.hover('#railCalPop [data-calnote]');
+  check(await page.$eval('#railCalPop', el => !el.hidden), 'bublina zůstane při přejetí na ni');
+  await page.click('#railCalPop [data-calnote]');
+  await page.waitForSelector('#dlg[open] [name="text"]');
+  await page.fill('#dlg[open] [name="text"]', 'Návštěva auditora');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => (S.calNotes || []).some(n => n.text === 'Návštěva auditora'));
+  await saved();
+  await page.waitForSelector(`#rail [data-calday="${calInfo.today}"] .k-note`);
+  check(/Návštěva auditora/.test(await page.textContent('#railCalPop')), 'poznámka v bublině po přidání');
+  await page.screenshot({ path: path.join(shots, '02e-kalendar-poznamka.png') });
+  check(/Poznámka v kalendáři/.test(await page.evaluate(() => S.log.slice(-3).map(x => x.text).join(' | '))), 'poznámka v historii změn');
+  await page.click('#railCalPop [data-calnotedel]');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => !(S.calNotes || []).length);
+  await saved();
+  await page.keyboard.press('Escape');
+  await page.click('#rail [data-calmove="1"]');
+  check(await page.evaluate(() => ui.railCal) > calInfo.today.slice(0, 7), 'další měsíc');
+  await page.click('#rail [data-calmove="0"]');
+  check(await page.evaluate(() => ui.railCal) === calInfo.today.slice(0, 7), 'zpět na dnešek');
+  // svátek: 1. 1. má červený den
+  await page.evaluate(() => { ui.railCal = `${+todayIso().slice(0, 4) + 1}-01`; renderRail(); });
+  check(await page.$eval(`#rail [data-calday="${+calInfo.today.slice(0, 4) + 1}-01-01"]`, el => el.classList.contains('hol')), 'Nový rok je svátek');
+  await page.evaluate(() => { ui.railCal = ''; renderRail(); });
   // rychlá akce přepne část
   await page.click('#rail [data-railact="sankce"]');
   await page.waitForSelector('#view-sankce.on');
@@ -262,7 +297,7 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   const shCard = await page.$eval('#rail .rail-short', el => ({ vis: getComputedStyle(el).display !== 'none', text: el.textContent.replace(/\s+/g, ' ') }));
   check(shCard.vis && /1 TOP/.test(shCard.text) && /1 TOP 2/.test(shCard.text) && /Lopatka turbíny/.test(shCard.text), `Shortage v širokém panelu: ${JSON.stringify(shCard)}`);
   await page.screenshot({ path: path.join(shots, '07d-3840-shortage.png') });
-  await page.click('#rail .rail-short .rail-sh');
+  await page.click('#rail .rail-short .rail-shname');
   await page.waitForSelector('#view-shortage.on');
   await page.click('#nav [data-view="prehled"]');
   await page.setViewportSize({ width: 2560, height: 1440 });
