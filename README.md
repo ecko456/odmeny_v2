@@ -62,6 +62,12 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.66
+
+- Časová osa v pravém panelu pod kalendářem: úkoly na čas, vidět jsou 2 hodiny zpět a 3 hodiny
+  dopředu s čarou „teď“. Opakování jednorázově, každý den, týden, sudý týden, lichý týden
+  a měsíc; volba „jen pracovní dny“ (bez víkendů a svátků). Kroužkem se úkol označí jako splněný.
+
 ## Co je nového ve verzi 2.65
 
 - Kalendář v pravém panelu: svátky, víkendy, úkoly s termínem, konce trestů a vlastní poznámky.

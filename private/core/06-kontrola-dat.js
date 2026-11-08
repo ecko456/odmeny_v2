@@ -6,7 +6,7 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=46;
+const DATA_VERSION=47;
 const LOG_MAX=2000;
 const HIST_MAX=200;
 const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
@@ -320,6 +320,8 @@ function sanitizeState(input){
   out.attLocks=cleanAttLocks(o.attLocks);
   /* Poznámky v kalendáři (2.65): starší data je nemají */
   out.calNotes=cleanCalNotes(o.calNotes);
+  /* Časová osa (2.66): starší data ji nemají */
+  out.agenda=cleanAgenda(o.agenda);
   // data před 2.18.1: požadavek lidí je pevných 100 (zadání), dřív se bral jen ze souboru
   if(!(+o.v>=17)&&out.workAudit.target==null)out.workAudit.target=WA_TARGET;
   out.v=DATA_VERSION;

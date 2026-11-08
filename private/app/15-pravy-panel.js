@@ -123,6 +123,68 @@ async function railCalNote(iso) {
   railCalShow(iso, true);
   toast('Poznámka přidána do kalendáře.');
 }
+// Časová osa (2.66): pod kalendářem, 2 hodiny zpět a 3 dopředu od teď. Hodiny jako značky na ose,
+// úkoly v pořadí času, čára „teď“ mezi minulými a budoucími. Klepnutí na kroužek = splněno v ten den.
+const AG_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+function railAgenda(now) {
+  const w = agWindow(S.agenda || [], now);
+  const hm = ts => new Date(ts).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
+  // hodinové značky v okně
+  const marks = [];
+  const h0 = new Date(w.from); h0.setMinutes(0, 0, 0);
+  for (let t = h0.getTime() + (h0.getTime() < w.from ? 3600e3 : 0); t <= w.to; t += 3600e3) marks.push({ ts: t, k: 'h' });
+  const rows = [...marks, { ts: now, k: 'now' }, ...w.items.map(o => ({ ts: o.ts, k: 'i', o }))]
+    .sort((a, b) => a.ts - b.ts || (a.k === 'h' ? -1 : b.k === 'h' ? 1 : a.k === 'now' ? (b.o && b.o.past ? 1 : -1) : 0));
+  const row = r => {
+    if (r.k === 'h') return `<div class="ag-hour${r.ts < now ? ' past' : ''}"><span>${esc(hm(r.ts))}</span></div>`;
+    if (r.k === 'now') return `<div class="ag-now" aria-label="Teď"><span>teď ${esc(hm(now))}</span></div>`;
+    const { x, iso, done, past, other } = r.o;
+    return `<div class="ag-item${past ? ' past' : ''}${done ? ' done' : ''}${past && !done ? ' miss' : ''}" data-agid="${esc(x.id)}" data-agday="${iso}">
+      <button type="button" class="ag-dot" data-agdone aria-pressed="${done}" title="${done ? 'Splněno: klepnutím zrušíš' : 'Označit jako splněné'}" aria-label="${done ? 'Zrušit splnění' : 'Splněno'}: ${esc(x.title)}">${done ? AG_ICON : ''}</button>
+      <button type="button" class="ag-body" data-agedit title="Upravit"><b>${esc(x.time)}${other ? ` <small>${esc(dayText(iso, false))}</small>` : ''}</b><span>${esc(x.title)}</span>${x.rep !== 'once' ? `<em>${esc(agRepName(x.rep).toLowerCase())}${x.work ? ' · pracovní dny' : ''}</em>` : ''}</button></div>`;
+  };
+  const html = `<section class="rail-card rail-agenda"><div class="rail-hrow"><h2 class="rail-h">Časová osa</h2><button class="link small" type="button" data-agadd>+ Přidat</button></div>
+    <div class="ag-axis">${rows.map(row).join('')}</div>
+    ${w.items.length ? '' : '<p class="small muted ag-empty">V tomto čase nic naplánovaného.</p>'}</section>`;
+  return { sig: [Math.floor(now / 60e3), w.items.map(o => [o.x.id, o.iso, o.x.time, o.x.title, o.x.rep, o.done])], html };
+}
+async function agDialog(x) {
+  const now = new Date();
+  const def = x || { title: '', time: `${String(now.getHours() + 1 > 23 ? 23 : now.getHours() + 1).padStart(2, '0')}:00`, rep: 'once', date: todayIso(), note: '', work: true };
+  const res = await dialog({
+    title: x ? 'Upravit úkol na časové ose' : 'Nový úkol na časové ose', ok: x ? 'Uložit' : 'Přidat', wide: true,
+    html: `<label class="field"><span>Co je třeba udělat</span><input name="title" maxlength="200" autofocus autocomplete="off" value="${esc(def.title)}" placeholder="třeba kontrola tlaku vzduchu, porada směny"></label>
+      <div class="form-grid tk-grid">
+        <label class="field"><span>Čas</span><input type="time" name="time" value="${esc(def.time)}"></label>
+        <label class="field"><span>Opakování</span><select name="rep">${AG_REP.map(([k, l]) => `<option value="${k}"${def.rep === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label class="field"><span>Den (u opakování od kdy; den v týdnu a v měsíci se bere z něj)</span><input type="date" name="date" value="${esc(def.date)}"></label>
+      </div>
+      <label class="check ag-workchk"><input type="checkbox" name="work"${def.work ? ' checked' : ''}> Jen pracovní dny (bez víkendů a státních svátků, u opakování)</label>
+      <label class="field"><span>Poznámka</span><input name="note" maxlength="500" autocomplete="off" value="${esc(def.note || '')}"></label>
+      ${x ? '<label class="check ag-delchk"><input type="checkbox" name="del"> Smazat tento úkol</label>' : ''}`,
+    validate: form => {
+      const f = form.elements;
+      if (f.del && f.del.checked) return '';
+      if (!f.title.value.trim()) return 'Napiš, co je třeba udělat.';
+      if (!agTimeOk(f.time.value)) return 'Zadej čas.';
+      if (!f.date.value) return 'Zadej den.';
+      return '';
+    },
+  });
+  if (res.value !== 'ok') return;
+  const f = res.form.elements;
+  if (x && f.del && f.del.checked) {
+    agDel(S, x.id);
+    save(); _railSig = ''; renderRail();
+    toast('Úkol z časové osy smazán.');
+    return;
+  }
+  const v = { title: f.title.value, time: f.time.value, rep: f.rep.value, date: f.date.value, note: f.note.value, work: f.work.checked };
+  const r = x ? agSet(S, x.id, v) : agAdd(S, v, { at: Date.now(), by: ui.me.label || '' });
+  if (r.err) { toast(r.err, true); return; }
+  save(); _railSig = ''; renderRail();
+  toast(x ? 'Úkol upraven.' : `Přidáno na ${r.time}${r.rep !== 'once' ? `, ${agRepName(r.rep).toLowerCase()}` : ''}.`);
+}
 let _railSig = '';
 function renderRail() {
   const box = $('#rail');
@@ -146,7 +208,8 @@ function renderRail() {
   const h = new Date().getHours();
   const sh = railShortage();
   const cal = railCalendar(today);
-  const sig = JSON.stringify([sh.sig, cal.sig, today, h < 10 ? 0 : h < 18 ? 1 : 2, ui.view, shown.map(([t, w]) => [t.id, t.state, t.due, t.title, t.owner, t.sev, w]), logs.map(x => [x.at, x.text, !!x.un, undoable(x)]), o.open, o.late.length, o.soon.length, ui.me && ui.me.label]);
+  const ag = railAgenda(Date.now());
+  const sig = JSON.stringify([sh.sig, cal.sig, ag.sig, today, h < 10 ? 0 : h < 18 ? 1 : 2, ui.view, shown.map(([t, w]) => [t.id, t.state, t.due, t.title, t.owner, t.sev, w]), logs.map(x => [x.at, x.text, !!x.un, undoable(x)]), o.open, o.late.length, o.soon.length, ui.me && ui.me.label]);
   if (sig === _railSig && box.innerHTML) return;
   _railSig = sig;
   const popWas = $('#railCalPop');
@@ -168,7 +231,7 @@ function renderRail() {
   box.innerHTML = `<div class="rail-in"><div class="rail-col rail-ca">
     <section class="rail-card rail-me"><span class="rail-av" aria-hidden="true">${esc(ini)}</span><div><p class="rail-hi">${esc(greeting(h))}</p><b>${esc(name)}</b><small>${esc(dayText)}</small></div></section>
     <section class="rail-card"><h2 class="rail-h">Rychlé akce</h2><div class="rail-acts">${RAIL_ACTS.map(railActHtml).join('')}</div></section>
-    ${cal.html}</div><div class="rail-col rail-cb">
+    ${cal.html}${ag.html}</div><div class="rail-col rail-cb">
     <section class="rail-card rail-tasks"><div class="rail-hrow"><h2 class="rail-h">Úkoly</h2><button class="link small" type="button" data-railgo="ukoly">Vše (${o.open})</button></div>
       ${o.late.length || o.soon.length ? `<p class="rail-sum">${o.late.length ? `<span class="tag crit">${o.late.length} po termínu</span>` : ''}${o.soon.length ? `<span class="tag warn">${o.soon.length} blíží se</span>` : ''}</p>` : ''}
       ${shown.length ? `<div class="rail-tlist">${shown.map(taskRow).join('')}</div>${pick.length > shown.length ? `<p class="tiny muted">a další otevřené (${pick.length - shown.length})</p>` : ''}` : `<p class="small muted">${tkList().length ? 'Žádný otevřený úkol.' : 'Zatím žádné úkoly.'}</p>`}</section>
@@ -203,6 +266,17 @@ function bindRail() {
     if (day) {
       const pop = $('#railCalPop');
       if (pop && !pop.hidden && pop.dataset.pin && pop.dataset.iso === day.dataset.calday) railCalHide(true); else railCalShow(day.dataset.calday, true);
+      return;
+    }
+    if (t.closest('[data-agadd]')) { agDialog(null); return; }
+    const agRow = t.closest('[data-agid]');
+    if (agRow) {
+      const x = (S.agenda || []).find(a => a.id === agRow.dataset.agid);
+      if (!x) return;
+      if (t.closest('[data-agdone]')) {
+        const on = !(x.done && x.done[agRow.dataset.agday]);
+        if (agDone(S, x.id, agRow.dataset.agday, on, { at: Date.now(), by: ui.me.label || '' })) { save(); _railSig = ''; renderRail(); }
+      } else if (t.closest('[data-agedit]')) agDialog(x);
       return;
     }
     const sst = t.closest('[data-railshst]');
@@ -258,7 +332,8 @@ function bindRail() {
   });
   window.matchMedia(`(min-width: ${RAIL_MIN}px)`).addEventListener('change', () => { _railSig = ''; renderTaskAlert(); });
   // pozdrav a „dnes“ se mění s časem
-  setInterval(() => { if (railOn()) renderRail(); }, 5 * 60 * 1000);
+  // pozdrav, „dnes“ a okno časové osy se mění s časem (podpis se mění po minutách, jinak nic nepřekreslí)
+  setInterval(() => { if (railOn()) renderRail(); }, 60 * 1000);
 }
 
 /* Sbalitelné boční menu (2.59): úzká kapsle jen s ikonami, popisky po najetí. Volba je jen pro

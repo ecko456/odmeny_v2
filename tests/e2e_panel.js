@@ -188,6 +188,46 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   await page.evaluate(() => { ui.railCal = `${+todayIso().slice(0, 4) + 1}-01`; renderRail(); });
   check(await page.$eval(`#rail [data-calday="${+calInfo.today.slice(0, 4) + 1}-01-01"]`, el => el.classList.contains('hol')), 'Nový rok je svátek');
   await page.evaluate(() => { ui.railCal = ''; renderRail(); });
+  // 2.66: časová osa pod kalendářem – okno 2 h zpět a 3 h dopředu, opakování, splněno, úprava, smazání
+  await page.waitForSelector('#rail .rail-agenda .ag-now');
+  const agT = await page.evaluate(() => { const d = new Date(Date.now() + 60 * 60e3); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; });
+  await page.click('#rail [data-agadd]');
+  await page.waitForSelector('#dlg[open] [name="title"]');
+  await page.fill('#dlg[open] [name="title"]', 'Kontrola tlaku vzduchu');
+  await page.fill('#dlg[open] [name="time"]', agT);
+  await page.selectOption('#dlg[open] [name="rep"]', 'day');
+  check(await page.$eval('#dlg[open] [name="work"]', el => el.checked), 'jen pracovní dny zaškrtnuté předem');
+  await page.uncheck('#dlg[open] [name="work"]');   // test může běžet o víkendu
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => (S.agenda || []).length === 1 && S.agenda[0].work === false);
+  await saved();
+  await page.waitForSelector('#rail .ag-item');
+  const agOrder = await page.$$eval('#rail .ag-axis > *', els => els.map(e => e.className.split(' ')[0]));
+  check(agOrder.indexOf('ag-now') >= 0 && agOrder.indexOf('ag-item') > agOrder.indexOf('ag-now'), `úkol za hodinu je pod čarou teď: ${agOrder}`);
+  check(agOrder.filter(c => c === 'ag-hour').length >= 5, `hodinové značky v okně: ${agOrder}`);
+  check(/každý den/.test(await page.textContent('#rail .ag-item')), 'opakování u úkolu');
+  await page.screenshot({ path: path.join(shots, '02f-casova-osa.png') });
+  await page.click('#rail .ag-item [data-agdone]');
+  await page.waitForFunction(() => Object.keys(S.agenda[0].done).length === 1);
+  await saved();
+  check(await page.$eval('#rail .ag-item', el => el.classList.contains('done')), 'splněno v panelu');
+  await page.click('#rail .ag-item [data-agedit]');
+  await page.waitForSelector('#dlg[open] [name="del"]');
+  await page.fill('#dlg[open] [name="title"]', 'Kontrola tlaku a oleje');
+  const parity = await page.evaluate(() => (isoWeek(todayIso()).w % 2 === 0 ? 'even' : 'odd'));   // tento týden, ať úkol zůstane vidět
+  await page.selectOption('#dlg[open] [name="rep"]', parity);
+  await page.click('#dlgOk');
+  await page.waitForFunction(p => S.agenda[0].title === 'Kontrola tlaku a oleje' && S.agenda[0].rep === p, parity);
+  await saved();
+  const agLog = await page.evaluate(() => S.log.slice(-4).map(x => x.text).join(' | '));
+  check(/Časová osa: nový úkol/.test(agLog) && /Časová osa: splněno/.test(agLog) && /upraven úkol/.test(agLog), `časová osa v historii: ${agLog}`);
+  await page.click('#rail .ag-item [data-agedit]');
+  await page.waitForSelector('#dlg[open] [name="del"]');
+  await page.check('#dlg[open] [name="del"]');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => !(S.agenda || []).length);
+  await saved();
+  check(await page.$('#rail .rail-agenda .ag-empty'), 'po smazání prázdná osa');
   // rychlá akce přepne část
   await page.click('#rail [data-railact="sankce"]');
   await page.waitForSelector('#view-sankce.on');

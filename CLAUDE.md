@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 8. 11. 2026 (verze 2.66):
+
+- Uživatel: „pod kalendář … vertikální časovou osu, kde bych mohl přidat úkol na nějaký čas
+  a opakování ‚Každý den, každý týden, každý měsíc, každý sudý týden, každý lichý týden‘ … 2 hodiny
+  před aktuální hodinou a 3 hodiny dopředu“ a „ať jde nastavit, zda to platí jen pro pracovní dny“.
+  - Data (verze 47): `S.agenda[≤ 500] = {id 'ag…', title, time 'HH:MM', rep (`AG_REP`: once, day,
+    week, even, odd, month), date (od kdy; den v týdnu a v měsíci se bere z něj), note, work (jen
+    pracovní dny = Po–Pá bez svátků), at, by, done{iso: {at, by}} (nejvýš 400)}` (`cleanAgenda`).
+    Historie `agChanges` (kind task, m `ag:`, `age:`, `agd:`, `agx:`).
+  - Core nový díl `private/core/26-casova-osa.js`: `agWorkDay`, `agOn(x, iso)` (sudý/lichý podle
+    ISO týdne `isoWeek().w`, měsíc 31. → poslední den kratšího měsíce), `agWindow(list, now)`
+    (výskyty včera/dnes/zítra v okně now − 2 h … now + 3 h, `past`, `done`, `other`), `agAdd`,
+    `agSet`, `agDel`, `agDone`, `agText`.
+  - Pravý panel: karta `.rail-agenda` pod kalendářem (skupina a): hodinové značky `.ag-hour`,
+    čára `.ag-now`, úkoly `.ag-item` (`[data-agdone]` splněno v ten den, `[data-agedit]` →
+    `agDialog` s volbou Smazat), `[data-agadd]`. Panel se překresluje každou minutu (podpis
+    s minutou, jinak nic nemění). Jen pracovní dny je u nového úkolu zaškrtnuté.
+  - Testy: core „Časová osa (2.66)“, `e2e_panel` (přidání, pořadí proti „teď“, hodiny, splněno,
+    úprava, smazání, historie), `test_odmeny` (426 pro 46). `ODM_VERSION` 2.66.
+
 Stav k 8. 11. 2026 (verze 2.65):
 
 - Uživatel: „napravo přidat ještě kalendář … události, svátky, víkendy a při najetí na datum
@@ -2504,7 +2524,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.62.1 | `5752b91` | audit (relace při průběžné kontrole, stálé čištění dat, test podvrženého HTML, SheetJS 0.20.3) |
 | 2.63 | `7fe5cad` | kód rozdělený po modulech (`private/app/`, `private/core/`), souběžné testy v prohlížeči (`tests/run_e2e.sh`) |
 | 2.64 | `3600e58` | pravý panel se roztáhne do volného místa (se Shortage), Nový úkol s Požadavkem pracovníka, výběr měsíce jen v Přehledu a Docházce |
-| 2.65 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kalendář v pravém panelu s poznámkami, pevné rozložení karet, stav položek Shortage (modul, panel, PDF), ruční přidání položky (data verze 46) |
+| 2.65 | `d45d394` | kalendář v pravém panelu s poznámkami, pevné rozložení karet, stav položek Shortage (modul, panel, PDF), ruční přidání položky (data verze 46) |
+| 2.66 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: časová osa v pravém panelu (2 h zpět, 3 h dopředu, opakování, jen pracovní dny, splněno) (data verze 47) |
 
 Verze 2.1 přidala:
 
@@ -2617,7 +2638,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `46` (od 2.65):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `47` (od 2.66):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

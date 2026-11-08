@@ -314,6 +314,7 @@ function describeChanges(a,b,meta){
   tkChanges(a.tasks,b.tasks,add);
   attEditChanges(a,b,add);
   calChanges(a.calNotes,b.calNotes,add);
+  agChanges(a.agenda,b.agenda,add);
   return {entries,hist};
 }
 
