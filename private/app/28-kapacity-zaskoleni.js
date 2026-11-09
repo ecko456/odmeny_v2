@@ -182,7 +182,7 @@ function ctrDaysChart(r) {
       top.push({ t: 'text', x: cx, y: yTop - 8, s: 13, b: true, c: CTR.ink, a: 'middle', v: nf(d.on, 1) });
       if (B - yOk >= 32) top.push({ t: 'text', x: cx, y: yOk + 23.4, s: 13, b: true, c: CTR.white, a: 'middle', v: `${nf(d.ok, 1)} · ${ctrPct(d.ok / d.on)}` });
     }
-    const tag = d.kind === 'off' ? (d.day.hol ? ' · svátek' : ' · volno') : plan ? ' · plán' : '';
+    const tag = d.kind === 'off' ? (d.day.hol ? ' · svátek' : ' · volno') : d.half ? ' · přesčas' : plan ? ' · plán' : '';
     top.push({ t: 'text', x: cx, y: 242, s: 13, c: CTR.muted, a: 'middle', v: ctrDay(d) + tag });
     const ref = refs[i];
     const refT = ref ? ` · ${hasReq ? 'požadavek' : 'plán skupin'} ${nf(ref, 1)} (${d.met ? 'splněn' : 'nesplněn'})` : '';
@@ -291,7 +291,7 @@ function ctrWeek(weekId) {
   const tiles = [
     { v: ctrPct(share), label: 'Plnění normy', sub: 'dní v normě / prac. dní' },
     hasReq ? { v: r.reqSame ? nf(r.req, 0) : nf(r.req, 1), label: 'Denní požadavek', sub: r.reqSame ? 'norma na každý pracovní den' : 'Ø požadavek na pracovní den' }
-      : { v: nf(t.plan, 1), label: 'Denní plán', sub: 'Ø lidí podle plánu skupin' },
+      : { v: nf(t.plan, 1), label: 'Denní plán', sub: r.cap ? 'Ø lidí podle Plánu kapacit' : 'Ø lidí podle plánu skupin' },
     { v: `${t.met}/${n}`, label: 'Dní v normě', sub: hasReq ? 'celý požadavek splněn' : 'plán skupin splněn' },
     { v: String(n - t.met), label: 'Dní pod normou', sub: below.length ? below.map(ctrDay).join(', ') : `${hasReq ? 'požadavek' : 'plán'} splněn každý den` },
   ];
@@ -314,7 +314,7 @@ function ctrWeek(weekId) {
     banner, tiles, charts,
     table: { title: 'Průměr po skupinách', fixed: true, cols: [{ h: 'SKUPINA', a: 'l', w: 224 }, { h: 'Ø PLÁN', a: 'r', w: 134 }, { h: 'Ø DODÁNO', a: 'r', w: 144 }, { h: 'DNÍ V NORMĚ', a: 'r', w: 154 }, { h: 'STAV / ZAŠKOLENÍ', a: 'l' }], rows },
     notes: [
-      ['Zaškolení', ` — podíl lidí přítomných na směně, kteří mají v matici aspoň ${r.okPct} % dovedností skupiny (${ctTrainSrc(r)}). Ø = průměr pracovních dní v týdnu. Plán = lidé ve skupině, kteří měli přijít (bez dovolené a nemoci)${planD.length ? ', plánované dny podle dnešního zařazení' : ''}.`],
+      ['Zaškolení', ` — podíl lidí přítomných na směně, kteří mají v matici aspoň ${r.okPct} % dovedností skupiny (${ctTrainSrc(r)}). Ø = průměr pracovních dní v týdnu. ${r.cap ? 'Plán = potřeba lidí z Plánu kapacit; skupina bez plánu = lidé ve skupině, kteří měli přijít (bez dovolené a nemoci)' : `Plán = lidé ve skupině, kteří měli přijít (bez dovolené a nemoci)${planD.length ? ', plánované dny podle dnešního zařazení' : ''}`}${r.half.length ? `. ${ctrDayList(r.days.filter(d => d.half), work)}: přesčas / práce ve svátek, jedna směna, plán a požadavek na polovinu` : ''}.`],
       ['', `Vygenerováno ${dayText(today)} · zelená = v normě / splněný plán · oranžová = mírně pod (aspoň 80 % dní) · červená = pod plánem.`],
     ],
   };

@@ -62,6 +62,13 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.69
+
+- KPI, Kapacity a zaškolení: plán skupin v týdenním souhrnu je potřeba lidí z Plánu kapacit.
+  Skupina, která v Plánu kapacit nic nemá, se počítá postaru (lidé ve skupině, kteří měli přijít).
+- Report docházky i Kapacity a zaškolení: v den označený jako přesčas nebo práce ve svátek se
+  pracuje na jednu směnu, plán i denní požadavek jsou proto poloviční (zaokrouhleno nahoru).
+
 ## Co je nového ve verzi 2.68
 
 - Na tabletu a menším monitoru (pod 1600 px šířky) je u pravého okraje tlačítko, které vysune

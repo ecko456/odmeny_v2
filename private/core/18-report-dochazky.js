@@ -28,6 +28,12 @@ function cleanDrep(o){
   Object.entries(obj(o.marks)).slice(0,3000).forEach(([iso,v])=>{if(WA_ISO.test(iso)&&(v==="ot"||v==="hol"))out.marks[iso]=v;});
   return out;
 }
+/* Plán podle Plánu kapacit (2.69): potřeba lidí skupiny (potřeba celkem) na den. V den označený
+   jako přesčas nebo práce ve svátek se pracuje jen na jednu směnu, plán je proto poloviční
+   (zaokrouhleno nahoru na celé lidi). Bez plánu skupiny null. */
+function drHalf(iso){const m=((S.workAudit&&S.workAudit.drep)||{}).marks||{};return m[iso]==="ot"||m[iso]==="hol";}
+function drHalfN(n,iso){return n!=null&&drHalf(iso)?Math.ceil(n/2):n;}
+function capNeed(gid,iso){const g=S.capPlan&&S.capPlan.groups&&S.capPlan.groups[gid];return g&&g.n?drHalfN(g.n,iso):null;}
 function drCtx(opts){
   opts=opts||{};
   const mg=S.positions.filter(isGroup).map(p=>{
@@ -55,7 +61,9 @@ function drDay(iso,ctx){
   const pres=ctx.dv.pres[iso];
   const has=!!pres&&Object.values(pres).some(v=>v[0]!=null||v[1]!=null);
   const kind=has?"real":iso>ctx.today?"plan":"none";
-  const rows=ctx.groups.map(g=>({id:g.id,name:g.name,plan:g.plan,done:0,sick:0,miss:[],note:""}));
+  // přesčas a práce ve svátek (2.69): jen jedna směna, plán i požadavek na polovinu
+  const half=drHalf(iso),req=half?Math.ceil(ctx.req/2):ctx.req;
+  const rows=ctx.groups.map(g=>({id:g.id,name:g.name,plan:half?Math.ceil(g.plan/2):g.plan,done:0,sick:0,miss:[],note:""}));
   const byId=new Map(rows.map(r=>[r.id,r]));
   if(kind==="real"){
     const came=new Set();
@@ -88,7 +96,7 @@ function drDay(iso,ctx){
   });
   const plan=rows.filter(r=>!r.extra).reduce((x,r)=>x+r.plan,0),done=rows.reduce((x,r)=>x+r.done,0);
   const mark=ctx.marks[iso]||"";
-  return {iso,day,work:day.work,mark,norm:day.work&&!mark,kind,rows,plan,done,req:ctx.req,met:done>=ctx.req};
+  return {iso,day,work:day.work,mark,half,norm:day.work&&!mark,kind,rows,plan,done,req,met:done>=req};
 }
 /** Párování příchodů pro report (2.42.1): kolik lidí s příchodem jde do skupin, kdo má ID, které
     v Lidech není, a kdo je bez skupiny. */

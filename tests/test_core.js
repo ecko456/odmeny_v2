@@ -3294,6 +3294,38 @@ test('Kapacity a zaškolení (2.31): týdenní souhrn bez požadavku z KPI porov
   return null;
 });
 
+test('Kapacity a zaškolení (2.69): plán skupin z Plánu kapacit, v přesčas na polovinu', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    const p = mkPos('g1', 'Brus', []); p.skillset = [{ id: 'k1', name: 'Broušení', desc: '', scale: null }]; p.maxTab = 8; p.tiers = [];
+    const q = mkPos('g2', 'CNC', []); q.skillset = [{ id: 'k2', name: 'Obrábění', desc: '', scale: null }]; q.maxTab = 8; q.tiers = [];
+    st.positions = [p, q];
+    ['a', 'b', 'c'].forEach(k => { st.employees[k] = { key: k, last: 'L' + k, first: 'F', positionId: 'g1', shift: 'R', note: '', rate: { k1: 4 } }; });
+    st.employees.d = { key: 'd', last: 'Ld', first: 'F', positionId: 'g2', shift: 'R', note: '', rate: { k2: 4 } };
+    st.workAudit.target = null;
+    st.capPlan.groups.g1 = { n: 5, l2: 0, l3: 0, l4: 0 };
+    S = sanitizeState(st);
+    S.workAudit.target = null;
+    S.workAudit.drep.marks['2026-09-16'] = 'ot';
+    const days = ['2026-09-14', '2026-09-15', '2026-09-16', '2026-09-17', '2026-09-18'];
+    const row = k => ({ first: 'F', last: 'L' + k, h: days.map(() => 7.5), c: days.map(() => null) });
+    S.periods['2026-09'] = { id: '2026-09', y: 2026, m: 9, days, rows: { a: row('a'), b: row('b'), c: row('c'), d: row('d') }, codes: {}, file: 'x', at: 1, headerRow: 1 };
+    const r = capWeekReport('2026-W38', { now: new Date(2026, 9, 1).getTime() });
+    S.workAudit.target = 10;
+    const r2 = capWeekReport('2026-W38', { now: new Date(2026, 9, 1).getTime() });
+    return JSON.stringify({ req: r2.days.map(d => d.req), days: r.days.map(d => [d.plan, d.req, d.met, !!d.half]), g: r.groups.map(x => [x.g.id, x.plan, x.met, x.cap]), cap: r.cap, half: r.half,
+      need: [capNeed('g1', '2026-09-15'), capNeed('g1', '2026-09-16'), capNeed('g2', '2026-09-15')] });
+  })()`));
+  // Brus: potřeba 5 (v přesčas 3), CNC bez plánu = kdo měl přijít (1); bez pevného požadavku platí plán skupin
+  assert.deepStrictEqual(out.need, [5, 3, null]);
+  assert.deepStrictEqual(out.days, [[6, null, false, false], [6, null, false, false], [4, null, true, true], [6, null, false, false], [6, null, false, false]], 'plán dne z Plánu kapacit, přesčas poloviční');
+  assert.deepStrictEqual(out.g, [['g1', 4.6, 1, true], ['g2', 1, 5, false]]);
+  assert.deepStrictEqual([out.cap, out.half], [true, ['2026-09-16']]);
+  assert.deepStrictEqual(out.req, [10, 10, 5, 10, 10], 'pevný požadavek v přesčas na polovinu');
+  return null;
+});
+
 test('Shortage (2.32): TOP 2 pod TOP SHORTAGE, oddělení podle probíhající operace, ruční přesun, historie změn', () => {
   const core = loadCore();
   const out = JSON.parse(run(core, `(() => {
@@ -4174,7 +4206,7 @@ test('Report docházky (2.41): skupiny reportu z oddělení, přesčas a práce 
   })()`));
   assert.deepStrictEqual(out.drep, { groups: [{ id: 'rgA', name: 'Výroba', depts: ['Obrobna', 'Lepení'] }, { id: 'rgB', name: 'Dvojí', depts: ['Neexistuje'] }], marks: { '2026-10-27': 'ot', '2026-10-29': 'hol' } },
     'oddělení jen v jedné skupině, špatné id a značka pryč');
-  assert.deepStrictEqual(out.rows, [['Výroba', 4, 1], ['Dvojí', 0, 0], ['Brus', 2, 1]], 'skupina reportu sečte CNC, Frézku a Lepení; Brus bez skupiny zůstane');
+  assert.deepStrictEqual(out.rows, [['Výroba', 2, 1], ['Dvojí', 0, 0], ['Brus', 1, 1]], 'skupina reportu sečte CNC, Frézku a Lepení; Brus bez skupiny zůstane; v přesčas plán na polovinu (2.69)');
   assert.deepStrictEqual(out.mark, ['ot', false]);
   assert.deepStrictEqual(out.w.slice(0, 3), [2, 2, 100], 'přesčas 27. a práce ve svátek 29. se do normy nepočítají');
   assert.deepStrictEqual(out.w[3], [{ iso: '2026-10-27', mark: 'ot', done: 2 }, { iso: '2026-10-29', mark: 'hol', done: 5 }]);

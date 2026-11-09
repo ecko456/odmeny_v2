@@ -239,6 +239,14 @@ const FIRST = ['Adam', 'Bára', 'Cyril'];
   await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
   check(await page.locator('#waView .ctr-banner').count() === 0, 'minulý týden bez pruhu (celý vykázaný)');
   check(await page.locator('#waView .ctr-chart svg text').filter({ hasText: /·\s\d+ %/ }).count() >= 1, 'popisek zaškolených ve sloupci');
+  // 2.69: plán skupiny z Plánu kapacit
+  const cpName = await page.evaluate(() => { const g = S.positions.filter(isGroup)[0]; S.capPlan.groups[g.id] = { n: 7, l2: 0, l3: 0, l4: 0 }; save(); renderWorkAudit(); return g.name; });
+  await page.waitForSelector('#waView .ctr-paper[data-ctrpage="week"]');
+  const cpRow = await page.$$eval('#waView .ctr-tab tbody tr', (rows, n) => { const r = rows.find(x => x.cells[0] && x.cells[0].textContent.trim() === n); return r ? r.cells[1].textContent.trim() : ''; }, cpName);
+  const cpText = (await page.textContent('#waView .ctr-paper')).replace(/\s+/g, ' ');
+  check(cpRow === '7' && cpText.includes('Plán = potřeba lidí z Plánu kapacit'), `plán skupiny ${cpName} z Plánu kapacit: ${cpRow}`);
+  await page.screenshot({ path: path.join(shots, '02b-tyden-plankap.png'), fullPage: true });
+  await page.evaluate(() => { S.capPlan.groups = {}; save(); renderWorkAudit(); });
   // vývoj zaškolení
   await page.click('#waView [data-wactpage="dev"]');
   await page.waitForSelector('#waView .ctr-paper[data-ctrpage="dev"]');

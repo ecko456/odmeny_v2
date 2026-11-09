@@ -329,8 +329,11 @@ function capTimeline(from,to,opts){
     });
     const tot=ctRound(cells.reduce((a,b)=>ctAdd(a,b),ctCell()));
     const wd=wa&&wa.days&&wa.days[iso]?waDay(wa,iso):null;
-    const req=wa?(wa.target||(real&&wd&&wd.plan)||null):null;
-    return {iso,day,week,month:iso.slice(0,7),kind:real?"real":"plan",past:iso<today,mg,cells,tot,
+    // plán skupin = Plán kapacit (2.69), v den přesčasu nebo práce ve svátek poloviční
+    const need=groups.map(g=>capNeed(g.id,iso)),needTot=need.some(v=>v!=null)?need.reduce((s,v)=>s+(v||0),0):null;
+    // požadavek = pevné číslo z Nastavení KPI (v přesčas na polovinu); bez něj s Plánem kapacit platí plán skupin
+    const req=wa&&wa.target?drHalfN(wa.target,iso):needTot!=null?null:wa?((real&&wd&&wd.plan)||null):null;
+    return {iso,day,week,month:iso.slice(0,7),kind:real?"real":"plan",past:iso<today,mg,cells,tot,need,needTot,half:drHalf(iso),
       extraN,extraH:r2(extraH),noGroup,req,met:req?tot.on>=req-1e-9:null,audit:wd?wd.people:null};
   });
   /* souhrn za skupinu dnů (týden, měsíc, celé období) */
@@ -584,23 +587,25 @@ function capWeekReport(weekId,opts){
   const x=capTimeline(w.from,w.to,opts);
   if(!x)return null;
   const n=x.days.length;
-  const plan2=(d,c)=>d.kind==="real"?c.planN-c.excused:c.planN;
+  // plán skupiny (2.69) = potřeba z Plánu kapacit; skupina bez plánu: kdo měl přijít (bez omluvených)
+  const plan2=(d,c,i)=>d.need&&d.need[i]!=null?d.need[i]:d.kind==="real"?c.planN-c.excused:c.planN;
   const groups=x.groups.map((g,i)=>{
     let plan=0,on=0,ok=0,met=0;
-    x.days.forEach(d=>{const c=d.cells[i],p=plan2(d,c);plan+=p;on+=c.on;ok+=c.onOk;if(c.on>=p-1e-9)met++;});
-    return {g,i,plan:n?plan/n:0,on:n?on/n:0,ok:n?ok/n:0,share:on?ok/on:null,met,n,state:ctState(met,n)};
+    x.days.forEach(d=>{const c=d.cells[i],p=plan2(d,c,i);plan+=p;on+=c.on;ok+=c.onOk;if(c.on>=p-1e-9)met++;});
+    return {g,i,plan:n?plan/n:0,on:n?on/n:0,ok:n?ok/n:0,share:on?ok/on:null,met,n,state:ctState(met,n),cap:x.days.some(d=>d.need&&d.need[i]!=null)};
   }).filter(r=>r.plan>0||r.on>0);
   let plan=0,on=0,ok=0;
-  x.days.forEach(d=>{d.cells.forEach(c=>{plan+=plan2(d,c);});on+=d.tot.on;ok+=d.tot.onOk;});
+  x.days.forEach(d=>{d.cells.forEach((c,i)=>{plan+=plan2(d,c,i);});on+=d.tot.on;ok+=d.tot.onOk;});
   // den v normě: s požadavkem z KPI na směně aspoň požadavek, bez něj aspoň plán skupin
-  const planOf=d=>d.cells.reduce((s,c)=>s+plan2(d,c),0),inNorm=d=>d.req?!!d.met:d.tot.on>=planOf(d)-1e-9;
+  const planOf=d=>d.cells.reduce((s,c,i)=>s+plan2(d,c,i),0),inNorm=d=>d.req?!!d.met:d.tot.on>=planOf(d)-1e-9;
   const reqDays=x.days.filter(d=>d.req).length,met=x.days.filter(inNorm).length;
   const reqs=[...new Set(x.days.filter(d=>d.req).map(d=>d.req))];
   const days=Array.from({length:5},(_,i)=>{const iso=addDays(w.from,i),d=x.days.find(q=>q.iso===iso),[yy,mm,dd]=iso.split("-").map(Number),day=mkDay(yy,mm,dd);
-    return d?{iso,day,kind:d.kind,on:d.tot.on,ok:d.tot.onOk,tr:d.tot.onTr,plan:Math.round(planOf(d)*1e6)/1e6,req:d.req,met:inNorm(d)}:{iso,day,kind:"off",on:0,ok:0,tr:0,plan:0,req:null,met:null};});
+    return d?{iso,day,kind:d.kind,on:d.tot.on,ok:d.tot.onOk,tr:d.tot.onTr,plan:Math.round(planOf(d)*1e6)/1e6,req:d.req,met:inNorm(d),half:d.half}:{iso,day,kind:"off",on:0,ok:0,tr:0,plan:0,req:null,met:null};});
   return {week:w,id:weekId,x,days,groups,n,req:x.total.reqAvg,reqSame:reqs.length===1,reqDays,met,
     tot:{plan:n?plan/n:0,on:n?on/n:0,ok:n?ok/n:0,share:on?ok/on:null,met,state:ctState(met,n)},
-    real:x.real.n,plan:x.plan.n,kind:x.total.kind,thr:x.thr,okPct:x.okPct,okOwn:x.okOwn,noGroup:x.noGroup};
+    real:x.real.n,plan:x.plan.n,kind:x.total.kind,thr:x.thr,okPct:x.okPct,okOwn:x.okOwn,noGroup:x.noGroup,
+    cap:x.days.some(d=>d.needTot!=null),half:x.days.filter(d=>d.half).map(d=>d.iso)};
 }
 /* Stránky PDF pro období od–do: za každý měsíc měsíční souhrn a za ním týdenní souhrny týdnů,
    jejichž čtvrtek do měsíce patří (ISO týden). */

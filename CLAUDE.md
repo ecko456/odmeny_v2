@@ -34,6 +34,22 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 9. 11. 2026 (verze 2.69):
+
+- Uživatel: „V KPI v kapacity a zaškolení mi to ukazuje nějaký nesmyslný plán, ať se plán řídí
+  podle plán kapacit. A plán kapacit v reporty docházky, ať se o přesčasu a svátku stáhnou na
+  polovinu. Protože se pracuje jen na jednu směnu a ne na dvě.“
+  - Core (18-report-dochazky): `drHalf(iso)` (značka dne `ot`/`hol` v `drep.marks`), `drHalfN(n, iso)`
+    (polovina nahoru), `capNeed(gid, iso)` (potřeba celkem z `S.capPlan`, v přesčas poloviční, bez
+    plánu null). `drDay`: plán řádků i `req` dne poloviční, vrací `half`, `req` je za den.
+  - `capTimeline`: den má `need[]` (po skupinách), `needTot`, `half`; `req` = pevný požadavek
+    z Nastavení KPI (v přesčas poloviční), bez něj s Plánem kapacit null (platí plán skupin),
+    jinak jako dřív. `capWeekReport`: plán skupiny = `need`, skupina bez plánu postaru (kdo měl
+    přijít), `cap`, `half`, u skupiny `cap`. Texty `ctrWeek` (dlaždice, poznámka, štítek
+    „přesčas“ v grafu), Report docházky den bere `d.req`.
+  - Testy: core „Kapacity a zaškolení (2.69)“, upravený „Report docházky (2.41)“ (přesčas na
+    polovinu). `ODM_VERSION` 2.69, data beze změny (47).
+
 Stav k 8. 11. 2026 (verze 2.68):
 
 - Uživatel: „pro tablety nebo pc s menším monitorem … ten pravý panel budou moct rozevřít a poté
@@ -2553,7 +2569,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.65 | `d45d394` | kalendář v pravém panelu s poznámkami, pevné rozložení karet, stav položek Shortage (modul, panel, PDF), ruční přidání položky (data verze 46) |
 | 2.66 | `78ff72c` | časová osa v pravém panelu (2 h zpět, 3 h dopředu, opakování, jen pracovní dny, splněno) (data verze 47) |
 | 2.67 | `178d8f0` | Úkoly na časové ose jako samostatná část modulu Úkoly (přehled, hledání, úpravy, smazání) |
-| 2.68 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: vysouvací pravý panel na tabletu a menším monitoru (tlačítko u pravého okraje) |
+| 2.68 | `2d4e65e` | vysouvací pravý panel na tabletu a menším monitoru (tlačítko u pravého okraje) |
+| 2.69 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plán v Kapacitách a zaškolení z Plánu kapacit, v přesčas a práci ve svátek plán poloviční |
 
 Verze 2.1 přidala:
 

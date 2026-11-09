@@ -201,6 +201,9 @@ const pdfText = file => {
   await page.click('[data-drmark="ot"]');
   await saved(page);
   check(/PŘESČAS/.test(await text(page, '.dr-verdict')) && /přesčas — mimo normu/i.test(await text(page, '.dr-verdict')), `27. 10. přesčas: ${await text(page, '.dr-verdict')}`);
+  // 2.69: v přesčas jen jedna směna, plán i požadavek na polovinu
+  const half = await page.evaluate(() => { const c = drCtx(), d = drDay('2026-10-27', c); return { ok: d.half && d.req === Math.ceil(c.req / 2) && d.rows.filter(r => !r.extra).every((r, i) => r.plan === Math.ceil(c.groups[i].plan / 2)), req: d.req }; });
+  check(half.ok && new RegExp(`norma\\) ${half.req} `).test(await text(page, '.dr-verdict')), `přesčas: plán a požadavek na polovinu (${half.req}): ${await text(page, '.dr-verdict')}`);
   await page.click('[data-drmode="week"]');
   check(/67\s*%/.test(await text(page, '.dr-verdict')) && /Přesčas \(mimo normu\): Út 27\. 10\. \(12\)/.test(await text(page, '.dr-paper')), `týden s přesčasem: ${await text(page, '.dr-verdict')}`);
   const log = await page.evaluate(() => S.log.map(x => x.text).filter(t => /Report docházky/.test(t)).join(' | '));

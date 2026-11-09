@@ -99,7 +99,8 @@ function drTrendChart(r) {
 function drView(r) {
   const place = ctrRep().place;
   const per = drPeriodLabel(r);
-  const req = r.req;
+  // den přesčasu nebo práce ve svátek: jedna směna, plán i požadavek na polovinu (2.69)
+  const req = r.mode === 'day' ? r.d.req : r.req;
   const v = { title: `Report docházky${place ? ` — ${place}` : ''}`, org: ctrSub(`plnění denního požadavku (norma) ${req}`, 'víkendy mimo', 'budoucí dny = plánovaná kapacita'), per };
   if (r.mode === 'day') {
     const d = r.d;
@@ -122,7 +123,7 @@ function drView(r) {
       head: planned ? (ok ? 'KAPACITA POKRYJE POŽADAVEK' : 'KAPACITA NESTAČÍ') : !exists ? 'BEZ DAT' : wknd ? `${d.mark === 'hol' ? 'PRÁCE VE SVÁTEK' : 'PŘESČAS'}${ok ? ' – SPLNĚNO' : ''}` : ok ? 'SPLNĚNO' : 'NESPLNĚNO',
       sub: planned ? (ok ? `Rezerva ${diffMin} ${lidiN(diffMin)} nad požadavek` : `Chybí ${-diffMin} ${lidiAcc(-diffMin)} do denního požadavku`)
         : !exists ? 'Pro tento den nejsou nahrané příchody'
-        : wknd ? (d.mark ? `Den je označený jako ${offT}, do plnění normy se nezapočítává` : 'Víkend a svátek se do plnění normy nezapočítávají')
+        : wknd ? (d.mark ? `Den je označený jako ${offT} (jedna směna, plán a požadavek na polovinu), do plnění normy se nezapočítává` : 'Víkend a svátek se do plnění normy nezapočítávají')
         : ok ? (diffMin > 0 ? `Rezerva ${diffMin} ${lidiN(diffMin)} nad požadavek` : 'Přesně na denním požadavku') : `Chybí ${-diffMin} ${lidiAcc(-diffMin)} do denního požadavku`,
       big: shown ? String(d.done) : '–', bigL: planned ? 'plánovaná kapacita' : 'reálně dodáno',
     };
@@ -194,7 +195,7 @@ function drView(r) {
       mk('ot').length ? `Přesčas (mimo normu): ${mkT(mk('ot'))}.` : '', mk('hol').length ? `Práce ve svátek (mimo normu): ${mkT(mk('hol'))}.` : '',
       r.weekend ? `Docházka o víkendu nebo ve svátek: ${r.weekend} ${dniN(r.weekend)} (přesčas, mimo normu).` : ''].filter(Boolean);
   }
-  v.foot = `Plnění normy = podíl pracovních dní, kdy celkový počet lidí v práci dosáhl denního požadavku ${req}${r.reqOwn ? ' (KPI, Nastavení)' : ' (součet plánů skupin)'}. Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině. Víkendy, svátky a dny označené jako přesčas nebo práce ve svátek jsou mimo normu, budoucí dny jsou plánovaná kapacita a do plnění se nepočítají. Lidé jen s ID. Vygenerováno ${dayText(todayIso())}.`;
+  v.foot = `Plnění normy = podíl pracovních dní, kdy celkový počet lidí v práci dosáhl denního požadavku ${req}${r.reqOwn ? ' (KPI, Nastavení)' : ' (součet plánů skupin)'}. Dodáno = lidé ze skupin Matice dovedností s příchodem v nahrané docházce (vedoucí ne). Plán skupiny = potřeba z Plánu kapacit, jinak počet lidí ve skupině; v den přesčasu nebo práce ve svátek se pracuje na jednu směnu, plán i požadavek jsou poloviční. Víkendy, svátky a dny označené jako přesčas nebo práce ve svátek jsou mimo normu, budoucí dny jsou plánovaná kapacita a do plnění se nepočítají. Lidé jen s ID. Vygenerováno ${dayText(todayIso())}.`;
   return v;
 }
 
