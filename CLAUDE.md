@@ -34,6 +34,22 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 9. 11. 2026 (verze 2.69.1):
+
+- Uživatel: „v KPI přehledu mi to vypočítá kolik se zpracovalo kusů, ale už to nedokáže dát
+  dohromady kolik bylo lidí v práci a kusy na osobu“.
+  - Příčiny: lidé po skupinách KPI jsou jen u skupin s přiřazenými skupinami Matice (`mg`, jinak
+    podle shodného názvu), bez nich kusy na osobosměnu chybí; dny bez souboru obsazenosti (říjen,
+    kusy z Výroby) neměly lidi vůbec.
+  - Core `waAttPeople(iso)` (13-kpi, cache podle objektu měsíce v `S.periods`): v práci = hodiny
+    bez kódu, bez vedoucích, po skupinách Matice (`dvGroupOf`). `waDay`: bez `wa.days[iso]`
+    doplní lidi z docházky (`attFb`), skupiny KPI přes `dvAuditGroups`; bez lidí ve skupinách
+    kusy na osobu na všechny v práci bez neproduktivních a neevidovaných (`perAll`).
+    `waTotals` → `perAll`, `attFb` (počet dní). UI `waHistHtml`: poznámka `.note.i` s odkazem do
+    Nastavení, popisek dlaždice.
+  - Testy: core „KPI (2.69.1)“, „KPI (2.17)“ bez docházky z ukázky (`S.periods = {}`),
+    `e2e_zdroj`. `ODM_VERSION` 2.69.1, data beze změny (47).
+
 Stav k 9. 11. 2026 (verze 2.69):
 
 - Uživatel: „V KPI v kapacity a zaškolení mi to ukazuje nějaký nesmyslný plán, ať se plán řídí
@@ -2570,7 +2586,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.66 | `78ff72c` | časová osa v pravém panelu (2 h zpět, 3 h dopředu, opakování, jen pracovní dny, splněno) (data verze 47) |
 | 2.67 | `178d8f0` | Úkoly na časové ose jako samostatná část modulu Úkoly (přehled, hledání, úpravy, smazání) |
 | 2.68 | `2d4e65e` | vysouvací pravý panel na tabletu a menším monitoru (tlačítko u pravého okraje) |
-| 2.69 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: plán v Kapacitách a zaškolení z Plánu kapacit, v přesčas a práci ve svátek plán poloviční |
+| 2.69 | `ad4daf6` | plán v Kapacitách a zaškolení z Plánu kapacit, v přesčas a práci ve svátek plán poloviční |
+| 2.69.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: KPI přehled spojí kusy s lidmi v práci (lidé z docházky, kusy na osobu i bez skupin Matice) |
 
 Verze 2.1 přidala:
 

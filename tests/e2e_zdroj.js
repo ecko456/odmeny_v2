@@ -174,6 +174,26 @@ const PEOPLE = [['g_brus', '101', 'Adámek', 'Aleš'], ['g_brus', '102', 'Bedná
   await page.screenshot({ path: path.join(shots, '01b-report.png') });
   await page.evaluate(() => { delete S.workAudit.dv.pres['2026-11-03']['555']; S.employees['fiala|filip'].positionId = 'g_cnc'; renderWorkAudit(); });
 
+  // 2.69.1: přehled KPI spojí kusy s lidmi v práci i bez přiřazených skupin Matice
+  const ov = await page.evaluate(() => {
+    const wa = S.workAudit, keep = wa.groups.map(g => [g.mg, g.name]), ops = wa.ops.map(o => [o.group, o.on]);
+    wa.ops.forEach(o => { o.group = 'brus'; o.on = true; });
+    wa.groups.forEach(g => { g.mg = []; g.name = 'X ' + g.id; });
+    const t = waTotals(wa, waDays(wa, '2026-11-01', '2026-11-30'));
+    const res = { people: t.avgPeople, pcs: t.pcs, per: t.perShift, all: t.perAll };
+    wa.groups.forEach((g, i) => { [g.mg, g.name] = keep[i]; });
+    wa.ops.forEach((o, i) => { [o.group, o.on] = ops[i]; });
+    return res;
+  });
+  check(ov.people > 0 && ov.pcs > 0 && ov.per > 0, `přehled KPI: lidé ${ov.people}, kusy ${ov.pcs}, na osobu ${ov.per}`);
+  await page.evaluate(() => { window._waKeep = JSON.stringify(S.workAudit); const wa = S.workAudit;
+    wa.ops.forEach(o => { o.group = 'brus'; o.on = true; }); wa.groups.forEach(g => { g.mg = []; g.name = 'X ' + g.id; });
+    Object.keys(wa.days).forEach(iso => { delete wa.days[iso]; }); ui.wa.tab = 'prehled'; ui.wa.hist = '0'; renderWorkAudit(); });
+  await page.waitForSelector('#waView .wa-hist-warn');
+  const ovText = await text(page, '#waView');
+  check(/doplněni z docházky/.test(ovText) && /na všechny lidi v práci/.test(ovText), 'přehled KPI vysvětlí lidi z docházky a kusy na všechny v práci');
+  await page.screenshot({ path: path.join(shots, '02c-kpi-prehled.png') });
+  await page.evaluate(() => { S.workAudit = cleanWorkAudit(JSON.parse(window._waKeep)); renderWorkAudit(); });
   // 2) Nastavení: skupiny Matice u skupin KPI, starší soubory schované
   await page.click('#waTabs [data-watab="nastaveni"]');
   await page.waitForSelector('#waView .wa-mg');

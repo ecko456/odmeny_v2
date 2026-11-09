@@ -223,6 +223,33 @@ function waKeyLabel(wa,key){
 }
 const waSum=list=>{const v=list.filter(x=>x!=null);return v.length?Math.round(v.reduce((s,x)=>s+x,0)*100)/100:null;};
 /* Jeden den: obsazenost po směnách a skupinách, kusy po operacích a skupinách, kontrola součtů. */
+/* Lidé v práci z docházky (2.69.1): den bez obsazenosti v KPI (bez souboru obsazenosti, jen
+   docházka a kusy) se doplní z docházky: v práci = hodiny bez kódu nepřítomnosti, bez vedoucích.
+   Skupiny Matice → skupiny KPI podle přiřazení (dvAuditGroups). Bez docházky toho dne null. */
+const _waAttCache=new WeakMap();
+function waAttPeople(iso){
+  const P=typeof S!=="undefined"&&S&&S.periods?S.periods[iso.slice(0,7)]:null;
+  if(!P||!Array.isArray(P.days))return null;
+  let m=_waAttCache.get(P);
+  if(!m){
+    m=new Map();const today=todayIso(),rows=P.rows||{};
+    P.days.forEach((d,i)=>{
+      let n=0;const mg={};
+      Object.keys(rows).forEach(key=>{
+        const r=rows[key],h=+((r.h||[])[i])||0,c=r.c&&r.c[i];
+        if(!(h>0)||c)return;
+        const e=S.employees[key]||null;
+        if(e&&isLead(e))return;
+        n++;
+        const g=e?dvGroupOf(e,d,today):null;
+        if(g&&g.id!=="-"&&g.id!=="?")mg[g.id]=(mg[g.id]||0)+1;
+      });
+      if(n)m.set(d,{n,mg});
+    });
+    _waAttCache.set(P,m);
+  }
+  return m.get(iso)||null;
+}
 function waDay(wa,iso){
   const [y,m,dd]=iso.split("-").map(Number);
   const day=mkDay(y,m,dd);
@@ -230,6 +257,14 @@ function waDay(wa,iso){
   const am={plan:v("am.plan"),total:v("am.total"),abs:v("am.abs")},pm={plan:v("pm.plan"),total:v("pm.total")};
   const g={};
   wa.groups.forEach(gr=>{const a=v("g."+gr.id+".am"),p=v("g."+gr.id+".pm");g[gr.id]={am:a,pm:p,sum:waSum([a,p])};});
+  // bez obsazenosti v KPI: lidé v práci z docházky (2.69.1)
+  const fb=!wa.days[iso]&&am.total==null&&pm.total==null?waAttPeople(iso):null;
+  if(fb){
+    const gm=dvAuditGroups(wa),by={};
+    Object.entries(fb.mg).forEach(([pid,n])=>{const k=gm.get(pid);if(k)by[k]=(by[k]||0)+n;});
+    const mapped=new Set(gm.values());
+    wa.groups.forEach(gr=>{if(g[gr.id].sum==null&&mapped.has(gr.id))g[gr.id]={am:null,pm:null,sum:by[gr.id]||0};});
+  }
   const pcs={};const groupPcs={};let pcsTotal=null,noGroup=null;
   wa.ops.forEach(op=>{
     const n=v("pcs."+op.id);if(n==null)return;pcs[op.id]=n;
@@ -238,7 +273,7 @@ function waDay(wa,iso){
     pcsTotal=(pcsTotal||0)+n;
     groupPcs[op.group]=(groupPcs[op.group]||0)+n;
   });
-  const people=waSum([am.total,pm.total]);
+  const people=fb?fb.n:waSum([am.total,pm.total]);
   const plan=waSum([am.plan,pm.plan]);
   let prodPeople=null,unprodPeople=null,noIsPeople=null,prodPcs=null;
   wa.groups.forEach(gr=>{
@@ -248,9 +283,17 @@ function waDay(wa,iso){
     if(n!=null)prodPeople=(prodPeople||0)+n;
     if(groupPcs[gr.id]!=null)prodPcs=(prodPcs||0)+groupPcs[gr.id];
   });
+  /* Skupiny KPI bez přiřazené skupiny Matice nemají lidi (2.69.1): kusy na osobu se pak počítají
+     na všechny lidi v práci bez neproduktivních a neevidovaných skupin (perAll). */
+  let perAll=false;
+  if(prodPeople==null&&people&&pcsTotal!=null){
+    prodPeople=Math.max(0,people-(unprodPeople||0)-(noIsPeople||0));
+    prodPcs=0;wa.groups.forEach(gr=>{if(!gr.noIs&&!gr.unprod&&groupPcs[gr.id]!=null)prodPcs+=groupPcs[gr.id];});
+    perAll=true;
+  }
   const amSum=waSum(wa.groups.map(gr=>g[gr.id].am)),pmSum=waSum(wa.groups.map(gr=>g[gr.id].pm));
   const edits=wa.edits[iso]||{};
-  return {iso,day,am,pm,g,pcs,groupPcs,pcsTotal,noGroup,people,plan,prodPeople,unprodPeople,noIsPeople,prodPcs,
+  return {iso,day,am,pm,g,pcs,groupPcs,pcsTotal,noGroup,people,plan,prodPeople,unprodPeople,noIsPeople,prodPcs,perAll,attFb:!!fb,
     perProd:prodPcs!=null&&prodPeople?prodPcs/prodPeople:null,
     fill:people!=null&&plan?people/plan:null,
     check:{am:amSum!=null&&am.total!=null?Math.round((amSum-am.total)*100)/100:null,pm:pmSum!=null&&pm.total!=null?Math.round((pmSum-pm.total)*100)/100:null},
@@ -300,6 +343,7 @@ function waTotals(wa,days){
   t.avgReq=t.reqDays?reqSum/t.reqDays:null;
   t.metShare=t.reqDays?t.metDays/t.reqDays:null;
   t.perShift=t.prodShifts&&t.prodPcs!=null?t.prodPcs/t.prodShifts:null;
+  t.perAll=days.some(d=>d.perAll);t.attFb=days.filter(d=>d.attFb).length;   // 2.69.1
   t.perDay=t.workDays&&t.pcs!=null?t.pcs/Math.max(1,days.filter(d=>d.hasWork).length):null;
   t.unprodShare=t.shifts&&t.unprodShifts!=null?t.unprodShifts/t.shifts:null;
   // skupina: průměr na pracovní den s obsazeností a podíl na lidech v práci (2.17.2)

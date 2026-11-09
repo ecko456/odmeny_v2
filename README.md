@@ -62,6 +62,12 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.69.1
+
+- KPI, Přehled: lidé v práci se u dnů bez souboru obsazenosti doplní z docházky a kusy na
+  osobosměnu se spočítají i tehdy, když skupiny KPI nemají přiřazené skupiny Matice (pak na všechny
+  lidi v práci). Přehled to napíše a nabídne přiřazení skupin.
+
 ## Co je nového ve verzi 2.69
 
 - KPI, Kapacity a zaškolení: plán skupin v týdenním souhrnu je potřeba lidí z Plánu kapacit.

@@ -280,7 +280,11 @@ function waHistHtml() {
   }
   const ng = wa.ops.filter(o => !(o.on && o.group)).length;
   const warn = ng ? `<div class="note w wa-hist-warn">${ng} ${operaceN(ng)} z výkazu práce ${ng === 1 ? 'nemá' : 'nemají'} skupinu, ${ng === 1 ? 'její kusy' : 'jejich kusy'} se nepočítají. <button class="link" type="button" data-watabgo="nastaveni">Přiřadit skupiny</button></div>` : '';
-  const perNote = G ? (G.noIs ? 'projekt není evidován v IS' : G.unprod ? 'neproduktivní pozice, nepočítá se' : 'kusy skupiny na její osobosměnu') : 'produktivní skupiny';
+  // 2.69.1: odkud jsou lidé v práci a na koho se počítají kusy
+  const info = [t.attFb ? `Lidé v práci za ${t.attFb} ${dniN(t.attFb)} bez souboru obsazenosti jsou doplněni z docházky (hodiny bez nepřítomnosti, bez vedoucích).` : '',
+    t.perAll ? 'Skupiny KPI nemají přiřazené skupiny Matice dovedností, kusy na osobosměnu se proto počítají na všechny lidi v práci. <button class="link" type="button" data-watabgo="nastaveni">Přiřadit skupiny Matice</button>' : ''].filter(Boolean);
+  const warnAll = warn + (info.length ? `<div class="note i wa-hist-warn">${info.join(' ')}</div>` : '');
+  const perNote = G ? (G.noIs ? 'projekt není evidován v IS' : G.unprod ? 'neproduktivní pozice, nepočítá se' : 'kusy skupiny na její osobosměnu') : t.perAll ? 'na lidi v práci (skupiny KPI nemají přiřazené skupiny Matice)' : 'produktivní skupiny';
   const tiles = `<div class="stats wa-stats">${[
     statTile('Lidé v práci', `${waN(f.avg, 1)}<em>Ø na den</em>`, f.req != null ? `požadavek Ø ${waN(f.req, 1)}${wa.target ? ' (pevný)' : ''}` : G ? esc(G.name) : 'požadavek v souboru chybí'),
     G ? statTile('Podíl na lidech v práci', waP(f.share), `z Ø ${waN(t.avgPeople, 1)} lidí na pracovní den`)
@@ -330,7 +334,7 @@ function waHistHtml() {
       <td class="r num" data-label="Ks na osobosměnu">${waN(v.per, 1)}</td></tr>`;
   }).reverse().join('');
   const table = `<div class="table-card"><table class="stack wa-hist"><thead><tr><th>Týden${G ? ` · ${esc(G.name)}` : ''}</th><th class="r">Prac. dny</th><th class="r">Ø lidí / den</th>${G ? '<th class="r">Podíl</th>' : '<th class="r">Ø požadavek</th><th class="r">Splněno dní</th><th class="r">Bilance</th><th class="r">Kumulovaně</th>'}<th class="r">Kusy</th><th class="r">Ks / os.</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-  return `${bar}<p class="wa-range-line small muted">${esc(dayText(r.from))} – ${esc(dayText(r.to))}${r.clipped ? ` (zvoleno ${esc(dayText(r.want.from))} – ${esc(dayText(r.want.to))}, data jsou jen za tyto dny)` : ''}${G ? ` · skupina ${esc(G.name)}` : ''}</p>${warn}${tiles}${charts}${staff}${groups}${table}
+  return `${bar}<p class="wa-range-line small muted">${esc(dayText(r.from))} – ${esc(dayText(r.to))}${r.clipped ? ` (zvoleno ${esc(dayText(r.want.from))} – ${esc(dayText(r.want.to))}, data jsou jen za tyto dny)` : ''}${G ? ` · skupina ${esc(G.name)}` : ''}</p>${warnAll}${tiles}${charts}${staff}${groups}${table}
     <p class="hint">Ø na pracovní den = průměr pracovních dnů s obsazeností; víkendy a svátky se do průměru nepočítají, do součtů ano. Požadavek = ${wa.target ? `pevně ${wa.target} lidí na pracovní den (Nastavení)` : 'mělo dorazit + požadavek ze souboru obsazenosti'}; den se splněným požadavkem má v práci aspoň 100 % požadavku. Bilance v člověkodnech (člověk × den). Kusy jen z operací přiřazených ke skupině, kusy na osobosměnu jen u produktivních skupin. Klepnutím na týden otevřeš jeho dny.</p>`;
 }
 

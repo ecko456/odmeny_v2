@@ -1885,6 +1885,7 @@ test('KPI (2.17): čtení obsazenosti a výkazu podle písmen sloupců, víkendy
   const core = loadCore();
   const out = JSON.parse(run(core, `
     S = sanitizeState(demoData());
+    S.periods = {};   // jen soubor obsazenosti (lidé z docházky 2.69.1 má vlastní test)
     const wa = S.workAudit;
     wa.target = null;   // požadavek podle plánu ze souboru (výchozí od 2.18.1 je pevných 100)
     const L = letter => waIndex(letter);
@@ -3323,6 +3324,34 @@ test('Kapacity a zaškolení (2.69): plán skupin z Plánu kapacit, v přesčas 
   assert.deepStrictEqual(out.g, [['g1', 4.6, 1, true], ['g2', 1, 5, false]]);
   assert.deepStrictEqual([out.cap, out.half], [true, ['2026-09-16']]);
   assert.deepStrictEqual(out.req, [10, 10, 5, 10, 10], 'pevný požadavek v přesčas na polovinu');
+  return null;
+});
+
+test('KPI (2.69.1): lidé v práci z docházky, kusy na osobu i bez přiřazených skupin Matice', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    const p = mkPos('g1', 'Brus A', []); p.skillset = [{ id: 'k1', name: 'X', desc: '', scale: null }]; p.maxTab = 8; p.tiers = [];
+    st.positions = [p];
+    ['a', 'b', 'c', 'l'].forEach(k => { st.employees[k] = { key: k, last: 'L' + k, first: 'F', positionId: k === 'l' ? null : 'g1', lead: k === 'l' ? ['X'] : undefined, shift: 'R', note: '' }; });
+    const days = ['2026-10-05', '2026-10-06'];
+    const row = (h, c) => ({ first: 'F', last: 'L', h, c });
+    st.periods['2026-10'] = { id: '2026-10', y: 2026, m: 10, days, rows: { a: row([7.5, 7.5], [null, null]), b: row([7.5, 0], [null, 'D']), c: row([0, 8], ['D', 'D']), l: row([7.5, 7.5], [null, null]) }, codes: {}, file: 'x', at: 1, headerRow: 1 };
+    S = sanitizeState(st);
+    const wa = S.workAudit;
+    wa.ops = [{ id: 'o1', name: 'Broušení', group: 'brus', on: true }];
+    wa.pcs = { '2026-10-05': { o1: 60 }, '2026-10-06': { o1: 30 } };
+    const d0 = waDay(wa, '2026-10-05');   // bez přiřazení skupiny Matice: na všechny v práci
+    wa.groups.find(g => g.id === 'brus').mg = ['g1'];
+    const d1 = waDay(wa, '2026-10-05'), d2 = waDay(wa, '2026-10-06');
+    wa.days['2026-10-06'] = { am: { plan: null, total: 9, abs: null }, pm: { plan: null, total: null }, g: {} };
+    const d3 = waDay(wa, '2026-10-06');
+    return JSON.stringify({ d0: [d0.people, d0.prodPeople, d0.perProd, d0.perAll, d0.attFb], d1: [d1.people, d1.g.brus.sum, d1.perProd, d1.perAll], d2: [d2.people, d2.perProd], d3: [d3.people, d3.attFb] });
+  })()`));
+  assert.deepStrictEqual(out.d0, [2, 2, 30, true, true], 'v práci a a b (vedoucí ne), kusy na všechny v práci');
+  assert.deepStrictEqual(out.d1, [2, 2, 30, false], 'se skupinou Matice lidé skupiny');
+  assert.deepStrictEqual(out.d2, [1, 30], 'den s kódem (i s hodinami) se nepočítá');
+  assert.deepStrictEqual(out.d3, [9, false], 'soubor obsazenosti má přednost');
   return null;
 });
 
