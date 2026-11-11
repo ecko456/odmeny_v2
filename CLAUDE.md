@@ -34,6 +34,32 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 11. 2026 (verze 2.72):
+
+- Uživatel: „Pokud nastane ‚Neshoda objednávky / line‘ tak bych potřeboval mít možnost rozevíracího
+  menu s nabídkou alternativních objednávek, kde budu mít číslo objednávky, index, počet ks, poslední
+  interní záznam, probíhající operaci“.
+  - Data (verze 50): položka `planAlts[≤ SH_MAX_ALTS 30] = {order, index, link, code, op, qty, rec}`
+    (`shAltsClean`, jen při `planMismatch` nebo s `was`), `was = {order, index, link, code, op, oqty?}`
+    = objednávka z urgentů před prvním výběrem (`shWasClean`).
+  - Core (23-shortage): plán `eanKeys` (EAN → klíče 1. listu), `label` (klíč → objednávka a index
+    jako text v plánu), plní `shPlanDirectRow`. `shPlanAlts(plan, it, records)` (po QR kódu, bez
+    odkazu jedna položka; množství z `plan.qty`, operace z `plan.operations`, záznam z `shRecordMap`;
+    pořadí `shAltRank`: stejná objednávka, stejný index, ostatní, podle urgentu), `shApplyPlan` je
+    dává při neshodě i s `was`. `shPickAlt(list, id, n)` (QR z plánu, bez něj z urgentu; operace,
+    množství, záznam; `was` jen poprvé), `shAltBack(list, id)` (zpátky, `planMismatch` = je nabídka).
+    `shItemKey` bere objednávku a index z `was` (Doplnit chybějící, poznámky z urgentů, odebrané).
+    Historie `shalt:` (výběr z nabídky, návrat; ruční úprava tužkou ne).
+  - UI (26-shortage): `shAltPick(item, recs)` v buňce QR (`select[data-shalt]`, optgroup
+    `SH_ALT_GROUPS`, popisek `shAltLabel`: objednávka | Index | ks | Záznam | Operace),
+    `.sh-was` + `[data-shaltback]`, `shAltPlan` (plán v paměti okna doplní poddíly a varianty QR
+    nové objednávky), `shUsePlan` při ponechaných poddílech převezme i `planAlts` a `oqty`, ruční
+    úprava s jiným EANem `was` a nabídku zahodí, text sekce Nelze přidělit odkaz a hláška plánu.
+    Telefon (≤ 760 px): buňky operace, QR a poznámky celou šířkou pod popiskem (dřív se text lámal po písmenech).
+  - Testy: core „Shortage (2.72)“ (+ tvar položky v 2.27), `test_odmeny` (426 pro 49), `e2e_shkroky`
+    (tři alternativy ve skupinách, výběr, jiná, Vrátit z urgentů, historie, další plán, telefon),
+    `e2e_upgrade_prev` 2.71.1 → 2.72 (archiv `8184841`). `ODM_VERSION` 2.72.
+
 Stav k 11. 11. 2026 (verze 2.71.1):
 
 - Uživatel na otázku k 2.71 (poslední záznam je „Odesláno na WPA“, ale do zakázky kusy chybí):
@@ -2664,7 +2690,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.69.1 | `ce1ae20` | KPI přehled spojí kusy s lidmi v práci (lidé z docházky, kusy na osobu i bez skupin Matice) |
 | 2.70 | `04478bb` | Shortage ze samostatné aplikace (urgenty A–S, poznámka od plánování, plán ze dvou listů, QR varianty, evidence předem, úprava položek, poddíly všech operací) (data verze 48) |
 | 2.71 | `b3256ac` | Shortage – množství zakázky z výrobního plánu, odesláno na WPA z evidence pohybu, díl u nás (data verze 49) |
-| 2.71.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – chybějící kusy po odeslání na WPA jsou u nás |
+| 2.71.1 | `8184841` | Shortage – chybějící kusy po odeslání na WPA jsou u nás |
+| 2.72 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – nabídka alternativních objednávek z plánu při neshodě objednávky / line (data verze 50) |
 
 Verze 2.1 přidala:
 
@@ -2777,7 +2804,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `49` (od 2.71):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `50` (od 2.72):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

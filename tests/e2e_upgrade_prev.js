@@ -1,5 +1,5 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.70 → 2.71.1):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.71.1 → 2.72):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení, rozpracovaný seznam Shortage
 //      s poznámkami, záznamem, stavem, poddílem a čekajícím poddílem s jinou operací) a uloží je;
@@ -9,12 +9,12 @@
 //   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
 //   5. v nové verzi vylosuje Rychlou kontrolu (2.39), uloží ji do dnešních kontrol, založí úkol,
 //      v Shortage (2.70) vybere sloupec poznámek od plánování a dopíše dlouhou poznámku a (2.71) zadá
-//      množství zakázky a nahraje záznam „Odesláno na WPA“; po novém přihlášení je vše uložené
-//      a ostatní data stejná.
-//   Shortage se kontroluje zvlášť (2.71 přidá seznamu prázdné odesláno na WPA): nic původního
+//      množství zakázky a nahraje záznam „Odesláno na WPA“ a (2.72) u položky s neshodou objednávky
+//      vybere alternativní objednávku z plánu; po novém přihlášení je vše uložené a ostatní data stejná.
+//   Shortage se kontroluje zvlášť (2.72 přidá položkám prázdnou nabídku objednávek): nic původního
 //   nesmí chybět ani se změnit.
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive 04478bb | tar -x -C $S/v270 && sudo bash $S/v270/deploy/install.sh
+//   git archive 8184841 | tar -x -C $S/v2711 && sudo bash $S/v2711/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
@@ -22,15 +22,15 @@ const fs = require('fs');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.70$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.71\\.1$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.71\\.1$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.72$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). Hodnota null = část,
    která se při převodu mění schválně a kontroluje se zvlášť (Shortage 2.70); úkoly a Vrátit zpět mění krok 5. */
 const ADDED = { 'shortage.lists': null, 'shortage.cols': null, tasks: null, undo: null };
-/* Verze dat se mění (2.71: množství zakázky a odesláno na WPA v Shortage, verze dat 49): stará stránka dostane 426. */
+/* Verze dat se mění (2.72: alternativní objednávky a objednávka z urgentů v Shortage, verze dat 50): stará stránka dostane 426. */
 const SAME_DATA = false;
 
 async function watch(page, label, allow426 = false) {
@@ -111,7 +111,7 @@ const STATE = added => `(() => {
         note: 'Volat dodavatele', rec: { ts: at, when: '9. 11. 2026 08:00', qty: '4', state: 'Hotovo', at, by }, st: 'run', stAt: at, stBy: by,
         subs: [{ id: 'spupg01', ean: '8590000000901', link: L('9.0.1'), code: '9.0.1', op: 'Leštění – hala 2', note: 'Poddíl s poznámkou', rec: null }],
         cands: [{ ean: '8590000000902', link: L('9.0.2'), code: '9.0.2', op: 'Lakování' }] },
-      { id: 'siupg02', order: 'OBJ-2026-2', name: 'Kryt motoru', ean: '8590000000028', index: 'B', qty: '2', top: false, top2: true, op: 'Frézování Hala 2', link: '', code: '', note: '', rec: null, pdfHide: true },
+      { id: 'siupg02', order: 'OBJ-2026-2', name: 'Kryt motoru', ean: '8590000000028', index: 'B', qty: '2', top: false, top2: true, op: 'Frézování Hala 2', link: '', code: '', note: '', rec: null, pdfHide: true, planMismatch: true },
     ] }];
     st.shortage.depts = [{ id: 'sdupg01', name: 'Brus', ops: [{ key: 'brouseni hala 2', label: 'Broušení – hala 2' }] }];
     st.shortage.colors = { FF0000: 'top' };
@@ -140,7 +140,7 @@ const STATE = added => `(() => {
   const fresh = Object.keys(before.added).filter(p => ADDED[p] !== null);
   check(fresh.length === 0, `předchozí verze už má nová data: ${fresh}`);
   const oldSh = before.added['shortage.lists'] || [];
-  check(oldSh.length === 1 && oldSh[0].items.length === 2 && oldSh[0].items[0].subs.length === 2 && oldSh[0].items[0].note === 'Volat dodavatele' && !('sent' in oldSh[0]), `předchozí verze neuložila seznam Shortage: ${JSON.stringify(oldSh).slice(0, 200)}`);
+  check(oldSh.length === 1 && oldSh[0].items.length === 2 && oldSh[0].items[0].subs.length === 2 && oldSh[0].items[0].note === 'Volat dodavatele' && !('planAlts' in oldSh[0].items[1]) && oldSh[0].items[1].planMismatch === true, `předchozí verze neuložila seznam Shortage: ${JSON.stringify(oldSh).slice(0, 200)}`);
   check(Object.keys(before.st.audit.plans).length === 1 && Object.keys(before.st.workAudit.pcs).length === 2 && before.st.workAudit.trainPct === 60, 'předchozí verze neuložila plán kontrol nebo KPI');
 
   // ---- 2. aktualizace, stará stránka zůstává otevřená ----
@@ -173,11 +173,11 @@ const STATE = added => `(() => {
     const want = await page.evaluate(`(() => { const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v; return JSON.stringify(canon(${expr})); })()`);
     check(JSON.stringify(after.added[p]) === want, `${p}: ${JSON.stringify(after.added[p])} ≠ ${want}`);
   }
-  // Shortage (2.71): položky beze změny, seznam má jen navíc prázdné odesláno na WPA
+  // Shortage (2.72): položky beze změny, jen navíc prázdná nabídka alternativních objednávek
   {
     const was = before.added['shortage.lists'][0], now = (after.added['shortage.lists'] || [])[0] || { items: [] };
-    const { sent, ...rest } = now;
-    check(JSON.stringify(rest) === JSON.stringify(was) && JSON.stringify(sent) === '{}', `seznam Shortage po aktualizaci: ${JSON.stringify(now).slice(0, 300)}`);
+    const rest = { ...now, items: now.items.map(({ planAlts, ...i }) => i) };
+    check(JSON.stringify(rest) === JSON.stringify(was) && now.items.every(i => JSON.stringify(i.planAlts) === '[]') && now.items[1].planMismatch === true, `seznam Shortage po aktualizaci: ${JSON.stringify(now).slice(0, 300)}`);
     check(JSON.stringify(after.added['shortage.cols']) === JSON.stringify(before.added['shortage.cols']), `sloupce Shortage po aktualizaci: ${JSON.stringify(after.added['shortage.cols'])}`);
     check(JSON.stringify(after.added.tasks) === JSON.stringify(before.added.tasks) && JSON.stringify(after.added.undo) === JSON.stringify(before.added.undo), 'úkoly a Vrátit zpět po aktualizaci');
   }
@@ -208,6 +208,13 @@ const STATE = added => `(() => {
   await page.evaluate(() => { const l = S.shortage.lists[0]; l.items[0].oqty = 10; const b = shRecBuild([['1.1.1', '08.11.2026 10:00', '4', 'Odesláno na WPA'].map(text => ({ text, link: '', fill: '' }))], SH_COLS.move); shApplyRecs(l, b.recs, { at: Date.now(), by: 'test' }, b.sent); save(); renderShortage(); });
   await page.waitForSelector('#shView [data-shsent="here"]', { state: 'attached' });
   await saved(page);
+  // 2.72: neshoda objednávky z dřívějška, nový plán nabídne objednávku téhož dílu, výběr v nabídce u položky
+  await page.evaluate(() => { const l = S.shortage.lists[0], p = shPlanBlank('plan-alt.xlsx'); shPlanDirectRow(p, '8590000000028', 'http://is.example/commission.production.detail/default/1?activeBarcode=2.2.2&x=1', 'Leštění – hala 2', 'C', 'OBJ-2026-9', '8'); shApplyPlan({ items: [l.items[1]], records: [] }, p); save(); renderShortage(); });   // jen ta položka (zbytek beze změny)
+  await page.waitForSelector('#shView select[data-shalt="siupg02"]', { state: 'attached' });
+  await saved(page);
+  await page.evaluate(() => { const s = document.querySelector('#shView select[data-shalt="siupg02"]'); s.value = '0'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForFunction(() => S.shortage.lists[0].items[1].order === 'OBJ-2026-9');
+  await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const again = await ctx3.newPage();
@@ -225,6 +232,9 @@ const STATE = added => `(() => {
   const fit0 = fsh.items[0], ait0 = after.added['shortage.lists'][0].items[0];
   check(fit0.oqty === 10 && JSON.stringify({ ...fit0, oqty: undefined }) === JSON.stringify({ ...ait0, oqty: undefined }) && JSON.stringify(fsh.sent) === JSON.stringify({ '1.1.1': [[fsh.sent['1.1.1'][0][0], 4]] }), `Shortage 2.71 po novém přihlášení (množství zakázky, odesláno na WPA, poslední záznam beze změny): ${JSON.stringify([fit0.oqty, fsh.sent, fit0.rec])}`);
   check(await again.evaluate(() => { const l = S.shortage.lists[0]; const x = shSentOf(l, l.items[0]); return x && x.st === 'here' && x.left === 6 && x.sent === 4; }), 'po novém přihlášení: zbytek 6 ks u nás');
+  const f1 = fsh.items[1];
+  check(f1.order === 'OBJ-2026-9' && f1.index === 'C' && f1.code === '2.2.2' && f1.oqty === 8 && f1.op === 'Leštění – hala 2' && !f1.planMismatch && f1.planAlts.length === 1 && f1.was && f1.was.order === 'OBJ-2026-2' && f1.was.index === 'B' && f1.note === LONG.trim(),
+    `Shortage 2.72 po novém přihlášení (vybraná objednávka z plánu, objednávka z urgentů): ${JSON.stringify({ ...f1, note: f1.note.length })}`);
   check(final.st.employees['adámek|aleš'] && final.st.employees['adámek|aleš'].end === '2027-02-28', 'konec trestu (2.43) po novém přihlášení');
   check(final.added.tasks && final.added.tasks.list.length === 1 && final.added.tasks.list[0].title === 'Kontrola po aktualizaci', `úkol (2.46) po novém přihlášení: ${JSON.stringify(final.added.tasks)}`);
   // Vrátit zpět (2.45): změna z kroku 5 má uložené hodnoty před změnou a odkaz z historie

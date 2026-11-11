@@ -3296,6 +3296,15 @@ table.sh-tab tbody tr textarea { cursor: text; user-select: text; }
 .sh-qrpick { display: grid; gap: 4px; width: 190px; max-width: 100%; margin-bottom: 6px; }   /* celé popisky variant ukáže rozbalená nabídka */
 table.sh-tab tr.sh-depthead td { white-space: normal; }
 .sh-qrpick select { width: 100%; font-size: 13px; }
+.sh-altpick { margin-top: 6px; }   /* alternativní objednávka z plánu (2.72) */
+.sh-was { display: grid; gap: 4px; justify-items: start; width: 190px; max-width: 100%; margin-top: 2px; }
+.sh-was .small { color: var(--ink-3); }
+@media screen and (max-width: 760px) {
+  /* Shortage na telefonu (2.72): bohaté buňky (operace se záznamem, QR s nabídkou objednávek, poznámka) celou šířkou pod popiskem */
+  table.stack.sh-tab td.sh-opc, table.stack.sh-tab td[data-label="QR kód"], table.stack.sh-tab td.sh-notec { display: block; text-align: left; }
+  table.stack.sh-tab td.sh-opc::before, table.stack.sh-tab td[data-label="QR kód"]::before, table.stack.sh-tab td.sh-notec::before { display: block; margin: 0 0 4px; padding: 0; }
+  table.stack.sh-tab .sh-qrpick, table.stack.sh-tab .sh-was, table.stack.sh-tab .sh-stpick { width: 100%; }
+}
 .sh-coldlg > .note { margin: 12px 0 4px; }
 .sh-coldlg > h4 { margin: 14px 0 6px; }
 

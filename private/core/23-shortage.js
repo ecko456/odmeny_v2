@@ -113,6 +113,74 @@ function shSelectQr(list,id,code){
   item.rec=record?{...record}:null;
   return true;
 }
+/* Alternativní objednávky z 1. listu výrobního plánu (2.72): při neshodě objednávky / line nabídka
+   všech řádků se stejným EANem, po QR kódu, s množstvím zakázky, operací a posledním záznamem. */
+const SH_MAX_ALTS=30;
+/** Pořadí nabídky: stejná objednávka (jiný index), stejný index, ostatní (podle urgentu, ne podle výběru). */
+function shAltRank(it,a){
+  const b=it.was||it;
+  return shPlanKeyPart(a.order)===shPlanKeyPart(b.order)?0:shPlanKeyPart(a.index)===shPlanKeyPart(b.index)?1:2;
+}
+function shPlanAlts(plan,it,records){
+  const keys=plan&&plan.eanKeys&&plan.eanKeys.get(shPlanKeyPart(it.ean));
+  if(!keys||!keys.size)return [];
+  const out=[];
+  keys.forEach(k=>{
+    const lab=plan.label.get(k)||{order:"",index:""},ops=plan.operations?.get(k)||[],qm=plan.qty&&plan.qty.get(k),dir=plan.direct?.get(k)||[];
+    (dir.length?dir:[{link:"",code:""}]).forEach(v=>{
+      const op=[...new Set(ops.filter(x=>!dir.length||x.code===v.code).map(x=>x.op).filter(Boolean))].join(" · ").slice(0,300);
+      const qty=qm&&qm.size?(qm.has(v.code)?qm.get(v.code):Math.max(...qm.values())):null;
+      out.push({order:lab.order,index:lab.index,link:v.link||"",code:v.code||"",op,qty,rec:v.code&&records&&records.get(v.code)||null});
+    });
+  });
+  const cmp=(a,b)=>String(a).localeCompare(String(b),"cs",{numeric:true});
+  return shAltsClean(out.sort((a,b)=>shAltRank(it,a)-shAltRank(it,b)||cmp(a.order,b.order)||cmp(a.index,b.index)||cmp(a.code,b.code)));
+}
+function shAltsClean(v){
+  const out=[],seen=new Set();
+  (Array.isArray(v)?v:[]).forEach(a=>{
+    if(!a||typeof a!=="object"||out.length>=SH_MAX_ALTS)return;
+    const link=shLink(a.link),x={order:shCleanLine(a.order,80),index:shCleanLine(a.index,40),link,code:"code" in a?shCodeClean(a.code):shCode(link),op:shCleanLine(a.op,300),qty:shQtyNum(a.qty),rec:shRecClean(a.rec,shCleanLine)};
+    const k=shPlanKeyPart(x.order)+"|"+shPlanKeyPart(x.index)+"|"+x.code;
+    if((x.order||x.index||x.code)&&!seen.has(k)){seen.add(k);out.push(x);}
+  });
+  return out;
+}
+/** Objednávka z urgentů (snímek před prvním výběrem alternativy), jinak null. */
+function shWasClean(w){
+  if(!w||typeof w!=="object")return null;
+  const link=shLink(w.link),q=shQtyNum(w.oqty);
+  return {order:shCleanLine(w.order,80),index:shCleanLine(w.index,40),link,code:"code" in w?shCodeClean(w.code):shCode(link),op:shCleanLine(w.op,300),...(q!=null?{oqty:q}:{})};
+}
+/** Vybraná alternativa n: objednávka, index, QR kód, operace a množství z plánu (bez QR v plánu zůstane kód z urgentu). */
+function shPickAlt(list,id,n){
+  const hit=shEntry(list,id),x=hit&&!hit.sub?hit.entry:null,a=x&&(x.planAlts||[])[n];
+  if(!a)return false;
+  const records=shRecordMap(list);
+  if(!x.was)x.was=shWasClean({...x});
+  const w=x.was;
+  x.order=a.order;x.index=a.index;
+  x.link=a.code?a.link:w.link;x.code=a.code||w.code;
+  x.op=a.op||w.op;
+  if(a.qty!=null)x.oqty=a.qty;else if(w.oqty!=null)x.oqty=w.oqty;else delete x.oqty;
+  x.planMismatch=false;x.qrConflict=false;x.qrChoices=[];x.qrKey=shPlanKey(x.ean,x.index,x.order);
+  const rec=x.code?records.get(x.code)||a.rec||null:null;
+  x.rec=rec?{...rec}:null;
+  return true;
+}
+/** Zpátky objednávka z urgentů (2.72): neshoda s plánem zase platí, nabídka zůstane. */
+function shAltBack(list,id){
+  const hit=shEntry(list,id),x=hit&&!hit.sub?hit.entry:null;
+  if(!x||!x.was)return false;
+  const records=shRecordMap(list),w=x.was;
+  x.order=w.order;x.index=w.index;x.link=w.link;x.code=w.code;x.op=w.op;
+  if(w.oqty!=null)x.oqty=w.oqty;else delete x.oqty;
+  delete x.was;
+  x.planMismatch=(x.planAlts||[]).length>0;x.qrConflict=false;x.qrChoices=[];x.qrKey=shPlanKey(x.ean,x.index,x.order);
+  const rec=x.code?records.get(x.code)||null:null;
+  x.rec=rec?{...rec}:null;
+  return true;
+}
 function shAllSubs(item){
   const out=[...(Array.isArray(item.subs)?item.subs:[])].filter(s=>s&&typeof s==='object');
   (Array.isArray(item.cands)?item.cands:[]).filter(s=>s&&typeof s==='object').forEach(s=>{
@@ -408,7 +476,7 @@ function cleanShortage(o){
     // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec; ze 2.28 nemá subs
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,top2:i.top2===true&&i.top!==true,op:line(i.op,300),link:shLink(i.link),
-      qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,
+      qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,
       dept:i.dept==="-"||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),...(shQtyNum(i.oqty)!=null?{oqty:shQtyNum(i.oqty)}:{}),
       subs:shAllSubs(i).map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),
       cands:[],_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
@@ -483,7 +551,7 @@ function shBuild(rows,cols,colors){
 }
 /* Doplnění chybějících (2.36): položka se pozná podle EANu (bez něj podle názvu), indexu
    a čísla objednávky, stejně jako sestava u poddílů z plánu. */
-function shItemKey(i){i=i||{};return (shPlanKeyPart(i.ean)||"#"+shOpNorm(i.name))+"|"+shPlanKeyPart(i.index)+"|"+shPlanKeyPart(i.order);}
+function shItemKey(i){i=i||{};const w=i.was&&typeof i.was==="object"?i.was:i;return (shPlanKeyPart(i.ean)||"#"+shOpNorm(i.name))+"|"+shPlanKeyPart(w.index)+"|"+shPlanKeyPart(w.order);}   // 2.72: s vybranou alternativou podle urgentu
 /** Co z nově vložených položek v seznamu chybí: add = k doplnění (v pořadí ze souboru),
     have = kolik už v seznamu je, gone = ručně odebrané (vrátí se jen s back). Stejná položka
     víckrát se počítá po kusech: dvakrát v souboru a jednou v seznamu = jedna chybí. */
@@ -529,12 +597,19 @@ function shPlanKeyPart(v){let s=String(v==null?"":v).replace(/\s+/g,"").toUpperC
 function shPlanKey(ean,index,order){return shPlanKeyPart(ean)+"|"+shPlanKeyPart(index)+"|"+shPlanKeyPart(order);}
 /** Prázdný přehled plánu: rows = klíč sestavy → [{ean, link, code, op}] (jen operace Hala 2),
     other = klíč → počet řádků s jinou operací, cands = klíč → poddíly s jinou operací a s kódem (2.29.1). */
-function shPlanBlank(file){return {file:String(file||"").slice(0,160),at:Date.now(),sheet:"",itemSheet:"",total:0,rows:new Map(),other:new Map(),cands:new Map(),direct:new Map(),operations:new Map(),itemEans:new Set(),firstKeys:new Set(),qty:new Map()};}
+function shPlanBlank(file){return {file:String(file||"").slice(0,160),at:Date.now(),sheet:"",itemSheet:"",total:0,rows:new Map(),other:new Map(),cands:new Map(),direct:new Map(),operations:new Map(),itemEans:new Set(),firstKeys:new Set(),qty:new Map(),eanKeys:new Map(),label:new Map()};}
 /** Jeden řádek plánu (a EAN sestavy, e EAN poddílu, h index, m objednávka, op operace, link cíl odkazu u E). */
 function shPlanDirectRow(plan,ean,link,op,index='',order='',qty){
   if(!shPlanKeyPart(ean))return;
   const key=shPlanKey(ean,index,order),url=shLink(link),code=shCode(link);
   plan.itemEans.add(shPlanKeyPart(ean));plan.firstKeys.add(key);
+  // 2.72: objednávky a indexy podle EANu (nabídka alternativních objednávek při neshodě), text jako v plánu
+  if(plan.eanKeys){
+    const ek=shPlanKeyPart(ean);let set=plan.eanKeys.get(ek);
+    if(!set){set=new Set();plan.eanKeys.set(ek,set);}
+    set.add(key);
+    if(!plan.label.has(key))plan.label.set(key,{order:shCleanLine(order,80),index:shCleanLine(index,40)});
+  }
   // 2.71: množství zakázky (u QR varianty podle kódu; stejný řádek víckrát = větší hodnota)
   const q=shQtyNum(qty);
   if(key&&q!=null){
@@ -591,6 +666,8 @@ function shApplyPlan(list,plan){
     const matches=plan.direct?.get(k)||[];
     it.planMismatch=!!(plan.itemEans?.has(shPlanKeyPart(it.ean))&&!plan.firstKeys.has(k));
     if(it.planMismatch)out.unmatchedFirst++;
+    // 2.72: nabídka objednávek se stejným EANem (i po výběru, ať jde vybrat jinou nebo vrátit urgent)
+    it.planAlts=it.planMismatch||it.was?shPlanAlts(plan,it,records):[];
     it.qrConflict=!!(it.code&&matches.length&&!matches.some(x=>x.code===it.code));
     if(it.qrConflict)out.conflicts++;
     it.qrKey=k;

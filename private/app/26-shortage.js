@@ -634,12 +634,18 @@ async function shPlanRead(file, progress, cols = null, itemCols = null) {
   if (pairCols && wb.SheetNames[1]) await read(wb.SheetNames[1],shPcOf(pairCols),'subs');
   return fresh;
 }
+/** Po výběru alternativní objednávky (2.72): plán v paměti okna doplní poddíly a varianty QR nové objednávky. */
+function shAltPlan(l, it) {
+  if (!ui.sh.plan || !it) return false;
+  shApplyPlan({ items: [it], records: [...shRecordMap(l)].map(([code, r]) => ({ ...r, code })) }, ui.sh.plan);
+  return true;
+}
 /** Poddíly z plánu k seznamu. Když plán k seznamu nic nenajde a seznam poddíly má, nechá je být. */
 function shUsePlan(l, plan) {
   const copy = JSON.parse(JSON.stringify(l));
   const res = shApplyPlan(copy, plan);
   if (!res.items && l.items.some(i => (i.subs || []).length)) {
-    l.items.forEach((it,i) => { it.link=copy.items[i].link; it.code=copy.items[i].code; it.qrChoices=copy.items[i].qrChoices; it.qrKey=copy.items[i].qrKey; it.qrConflict=copy.items[i].qrConflict; it.planMismatch=copy.items[i].planMismatch; it.op=copy.items[i].op; it.pop=copy.items[i].pop; it.rec=copy.items[i].rec; });
+    l.items.forEach((it,i) => { it.link=copy.items[i].link; it.code=copy.items[i].code; it.qrChoices=copy.items[i].qrChoices; it.qrKey=copy.items[i].qrKey; it.qrConflict=copy.items[i].qrConflict; it.planMismatch=copy.items[i].planMismatch; it.planAlts=copy.items[i].planAlts; if(copy.items[i].oqty!=null)it.oqty=copy.items[i].oqty; it.op=copy.items[i].op; it.pop=copy.items[i].pop; it.rec=copy.items[i].rec; });
     return { ...res, kept: true };
   }
   l.items = copy.items;
@@ -655,7 +661,7 @@ function shPlanNote(res, plan, auto) {
   const linked = res.linked ? `<div class="note i">Z prvního listu doplněn QR kód u ${res.linked} ${res.linked === 1 ? 'položky' : 'položek'}.</div>` : '';
   if (res.kept) return `<div class="note w">${head}: k položkám seznamu nenašel žádný poddíl, poddíly zůstaly beze změny.</div>${updated}${linked}`;
   return `<div class="note ${res.subs || !plan.sheet ? 'i' : 'w'}">${head}: ${res.subs ? `<b>${res.subs} ${shSubsN(res.subs)}</b> u ${res.items} ${res.items === 1 ? 'sestavy' : 'sestav'}` : plan.sheet ? 'k položkám seznamu nebyly nalezeny poddíly' : 'samostatné díly bez sestav'}.</div>${[
-    res.unmatchedFirst ? `U ${res.unmatchedFirst} položek první list obsahuje EAN, ale nesouhlasí objednávka nebo line/index. Odkaz ani operace z těchto řádků se nepřiřadily. Zkontroluj sloupce prvního listu.` : '',
+    res.unmatchedFirst ? `U ${res.unmatchedFirst} položek první list obsahuje EAN, ale nesouhlasí objednávka nebo line/index. Odkaz ani operace z těchto řádků se nepřiřadily. Jsou nahoře v sekci „Nelze přidělit odkaz“: v nabídce u položky vyber alternativní objednávku z plánu, nebo zkontroluj sloupce prvního listu.` : '',
     res.conflicts ? `U ${res.conflicts} položek se uložený QR kód liší od variant pro přesnou objednávku a line. Jsou nahoře k ručnímu ověření.` : '',
     res.truncated ? `${res.truncated} dalších poddílů přesahuje limit ${SH_MAX_SUBS} na jednu sestavu.` : '',
     res.noCode ? `${res.noCode} ${res.noCode === 1 ? 'poddíl nemá' : res.noCode <= 4 ? 'poddíly nemají' : 'poddílů nemá'} u EANu odkaz s activeBarcode, v PDF ${res.noCode === 1 ? 'bude' : 'budou'} bez QR kódu.` : '',
@@ -734,6 +740,7 @@ function renderShortage() {
     statTile('S QR kódem', String(coded), coded === n ? 'všechny mají kód' : `bez kódu ${n - coded}`, coded === n ? '' : 'warn'),
     statTile('Poslední záznam', String(recs), `${recs ? `z ${n} položek` : 'vlož přes Ctrl+V'}${sentSum.here ? ` · u nás ${sentSum.here}` : ''}`, sentSum.here ? 'warn' : ''),
   ].join('')}</div>`;
+  const altRecs = shRecordMap(l);   // poslední záznamy k alternativním objednávkám (2.72)
   // 2.71: odesláno na WPA proti množství zakázky z výrobního plánu
   const sentHtml = x => {
     const st = shSentOf(l, x);
@@ -763,7 +770,8 @@ function renderShortage() {
     // sestava s poddíly je jen orientační: bez QR kódu (2.29.1), dokud ji uživatel nezobrazí plně (2.31); poznámka jde dopsat vždy (2.70)
     const asm = !!subs && !i.full;
     const fullBtn = subs ? `<button class="btn sec small sh-fullbtn${i.full ? ' on' : ''}" type="button" data-shfull="${esc(i.id)}" aria-pressed="${!!i.full}" title="${i.full ? 'Sestava se ukazuje i tiskne celá (QR kód, poslední záznam, kolonky). Klikni a bude zase jen orientační.' : 'Ukázat a tisknout sestavu celou: QR kód, poslední záznam, kolonky na psaní a poznámku'}">${i.full ? 'Jen orientačně' : 'Zobrazit plně'}</button>` : '';
-    const qr = ((i.qrChoices||[]).length>1||i.qrConflict) ? shQrSelect(i) : i.planMismatch ? '<span class="tag warn">Neshoda objednávky / line</span>' : i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>';
+    // 2.72: u neshody objednávky / line (a po výběru) nabídka objednávek se stejným EANem z plánu
+    const qr = (((i.qrChoices||[]).length>1||i.qrConflict) ? shQrSelect(i) : i.planMismatch ? '<span class="tag warn">Neshoda objednávky / line</span>' : asm ? '<span class="small muted">sestava</span>' : i.code ? `<span class="tag ok sh-code">${esc(i.code)}</span>` : '<span class="tag warn">bez kódu</span>') + shAltPick(i, altRecs);
     const topBtn = `<button class="btn sec small sh-topbtn${i.top ? ' on' : ''}" type="button" data-shtop="${esc(i.id)}" aria-pressed="${!!i.top}" title="${i.top ? 'Zrušit TOP SHORTAGE' : 'Označit jako TOP SHORTAGE (bude nahoře)'}" aria-label="${i.top ? 'Zrušit TOP SHORTAGE u' : 'Označit jako TOP SHORTAGE'} ${esc(i.ean || i.name)}">TOP</button>`
       + `<button class="btn sec small sh-topbtn sh-top2btn${i.top2 ? ' on' : ''}" type="button" data-shtop2="${esc(i.id)}" aria-pressed="${!!i.top2}" title="${i.top2 ? 'Zrušit TOP 2' : 'Označit jako TOP 2: zpracovat hned po TOP shortage'}" aria-label="${i.top2 ? 'Zrušit TOP 2 u' : 'Označit jako TOP 2'} ${esc(i.ean || i.name)}">TOP2</button>`;
     // oddělení položky (2.32): podle operace, nebo ručně jiné
@@ -780,7 +788,7 @@ function renderShortage() {
       <td data-label="Index">${esc(i.index || '—')}</td>
       <td class="num sh-qty" data-label="Urgentní množství"><b>${esc(i.qty || '—')}</b></td>
       <td class="sh-opc" data-label="Oddělení / Probíhající operace">${esc(i.op || '—')}${rec}${sentHtml(i)}${deptSel}</td>
-      <td data-label="QR kód">${asm && !(i.qrChoices||[]).length ? '<span class="small muted">sestava</span>' : qr}${fullBtn ? `<div class="sh-fullc">${fullBtn}</div>` : ''}</td>
+      <td data-label="QR kód">${qr}${fullBtn ? `<div class="sh-fullc">${fullBtn}</div>` : ''}</td>
       <td class="sh-notec" data-label="Poznámka">${shStSel(i, `položky ${i.ean || i.name}`)}<textarea class="sh-note" data-shnote="${esc(i.id)}" rows="2" maxlength="${SH_MAX_NOTE}" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k položce ${esc(i.ean || i.name)}">${esc(i.note || '')}</textarea></td>
       <td class="sh-actc"><div class="sh-acts"><span class="sh-tiers">${topBtn}</span>${shHideBtn(i)}${shEditBtn(i)}<button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${I.x}</button></div></td></tr>${subs}`;
   };
@@ -789,7 +797,7 @@ function renderShortage() {
   const unresolved=l.items.filter(i=>i.qrConflict||i.planMismatch||!i.code&&(i.qrChoices||[]).length>1);
   const ordinary=l.items.filter(i=>!unresolved.includes(i));
   const sections=[...(unresolved.length?[{id:'unlinked',name:'Nelze přidělit odkaz',items:unresolved}]:[]),...shSections(c,ordinary)].filter(x=>x.items.length);
-  const rows=sections.map(sec=>`${depts.length||unresolved.length?`<tr class="sh-depthead" data-shdepthead="${esc(sec.id||'-')}"><td colspan="10"><b>${esc(sec.name||'Ostatní položky')}</b><span class="muted small"> · ${sec.items.length} ${shItemsN(sec.items.length)}</span>${sec.id==='unlinked'?'<p class="small">Zkontroluj objednávku a line/index. Pokud jsou k dispozici odpovídající QR kódy, vyber variantu v nabídce u položky podle operace a interního záznamu. Vlastní kód zadáš propiskou.</p>':''}</td></tr>`:''}${sec.items.map(i=>rowHtml(i,num++)).join('')}`).join('');
+  const rows=sections.map(sec=>`${depts.length||unresolved.length?`<tr class="sh-depthead" data-shdepthead="${esc(sec.id||'-')}"><td colspan="10"><b>${esc(sec.name||'Ostatní položky')}</b><span class="muted small"> · ${sec.items.length} ${shItemsN(sec.items.length)}</span>${sec.id==='unlinked'?'<p class="small">Zkontroluj objednávku a line/index. U neshody objednávky / line vyber v nabídce u položky alternativní objednávku z výrobního plánu (objednávka, index, počet ks, poslední interní záznam, operace). Pokud jsou k dispozici odpovídající QR kódy, vyber variantu podle operace a interního záznamu. Vlastní kód zadáš propiskou.</p>':''}</td></tr>`:''}${sec.items.map(i=>rowHtml(i,num++)).join('')}`).join('');
   // filtr podle probíhající operace (2.31): víc operací najednou, platí i pro PDF
   const ops = shOpList(l);
   const sel = shOpSel(l);
@@ -953,10 +961,11 @@ async function shManualDialog(id = null) {
   if(hit){
     if(hit.sub){it.manual=true;it.sourceKey=original.sourceKey||shPlanKeyPart(original.ean)+'|'+original.code;}
     if(it.code!==original.code){const selected=original.qrChoices?.find(x=>x.code===it.code&&x.link===shLink(it.link));it.rec=shRecordMap(l).get(it.code)||selected?.rec||null;}
-    const identityChanged=shPlanKey(original.ean,original.index,original.order)!==shPlanKey(it.ean,it.index,it.order);
+    const identityChanged=shPlanKey(original.ean,original.index,original.order)!==shPlanKey(it.ean,it.index,it.order),eanBefore=original.ean;
     Object.assign(original,it);
     if(oq==null)delete original.oqty;
     if(!hit.sub){
+      if(shPlanKeyPart(original.ean)!==shPlanKeyPart(eanBefore)){delete original.was;original.planAlts=[];}   // jiný díl (2.72)
       if(identityChanged){original.qrChoices=[];original.qrKey='';original.qrConflict=false;original.planMismatch=false;}
       else original.qrConflict=!!(original.qrChoices?.length&&!original.qrChoices.some(x=>x.code===it.code));
     }
@@ -979,6 +988,24 @@ function shQrSelect(item){
     <option value=""${choices.some(x=>x.code===item.code)?'':' selected'} disabled>Vyber podle operace a záznamu</option>
     ${choices.map(x=>`<option value="${esc(x.code)}"${x.code===item.code?' selected':''}>${esc(shQrLabel(x))}</option>`).join('')}
     </select></label>${item.code?`<span class="tag ok sh-code">${esc(item.code)}</span>`:''}`;
+}
+/* Alternativní objednávky z výrobního plánu (2.72): rozevírací nabídka u neshody objednávky / line. */
+function shAltLabel(a, rec) {
+  const r = rec || a.rec;
+  const record = r ? [r.state || 'stav neuveden', r.qty ? (/^[\d\s.,]+$/.test(r.qty) ? `${r.qty} ks` : r.qty) : '', r.when || ''].filter(Boolean).join(', ') : 'nenahrán';
+  return `${a.order || 'bez objednávky'} | Index ${a.index || '—'} | ${a.qty != null ? `${nf(a.qty, 3)} ks` : 'ks neuvedeno'} | Záznam: ${record} | Operace: ${a.op || 'neuvedena'}`;
+}
+const SH_ALT_GROUPS = ['Stejná objednávka, jiný index', 'Stejný index, jiná objednávka', 'Jiné objednávky'];
+function shAltPick(item, recs) {
+  const alts = item.planAlts || [];
+  const cur = alts.findIndex(a => a.order === item.order && a.index === item.index && (!a.code || a.code === item.code));
+  const was = item.was ? `<div class="sh-was"><span class="small">V urgentech ${esc(item.was.order || '—')} · index ${esc(item.was.index || '—')}</span><button class="btn sec small" type="button" data-shaltback="${esc(item.id)}" title="Vrátit objednávku, index a QR kód z urgentů">Vrátit z urgentů</button></div>` : '';
+  if (!alts.length) return was;
+  const opt = (a, n) => `<option value="${n}"${n === cur ? ' selected' : ''}>${esc(shAltLabel(a, a.code && recs.get(a.code)))}</option>`;
+  const groups = SH_ALT_GROUPS.map((g, k) => ({ g, list: alts.map((a, n) => [a, n]).filter(([a]) => shAltRank(item, a) === k) })).filter(x => x.list.length);
+  const body = groups.length > 1 ? groups.map(x => `<optgroup label="${esc(x.g)}">${x.list.map(([a, n]) => opt(a, n)).join('')}</optgroup>`).join('') : alts.map(opt).join('');
+  return `<label class="sh-qrpick sh-altpick"><span class="small">${item.was ? 'Objednávka z výrobního plánu' : 'Alternativní objednávka z plánu'}</span><select data-shalt="${esc(item.id)}" aria-label="Alternativní objednávka z výrobního plánu pro položku ${esc(item.ean || item.name)}">
+    <option value=""${cur < 0 ? ' selected' : ''} disabled>Vyber z ${alts.length} ${shPl(alts.length, 'objednávky', 'objednávek', 'objednávek')} v plánu</option>${body}</select></label>${was}`;
 }
 function shEditBtn(x){
   return `<button class="icon-btn small" type="button" data-shedit="${esc(x.id)}" title="Upravit položku" aria-label="Upravit položku ${esc(x.ean||x.name||x.code||'')}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z"/></svg></button>`;
@@ -1293,6 +1320,17 @@ function bindShortage() {
       renderShortage();
       return;
     }
+    const altB = t.closest('[data-shaltback]');
+    if (altB) {
+      const l = shList(), id = altB.dataset.shaltback;
+      if (!l || !shAltBack(l, id)) return;
+      const it = shEntry(l, id).entry;
+      shAltPlan(l, it);
+      S.shortage = cleanShortage(S.shortage);
+      save(); renderShortage();
+      toast(`Položka ${it.ean || it.name}: zase objednávka z urgentů ${it.order || '—'} · index ${it.index || '—'}.`);
+      return;
+    }
     const fullB = t.closest('[data-shfull]');
     if (fullB) {
       const l = shList();
@@ -1378,6 +1416,17 @@ function bindShortage() {
     }
     if (t.matches('[data-shopdept]')) {
       if (shAssignOp(c, t.dataset.shopdept, t.dataset.shoplabel, t.value)) { save(); renderShortage(); }
+      return;
+    }
+    if (t.matches('[data-shalt]')) {
+      const l = shList(), id = t.dataset.shalt;
+      if (l && t.value !== '' && shPickAlt(l, id, +t.value)) {
+        const it = shEntry(l, id).entry, mem = shAltPlan(l, it);
+        S.shortage = cleanShortage(S.shortage);
+        save(); renderShortage();
+        $('#shView [data-shalt="' + CSS.escape(id) + '"]')?.focus();
+        toast(`Položka ${it.ean || it.name}: objednávka ${it.order || '—'} · index ${it.index || '—'} z výrobního plánu.${mem ? '' : ' Poddíly a varianty QR se doplní při dalším nahrání plánu.'}`);
+      }
       return;
     }
     if(t.matches('[data-shqr]')){

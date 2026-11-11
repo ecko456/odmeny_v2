@@ -232,6 +232,15 @@ function shChanges(A,B,add){
     // ruční přesun do oddělení (2.32)
     const dName=id=>id==="-"?"nezařazeno":((B.depts||[]).find(d=>d.id===id)||{}).name||"oddělení";
     l.items.forEach(i=>{const p=oi.get(i.id);if(p&&(p.dept||"")!==(i.dept||""))add("shortage","Shortage: položka "+label(i)+(i.dept?" ručně přesunuta: "+dName(i.dept):" zase v oddělení podle operace")+" (seznam "+shWhen(l)+")",{m:"shdi:"+l.id+":"+i.id});});
+    // alternativní objednávka z výrobního plánu (2.72)
+    const ordLab=x=>(x.order||"—")+" · index "+(x.index||"—");
+    l.items.forEach(i=>{
+      const p=oi.get(i.id);
+      if(!p)return;
+      const moved=p.order!==i.order||p.index!==i.index;
+      if(i.was&&moved&&(p.planAlts||[]).some(a=>a.order===i.order&&a.index===i.index))add("shortage","Shortage: u položky "+label(i)+" vybrána objednávka z plánu "+ordLab(i)+" (v urgentech "+ordLab(i.was)+", seznam "+shWhen(l)+")",{m:"shalt:"+l.id+":"+i.id});
+      else if(p.was&&!i.was)add("shortage","Shortage: u položky "+label(i)+" vrácena objednávka z urgentů "+ordLab(i)+" (seznam "+shWhen(l)+")",{m:"shalt:"+l.id+":"+i.id});
+    });
     l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.full!==!!i.full)add("shortage","Shortage: sestava "+label(i)+(i.full?" zobrazena plně (QR kód, záznam, kolonky)":" zase jen orientačně")+" (seznam "+shWhen(l)+")",{m:"shf:"+l.id+":"+i.id});});
     // skrytí v PDF (2.29.1)
     l.items.forEach(i=>{const p=oi.get(i.id);if(p&&(p.st||"")!==(i.st||""))add("shortage","",{m:"shst:"+l.id+":"+i.id,p:"Shortage: položka "+label(i)+" – stav: ",v0:shStName(p.st)||"bez stavu",v1:shStName(i.st)||"bez stavu"});});

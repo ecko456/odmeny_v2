@@ -49,7 +49,9 @@ wb.save(out + '/urgenty.xlsx')
 # 2. výrobní plán (od 2.70 dva listy): list 1 díly bez sestav (A EAN s odkazem, B objednávka, C index, D operace,
 #    E množství zakázky 2.71), list 2 A objednávka, B EAN sestavy, C index, D EAN poddílu, E operace, F množství zakázky
 wb = Workbook(); ws = wb.active; ws.title = 'Díly'; ws.append(['EAN dílu', 'Objednávka', 'Index', 'Probíhající operace', 'Množství zakázky'])
-for i, (e, o, x, op, code, q) in enumerate([('8590000005002', 'OBJ-502', 'B', 'Frézování Hala 2', '5.2.2', 10), ('8590000005003', 'OBJ-503', 'C', 'Frézování Hala 2', '5.0.3', 6), ('8590000005004', 'OBJ-777', '', 'Brush Hala 2', '5.4.4', 12)]):
+for i, (e, o, x, op, code, q) in enumerate([('8590000005002', 'OBJ-502', 'B', 'Frézování Hala 2', '5.2.2', 10), ('8590000005003', 'OBJ-503', 'C', 'Frézování Hala 2', '5.0.3', 6), ('8590000005004', 'OBJ-777', '', 'Brush Hala 2', '5.4.4', 12),
+                                          # 2.72: další objednávky téhož dílu (alternativy k urgentu OBJ-504 bez indexu)
+                                          ('8590000005004', 'OBJ-778', 'B', 'Leštění – hala 2', '5.4.5', 30), ('8590000005004', 'OBJ-504', 'C', 'Brush Hala 2', '5.4.6', 12)]):
     ws.append([e, o, x, op, q]); ws.cell(row=i + 2, column=1).hyperlink = L(code)
 p = wb.create_sheet('Poddíly'); p.append(['Objednávka', 'EAN sestavy', 'Index', 'EAN poddílu', 'Probíhající operace', 'Množství zakázky'])
 plan = [('OBJ-501', '8590000005001', 'A', '8590000005001', 'Broušení – hala 2', None, 4),
@@ -84,6 +86,7 @@ wb.save(out + '/pohyb.xlsx')
 wb = Workbook(); ws = wb.active; ws.title = 'Pohyb'
 ws.append(['Pracoviště', 'QR kód', 'Datum a čas', 'Ks', 'Stav'])
 ws.append(['Expedice', '5.0.2', '07.11.2026 08:00', 2, 'Odesláno na WPA'])
+ws.append(['Leštění', '5.4.5', '07.11.2026 09:00', 30, 'Leštěno hotovo'])   # 2.72: poslední záznam alternativní objednávky
 wb.save(out + '/pohyb2.xlsx')
 print('ok')`;
 
@@ -221,6 +224,54 @@ print('ok')`;
   await page.locator(`#shView [data-shsent="here"]`).nth(1).scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(shots, '03d-wpa-u-nas.png') });
 
+  // ---------- alternativní objednávky z plánu při neshodě objednávky / line (2.72) ----------
+  const dId = await page.evaluate(() => S.shortage.lists[0].items.find(x => x.ean === '8590000005004').id);
+  const altSel = `#shView select[data-shalt="${dId}"]`;
+  const altUi = () => page.evaluate(([sel, id]) => {
+    const tr = document.querySelector(`#shView tr[data-shid="${id}"]`), s = document.querySelector(sel);
+    let h = tr && tr.previousElementSibling;
+    while (h && !h.matches('.sh-depthead')) h = h.previousElementSibling;
+    const i = S.shortage.lists[0].items.find(x => x.id === id);
+    return { sec: h && h.dataset.shdepthead, groups: s ? [...s.querySelectorAll('optgroup')].map(g => g.label) : null, opts: s ? [...s.options].map(o => [o.value, o.disabled, o.textContent.trim()]) : null, val: s && s.value,
+      ord: tr && tr.querySelector('.sh-ord').textContent.trim(), tag: /Neshoda objednávky \/ line/.test(tr.textContent), back: tr.querySelectorAll('[data-shaltback]').length, was: (tr.querySelector('.sh-was') || {}).textContent || '',
+      it: [i.order, i.index, i.code, i.op, i.oqty ?? null, i.rec && i.rec.state, i.planMismatch], w: i.was ? [i.was.order, i.was.index, i.was.code, i.was.op] : null };
+  }, [altSel, dId]);
+  let au = await altUi();
+  const altTxt = au.opts ? au.opts.map(o => o[2]) : [];
+  check(au.sec === 'unlinked' && au.tag && JSON.stringify(au.groups) === JSON.stringify(['Stejná objednávka, jiný index', 'Stejný index, jiná objednávka', 'Jiné objednávky']) && au.val === '' && au.opts[0][1] && /^Vyber z 3 objednávek v plánu$/.test(altTxt[0])
+    && altTxt[1] === 'OBJ-504 | Index C | 12 ks | Záznam: nenahrán | Operace: Brush Hala 2' && altTxt[2] === 'OBJ-777 | Index — | 12 ks | Záznam: nenahrán | Operace: Brush Hala 2'
+    && /^OBJ-778 \| Index B \| 30 ks \| Záznam: Leštěno hotovo, 30 ks, 7\. ?11\. ?2026 9:00 \| Operace: Leštění – hala 2$/.test(altTxt[3]), `nabídka alternativních objednávek při neshodě: ${JSON.stringify(au)}`);
+  check(/vyber v nabídce u položky alternativní objednávku z výrobního plánu \(objednávka, index, počet ks, poslední interní záznam, operace\)/.test(await page.textContent('#shView tr[data-shdepthead="unlinked"]')), 'sekce Nelze přidělit odkaz radí nabídku');
+  await page.locator(altSel).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, '03e-alternativy.png') });
+  const pickAlt = async (order, done) => {
+    const v = (await altUi()).opts.find(o => o[2].startsWith(order + ' |'))[0];
+    await page.selectOption(altSel, v);
+    await page.waitForFunction(done, dId);
+    await saved(page);
+  };
+  await pickAlt('OBJ-778', id => S.shortage.lists[0].items.find(x => x.id === id).order === 'OBJ-778');
+  au = await altUi();
+  check(JSON.stringify(au.it) === JSON.stringify(['OBJ-778', 'B', '5.4.5', 'Leštění – hala 2', 30, 'Leštěno hotovo', false]) && JSON.stringify(au.w) === JSON.stringify(['OBJ-504', '', '5.0.4', 'Brush Hala 2']), `výběr převezme objednávku, index, QR, operaci, množství a záznam, urgent se zapamatuje: ${JSON.stringify(au)}`);
+  check(au.sec !== 'unlinked' && !au.tag && au.ord === 'OBJ-778' && au.val === au.opts.find(o => o[2].startsWith('OBJ-778 |'))[0] && au.back === 1 && /V urgentech OBJ-504 · index —/.test(au.was), `po výběru: řádek mezi ostatními, nabídka s vybranou objednávkou, návrat k urgentu: ${JSON.stringify(au)}`);
+  check(/^Položka 8590000005004: objednávka OBJ-778 · index B z výrobního plánu\.$/.test(await page.textContent('#toast')), `hláška po výběru: ${await page.textContent('#toast')}`);
+  const fitA = await page.evaluate(() => { const c = document.querySelector('#shView .table-card'); return c.scrollWidth - c.clientWidth; });
+  check(fitA <= 1, `tabulka s nabídkou objednávek na 1440 px přetéká o ${fitA} px`);
+  await page.locator(altSel).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, '03f-alternativa-vybrana.png') });
+  // jiná alternativa, pak zpátky na urgent, pak znovu OBJ-778
+  await pickAlt('OBJ-777', id => S.shortage.lists[0].items.find(x => x.id === id).order === 'OBJ-777');
+  au = await altUi();
+  check(JSON.stringify(au.it.slice(0, 5)) === JSON.stringify(['OBJ-777', '', '5.4.4', 'Brush Hala 2', 12]) && au.w && au.w[0] === 'OBJ-504', `přepnutí na jinou alternativu: ${JSON.stringify(au)}`);
+  await page.click(`#shView [data-shaltback="${dId}"]`);
+  await page.waitForFunction(id => !S.shortage.lists[0].items.find(x => x.id === id).was, dId);
+  await saved(page);
+  au = await altUi();
+  check(JSON.stringify(au.it) === JSON.stringify(['OBJ-504', '', '5.0.4', 'Brush Hala 2', null, null, true]) && au.sec === 'unlinked' && au.val === '' && au.back === 0, `Vrátit z urgentů: ${JSON.stringify(au)}`);
+  await pickAlt('OBJ-778', id => S.shortage.lists[0].items.find(x => x.id === id).order === 'OBJ-778');
+  const altLog = (await page.evaluate(() => S.log.filter(e => e.kind === 'shortage').map(e => e.text))).join(' | ');
+  check(/u položky 8590000005004 Šroub M8 vybrána objednávka z plánu OBJ-778 · index B \(v urgentech OBJ-504 · index —, seznam /.test(altLog), `historie výběru objednávky: ${altLog.slice(0, 600)}`);
+
   // ---------- úprava poddílu tužkou a QR varianty (2.70) ----------
   const sub3 = await page.evaluate(() => S.shortage.lists[0].items.find(x => x.ean === '8590000005003').subs[0].id);
   await page.click(`#shView [data-shedit="${sub3}"]`);
@@ -249,6 +300,8 @@ print('ok')`;
   check(JSON.stringify(qi.sub) === JSON.stringify(['Montáž', 'Upraveno ručně', true]), `ručně upravený poddíl: poznámka zůstane, operace z nového plánu: ${JSON.stringify(qi.sub)}`);
   check(/Nelze přidělit odkaz/.test(await page.textContent('#shView')) && await page.locator(`#shView select[data-shqr="${qi.id}"] option`).count() === 3, 'část Nelze přidělit odkaz s výběrem varianty');
   check(/liší od variant/.test(await page.textContent('#shMsg')), `hláška o uloženém kódu ke kontrole: ${await page.textContent('#shMsg')}`);
+  au = await altUi();
+  check(JSON.stringify(au.it.slice(0, 3)) === JSON.stringify(['OBJ-778', 'B', '5.4.5']) && au.w && au.w[0] === 'OBJ-504' && au.opts === null && au.back === 1, `další plán bez toho dílu: vybraná objednávka a návrat k urgentu zůstanou: ${JSON.stringify(au)}`);
   const fitQ = await page.evaluate(() => { const c = document.querySelector('#shView .table-card'); return c.scrollWidth - c.clientWidth; });
   check(fitQ <= 1, `tabulka s výběrem QR varianty na 1440 px přetéká o ${fitQ} px (akce vpravo schované)`);
   await page.locator(`#shView select[data-shqr="${qi.id}"]`).scrollIntoViewIfNeeded();
@@ -282,7 +335,8 @@ print('ok')`;
   await dl.saveAs(xf);
   const xr = spawnSync('python3', ['-c', 'import sys,json\nfrom openpyxl import load_workbook\nws=load_workbook(sys.argv[1]).active\nprint(json.dumps([ws.title]+[[c.value for c in r][:3]+[r[15].value, r[21].value if len(r)>21 else None] for r in ws.iter_rows()]))', xf], { encoding: 'utf8' });
   const xs = xr.status === 0 ? JSON.parse(xr.stdout) : [];
-  check(xs[0] === 'Rozbor' && xs.length === 1 + 1 + 5 + 3 && xs.some(r => Array.isArray(r) && r[1] === 'poddíl (jiná operace)') && xs[1][4] === 'Díl u nás' && xs.filter(r => Array.isArray(r) && r[4] === 'ano').length === 2, `Excel rozboru: ${xr.stderr || JSON.stringify(xs).slice(0, 300)}`);
+  check(xs[0] === 'Rozbor' && xs.length === 1 + 1 + 5 + 3 && xs.some(r => Array.isArray(r) && r[1] === 'poddíl (jiná operace)') && xs[1][4] === 'Díl u nás' && xs.filter(r => Array.isArray(r) && r[4] === 'ano').length === 3,   // 3.: Šroub M8 s objednávkou z plánu (2.72)
+ `Excel rozboru: ${xr.stderr || JSON.stringify(xs).slice(0, 300)}`);
 
   // ---------- znovu: sloupce zapamatované, barvy předvyplněné, Bez barev ----------
   await page.click('[data-shmode="list"]');
@@ -343,6 +397,11 @@ print('ok')`;
   const narrow = await page.evaluate(() => ({ over: document.documentElement.scrollWidth - document.documentElement.clientWidth, cols: getComputedStyle(document.querySelector('.sh-steps')).gridTemplateColumns.split(' ').length }));
   check(narrow.over <= 1 && narrow.cols === 1, `telefon: ${JSON.stringify(narrow)}`);
   await page.screenshot({ path: path.join(shots, '05-telefon.png'), fullPage: true });
+  await page.evaluate(id => { ui.sh.mode = 'list'; ui.sh.open = S.shortage.lists.find(l => l.items.some(i => i.id === id)).id; renderShortage(); }, dId);
+  const narrowL = await page.evaluate(id => { const b = document.querySelector(`#shView [data-shaltback="${id}"]`); if (b) b.scrollIntoView({ block: 'center' });
+    return { b: !!b, vis: !!(b && b.getClientRects().length), over: document.documentElement.scrollWidth - document.documentElement.clientWidth, open: ui.sh.open, lists: S.shortage.lists.map(l => [l.id, l.items.some(i => i.id === id)]) }; }, dId);
+  check(narrowL.b && narrowL.vis && narrowL.over <= 1, `telefon, seznam s objednávkou z plánu: ${JSON.stringify(narrowL)}`);
+  await page.screenshot({ path: path.join(shots, '05b-telefon-objednavka.png') });
   await ctx.close();
 
   await browser.close();

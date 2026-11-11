@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.72
+
+- Shortage, neshoda objednávky / line: když první list výrobního plánu zná EAN položky, ale ne
+  s její objednávkou a line/indexem, je u položky rozevírací nabídka **Alternativní objednávka
+  z plánu**. Každá objednávka téhož dílu z plánu (každá varianta QR zvlášť) ukazuje číslo
+  objednávky, index, počet ks, poslední interní záznam a probíhající operaci. Nahoře jsou
+  objednávky se stejným číslem a jiným indexem, pak se stejným indexem, pak ostatní.
+- Po výběru položka převezme objednávku, index, QR kód, operaci a množství zakázky z plánu
+  (poddíly a varianty QR doplní plán nahraný v tomto okně, jinak další nahrání plánu).
+  Objednávka z urgentů se zapamatuje („V urgentech …“), tlačítkem **Vrátit z urgentů** se k ní
+  dá vrátit, v nabídce jde vybrat i jiná objednávka. Doplnit chybějící a poznámky z urgentů
+  poznají položku dál podle objednávky z urgentů. Výběr je v historii změn.
+- Na telefonu jsou buňky operace, QR kódu a poznámky v Shortage celou šířkou pod popiskem.
+- Verze dat 50: stránka otevřená ve starší verzi po aktualizaci nic neuloží (obnovit Ctrl+Shift+R).
+
 ## Co je nového ve verzi 2.71.1
 
 - Shortage: když do množství zakázky chybí kusy, počítá se zbytek jako **U nás** i tehdy, když je
