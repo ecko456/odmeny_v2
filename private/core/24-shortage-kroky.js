@@ -197,6 +197,8 @@ function shChanges(A,B,add){
   B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&l.moves&&JSON.stringify(o.moves||null)!==JSON.stringify(l.moves))add("shortage","Shortage: evidence pohybu "+(l.moves.file||"")+" u seznamu "+shWhen(l)+" ("+l.moves.rows+" záznamů)",{m:"shv:"+l.id+":"+l.moves.at});});
   const what=l=>{const n=l.items.length,top=l.items.filter(i=>i.top).length;return " ("+n+" "+shItemsN(n)+(top?", z toho "+top+" TOP":"")+(l.file?", "+l.file:"")+")";};
   B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+what(l),{m:"shl:"+l.id});});
+  // zabalení dne (2.73)
+  B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&!!o.packed!==!!l.packed)add("shortage",l.packed?"Shortage: zabalen seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+")":"Shortage: rozbalen seznam "+shWhen(l),{m:"shpk:"+l.id});});
   // smazání má vlastní klíč, ať v historii zůstane i záznam o nahrání
   A.lists.forEach(l=>{if(!ib.has(l.id))add("shortage","Shortage: smazán seznam "+shWhen(l)+what(l),{m:"shd:"+l.id});});
   // úpravy položek seznamu (2.28): odebrání, poznámka, poslední záznamy, pořadí; poddíly z plánu (2.29)

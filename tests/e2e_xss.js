@@ -45,6 +45,10 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     const L = c => 'http://is.example/x?activeBarcode=' + c + '&y';
     S.shortage.lists.unshift({ id: 'shxss', at: Date.now(), by: P(), file: P(), sheet: P(), items: [{ id: 'si1', order: P(), name: P(), ean: P(), index: P(), qty: P(), top: true, op: P(), link: L('1.2'), code: '1.2', note: P(), rec: { ts: 1, when: P(), qty: P(), state: P(), op: P(), n: 2, at: 1, by: P() }, subs: [{ id: 'sp1', ean: P(), code: '3.4', op: P(), note: P() }], cands: [{ ean: P(), code: '', op: P(), link: '' }] }] });
     S.shortage.depts = [{ id: 'sdx', name: P(), ops: [] }];
+    // 2.73: zabalený předchozí den (položka, která v dalším seznamu není = odbouraná), ručně odebraná a souhrn dne v historii
+    S.shortage.lists.push({ id: 'shxss0', at: Date.now() - 86400000, by: P(), file: P(), packed: { at: Date.now(), by: P() }, items: [{ id: 'si9', order: P(), name: P(), ean: P(), index: P(), qty: P(), op: P(), note: P(), rec: { ts: 1, when: P(), qty: P(), state: P() } }],
+      out: [{ key: 'kx', name: P(), ean: P(), order: P(), index: P(), qty: P(), op: P(), manual: true, by: P(), at: 1, day: '2026-01-02', rec: { state: P(), when: P() } }] });
+    S.shortage.hist = [{ id: 'hxss', day: '2026-01-01', at: 1, by: P(), file: P(), n: 1, out: [{ key: 'ky', name: P(), ean: P(), order: P(), index: P(), qty: P(), op: P(), rec: { state: P(), when: P() } }] }];
     S.service.devices.push({ id: 'dvxss', kind: P(), brand: P(), model: P(), made: '2020', iid: P().slice(0, 40), sn: P().slice(0, 40), note: P(), at: 1, by: P() });
     S.logbooks.push({ ...blankLogbook(), id: 'lbxss', name: P(), maker: P(), place: P(), note: P(), steps: [{ ...blankStep(), id: 'st1', name: P(), how: P() }] });
     S.log.push({ at: Date.now(), by: P(), card: '', kind: 'person', text: P() });
@@ -70,6 +74,8 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     ['matice: kapacita', () => { ui.mxTab = 'cap'; showView('matice'); }],
     ['matice: vedoucí', () => { ui.mxTab = 'leads'; showView('matice'); }],
     ['shortage: rozbor', () => { ui.sh.mode = 'rozbor'; showView('shortage'); }],
+    ['shortage: historie', () => { ui.sh.mode = 'historie'; showView('shortage'); }],
+    ['shortage: zabalený den', () => { ui.sh.mode = 'list'; ui.sh.open = 'shxss0'; showView('shortage'); }],
     ['ukoly: detail', () => { ui.tk.sel = 'tkxss1'; showView('ukoly'); }],
     ['servis: zařízení', () => { ui.sv.tab = 'dev'; showView('servis'); }],
     ['protokoly: detail', () => { ui.lb.sel = 'lbxss'; showView('protokoly'); }],
@@ -83,7 +89,7 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     await page.evaluate(() => { const d = document.querySelector('#dlg[open]'); if (d) d.close(); });
   }
   // test opravdu testuje: podvržený text je na stránce vidět jako text
-  await page.evaluate(() => { ui.sh.mode = 'list'; showView('shortage'); });
+  await page.evaluate(() => { ui.sh.mode = 'list'; ui.sh.open = null; showView('shortage'); });
   await page.waitForTimeout(300);
   check(/<img src="x" id="xss\d+"><b class="xssb">/.test(await page.textContent('#shView')), 'podvržený text je vidět jako text');
   await page.screenshot({ path: path.join(shots, '01-shortage.png') });

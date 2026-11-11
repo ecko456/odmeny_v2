@@ -206,7 +206,7 @@ function shApplyNotes(list,items){
   }
   return {updated,missing,ambiguous};
 }
-function blankShortage(){return {lists:[],depts:[],cols:{},colors:{}};}
+function blankShortage(){return {lists:[],depts:[],cols:{},colors:{},hist:[]};}
 /** Cíl odkazu ze souboru xlsx: SheetJS 0.18.5 v něm nechá XML zápis (&amp; místo &, &#38; …). */
 function shUnxml(s){
   return String(s==null?"":s).replace(/&(amp|lt|gt|quot|apos|#\d{1,7}|#x[0-9a-f]{1,6});/gi,(m,e)=>{
@@ -471,6 +471,9 @@ function cleanShortage(o){
     records:(Array.isArray(l.records)?l.records:[]).slice(0,SH_MAX_RECORDS).filter(r=>r&&shCodeClean(r.code)).map(r=>({...shRecClean(r,line),code:shCodeClean(r.code)})),
     // odesláno na WPA (2.71): všechny záznamy s počtem kusů
     sent:shSentClean(l.sent),
+    // zabalený den (2.73): seznam jen ke čtení v historii; out = odbourané položky toho dne
+    packed:l.packed&&typeof l.packed==="object"?{at:num(l.packed.at),by:line(l.packed.by,60)}:null,
+    out:shOutClean(l.out),
     // ručně odebrané položky (2.36): při doplnění chybějících se samy nevrátí
     gone:[...new Set((Array.isArray(l.gone)?l.gone:[]).filter(k=>typeof k==="string"&&k).map(k=>k.slice(0,240)))].slice(-SH_MAX_GONE),
     // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec; ze 2.28 nemá subs
@@ -478,6 +481,7 @@ function cleanShortage(o){
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,top2:i.top2===true&&i.top!==true,op:line(i.op,300),link:shLink(i.link),
       qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,
       dept:i.dept==="-"||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),...(shQtyNum(i.oqty)!=null?{oqty:shQtyNum(i.oqty)}:{}),
+      since:shIsoDay(i.since),days:Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+i.days||1))),again:shIsoDay(i.again),   // dny na shortage (2.73), dopočítá shLinkDays
       subs:shAllSubs(i).map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),
       cands:[],_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
@@ -497,14 +501,18 @@ function cleanShortage(o){
   }).slice(0,SH_MAX_DEPTS);
   const dIds=new Set(depts.map(d=>d.id));
   lists.forEach(l=>l.items.forEach(i=>{if(i.dept&&i.dept!=="-"&&!dIds.has(i.dept))i.dept="";}));   // smazané oddělení: zase podle operace
-  // nejnovější první; nad SH_MAX_LISTS se nejstarší zahodí
+  // nejnovější první; dny na shortage a odbourané položky (2.73); nad SH_MAX_LISTS se nejstarší
+  // seznam přesune do historie (souhrn dne a odbourané položky)
   lists.sort((a,b)=>b.at-a.at);
+  shLinkDays(lists);
+  const kept=lists.slice(0,SH_MAX_LISTS),keptIds=new Set(kept.map(l=>l.id));
+  const hist=shHistClean([...lists.slice(SH_MAX_LISTS).map(shDaySummary),...(Array.isArray(o.hist)?o.hist:[])]).filter(d=>!keptIds.has(d.id));
   // sloupce tří importů (2.61) a barvy výplně buňky EANu → TOP / TOP 2 / běžná shortage
   const cols={};
   Object.keys(SH_COLS).forEach(k=>{if(o.cols&&o.cols[k]&&typeof o.cols[k]==="object")cols[k]=shColsClean(k,o.cols[k]);});
   const colors={};
   if(o.colors&&typeof o.colors==="object")Object.keys(o.colors).slice(0,SH_MAX_COLORS).forEach(k=>{const h=shHex(k);if(h&&SH_TIERS.includes(o.colors[k]))colors[h]=o.colors[k];});
-  return {lists:lists.slice(0,SH_MAX_LISTS),depts,cols,colors};
+  return {lists:kept,depts,cols,colors,hist};
 }
 /** Řádek s nadpisy sloupců (Číslo objednávky, Název dílu, EAN …), ne položka: aspoň dva nadpisy, v E žádná číslice. */
 function shIsHeader(t){
@@ -566,6 +574,111 @@ function shMergePlan(list,items,back){
     else out.add.push(i);
   });
   return out;
+}
+/* ---------- Zabalení dne a dny na shortage (2.73) ----------
+   Seznam jde zabalit (packed {at, by}): zůstane v historii jen ke čtení. Každý seznam se porovná
+   s předchozím nahraným (shItemKey): položka nese since (první den na shortage), days (kolikátý
+   den s nahraným seznamem je na shortage) a again (den, kdy se naposledy odbourala, když se zase
+   vrátila). Položky předchozího seznamu, které v novém nejsou, jsou v jeho out (odbouráno ten den);
+   ručně odebrané (×) jdou do out hned (manual). Nad SH_MAX_LISTS se nejstarší seznam přesune do
+   hist (souhrn dne a odbourané položky), ať historie nezmizí. */
+const SH_MAX_OUT=1000,SH_MAX_HIST=400,SH_MAX_HIST_OUT=6000,SH_MAX_DAYS=9999;
+function shIsoDay(v){return typeof v==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(v)?v:"";}
+function shListDay(l){return todayIso((l&&l.at)||0);}
+function shLine(v,max){return String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim().slice(0,max);}
+/** Odbouraná položka: z urgentů zmizela (meta null, day = den nového seznamu), nebo odebrána ručně (meta {at, by}). */
+function shOutOf(i,day,meta){
+  const r=i.rec&&(i.rec.state||i.rec.when)?{state:shLine(i.rec.state,400),when:shLine(i.rec.when,40)}:null;
+  return {key:shItemKey(i).slice(0,240),ean:shLine(i.ean,60),name:shLine(i.name,200),order:shLine(i.order,80),index:shLine(i.index,40),qty:shLine(i.qty,40),
+    top:i.top===true,top2:i.top2===true&&i.top!==true,op:shLine(i.op,300),since:shIsoDay(i.since)||day,days:Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+i.days||1))),
+    day,manual:!!meta,at:meta?Math.max(0,+meta.at||0):0,by:meta?shLine(meta.by,60):"",rec:r};
+}
+function shOutClean(a){
+  return (Array.isArray(a)?a:[]).filter(o=>o&&typeof o==="object"&&typeof o.key==="string"&&o.key).slice(0,SH_MAX_OUT).map(o=>({
+    key:o.key.slice(0,240),ean:shLine(o.ean,60),name:shLine(o.name,200),order:shLine(o.order,80),index:shLine(o.index,40),qty:shLine(o.qty,40),
+    top:o.top===true,top2:o.top2===true&&o.top!==true,op:shLine(o.op,300),since:shIsoDay(o.since),days:Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+o.days||1))),
+    day:shIsoDay(o.day),manual:o.manual===true,at:Number.isFinite(+o.at)?Math.max(0,+o.at):0,by:shLine(o.by,60),
+    rec:o.rec&&typeof o.rec==="object"&&(o.rec.state||o.rec.when)?{state:shLine(o.rec.state,400),when:shLine(o.rec.when,40)}:null}));
+}
+/**
+ * Dny na shortage v řadě seznamů (od nejstaršího): položka, která byla v předchozím seznamu,
+ * převezme since a days (+1, když je seznam z jiného dne), nová začne dnem seznamu. Co
+ * z předchozího seznamu chybí, je v out nového seznamu. Nejstarší seznam si nechá uložené
+ * hodnoty (předchozí seznam už mohl odejít do historie). Mění seznamy na místě.
+ */
+function shLinkDays(lists){
+  const asc=[...(lists||[])].sort((a,b)=>(a.at||0)-(b.at||0));
+  const lastOut=new Map();
+  asc.forEach((l,ix)=>{
+    const day=shListDay(l),prev=ix?asc[ix-1]:null;
+    l.out=Array.isArray(l.out)?l.out:[];
+    if(!prev){
+      l.items.forEach(i=>{const s=shIsoDay(i.since);i.since=s&&s<=day?s:day;i.days=Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+i.days||1)));i.again=shIsoDay(i.again);});
+      l.out.forEach(o=>{if(!o.day)o.day=day;if(!o.since)o.since=o.day;});
+    }else{
+      const pday=shListDay(prev),pm=new Map();
+      prev.items.forEach(p=>{const k=shItemKey(p);if(!pm.has(k))pm.set(k,[]);pm.get(k).push(p);});
+      l.items.forEach(i=>{
+        const k=shItemKey(i),arr=pm.get(k),p=arr&&arr.shift();
+        if(p){i.since=p.since||pday;i.days=Math.min(SH_MAX_DAYS,(p.days||1)+(day!==pday?1:0));i.again=p.again||"";}
+        else{i.since=day;i.days=1;i.again=lastOut.get(k)||"";}
+      });
+      // ručně odebraná v tomto seznamu v urgentech byla: jako zmizelá se nepočítá podruhé
+      const manual=new Map();
+      l.out.forEach(o=>{if(o.manual)manual.set(o.key,(manual.get(o.key)||0)+1);});
+      const auto=[];
+      pm.forEach((arr,k)=>arr.forEach(p=>{const m=manual.get(k)||0;if(m>0){manual.set(k,m-1);return;}auto.push(shOutOf(p,day,null));}));
+      l.out=[...auto,...l.out.filter(o=>o.manual).map(o=>({...o,day:o.day||day,since:o.since||o.day||day}))].slice(0,SH_MAX_OUT);
+    }
+    l.out.forEach(o=>lastOut.set(o.key,o.day||day));
+  });
+  return lists;
+}
+/** Souhrn dne (seznamu): položky, priority, nové, vrácené, déle na shortage a odbourané. */
+function shDaySummary(l){
+  const its=(l&&l.items)||[],d=i=>i.days||1;
+  return {id:l.id,day:shListDay(l),at:l.at||0,by:l.by||"",file:l.file||"",n:its.length,top:its.filter(i=>i.top).length,top2:its.filter(i=>i.top2&&!i.top).length,
+    fresh:its.filter(i=>d(i)<=1&&!i.again).length,again:its.filter(i=>d(i)<=1&&!!i.again).length,carried:its.filter(i=>d(i)>=2).length,
+    maxDays:its.reduce((a,i)=>Math.max(a,d(i)),0),out:(l.out||[]).map(o=>({...o}))};
+}
+function shHistClean(h){
+  const seen=new Set(),num=v=>Number.isFinite(+v)?Math.max(0,Math.round(+v)):0;
+  const out=(Array.isArray(h)?h:[]).filter(d=>d&&typeof d==="object"&&typeof d.id==="string"&&SAFE_ID.test(d.id)&&!seen.has(d.id)&&(seen.add(d.id),true)).map(d=>{
+    const day=shIsoDay(d.day)||todayIso(num(d.at));
+    return {id:d.id,day,at:num(d.at),by:shLine(d.by,60),file:shLine(d.file,160),n:num(d.n),top:num(d.top),top2:num(d.top2),fresh:num(d.fresh),again:num(d.again),
+      carried:num(d.carried),maxDays:Math.min(SH_MAX_DAYS,num(d.maxDays)),out:shOutClean(d.out).map(o=>({...o,day:o.day||day,since:o.since||o.day||day}))};
+  }).sort((a,b)=>b.at-a.at).slice(0,SH_MAX_HIST);
+  let left=SH_MAX_HIST_OUT;
+  out.forEach(d=>{d.out=d.out.slice(0,Math.max(0,left));left-=d.out.length;});
+  return out;
+}
+/**
+ * Historie shortage: dny (nahrané seznamy i přesunuté do hist, nejnovější první) a odbourané
+ * položky (day = kdy se odbouraly, days = kolik dní byly na shortage). Souhrny: kolik, Ø dní,
+ * do 1 dne, TOP a TOP 2 zvlášť, rozložení podle dní.
+ */
+function shHistory(sh){
+  sh=sh||blankShortage();
+  const live=(sh.lists||[]).map(l=>({...shDaySummary(l),live:true,packed:!!l.packed}));
+  const ids=new Set(live.map(d=>d.id));
+  const days=[...live,...(sh.hist||[]).filter(d=>!ids.has(d.id)).map(d=>({...d,out:(d.out||[]).map(o=>({...o})),live:false,packed:true}))].sort((a,b)=>b.at-a.at);
+  const out=days.flatMap(d=>d.out.map(o=>({...o,day:o.day||d.day}))).sort((a,b)=>(b.day>a.day?1:b.day<a.day?-1:0)||(b.top-a.top)||(b.top2-a.top2)||(b.days-a.days));
+  const avg=a=>a.length?Math.round(a.reduce((s,o)=>s+o.days,0)/a.length*10)/10:null;
+  const bins=[["1 den",o=>o.days<=1],["2 dny",o=>o.days===2],["3 až 5 dní",o=>o.days>=3&&o.days<=5],["6 a více dní",o=>o.days>=6]].map(([name,f])=>({name,n:out.filter(f).length}));
+  return {days,out,n:out.length,manual:out.filter(o=>o.manual).length,avg:avg(out),avgTop:avg(out.filter(o=>o.top)),avgTop2:avg(out.filter(o=>o.top2)),
+    top:out.filter(o=>o.top).length,top2:out.filter(o=>o.top2).length,quick:out.filter(o=>o.days<=1).length,max:out.reduce((a,o)=>Math.max(a,o.days),0),bins,
+    from:days.length?days[days.length-1].day:"",to:days.length?days[0].day:""};
+}
+/** Kolikátý den na shortage jako text: „2. den“, s datem od kdy. */
+function shDaysText(x){const d=(x&&x.days)||1;return d+". den na shortage"+(x&&x.since?" (od "+dayText(x.since,false)+")":"");}
+/** Historie do Excelu: Dny a Odbourané položky. */
+function shHistorySheets(h){
+  const pr=o=>o.top?"TOP SHORTAGE":o.top2?"TOP 2":"";
+  const days={name:"Dny",cols:[12,16,9,7,7,8,8,12,10,11,10,12,28],rows:[["Den","Nahráno","Položek","TOP","TOP 2","Nové","Znovu","2 a více dní","Nejdéle (dní)","Odbouráno","z toho ručně","Ø dní odbouraných","Soubor"],
+    ...h.days.map(d=>{const a=d.out.length?Math.round(d.out.reduce((s,o)=>s+o.days,0)/d.out.length*10)/10:"";return [d.day,shWhenText(d.at),d.n,d.top,d.top2,d.fresh,d.again,d.carried,d.maxDays,d.out.length,d.out.filter(o=>o.manual).length,a,d.file];})]};
+  const out={name:"Odbourané položky",cols:[12,14,30,16,10,10,14,13,10,22,40,30],rows:[["Odbouráno dne","Číslo objednávky","Název dílu","EAN","Index","Množství","Priorita","Na shortage od","Dní na shortage","Jak","Poslední záznam","Probíhající operace"],
+    ...h.out.map(o=>[o.day,o.order,o.name,o.ean,o.index,o.qty,pr(o),o.since,o.days,o.manual?"odebráno ručně"+(o.by?" ("+o.by+")":""):"v urgentech už není",o.rec?[o.rec.state,o.rec.when].filter(Boolean).join(" · "):"",o.op])]};
+  return [days,out];
 }
 /** Text ze schránky (buňky oddělené tabulátorem, řádky novým řádkem, Excel dává do uvozovek buňky s tabulátorem nebo zalomením). */
 function shTsv(text){

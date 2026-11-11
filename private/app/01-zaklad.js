@@ -21,7 +21,7 @@ const ui = {
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
-  sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null, mode: 'list', last: null },
+  sh: { open: null, q: '', plan: null, ops: [], depts: [], deptOpen: false, merge: null, mode: 'list', last: null, tiers: [], age: '', outOpen: true },
   tk: { part: 'list', agQ: '', sel: null, filter: 'open', owner: '', q: '', draft: {}, alertOff: '', listY: 0, dueTimer: null, lastDue: '' },
   wa: { tab: 'prehled', hist: 26, hFrom: '', hTo: '', group: '', planRange: 'f13', pFrom: '', pTo: '', planBusy: false, mode: 'month', month: '', week: '', from: '', to: '', groups: false, allEdits: false, opQ: '', opFilter: 'all', ctPre: 'b3', ctFrom: '', ctTo: '', ctPage: '', dvMode: 'day', dvDay: '', dvMonth: '', dvSort: 'group', kp: { month: '', sort: 'ks', dir: 'best', dept: '' } },
 };

@@ -34,6 +34,40 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 11. 2026 (verze 2.73):
+
+- Uživatel: „za předchozí den shortage půjde ‚zabalit‘ a budu moct nahrát nové? … Položka tam je již
+  2. den nebo tato položka byla odstraněna ze shortage v dnešním soupisu urgentů není … filtrovat jen
+  TOP shortage, TOP2 shortage, položky co tu jsou 2. dny a více … historický přehled … jak se co
+  podaří rychle odbourat.“
+  - Data (verze 51): seznam `packed {at, by} | null` (zabalený = jen ke čtení), `out[≤ SH_MAX_OUT 1000]`
+    = odbourané položky `{key (shItemKey), ean, name, order, index, qty, top, top2, op, since, days,
+    day (kdy se odbourala), manual, at, by, rec {state, when}}`; položka `since` (první den na
+    shortage), `days` (kolikátý den s nahraným seznamem), `again` (den posledního odbourání, když se
+    vrátila); `S.shortage.hist[≤ 400]` = souhrn dne seznamu, který vypadl nad 30 (`shDaySummary`,
+    i s `out`, celkem nejvýš 6000 odbouraných).
+  - Core (23-shortage, blok „Zabalení dne a dny na shortage“): `shLinkDays(lists)` v `cleanShortage`
+    (řada od nejstaršího, předchozí seznam podle `at`; stejný den den nepřičte; nejstarší si nechá
+    uložené hodnoty; auto `out` se pokaždé přepočítá, `manual` zůstane a stejná položka se pak
+    nepočítá podruhé), `shOutOf`, `shOutClean`, `shDaySummary`, `shHistClean`, `shHistory` (dny,
+    odbourané, Ø, do 1 dne, TOP, rozložení), `shDaysText`, `shHistorySheets`. Historie změn `shpk:`
+    (zabalen / rozbalen). **Seznam se nezabalí sám** při nahrání dalšího (staré chování přepínání
+    seznamů zůstalo), hláška po nahrání nabídne Zabalit předchozí.
+  - UI (26-shortage): `shList()` = vybraný, jinak nejnovější nezabalený; **`shWork()`** = jen
+    nezabalený (importy, Ctrl+V záznamů, plán, poznámky z Excelu, ruční přidání). `shPackList`,
+    `[data-shpack]`, `[data-shunpack]`, `shPackedHtml` (tabulka jen ke čtení, `data-shopen=""`
+    Zavřít), `shNewDayHtml` (vše zabalené), `shAgeTag`, filtr `ui.sh.tiers` + `ui.sh.age`
+    (`shAgeSel`, `shAgeHit`, `shAgePick`, `[data-shtierf]`, `[data-shagef]`, i PDF a `sh-nodrag`),
+    `shOutHtml` (**bez tabulky**: `#shView tbody tr` patří položkám, přetahování i testy), `shModeBar`
+    (Historie), `shHistHtml`, `exportShHistXlsx`, `shVsNote`, `shPrevList`, šest dlaždic `.sh-six`
+    (3 + 3, na široké ploše 6; `#shView` má `container-type`). PDF: „N. den na shortage (od …)“.
+    Pravý panel bere nejnovější nezabalený seznam.
+  - Oprava mimochodem: řádek poddílu neměl za třídou uvozovku (`data-shsub` se nečetl).
+  - Testy: core „Shortage (2.73)“ (+ tvary 2.27, prázdný Shortage s `hist`, verze 51), nový
+    `tests/e2e_shdny.js` (tři dny s hodinami stránky), `e2e_xss` (zabalený den, historie),
+    `e2e_upgrade_prev` 2.72.1 → 2.73 (archiv `a986739`, předchozí den v datech, zabalení v kroku 5).
+    `ODM_VERSION` 2.73.
+
 Stav k 11. 11. 2026 (verze 2.72.1):
 
 - Uživatel: „aby šlo v časové ose scrollovat a vyjetí mimo myší, aby se plynule vrátilo na aktuální
@@ -2309,7 +2343,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36)
+## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36, zabalení dne a dny na shortage 2.73)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -2320,6 +2354,8 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
   název listu jen u sešitu s více listy, vložený seznam má `file` „vloženo ze schránky“;
 - seznam má navíc `plan` (2.29): `{file, at, by}` posledního prohledaného výrobního plánu, nebo null;
 - `S.shortage.depts` (2.32): oddělení s přiřazenými operacemi, viz „Kde jsme skončili“ 2.32;
+- seznam `packed` a `out`, položka `since`, `days`, `again`, `S.shortage.hist` (2.73): zabalený den,
+  odbourané položky a dny na shortage, viz „Kde jsme skončili“ 2.73;
 - položka `{id, order, name, ean, index, qty, top, top2, op, link, code, note, rec, subs, cands, pdfHide, full, dept}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1, `full` od 2.31 = sestava zobrazená plně; `top` jde od 2.31 přepnout ručně; `top2` a `dept` od 2.32, `shSetTier`): texty tak, jak je ukazuje Excel
   (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
   `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
@@ -2712,7 +2748,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.71 | `b3256ac` | Shortage – množství zakázky z výrobního plánu, odesláno na WPA z evidence pohybu, díl u nás (data verze 49) |
 | 2.71.1 | `8184841` | Shortage – chybějící kusy po odeslání na WPA jsou u nás |
 | 2.72 | `ce9ffce` | Shortage – nabídka alternativních objednávek z plánu při neshodě objednávky / line (data verze 50) |
-| 2.72.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: časová osa se posouvá a vrací na teď, panel bez posuvníku |
+| 2.72.1 | `a986739` | časová osa se posouvá a vrací na teď, panel bez posuvníku |
+| 2.73 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage po dnech – zabalení dne, kolikátý den na shortage, odbourané položky, filtr TOP / TOP 2 / 2 a více dní, Historie (data verze 51) |
 
 Verze 2.1 přidala:
 
@@ -2825,7 +2862,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `50` (od 2.72):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `51` (od 2.73):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

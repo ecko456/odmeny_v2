@@ -3319,3 +3319,54 @@ table.sh-tab tr.sh-depthead td { white-space: normal; }
 .ag-scroll:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 60%, transparent); outline-offset: 2px; border-radius: 10px; }
 .ag-scroll::-webkit-scrollbar, .rail::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .rail, html.rail-open .rail { scrollbar-width: none; }
+
+/* ---------- Shortage: zabalení dne, dny na shortage a historie (2.73) ---------- */
+.sh-age { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 5px; }
+.tag.sh-agetag { font-weight: 700; }
+.tag.sh-agetag.sh-long { background: var(--warn); color: var(--surface); }
+.tag.sh-newtag { background: var(--surface-3); color: var(--ink-2); }
+.tag.sh-again { background: transparent; color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-2, var(--line)); white-space: normal; }
+.sh-vsnote .btn { margin-left: 6px; vertical-align: middle; }
+.chip.sh-packedchip { border-style: dashed; }
+.sh-newday { margin-bottom: 16px; }
+.sh-newday .empty .btn { margin: 4px 2px 0; }
+table.sh-pktab tr.sh-top td:nth-child(2), table.sh-pktab tr.sh-top2 td:nth-child(2) { color: inherit; }
+.sh-packed .card-head h2 { display: flex; align-items: center; gap: 8px; }
+.sh-out { margin-top: 16px; }
+.sh-out > summary { cursor: pointer; list-style-position: inside; font-size: 15px; }
+.sh-out > summary b { margin-right: 6px; }
+.sh-outnone { margin: 12px 2px 0; }
+.sh-outlist { margin-top: 10px; border-top: 1px solid var(--line); }
+.sh-outrow { display: grid; grid-template-columns: minmax(200px, 2.2fr) minmax(130px, 1fr) minmax(92px, .7fr) minmax(120px, 1fr) minmax(170px, 1.6fr) minmax(120px, 1fr); gap: 4px 14px; padding: 9px 10px; border-bottom: 1px solid var(--line); align-items: start; font-size: 13.5px; }
+.sh-outrow > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.sh-outrow > div.num { align-items: flex-end; text-align: right; }
+.sh-outrow .sh-outname b { font-weight: 600; }
+.sh-outrow .sh-outname .tag { align-self: flex-start; margin-bottom: 2px; }
+.sh-outrow.sh-top { box-shadow: inset 3px 0 0 var(--crit); background: color-mix(in srgb, var(--crit-soft) 55%, transparent); }
+.sh-outrow.sh-top2 { box-shadow: inset 3px 0 0 var(--warn); background: color-mix(in srgb, var(--warn-soft) 50%, transparent); }
+.sh-outrow > div > .tag { align-self: flex-start; }
+.sh-outhead { padding-top: 7px; padding-bottom: 7px; font: 600 11.5px/1.3 var(--body); color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.sh-outk { display: none; }
+.sh-hbins h3, .sh-hlong h3, .sh-hout h3 { margin: 0 0 6px; }
+.sh-hbins, .sh-hdays, .sh-hlong, .sh-hout { margin-top: 16px; }
+.sh-hbars { display: grid; gap: 8px; margin-top: 10px; max-width: 760px; }
+.sh-hbar { display: grid; grid-template-columns: 110px minmax(0, 1fr) 44px 48px; align-items: center; gap: 10px; font-size: 13.5px; }
+.sh-hbtrack { height: 10px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.sh-hbtrack i { display: block; height: 100%; border-radius: 999px; background: var(--acc); }
+.sh-hbar b { text-align: right; }
+table.sh-htab td { vertical-align: top; }
+table.sh-htab td .link { margin-left: 4px; }
+@media screen and (max-width: 760px) {
+  .sh-outrow { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px 12px; padding: 10px 8px; }
+  .sh-outrow .sh-outname { grid-column: 1 / -1; }
+  .sh-outrow > div.num { align-items: flex-start; text-align: left; }
+  .sh-outhead { display: none; }
+  .sh-outk { display: block; font: 600 10.5px/1.3 var(--body); color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+  .sh-hbar { grid-template-columns: 82px minmax(0, 1fr) 34px 40px; gap: 8px; }
+}
+/* šest dlaždic (s porovnáním s předchozím dnem): na užší ploše 3 + 3, na široké v jedné řadě, ne 5 + 1 */
+#shView { container-type: inline-size; }
+@media screen and (min-width: 901px) {
+  #shView .stats.sh-six, :root[data-look="glass"] #shView .stats.sh-six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @container (min-width: 1120px) { #shView .stats.sh-six, :root[data-look="glass"] #shView .stats.sh-six { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+}

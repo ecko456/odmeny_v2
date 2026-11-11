@@ -62,6 +62,27 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.73
+
+- Shortage po dnech: tlačítkem **Zabalit den** jde seznam uložit do historie jen ke čtení (jde ho
+  otevřít, vytisknout a tlačítkem Rozbalit zase upravovat). Pak se ukáže výzva nahrát dnešní
+  urgenty. Zabalit jde i z hlášky po nahrání nového seznamu.
+- Každý nově nahraný seznam se porovná s předchozím (položka se pozná podle EANu, indexu
+  a objednávky z urgentů). U položky je štítek **2. den na shortage** (od 3. dne výraznější)
+  s datem, od kdy na shortage je, nová položka má štítek „nová“. Položka, která se vrátila, má
+  „znovu · odbouráno …“. Dlaždice Na shortage 2+ dní ukazuje počet, nové a odbourané.
+- Pod seznamem je oddíl **Odstraněno ze shortage**: položky z předchozího seznamu, které v nových
+  urgentech nejsou, s tím, kolik dní byly na shortage, posledním záznamem a operací. Ručně
+  odebraná položka (×) tu je s označením „odebráno ručně“.
+- Filtr **Priorita a dny na shortage**: TOP SHORTAGE, TOP 2, Nové dnes, Na shortage 2 a více dní
+  (jdou kombinovat, platí i pro PDF k tisku). V PDF je u položky „N. den na shortage (od …)“.
+- Pohled **Historie**: kolik se odbouralo, Ø dní na shortage, kolik se odbouralo do 1 dne, TOP
+  zvlášť, rozložení podle dní, tabulka po dnech, nejdéle na shortage teď a odbourané položky
+  (s filtrem), vše i do Excelu. Seznamy nad 30 zůstanou v historii jako souhrn dne.
+- Pravý panel ukazuje dnešní (nezabalený) seznam a počet položek 2 a více dní.
+- Verze dat 51: stránka otevřená ve starší verzi po aktualizaci nic neuloží (obnovit Ctrl+Shift+R).
+  Seznamy z dřívějška se při načtení porovnají samy, dny na shortage jsou vidět hned.
+
 ## Co je nového ve verzi 2.72.1
 
 - Časová osa v pravém panelu se dá posouvat kolečkem myši, prstem nebo šipkami: 12 hodin zpět

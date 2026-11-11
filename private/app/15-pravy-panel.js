@@ -49,11 +49,19 @@ function railActHtml([k, l, d]) {
 // Karta Shortage (2.64): nejnovější seznam, počty a první TOP položky. Kreslí se vždy, CSS ji ukáže,
 // jen když je panel širší než minimum (v panelu zbývá místo).
 function railShortage() {
-  const l = ((S.shortage && S.shortage.lists) || [])[0];
+  const lists = (S.shortage && S.shortage.lists) || [];
+  // 2.73: nejnovější nezabalený seznam; když je všechno zabalené, jen připomínka nahrát nové urgenty
+  const l = lists.find(x => !x.packed);
+  if (!l && lists.length) {
+    const p = lists[0];
+    return { sig: ['packed', p.id, p.at], html: `<section class="rail-card rail-short"><div class="rail-hrow"><h2 class="rail-h">Shortage</h2><button class="link small" type="button" data-railgo="shortage">Otevřít</button></div>
+    <p class="small muted">Seznam z ${esc(shWhen(p))} je zabalený. Nahraj dnešní urgenty.</p></section>` };
+  }
   if (!l) return { sig: null, html: '' };
   const items = l.items || [];
   const top = items.filter(i => i.top), top2 = items.filter(i => !i.top && i.top2);
   const rec = items.filter(i => i.rec).length;
+  const old = items.filter(i => (i.days || 1) >= 2).length;
   const shown = [...top, ...top2, ...items.filter(i => !i.top && !i.top2)].slice(0, 5);
   // položka (2.65): název otevře Shortage, EAN je odkaz, po najetí se rozbalí volba stavu
   const row = i => `<div class="rail-sh ${i.top ? 'top' : i.top2 ? 'top2' : ''}${i.st ? ` st-${i.st}` : ''}" data-railshid="${esc(i.id)}"><span class="rail-shtag">${i.top ? 'TOP' : i.top2 ? 'TOP 2' : '·'}</span><span class="rail-tmain"><button type="button" class="rail-shname" data-railgo="shortage">${esc(i.name || i.ean || '—')}</button>
@@ -61,10 +69,10 @@ function railShortage() {
       ${i.st ? `<span class="rail-shst st-${i.st}">${esc(shStName(i.st))}</span>` : ''}
       <span class="rail-shstset" role="group" aria-label="Stav položky ${esc(i.ean || i.name)}">${SH_ST.map(([k, n]) => `<button type="button" class="${i.st === k ? 'on' : ''}" data-railshst="${k}" aria-pressed="${i.st === k}">${n}</button>`).join('')}</span></span></div>`;
   const html = `<section class="rail-card rail-short"><div class="rail-hrow"><h2 class="rail-h">Shortage</h2><button class="link small" type="button" data-railgo="shortage">Otevřít</button></div>
-    <p class="rail-sum"><span class="tag">${items.length} ${items.length === 1 ? 'položka' : items.length <= 4 && items.length ? 'položky' : 'položek'}</span>${top.length ? `<span class="tag crit">${top.length} TOP</span>` : ''}${top2.length ? `<span class="tag warn">${top2.length} TOP 2</span>` : ''}${rec ? `<span class="tag">se záznamem ${rec}</span>` : ''}</p>
+    <p class="rail-sum"><span class="tag">${items.length} ${items.length === 1 ? 'položka' : items.length <= 4 && items.length ? 'položky' : 'položek'}</span>${top.length ? `<span class="tag crit">${top.length} TOP</span>` : ''}${top2.length ? `<span class="tag warn">${top2.length} TOP 2</span>` : ''}${old ? `<span class="tag warn">2 a více dní ${old}</span>` : ''}${rec ? `<span class="tag">se záznamem ${rec}</span>` : ''}</p>
     ${shown.length ? `<div class="rail-tlist">${shown.map(row).join('')}</div>` : '<p class="small muted">Seznam je prázdný.</p>'}
     <p class="tiny muted rail-shfile">${esc(l.file || '')}${l.at ? ` · ${esc(tsText(l.at))}` : ''}</p></section>`;
-  return { sig: [l.id, l.at, items.length, top.length, top2.length, rec, shown.map(i => [i.id, i.name, i.qty, i.op, i.link, i.st, i.rec && i.rec.state])], html };
+  return { sig: [l.id, l.at, items.length, top.length, top2.length, rec, old, shown.map(i => [i.id, i.name, i.qty, i.op, i.link, i.st, i.rec && i.rec.state])], html };
 }
 // Kalendář (2.65): měsíc po dnech, svátky, víkendy a tečky událostí (úkoly s termínem, konce trestů,
 // poznámky). Po najetí (nebo klepnutí) na den bublina se soupisem a tlačítkem Přidat poznámku.
@@ -379,7 +387,7 @@ function bindRail() {
     }
     const sst = t.closest('[data-railshst]');
     if (sst) {
-      const l = ((S.shortage && S.shortage.lists) || [])[0], row = sst.closest('[data-railshid]');
+      const l = ((S.shortage && S.shortage.lists) || []).find(x => !x.packed), row = sst.closest('[data-railshid]');
       const it = l && row && l.items.find(x => x.id === row.dataset.railshid);
       if (!it) return;
       const st = it.st === sst.dataset.railshst ? '' : sst.dataset.railshst;   // znovu klepnutí stav zruší
