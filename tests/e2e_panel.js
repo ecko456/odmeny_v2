@@ -207,6 +207,50 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
   check(agOrder.filter(c => c === 'ag-hour').length >= 5, `hodinové značky v okně: ${agOrder}`);
   check(/každý den/.test(await page.textContent('#rail .ag-item')), 'opakování u úkolu');
   await page.screenshot({ path: path.join(shots, '02f-casova-osa.png') });
+  // 2.72.1: osa se posouvá (bez posuvníku, ani v panelu), úkol za 6 h jde doposunout, po odjetí myší plynulý návrat na teď
+  await page.evaluate(() => { const d = new Date(Date.now() + 6 * 3600e3); agAdd(S, { title: 'Večerní obchůzka', time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`, rep: 'once', date: todayIso(d.getTime()) }, { at: Date.now(), by: 'test' }); save(); _railSig = ''; renderRail(); });
+  await page.waitForSelector('#rail .ag-item[data-agts] .ag-body:has-text("Večerní obchůzka")', { state: 'attached' });
+  await saved();
+  const agSc = '#rail [data-agscroll]';
+  const agInfo = () => page.evaluate(sel => {
+    const sc = document.querySelector(sel), r = sc.getBoundingClientRect(), home = agAxisHome(sc), vis = el => { const b = el.getBoundingClientRect(); return b.bottom > r.top + 9 && b.top < r.bottom - 9; };   // okraje 8 px přechází do ztracena
+    const late = [...sc.querySelectorAll('.ag-item')].find(e => /Večerní obchůzka/.test(e.textContent));
+    return { top: Math.round(sc.scrollTop), h: sc.clientHeight, sh: sc.scrollHeight, bar: sc.offsetWidth - sc.clientWidth, xo: sc.scrollWidth - sc.clientWidth, sw: getComputedStyle(sc).scrollbarWidth, rail: getComputedStyle(document.querySelector('#rail')).scrollbarWidth,
+      nowY: Math.round(sc.querySelector('.ag-now').getBoundingClientRect().top - r.top), home: home && Math.round(home.top), first: ([...sc.querySelectorAll('.ag-hour')].find(vis) || {}).textContent, late: late && vis(late), railTop: document.querySelector('#rail').scrollTop };
+  }, agSc);
+  let ai = await agInfo();
+  const firstHour = await page.evaluate(() => { const from = Date.now() - 2 * 3600e3, d = new Date(from); d.setMinutes(0, 0, 0); let t = d.getTime(); if (t < from) t += 3600e3; return new Date(t).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' }); });
+  check(ai.sh > ai.h + 300 && ai.bar === 0 && ai.xo <= 0 && ai.sw === 'none' && ai.rail === 'none', `osa se posouvá a nemá posuvník (ani panel): ${JSON.stringify(ai)}`);
+  check(Math.abs(ai.top - ai.home) <= 1 && ai.first && ai.first.trim() === firstHour && ai.nowY > ai.h * 0.2 && ai.nowY < ai.h * 0.75 && ai.late === false, `výchozí okno 2 h zpět a 3 h dopředu (od ${firstHour}), úkol za 6 h mimo: ${JSON.stringify(ai)}`);
+  await page.emulateMedia({ reducedMotion: 'no-preference' });   // plynulý návrat (s omezeným pohybem skočí, viz níže)
+  const scBox = await page.$eval(agSc, el => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  await page.mouse.move(scBox.x, scBox.y);
+  for (let k = 0; k < 12 && !(await agInfo()).late; k++) { await page.mouse.wheel(0, 60); await page.waitForTimeout(120); }
+  await page.waitForTimeout(300);
+  const moved = await agInfo();
+  check(moved.late === true && moved.top > ai.home + 100 && moved.railTop === ai.railTop, `posunutím je vidět i úkol za 6 h, panel se neposune: ${JSON.stringify(moved)}`);
+  await page.screenshot({ path: path.join(shots, '02g-casova-osa-posunuta.png') });
+  await page.evaluate(() => { _railSig = ''; renderRail(); });   // překreslení (každou minutu) posunutou osu nechá
+  const kept = (await agInfo()).top;
+  check(Math.abs(kept - moved.top) <= 2, `překreslení osu nevrátí, dokud je nad ní myš: ${kept} ≠ ${moved.top}`);
+  const samples = page.evaluate(sel => new Promise(res => { const sc = document.querySelector(sel), v = [], t0 = performance.now(); const tick = () => { v.push(Math.round(sc.scrollTop)); if (performance.now() - t0 < 2000) requestAnimationFrame(tick); else res(v); }; tick(); }), agSc);
+  await page.mouse.move(5, 5);
+  const path0 = await samples;
+  ai = await agInfo();
+  const mids = new Set(path0.filter(v => v < kept - 10 && v > ai.home + 10));
+  check(Math.abs(ai.top - ai.home) <= 1 && mids.size >= 2 && ai.late === false, `po odjetí myší se osa plynule vrátí na teď: ${JSON.stringify({ ai, path: path0.filter((v, i) => i % 4 === 0) })}`);
+  // s omezeným pohybem (nastavení systému) se vrátí hned, bez animace
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.mouse.move(scBox.x, scBox.y);
+  for (let k = 0; k < 4; k++) { await page.mouse.wheel(0, 80); await page.waitForTimeout(80); }
+  await page.waitForFunction(sel => { const sc = document.querySelector(sel); return sc.scrollTop > agAxisHome(sc).top + 100; }, agSc);
+  await page.mouse.move(5, 5);
+  await page.waitForTimeout(250);
+  ai = await agInfo();
+  check(Math.abs(ai.top - ai.home) <= 1, `s omezeným pohybem se osa vrátí hned: ${JSON.stringify(ai)}`);
+  await page.evaluate(() => { S.agenda = S.agenda.filter(x => x.title !== 'Večerní obchůzka'); save(); _railSig = ''; renderRail(); });
+  await page.waitForFunction(() => !document.querySelector('#rail .ag-item[data-agts]') || ![...document.querySelectorAll('#rail .ag-item')].some(e => /Večerní obchůzka/.test(e.textContent)));
+  await saved();
   await page.click('#rail .ag-item [data-agdone]');
   await page.waitForFunction(() => Object.keys(S.agenda[0].done).length === 1);
   await saved();

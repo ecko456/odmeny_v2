@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.72.1
+
+- Časová osa v pravém panelu se dá posouvat kolečkem myši, prstem nebo šipkami: 12 hodin zpět
+  a 24 hodin dopředu. Výchozí poloha zůstává 2 hodiny zpět a 3 hodiny dopředu.
+- Když myš z osy odjede, osa se plynule vrátí na teď. Na dotyku se vrátí po 5 vteřinách bez
+  pohybu, s klávesnicí po odchodu z osy. S omezeným pohybem v systému se vrátí hned, bez animace.
+  Překreslení panelu (každou minutu) posunutou osu nevrátí, dokud je nad ní myš.
+- Osa ani celý pravý panel nemají posuvník (posouvání funguje dál). Osa se na okrajích jemně
+  ztrácí, panel se při posouvání osy nehýbe.
+- Data beze změny.
+
 ## Co je nového ve verzi 2.72
 
 - Shortage, neshoda objednávky / line: když první list výrobního plánu zná EAN položky, ale ne

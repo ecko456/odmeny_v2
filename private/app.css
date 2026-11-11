@@ -3312,3 +3312,10 @@ table.sh-tab tr.sh-depthead td { white-space: normal; }
 .sh-sent { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 6px; margin-top: 6px; }
 .sh-sent .tag { white-space: normal; }
 .sh-rzsent { margin-top: 4px; }
+
+/* Časová osa se posouvá a panel je bez posuvníku (2.72.1): posouvá se kolečkem, prstem i šipkami */
+.ag-scroll { position: relative; margin-left: -4px; padding-left: 4px; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 8px, #000 calc(100% - 8px), transparent 100%); mask-image: linear-gradient(to bottom, transparent 0, #000 8px, #000 calc(100% - 8px), transparent 100%); }
+.ag-scroll:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 60%, transparent); outline-offset: 2px; border-radius: 10px; }
+.ag-scroll::-webkit-scrollbar, .rail::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.rail, html.rail-open .rail { scrollbar-width: none; }

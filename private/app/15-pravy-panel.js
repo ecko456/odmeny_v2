@@ -151,9 +151,11 @@ async function railCalNote(iso) {
 }
 // Časová osa (2.66): pod kalendářem, 2 hodiny zpět a 3 dopředu od teď. Hodiny jako značky na ose,
 // úkoly v pořadí času, čára „teď“ mezi minulými a budoucími. Klepnutí na kroužek = splněno v ten den.
+// Od 2.72.1 se osa posouvá (12 h zpět, 24 h dopředu), okno 2 h zpět a 3 h dopředu je výchozí poloha.
 const AG_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>';
+const AG_SPAN_BACK = 12, AG_SPAN_AHEAD = 24, AG_TOUCH_HOME = 5000;
 function railAgenda(now) {
-  const w = agWindow(S.agenda || [], now);
+  const w = agWindow(S.agenda || [], now, AG_SPAN_BACK, AG_SPAN_AHEAD);
   const hm = ts => new Date(ts).toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' });
   // hodinové značky v okně
   const marks = [];
@@ -162,15 +164,15 @@ function railAgenda(now) {
   const rows = [...marks, { ts: now, k: 'now' }, ...w.items.map(o => ({ ts: o.ts, k: 'i', o }))]
     .sort((a, b) => a.ts - b.ts || (a.k === 'h' ? -1 : b.k === 'h' ? 1 : a.k === 'now' ? (b.o && b.o.past ? 1 : -1) : 0));
   const row = r => {
-    if (r.k === 'h') return `<div class="ag-hour${r.ts < now ? ' past' : ''}"><span>${esc(hm(r.ts))}</span></div>`;
-    if (r.k === 'now') return `<div class="ag-now" aria-label="Teď"><span>teď ${esc(hm(now))}</span></div>`;
+    if (r.k === 'h') return `<div class="ag-hour${r.ts < now ? ' past' : ''}" data-agts="${r.ts}"><span>${esc(hm(r.ts))}</span></div>`;
+    if (r.k === 'now') return `<div class="ag-now" data-agts="${now}" aria-label="Teď"><span>teď ${esc(hm(now))}</span></div>`;
     const { x, iso, done, past, other } = r.o;
-    return `<div class="ag-item${past ? ' past' : ''}${done ? ' done' : ''}${past && !done ? ' miss' : ''}" data-agid="${esc(x.id)}" data-agday="${iso}">
+    return `<div class="ag-item${past ? ' past' : ''}${done ? ' done' : ''}${past && !done ? ' miss' : ''}" data-agid="${esc(x.id)}" data-agday="${iso}" data-agts="${r.ts}">
       <button type="button" class="ag-dot" data-agdone aria-pressed="${done}" title="${done ? 'Splněno: klepnutím zrušíš' : 'Označit jako splněné'}" aria-label="${done ? 'Zrušit splnění' : 'Splněno'}: ${esc(x.title)}">${done ? AG_ICON : ''}</button>
       <button type="button" class="ag-body" data-agedit title="Upravit"><b>${esc(x.time)}${other ? ` <small>${esc(dayText(iso, false))}</small>` : ''}</b><span>${esc(x.title)}</span>${x.rep !== 'once' ? `<em>${esc(agRepName(x.rep).toLowerCase())}${x.work ? ' · pracovní dny' : ''}</em>` : ''}</button></div>`;
   };
   const html = `<section class="rail-card rail-agenda"><div class="rail-hrow"><h2 class="rail-h">Časová osa</h2><button class="link small" type="button" data-agadd>+ Přidat</button></div>
-    <div class="ag-axis">${rows.map(row).join('')}</div>
+    <div class="ag-scroll" data-agscroll tabindex="0" title="Posouvej kolečkem myši, po odjetí se osa vrátí na teď" aria-label="Časová osa: posouvá se kolečkem myši, prstem nebo šipkami"><div class="ag-axis">${rows.map(row).join('')}</div></div>
     ${w.items.length ? '' : '<p class="small muted ag-empty">V tomto čase nic naplánovaného.</p>'}</section>`;
   return { sig: [Math.floor(now / 60e3), w.items.map(o => [o.x.id, o.iso, o.x.time, o.x.title, o.x.rep, o.done])], html };
 }
@@ -212,6 +214,72 @@ async function agDialog(x) {
   save(); _railSig = ''; renderRail();
   if (ui.view === 'ukoly') renderTasks();
   toast(x ? 'Úkol upraven.' : `Přidáno na ${r.time}${r.rep !== 'once' ? `, ${agRepName(r.rep).toLowerCase()}` : ''}.`);
+}
+/* Posouvání časové osy (2.72.1): okno 2 h zpět a 3 h dopředu je výchozí poloha i výška. Kdo osu
+   posune, uvidí dřív i později; po odjetí myší (dotyk: po chvíli bez pohybu, klávesnice: po odchodu
+   fokusu) se plynule vrátí na teď. Překreslení panelu (každou minutu) posunutou osu nechá, kde je. */
+const agUi = { away: false, user: false, hover: false, top: 0, timer: 0, raf: 0 };
+function agAxisHome(sc) {
+  const rows = [...sc.querySelectorAll('[data-agts]')];
+  if (!rows.length) return null;
+  const now = Date.now(), from = now - AG_BACK * 3600e3, to = now + AG_AHEAD * 3600e3;
+  const box = sc.getBoundingClientRect(), y = el => el.getBoundingClientRect().top - box.top + sc.scrollTop;
+  const first = rows.find(el => +el.dataset.agts >= from) || rows[0];
+  const last = [...rows].reverse().find(el => +el.dataset.agts <= to) || rows[rows.length - 1];
+  const top = Math.max(0, y(first) - 8), bottom = y(last) + last.offsetHeight + 8;
+  return { top, height: Math.round(Math.min(440, Math.max(180, bottom - top))) };
+}
+function agGoHome() {
+  clearTimeout(agUi.timer);
+  agUi.away = false; agUi.user = false;
+  const sc = $('#rail [data-agscroll]');
+  const home = sc && agAxisHome(sc);
+  if (!home) return;
+  // vlastní animace (scrollTo smooth prohlížeč s vypnutým plynulým posouváním skočí), zpomaluje ke konci
+  const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const from = sc.scrollTop, d = home.top - from;
+  cancelAnimationFrame(agUi.raf);
+  if (calm || Math.abs(d) < 2) { sc.scrollTop = home.top; return; }
+  const t0 = performance.now(), dur = Math.min(750, 320 + Math.abs(d) * 0.35);
+  const step = t => {
+    if (agUi.user) return;   // uživatel znovu posouvá: nechat ho
+    const k = Math.min(1, (t - t0) / dur);
+    sc.scrollTop = from + d * (1 - Math.pow(1 - k, 3));
+    if (k < 1) agUi.raf = requestAnimationFrame(step);
+  };
+  agUi.raf = requestAnimationFrame(step);
+}
+function agHomeLater(ms) { clearTimeout(agUi.timer); agUi.timer = setTimeout(agGoHome, ms); }
+// Myš nad osou sleduje jeden posluchač na stránce: panel se každou minutu překresluje a nový prvek
+// osy by vjetí myši (a tedy ani odjetí) nemusel zachytit.
+let agMoveBound = false;
+function agMouseOut() { if (agUi.hover) { agUi.hover = false; if (agUi.away || agUi.user) agHomeLater(120); } }
+function agBindMove() {
+  if (agMoveBound) return;
+  agMoveBound = true;
+  document.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    const inside = !!(e.target && e.target.closest && e.target.closest('#rail [data-agscroll]'));
+    if (inside && !agUi.hover) { agUi.hover = true; clearTimeout(agUi.timer); } else if (!inside) agMouseOut();
+  }, { passive: true });
+  document.documentElement.addEventListener('mouseleave', agMouseOut);
+}
+function agAxisInit() {
+  const sc = $('#rail [data-agscroll]');
+  if (!sc || !sc.getClientRects().length) return;
+  const home = agAxisHome(sc);
+  if (!home) return;
+  sc.style.height = `${home.height}px`;
+  sc.scrollTop = agUi.away ? agUi.top : home.top;
+  agBindMove();
+  const user = () => { agUi.user = true; clearTimeout(agUi.timer); cancelAnimationFrame(agUi.raf); };
+  ['wheel', 'touchstart', 'pointerdown', 'keydown'].forEach(ev => sc.addEventListener(ev, user, { passive: true }));
+  sc.addEventListener('wheel', () => { agUi.hover = true; }, { passive: true });   // kolečko = myš je nad osou
+  sc.addEventListener('scroll', () => { if (agUi.user) { agUi.away = true; agUi.top = sc.scrollTop; } }, { passive: true });
+  // dotyk „odjede“ hned po zvednutí prstu (i při posouvání), proto osa počká
+  sc.addEventListener('pointerleave', e => { if (e.pointerType !== 'mouse') agHomeLater(AG_TOUCH_HOME); });
+  sc.addEventListener('touchend', () => agHomeLater(AG_TOUCH_HOME), { passive: true });
+  sc.addEventListener('focusout', e => { if (!sc.contains(e.relatedTarget) && !agUi.hover) agHomeLater(120); });
 }
 let _railSig = '';
 function renderRail() {
@@ -269,6 +337,7 @@ function renderRail() {
       ${logs.length ? logs.map(logRow).join('') : '<p class="small muted">Za poslední 3 dny žádné změny.</p>'}</section>
   </div></div>`;
   if (keepIso && $(`#rail [data-calday="${keepIso}"]`)) railCalShow(keepIso, true);
+  agAxisInit();
 }
 function bindRail() {
   const box = $('#rail');

@@ -34,6 +34,26 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 11. 2026 (verze 2.72.1):
+
+- Uživatel: „aby šlo v časové ose scrollovat a vyjetí mimo myší, aby se plynule vrátilo na aktuální
+  čas. Jen klidně bych odebral ten postranní scrolovací panel pokud to jde, ruší to celkem vzhled panelu.“
+  - `railAgenda` bere `agWindow(…, AG_SPAN_BACK 12, AG_SPAN_AHEAD 24)`, řádky mají `data-agts`, osa je
+    v `.ag-scroll[data-agscroll]` (tabindex, title). `agAxisHome(sc)` = výchozí poloha a výška
+    (první řádek od teď − `AG_BACK`, poslední do teď + `AG_AHEAD`, výška 180–440 px), `agAxisInit()`
+    po každém `renderRail` (výška přes `style`, posluchače na novém prvku), stav `agUi {away, user,
+    hover, top, timer, raf}`: posunutá osa zůstane i po překreslení. Návrat `agGoHome` je vlastní
+    animace přes `requestAnimationFrame` (ease-out, 320–750 ms; `scrollTo` smooth v prohlížeči
+    s vypnutým plynulým posouváním skočí), s `prefers-reduced-motion` hned. Myš: po odjetí 120 ms, nad osou
+    je podle jednoho `pointermove` na stránce (`agBindMove`; nový prvek osy po minutovém překreslení
+    by vjetí ani odjetí nezachytil, v souběžných testech to padalo), dotyk: `AG_TOUCH_HOME` 5 s,
+    klávesnice: `focusout`.
+  - CSS na konci `app.css`: `.ag-scroll` (`overscroll-behavior: contain`, maska na okrajích 8 px,
+    `padding-left` 4 px kvůli kroužkům úkolů), bez posuvníku i `.rail` a `html.rail-open .rail`.
+  - Testy: `e2e_panel` (posouvání bez posuvníku, výchozí okno, úkol za 6 h jen posunutím, panel se
+    nehýbe, překreslení, plynulý návrat přes `emulateMedia` no-preference, s omezeným pohybem hned).
+    `ODM_VERSION` 2.72.1, data beze změny (50).
+
 Stav k 11. 11. 2026 (verze 2.72):
 
 - Uživatel: „Pokud nastane ‚Neshoda objednávky / line‘ tak bych potřeboval mít možnost rozevíracího
@@ -2691,7 +2711,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.70 | `04478bb` | Shortage ze samostatné aplikace (urgenty A–S, poznámka od plánování, plán ze dvou listů, QR varianty, evidence předem, úprava položek, poddíly všech operací) (data verze 48) |
 | 2.71 | `b3256ac` | Shortage – množství zakázky z výrobního plánu, odesláno na WPA z evidence pohybu, díl u nás (data verze 49) |
 | 2.71.1 | `8184841` | Shortage – chybějící kusy po odeslání na WPA jsou u nás |
-| 2.72 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – nabídka alternativních objednávek z plánu při neshodě objednávky / line (data verze 50) |
+| 2.72 | `ce9ffce` | Shortage – nabídka alternativních objednávek z plánu při neshodě objednávky / line (data verze 50) |
+| 2.72.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: časová osa se posouvá a vrací na teď, panel bez posuvníku |
 
 Verze 2.1 přidala:
 
