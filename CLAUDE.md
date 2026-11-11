@@ -34,6 +34,35 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 11. 2026 (verze 2.71):
+
+- Uživatel: „ty shortage načtou množství zakázky z výrobního plánu a dokud to množství nevyplní
+  v evidenci ‚Odesláno na WPA‘ … pokud tam budou nějaké ks chybět a zároveň urgentní položka měla
+  interní záznam jiný než ‚Odesláno na WPA‘ tak to počítá s tím, že díl je stále u nás“.
+  - Data (verze 49): položka i poddíl `oqty` (číslo, jen když je), seznam `sent {kód: [[ts, ks]]}`
+    (`shSentClean`: bez duplicit ts|ks, nejnovější do `SH_MAX_SENT` 3000, i pro nepřiřazené kódy).
+  - Core (23-shortage): `shQtyNum` („1 200“, „12 ks“, „2,5“), `shRecBuild` vrací i `sent` (každý
+    řádek se stavem `shWpa` a číselnými kusy), `shApplyRecs(list, recs, meta, sent)` → `out.sent`,
+    `sentCodes`; `shSentEntries` (uložené + poslední záznam, když je odeslání: data ze 2.70),
+    `shSentOf(list, x)` → `{st done|here|part|open|info, order, sent, left, n, last}`,
+    `SH_SENT_ST`, `shSentText`. Plán: `SH_COLS.planItem.qty`, `SH_COLS.plan.qty` (volitelné),
+    `shPlanDirectRow(…, qty)` (`plan.qty` klíč → kód → ks, stejný řádek víckrát = větší),
+    `shPlanRow(…, qty)`, `shApplyPlan` (1. list podle kódu, jinak největší; bez 1. listu vlastní
+    řádek sestavy ve 2. listu; poddíly ze 2. listu; bez hodnoty zůstane dřívější/ruční), `out.qty`.
+    `SH_COL_WORDS` order bez slov o množství (lookahead). `shAnalysis(it, list)` (`sent`, věta),
+    `shAnalysisSheet` 4 sloupce na konci.
+  - UI: `shSentSum(l)`, `sentHtml` v buňce operace (položka, sestava i poddíl, `[data-shsent]`),
+    dlaždice Poslední záznam „u nás N“, hláška po evidenci, `shPlanNote` (`res.qty`), PDF pod
+    záznamem (`L.sent`, „U nás“ tučně; orientační řádek sestavy bez stavu), rozbor, pole
+    `oqty` v `shManualDialog`, kontrola vlastního sloupce množství v `shColsDialog`.
+  - Server: `ODM_AI_SH_FIELDS` planItem/plan + `qty`, prompt.
+  - Výklad: „u nás“ jen když chybí kusy **a** poslední záznam existuje a není odeslání; poslední
+    záznam odeslání a chybí kusy = „odesláno X z Y, zbývá“ (zadání to neřešilo).
+  - Testy: core „Shortage (2.71)“, upravené 2.28/2.29/2.61/2.70 (nová pole výsledků), `test_odmeny`
+    (`qty`, 426 pro 48), `e2e_shkroky` (plán s množstvím, evidence s WPA, tabulka, hláška, PDF,
+    Excel rozboru, úprava tužkou), `e2e_upgrade_prev` 2.70 → 2.71 (archiv `04478bb`).
+    `ODM_VERSION` 2.71.
+
 Stav k 11. 11. 2026 (verze 2.70):
 
 - Uživatel upravoval Shortage externě v samostatné aplikaci `ecko456/shortage` (Electron pro
@@ -2620,7 +2649,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.68 | `2d4e65e` | vysouvací pravý panel na tabletu a menším monitoru (tlačítko u pravého okraje) |
 | 2.69 | `ad4daf6` | plán v Kapacitách a zaškolení z Plánu kapacit, v přesčas a práci ve svátek plán poloviční |
 | 2.69.1 | `ce1ae20` | KPI přehled spojí kusy s lidmi v práci (lidé z docházky, kusy na osobu i bez skupin Matice) |
-| 2.70 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage ze samostatné aplikace (urgenty A–S, poznámka od plánování, plán ze dvou listů, QR varianty, evidence předem, úprava položek, poddíly všech operací) (data verze 48) |
+| 2.70 | `04478bb` | Shortage ze samostatné aplikace (urgenty A–S, poznámka od plánování, plán ze dvou listů, QR varianty, evidence předem, úprava položek, poddíly všech operací) (data verze 48) |
+| 2.71 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – množství zakázky z výrobního plánu, odesláno na WPA z evidence pohybu, díl u nás (data verze 49) |
 
 Verze 2.1 přidala:
 
@@ -2733,7 +2763,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `48` (od 2.70):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `49` (od 2.71):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

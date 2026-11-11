@@ -393,8 +393,8 @@ function odm_ai_columns(array $sheets): array
 /* ---------- sloupce tří importů Shortage (2.61) ---------- */
 const ODM_AI_SH_FIELDS = [
     'list' => ['order', 'name', 'ean', 'index', 'qty', 'top', 'op', 'note'],
-    'planItem' => ['ean', 'order', 'index', 'op'],
-    'plan' => ['asm', 'sub', 'index', 'order', 'op'],
+    'planItem' => ['ean', 'order', 'index', 'op', 'qty'],
+    'plan' => ['asm', 'sub', 'index', 'order', 'op', 'qty'],
     'move' => ['code', 'when', 'qty', 'state', 'op'],
 ];
 const ODM_AI_SH_SYSTEM = <<<'TXT'
@@ -402,8 +402,8 @@ Pomáháš nastavit import Excelu do aplikace pro výrobu (chybějící díly, S
 
 Druhy importu a pole:
 - list = tabulka urgentních (chybějících) dílů: order číslo objednávky, name název dílu, ean EAN dílu (bývá s odkazem), index (také line), qty urgentní množství, top sloupec s textem TOP / TOP2 (priorita), op probíhající operace nebo oddělení v procesu, note poznámka od plánování. Široká tabulka urgentů A–S mívá A EAN, C název, F objednávku, G index (ne prioritu), H množství a S oddělení v procesu, které je zároveň poznámkou od plánování (op i note = S, top prázdné).
-- planItem = 1. list výrobního plánu (díly bez sestav): ean EAN dílu (bývá s odkazem), order číslo objednávky, index line / index, op probíhající operace.
-- plan = 2. list výrobního plánu (sestavy a poddíly): asm EAN sestavy, sub EAN poddílu (komponenty), index, order číslo objednávky, op probíhající operace. sheet = název listu s plánem.
+- planItem = 1. list výrobního plánu (díly bez sestav): ean EAN dílu (bývá s odkazem), order číslo objednávky, index line / index, op probíhající operace, qty množství zakázky (celkový počet kusů objednávky, ne vyrobeno ani zbývá; když není, prázdné).
+- plan = 2. list výrobního plánu (sestavy a poddíly): asm EAN sestavy, sub EAN poddílu (komponenty), index, order číslo objednávky, op probíhající operace, qty množství zakázky poddílu (když není, prázdné). sheet = název listu s plánem.
 - move = evidence pohybu (záznamy o operacích dílů): code QR kód / čárový kód dílu, when datum a čas záznamu, qty počet kusů, state stav nebo událost, op operace nebo pracoviště.
 
 Pravidla:

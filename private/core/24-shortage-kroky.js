@@ -4,8 +4,8 @@
    řádků (jen nadpisy a typy buněk), bez AI odhad podle nadpisů; nastavení se pamatuje. */
 const SH_COLS={
   list:{order:"A",name:"B",ean:"C",index:"D",qty:"E",top:"G",op:"H",note:""},
-  planItem:{ean:"A",order:"",index:"",op:""},
-  plan:{asm:"A",sub:"E",index:"H",order:"M",op:"AM"},
+  planItem:{ean:"A",order:"",index:"",op:"",qty:""},
+  plan:{asm:"A",sub:"E",index:"H",order:"M",op:"AM",qty:""},
   move:{code:"A",when:"B",qty:"C",state:"D",op:""},
 };
 const SH_URGENT_COLS={order:"F",name:"C",ean:"A",index:"G",qty:"H",top:"",op:"S",note:"S"};
@@ -22,14 +22,15 @@ function shListBase(rows,saved){
 const SH_COL_NEED={list:["ean"],planItem:["ean"],plan:["asm","sub"],move:["code","when"]};
 const SH_COL_NAMES={
   list:{order:"Číslo objednávky",name:"Název dílu",ean:"EAN (s odkazem, barva = TOP)",index:"Index",qty:"Urgentní množství",top:"TOP (text)",op:"Oddělení / operace v procesu",note:"Poznámka od plánování"},
-  planItem:{ean:"EAN dílu (s odkazem)",order:"Číslo objednávky",index:"Line / index",op:"Probíhající operace (volitelné)"},
-  plan:{asm:"EAN sestavy",sub:"EAN poddílu (s odkazem)",index:"Index",order:"Číslo objednávky",op:"Probíhající operace"},
+  planItem:{ean:"EAN dílu (s odkazem)",order:"Číslo objednávky",index:"Line / index",op:"Probíhající operace (volitelné)",qty:"Množství zakázky (volitelné)"},
+  plan:{asm:"EAN sestavy",sub:"EAN poddílu (s odkazem)",index:"Index",order:"Číslo objednávky",op:"Probíhající operace",qty:"Množství zakázky (volitelné)"},
   move:{code:"QR kód",when:"Datum a čas",qty:"Počet ks",state:"Stav",op:"Operace / pracoviště"},
 };
 const SH_COL_WORDS={
   list:{order:/objedn|zakaz/,name:/nazev|popis|^dil\b/,ean:/\bean\b|carov/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,qty:/mnozstv|urgent|^ks\b|pocet/,top:/^top\b|priorit/,op:/operac|probih|oddeleni|kde.*proces/,note:/poznam|planovan/},
-  planItem:{ean:/\bean\b|carov/,order:/objedn|zakaz|\border\b/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,op:/probih|operac/},
-  plan:{asm:/sestav/,sub:/poddil|komponent/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,order:/objedn|zakaz/,op:/probih|operac/},
+  // „Množství zakázky“ není číslo objednávky (2.71): objednávka bez slov o množství
+  planItem:{ean:/\bean\b|carov/,order:/^(?!.*(mnozstv|pocet|\bks\b|\bqty\b)).*(objedn|zakaz|\border\b)/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,op:/probih|operac/,qty:/mnozstv|^pocet|\bks\b|\bqty\b|quantity/},
+  plan:{asm:/sestav/,sub:/poddil|komponent/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,order:/^(?!.*(mnozstv|pocet|\bks\b|\bqty\b)).*(objedn|zakaz)/,op:/probih|operac/,qty:/mnozstv|^pocet|\bks\b|\bqty\b|quantity/},
   move:{code:/\bqr\b|barcode|^kod/,when:/datum|\bcas\b|time/,qty:/\bks\b|mnozstv|pocet/,state:/stav|status|udalost/,op:/operac|pracovist/},
 };
 const SH_TIERS=["top","top2","none"],SH_MAX_COLORS=40;
@@ -142,27 +143,34 @@ function shAiSample(sheets){
  * poslední záznam z evidence pohybu, subs = všechny poddíly z plánu (Hala 2 i jiné operace) se
  * záznamem, note = věta do poznámky.
  */
-function shAnalysis(it){
+function shAnalysis(it,list){
   const rec=it.rec||null;
-  const subs=[...(it.subs||[]).map(s=>({...s,rec:s.rec||null,hall:shSubOp(s.op),byRec:!!s.byRec})),
+  // 2.71: množství zakázky proti odeslanému na WPA (list = seznam se záznamy „Odesláno na WPA“)
+  const sent=shSentOf(list,it);
+  const subs=[...(it.subs||[]).map(s=>({...s,rec:s.rec||null,hall:shSubOp(s.op),byRec:!!s.byRec,sent:shSentOf(list,s)})),
     ...(it.cands||[]).map(c=>({ean:c.ean,code:c.code,op:c.op,rec:null,hall:false,byRec:false}))];
   const cur=it.op||it.pop||"";
   const recText=r=>[r.state,r.op&&!String(r.state||"").includes(r.op)?r.op:"",r.qty?(/^[\d\s.,]+$/.test(r.qty)?r.qty+" ks":r.qty):"",r.when].filter(Boolean).join(", ");
   const noRec=subs.filter(s=>!s.rec).length;
   const parts=[cur?"Probíhá: "+cur:"Probíhající operace neuvedena",
     rec?"poslední záznam: "+recText(rec)+(rec.n>1?" ("+rec.n+(rec.n<=4?" záznamy)":" záznamů)"):""):"bez interního záznamu"];
+  if(sent)parts.push(shSentText(sent));
   if(subs.length)parts.push("poddíly "+subs.length+(noRec?" ("+noRec+" bez záznamu)":", všechny se záznamem"));
-  return {cur,last:rec,internal:!!rec,subs,noRec,note:parts.join(" · ").slice(0,300),recText};
+  const here=subs.filter(s=>s.sent&&s.sent.st==="here").length;
+  if(here)parts.push("u nás "+here+" "+(here===1?"poddíl":here<=4?"poddíly":"poddílů"));
+  return {cur,last:rec,internal:!!rec,subs,noRec,sent,note:parts.join(" · ").slice(0,300),recText};
 }
 /** Rozbor seznamu do Excelu: položky a pod nimi všechny poddíly. */
 function shAnalysisSheet(l){
-  const rows=[["#","Typ","TOP","Číslo objednávky","Název dílu","EAN","Index","Urgentní množství","QR kód","Probíhající operace","Poslední záznam: stav","Operace v záznamu","Ks v záznamu","Datum a čas záznamu","Počet záznamů","Interní záznam","Poznámka","Rozbor"]];
+  // 2.71 na konci: množství zakázky, odesláno na WPA, zbývá, díl u nás
+  const rows=[["#","Typ","TOP","Číslo objednávky","Název dílu","EAN","Index","Urgentní množství","QR kód","Probíhající operace","Poslední záznam: stav","Operace v záznamu","Ks v záznamu","Datum a čas záznamu","Počet záznamů","Interní záznam","Poznámka","Rozbor","Množství zakázky","Odesláno na WPA (ks)","Zbývá (ks)","Díl u nás"]];
+  const qcols=x=>x?[x.order==null?"":x.order,x.sent,x.left==null?"":x.left,x.st==="here"?"ano":x.st==="done"?"ne, odesláno vše":""]:["","","",""];
   (l&&l.items||[]).forEach((it,j)=>{
-    const a=shAnalysis(it),r=it.rec||{};
-    rows.push([j+1,a.subs.length?"sestava":"díl",it.top?"TOP SHORTAGE":it.top2?"TOP 2":"",it.order,it.name,it.ean,it.index,it.qty,it.code,a.cur,r.state||"",r.op||"",r.qty||"",r.when||"",r.n||(it.rec?1:0),it.rec?"ano":"ne",it.note||"",a.note]);
-    a.subs.forEach((s,k)=>{const q=s.rec||{};rows.push([(j+1)+"."+(k+1),s.hall?"poddíl":"poddíl (jiná operace)","",s.order||it.order,s.name||"",s.ean,s.index||it.index,s.qty||"",s.code,s.op,q.state||"",q.op||"",q.qty||"",q.when||"",q.n||(s.rec?1:0),s.rec?"ano":"ne",s.note||"",""]);});
+    const a=shAnalysis(it,l),r=it.rec||{};
+    rows.push([j+1,a.subs.length?"sestava":"díl",it.top?"TOP SHORTAGE":it.top2?"TOP 2":"",it.order,it.name,it.ean,it.index,it.qty,it.code,a.cur,r.state||"",r.op||"",r.qty||"",r.when||"",r.n||(it.rec?1:0),it.rec?"ano":"ne",it.note||"",a.note,...qcols(a.sent)]);
+    a.subs.forEach((s,k)=>{const q=s.rec||{};rows.push([(j+1)+"."+(k+1),s.hall?"poddíl":"poddíl (jiná operace)","",s.order||it.order,s.name||"",s.ean,s.index||it.index,s.qty||"",s.code,s.op,q.state||"",q.op||"",q.qty||"",q.when||"",q.n||(s.rec?1:0),s.rec?"ano":"ne",s.note||"","",...qcols(s.sent)]);});
   });
-  return {name:"Rozbor",rows,cols:[6,18,13,18,30,16,8,10,18,26,28,18,10,18,9,9,30,60]};
+  return {name:"Rozbor",rows,cols:[6,18,13,18,30,16,8,10,18,26,28,18,10,18,9,9,30,60,12,12,10,16]};
 }
 /** „22. 10. 2026 8:15“ ze časové značky seznamu. */
 function shWhen(l){return shWhenText(l.at||0);}
@@ -233,6 +241,13 @@ function shChanges(A,B,add){
     const recN=l.items.filter(i=>oi.has(i.id)&&JSON.stringify(oi.get(i.id).rec||null)!==JSON.stringify(i.rec||null)).length
       +[...ns.entries()].filter(([id,x])=>os.has(id)&&JSON.stringify(os.get(id).s.rec||null)!==JSON.stringify(x.s.rec||null)).length;
     if(recN)add("shortage","Shortage: poslední záznamy u "+recN+" "+(recN===1?"položky":"položek")+" seznamu "+shWhen(l),{m:"shz:"+l.id});
+    // 2.71: množství zakázky (plán nebo ručně) a nové záznamy „Odesláno na WPA“
+    const qch=[...l.items.filter(i=>oi.has(i.id)&&(oi.get(i.id).oqty??null)!==(i.oqty??null)).map(i=>({x:i,lab:"u položky "+label(i)})),
+      ...[...ns.entries()].filter(([id,x])=>os.has(id)&&(os.get(id).s.oqty??null)!==(x.s.oqty??null)).map(([id,x])=>({x:x.s,lab:"u poddílu "+(x.s.ean||x.s.code)+" položky "+label(x.i)}))];
+    if(qch.length===1)add("shortage","Shortage: množství zakázky "+qch[0].lab+" (seznam "+shWhen(l)+"): "+(qch[0].x.oqty!=null?nf(qch[0].x.oqty,3)+" ks":"smazáno"),{m:"shq:"+l.id+":"+qch[0].x.id});
+    else if(qch.length)add("shortage","Shortage: množství zakázky u "+qch.length+" položek a poddílů seznamu "+shWhen(l),{m:"shq:"+l.id});
+    const sentN=c=>Object.values(c||{}).reduce((a,v)=>a+v.length,0),sn=sentN(l.sent)-sentN(o.sent);
+    if(sn>0)add("shortage","Shortage: odesláno na WPA, "+sn+" "+(sn===1?"nový záznam":sn<=4?"nové záznamy":"nových záznamů")+" u seznamu "+shWhen(l),{m:"shw:"+l.id});
     // přesun kvůli změně TOP se jako změna pořadí nepočítá
     const keep=id=>oi.has(id)&&ni.has(id)&&shRank(oi.get(id))===shRank(ni.get(id))&&(oi.get(id).dept||"")===(ni.get(id).dept||"");
     if(ol.filter(keep).join()!==nl.filter(keep).join())add("shortage","Shortage: změněno pořadí položek v seznamu "+shWhen(l),{m:"sho:"+l.id});

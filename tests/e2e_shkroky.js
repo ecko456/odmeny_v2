@@ -46,36 +46,38 @@ for i, (o, n, e, x, q, op, f) in enumerate(rows):
     ws.append([o, n, e, x, q, op]); c = ws.cell(row=i + 3, column=3); c.hyperlink = L('5.0.%d' % (i + 1))
     if f: c.fill = fills[f]
 wb.save(out + '/urgenty.xlsx')
-# 2. výrobní plán (od 2.70 dva listy): list 1 díly bez sestav (A EAN s odkazem, B objednávka, C index, D operace),
-#    list 2 A objednávka, B EAN sestavy, C index, D EAN poddílu, E operace
-wb = Workbook(); ws = wb.active; ws.title = 'Díly'; ws.append(['EAN dílu', 'Objednávka', 'Index', 'Probíhající operace'])
-for i, (e, o, x, op, code) in enumerate([('8590000005002', 'OBJ-502', 'B', 'Frézování Hala 2', '5.2.2'), ('8590000005003', 'OBJ-503', 'C', 'Frézování Hala 2', '5.0.3'), ('8590000005004', 'OBJ-777', '', 'Brush Hala 2', '5.4.4')]):
-    ws.append([e, o, x, op]); ws.cell(row=i + 2, column=1).hyperlink = L(code)
-p = wb.create_sheet('Poddíly'); p.append(['Objednávka', 'EAN sestavy', 'Index', 'EAN poddílu', 'Probíhající operace'])
-plan = [('OBJ-501', '8590000005001', 'A', '8590000005001', 'Broušení – hala 2', None),
-        ('OBJ-501', '8590000005001', 'A', '8590000006001', 'Leštění – hala 2', '6.0.1'),
-        ('OBJ-501', '8590000005001', 'A', '8590000006002', 'Lakování', None),
-        ('OBJ-503', '8590000005003', 'C', '8590000005003', 'Frézování Hala 2', None),
-        ('OBJ-503', '8590000005003', 'C', '8590000006003', 'Montáž', '6.0.3'),
-        ('OBJ-999', '8590000009999', 'Z', '8590000009998', 'Broušení – hala 2', '9.9.8')]
-for i, (o, a, x, s, op, code) in enumerate(plan):
-    p.append([o, a, x, s, op])
+# 2. výrobní plán (od 2.70 dva listy): list 1 díly bez sestav (A EAN s odkazem, B objednávka, C index, D operace,
+#    E množství zakázky 2.71), list 2 A objednávka, B EAN sestavy, C index, D EAN poddílu, E operace, F množství zakázky
+wb = Workbook(); ws = wb.active; ws.title = 'Díly'; ws.append(['EAN dílu', 'Objednávka', 'Index', 'Probíhající operace', 'Množství zakázky'])
+for i, (e, o, x, op, code, q) in enumerate([('8590000005002', 'OBJ-502', 'B', 'Frézování Hala 2', '5.2.2', 10), ('8590000005003', 'OBJ-503', 'C', 'Frézování Hala 2', '5.0.3', 6), ('8590000005004', 'OBJ-777', '', 'Brush Hala 2', '5.4.4', 12)]):
+    ws.append([e, o, x, op, q]); ws.cell(row=i + 2, column=1).hyperlink = L(code)
+p = wb.create_sheet('Poddíly'); p.append(['Objednávka', 'EAN sestavy', 'Index', 'EAN poddílu', 'Probíhající operace', 'Množství zakázky'])
+plan = [('OBJ-501', '8590000005001', 'A', '8590000005001', 'Broušení – hala 2', None, 4),
+        ('OBJ-501', '8590000005001', 'A', '8590000006001', 'Leštění – hala 2', '6.0.1', 4),
+        ('OBJ-501', '8590000005001', 'A', '8590000006002', 'Lakování', None, 8),
+        ('OBJ-503', '8590000005003', 'C', '8590000005003', 'Frézování Hala 2', None, 6),
+        ('OBJ-503', '8590000005003', 'C', '8590000006003', 'Montáž', '6.0.3', 2),
+        ('OBJ-999', '8590000009999', 'Z', '8590000009998', 'Broušení – hala 2', '9.9.8', 1)]
+for i, (o, a, x, s, op, code, q) in enumerate(plan):
+    p.append([o, a, x, s, op, q])
     if code: p.cell(row=i + 2, column=4).hyperlink = L(code)
 wb.save(out + '/plan.xlsx')
 # 2.70: druhý plán, v 1. listu dva QR kódy pro stejný díl (EAN + objednávka + index), 2. list stejný
-wb2 = Workbook(); ws = wb2.active; ws.title = 'Díly'; ws.append(['EAN dílu', 'Objednávka', 'Index', 'Probíhající operace'])
+wb2 = Workbook(); ws = wb2.active; ws.title = 'Díly'; ws.append(['EAN dílu', 'Objednávka', 'Index', 'Probíhající operace', 'Množství zakázky'])
 for i, (code, op) in enumerate([('5.5.1', 'Leštění – hala 2'), ('5.5.2', 'Lakování')]):
-    ws.append(['8590000005005', 'OBJ-505', 'D', op]); ws.cell(row=i + 2, column=1).hyperlink = L(code)
+    ws.append(['8590000005005', 'OBJ-505', 'D', op, 1]); ws.cell(row=i + 2, column=1).hyperlink = L(code)
 p2 = wb2.create_sheet('Poddíly')
 for row in p.iter_rows(values_only=True): p2.append(list(row))
-for i, (o, a, x, s, op, code) in enumerate(plan):
+for i, (o, a, x, s, op, code, q) in enumerate(plan):
     if code: p2.cell(row=i + 2, column=4).hyperlink = L(code)
 wb2.save(out + '/plan2.xlsx')
 # 3. evidence pohybu: A pracoviště, B QR kód, C datum a čas, D ks, E stav
 wb = Workbook(); ws = wb.active; ws.title = 'Pohyb'
 ws.append(['Pracoviště', 'QR kód', 'Datum a čas', 'Ks', 'Stav'])
 for r in [('Brus 2', '5.0.1', '06.11.2026 07:10', 4, 'Hotovo'), ('Lakovna', '5.0.1', '06.11.2026 09:40', 4, 'Předáno'),
-          ('Fréza', '5.0.2', '05.11.2026 13:00', 2, 'Čeká na nástroj'), ('Montáž', '6.0.3', '06.11.2026 08:00', 1, 'Hotovo'), ('Sklad', '7.7.7', '06.11.2026 08:00', 1, 'Nic')]:
+          ('Fréza', '5.0.2', '05.11.2026 13:00', 2, 'Čeká na nástroj'), ('Montáž', '6.0.3', '06.11.2026 08:00', 1, 'Hotovo'), ('Sklad', '7.7.7', '06.11.2026 08:00', 1, 'Nic'),
+          # 2.71: odesláno na WPA (5.0.2 část zakázky, poslední záznam jiný = zbytek u nás; 6.0.3 celá zakázka)
+          ('Expedice', '5.0.2', '04.11.2026 10:00', 3, 'Odesláno na WPA'), ('Expedice', '6.0.3', '06.11.2026 07:30', 2, 'Odesláno na WPA')]:
     ws.append(list(r))
 wb.save(out + '/pohyb.xlsx')
 print('ok')`;
@@ -144,7 +146,7 @@ print('ok')`;
   await page.setInputFiles('#shPlanFile', file('plan.xlsx'));
   await dlgOpen(page, /výrobního plánu · 1\. list/);
   const pic = await page.$$eval('#dlg [data-shcol]', x => Object.fromEntries(x.map(s => [s.dataset.shcol, s.value])));
-  check(JSON.stringify(pic) === JSON.stringify({ ean: 'A', order: 'B', index: 'C', op: 'D' }), `sloupce 1. listu plánu: ${JSON.stringify(pic)}`);
+  check(JSON.stringify(pic) === JSON.stringify({ ean: 'A', order: 'B', index: 'C', op: 'D', qty: 'E' }), `sloupce 1. listu plánu: ${JSON.stringify(pic)}`);
   // stejný sloupec pro EAN a objednávku okno nepustí
   await page.selectOption('#dlg [name="c-order"]', 'A');
   await page.click('#dlgOk');
@@ -154,7 +156,7 @@ print('ok')`;
   await page.click('#dlgOk');
   await dlgOpen(page, /výrobního plánu · 2\. list/);
   const pc = await page.$$eval('#dlg [data-shcol]', x => Object.fromEntries(x.map(s => [s.dataset.shcol, s.value])));
-  check(JSON.stringify(pc) === JSON.stringify({ asm: 'B', sub: 'D', index: 'C', order: 'A', op: 'E' }), `sloupce 2. listu plánu: ${JSON.stringify(pc)}`);
+  check(JSON.stringify(pc) === JSON.stringify({ asm: 'B', sub: 'D', index: 'C', order: 'A', op: 'E', qty: 'F' }), `sloupce 2. listu plánu: ${JSON.stringify(pc)}`);
   await page.click('#dlgOk');
   await page.waitForFunction(() => S.shortage.lists[0].plan && !/Čtu/.test(document.querySelector('#shMsg').textContent), null, { timeout: 20000 });
   await saved(page);
@@ -175,17 +177,42 @@ print('ok')`;
   await saved(page);
   const mv = await page.evaluate(() => { const l = S.shortage.lists[0]; const a = l.items.find(x => x.ean === '8590000005001'), c = l.items.find(x => x.ean === '8590000005003'); return { rec: a.rec && [a.rec.state, a.rec.op, a.rec.n], sub: (c.subs[0] || {}).ean, subRec: c.subs[0] && c.subs[0].rec && c.subs[0].rec.state, moves: [l.moves.file, l.moves.rows] }; });
   check(JSON.stringify(mv.rec) === JSON.stringify(['Předáno', 'Lakovna', 2]), `poslední záznam s operací a počtem: ${JSON.stringify(mv)}`);
-  check(mv.sub === '8590000006003' && mv.subRec === 'Hotovo' && mv.moves[0] === 'pohyb.xlsx' && mv.moves[1] === 5, `poddíl s jinou operací přidaný záznamem, evidence u seznamu: ${JSON.stringify(mv)}`);
+  check(mv.sub === '8590000006003' && mv.subRec === 'Hotovo' && mv.moves[0] === 'pohyb.xlsx' && mv.moves[1] === 7, `poddíl s jinou operací přidaný záznamem, evidence u seznamu: ${JSON.stringify(mv)}`);
   check(/7\.7\.7/.test(await page.textContent('#shMsg')), 'kód mimo seznam se ohlásí');
   const steps2 = await page.$$eval('.sh-step', x => x.map(s => s.classList.contains('done')));
   check(steps2.every(Boolean) && /pohyb\.xlsx/.test(await page.textContent('#shSt3')), `všechny kroky hotové: ${JSON.stringify(steps2)}`);
   await page.screenshot({ path: path.join(shots, '03-kroky.png') });
 
+  // ---------- množství zakázky a odesláno na WPA (2.71) ----------
+  const sentSt = await page.evaluate(() => { const l = S.shortage.lists[0]; const f = e => l.items.find(x => x.ean === e); const g = (i, e) => i.subs.find(s => s.ean === e);
+    const s = x => { const r = shSentOf(l, x); return r && [r.st, r.order, r.sent, r.left]; };
+    return { i1: s(f('8590000005001')), i2: s(f('8590000005002')), i3: s(f('8590000005003')), i4: s(f('8590000005004')), s3: s(g(f('8590000005003'), '8590000006003')), s2: s(g(f('8590000005001'), '8590000006002')), oq: l.items.map(i => i.oqty ?? null), sent: l.sent }; });
+  check(JSON.stringify([sentSt.i1, sentSt.i2, sentSt.i3, sentSt.i4, sentSt.s3, sentSt.s2]) === JSON.stringify([['here', 4, 0, 4], ['here', 10, 3, 7], ['open', 6, 0, 6], null, ['done', 2, 2, 0], ['open', 8, 0, 8]]), `stav proti množství zakázky: ${JSON.stringify(sentSt)}`);
+  const sentUi = await page.$$eval('#shView tr', rs => rs.filter(r => r.querySelector('[data-shsent]')).map(r => [r.dataset.shid || r.dataset.shsub, r.querySelector('[data-shsent]').dataset.shsent, [...r.querySelector('[data-shsent]').children].map(c => c.textContent.trim()).join(' ')]));
+  const uiOf = st => sentUi.filter(x => x[1] === st).map(x => x[2]);
+  check(uiOf('here').some(t => /^U nás 7 ks odesláno na WPA 3 z 10 ks$/.test(t)) && uiOf('here').some(t => /^U nás 4 ks/.test(t)) && uiOf('done').some(t => /^Odesláno na WPA vše 2 z 2 ks$/.test(t)) && uiOf('open').length === 3, `stav v tabulce: ${JSON.stringify(sentUi)}`);
+  check(/u nás 2/.test(await page.textContent('#shView .stats')), 'dlaždice Poslední záznam: díly u nás');
+  check(/Odesláno na WPA: 2 nové záznamy s počtem kusů · díl u nás 2 · odesláno vše 1 · částečně 0/.test((await page.textContent('#shMsg')).replace(/\s+/g, ' ')), `hláška o odeslání: ${(await page.textContent('#shMsg')).replace(/\s+/g, ' ')}`);
+  await page.locator('#shView [data-shsent="here"]').first().scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, '03a-u-nas.png') });
+  // PDF: stav pod posledním záznamem
+  const [pdl] = await Promise.all([page.waitForEvent('download'), page.click('#shView [data-shpdf]')]);
+  const pf = path.join(S, 'shkroky-wpa.pdf');
+  await pdl.saveAs(pf);
+  const pt = spawnSync('python3', ['-c', 'import sys\ntry:\n import pypdf\n print(" ".join((p.extract_text() or "") for p in pypdf.PdfReader(sys.argv[1]).pages))\nexcept ImportError:\n print("BEZ-PYPDF")', pf], { encoding: 'utf8' });
+  const ptext = (pt.stdout || '').replace(/\s+/g, ' ');
+  if (!/BEZ-PYPDF/.test(ptext)) check(/U nás 7 ks · odesláno na WPA 3 z 10 ks/.test(ptext) && /Odesláno na WPA vše \(2 z 2 ks\)/.test(ptext) && /Zakázka 4 ks · na WPA zatím nic/.test(ptext) && !/Zakázka 6 ks/.test(ptext), `PDF se stavem odeslání (orientační řádek sestavy bez stavu): ${pt.stderr || ptext.slice(0, 400)}`);
+  spawnSync('python3', ['-c', 'import pymupdf,sys\nd=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2])', pf, path.join(shots, '03c-pdf-wpa.png')]);
+
   // ---------- úprava poddílu tužkou a QR varianty (2.70) ----------
   const sub3 = await page.evaluate(() => S.shortage.lists[0].items.find(x => x.ean === '8590000005003').subs[0].id);
   await page.click(`#shView [data-shedit="${sub3}"]`);
   await dlgOpen(page, /Upravit poddíl/);
-  check(await page.inputValue('#dlg [name="order"]') === 'OBJ-503' && await page.inputValue('#dlg [name="code"]') === '6.0.3', 'úprava poddílu: objednávka ze sestavy, kód');
+  check(await page.inputValue('#dlg [name="order"]') === 'OBJ-503' && await page.inputValue('#dlg [name="code"]') === '6.0.3' && await page.inputValue('#dlg [name="oqty"]') === '2', 'úprava poddílu: objednávka ze sestavy, kód, množství zakázky');
+  await page.fill('#dlg [name="oqty"]', 'deset');
+  await page.click('#dlgOk');
+  check(/Množství zakázky musí být počet kusů/.test(await page.textContent('#dlg')), 'množství zakázky jen číslo');
+  await page.fill('#dlg [name="oqty"]', '2');
   await page.fill('#dlg [name="op"]', 'Montáž ručně');
   await page.fill('#dlg [name="note"]', 'Upraveno ručně');
   await page.click('#dlgOk');
@@ -236,9 +263,9 @@ print('ok')`;
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('[data-shaxlsx]')]);
   const xf = path.join(S, dl.suggestedFilename());
   await dl.saveAs(xf);
-  const xr = spawnSync('python3', ['-c', 'import sys,json\nfrom openpyxl import load_workbook\nws=load_workbook(sys.argv[1]).active\nprint(json.dumps([ws.title]+[[c.value for c in r][:3]+[r[15].value] for r in ws.iter_rows()]))', xf], { encoding: 'utf8' });
+  const xr = spawnSync('python3', ['-c', 'import sys,json\nfrom openpyxl import load_workbook\nws=load_workbook(sys.argv[1]).active\nprint(json.dumps([ws.title]+[[c.value for c in r][:3]+[r[15].value, r[21].value if len(r)>21 else None] for r in ws.iter_rows()]))', xf], { encoding: 'utf8' });
   const xs = xr.status === 0 ? JSON.parse(xr.stdout) : [];
-  check(xs[0] === 'Rozbor' && xs.length === 1 + 1 + 5 + 3 && xs.some(r => Array.isArray(r) && r[1] === 'poddíl (jiná operace)'), `Excel rozboru: ${xr.stderr || JSON.stringify(xs).slice(0, 300)}`);
+  check(xs[0] === 'Rozbor' && xs.length === 1 + 1 + 5 + 3 && xs.some(r => Array.isArray(r) && r[1] === 'poddíl (jiná operace)') && xs[1][4] === 'Díl u nás' && xs.filter(r => Array.isArray(r) && r[4] === 'ano').length === 2, `Excel rozboru: ${xr.stderr || JSON.stringify(xs).slice(0, 300)}`);
 
   // ---------- znovu: sloupce zapamatované, barvy předvyplněné, Bez barev ----------
   await page.click('[data-shmode="list"]');
@@ -277,7 +304,7 @@ print('ok')`;
 
   // historie
   const log = (await page.evaluate(() => S.log.filter(e => e.kind === 'shortage').map(e => e.text))).join(' | ');
-  check(/sloupce urgentních dílů/.test(log) && /sloupce prvního listu výrobního plánu: EAN dílu A, Číslo objednávky B/.test(log) && /sloupce druhého listu výrobního plánu/.test(log) && /barva EANu #FF0000 = TOP SHORTAGE/.test(log) && /evidence pohybu pohyb\.xlsx/.test(log), `historie změn: ${log.slice(0, 1200)}`);
+  check(/sloupce urgentních dílů/.test(log) && /sloupce prvního listu výrobního plánu: EAN dílu A, Číslo objednávky B/.test(log) && /sloupce druhého listu výrobního plánu/.test(log) && /barva EANu #FF0000 = TOP SHORTAGE/.test(log) && /evidence pohybu pohyb\.xlsx/.test(log) && /odesláno na WPA, 2 nové záznamy/.test(log) && /množství zakázky u \d+ položek a poddílů/.test(log), `historie změn: ${log.slice(0, 1200)}`);
 
   // ---------- Vložit ze schránky (2.70): tlačítko čte schránku přes Clipboard API ----------
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);

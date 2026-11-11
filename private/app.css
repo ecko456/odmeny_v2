@@ -3298,3 +3298,8 @@ table.sh-tab tr.sh-depthead td { white-space: normal; }
 .sh-qrpick select { width: 100%; font-size: 13px; }
 .sh-coldlg > .note { margin: 12px 0 4px; }
 .sh-coldlg > h4 { margin: 14px 0 6px; }
+
+/* Shortage: odesláno na WPA proti množství zakázky, díl u nás (2.71) */
+.sh-sent { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 6px; margin-top: 6px; }
+.sh-sent .tag { white-space: normal; }
+.sh-rzsent { margin-top: 4px; }

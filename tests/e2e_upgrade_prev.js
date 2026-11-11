@@ -1,5 +1,5 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.69.1 → 2.70):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.70 → 2.71):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení, rozpracovaný seznam Shortage
 //      s poznámkami, záznamem, stavem, poddílem a čekajícím poddílem s jinou operací) a uloží je;
@@ -7,13 +7,14 @@
 //   3. stará stránka už nesmí nic uložit (426, výzva k obnovení); s SAME_DATA (verze dat beze změny)
 //      se krok vynechá, stará stránka smí dál ukládat;
 //   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
-//   5. v nové verzi vylosuje Rychlou kontrolu (2.39), uloží ji do dnešních kontrol, založí úkol
-//      a v Shortage (2.70) vybere sloupec poznámek od plánování a dopíše dlouhou poznámku; po novém
-//      přihlášení je vše uložené a ostatní data stejná.
-//   Shortage se při převodu mění schválně (2.70: čekající poddíly mezi poddíly, nová pole položek),
-//   proto se kontroluje zvlášť: nic původního nesmí chybět ani se změnit.
+//   5. v nové verzi vylosuje Rychlou kontrolu (2.39), uloží ji do dnešních kontrol, založí úkol,
+//      v Shortage (2.70) vybere sloupec poznámek od plánování a dopíše dlouhou poznámku a (2.71) zadá
+//      množství zakázky a nahraje záznam „Odesláno na WPA“; po novém přihlášení je vše uložené
+//      a ostatní data stejná.
+//   Shortage se kontroluje zvlášť (2.71 přidá seznamu prázdné odesláno na WPA): nic původního
+//   nesmí chybět ani se změnit.
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive ce1ae20 | tar -x -C $S/v2691 && sudo bash $S/v2691/deploy/install.sh
+//   git archive 04478bb | tar -x -C $S/v270 && sudo bash $S/v270/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
@@ -21,15 +22,15 @@ const fs = require('fs');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.69\\.1$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.70$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.70$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.71$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). Hodnota null = část,
    která se při převodu mění schválně a kontroluje se zvlášť (Shortage 2.70); úkoly a Vrátit zpět mění krok 5. */
 const ADDED = { 'shortage.lists': null, 'shortage.cols': null, tasks: null, undo: null };
-/* Verze dat se mění (2.70: Shortage, verze dat 48): stará stránka dostane 426. */
+/* Verze dat se mění (2.71: množství zakázky a odesláno na WPA v Shortage, verze dat 49): stará stránka dostane 426. */
 const SAME_DATA = false;
 
 async function watch(page, label, allow426 = false) {
@@ -139,7 +140,7 @@ const STATE = added => `(() => {
   const fresh = Object.keys(before.added).filter(p => ADDED[p] !== null);
   check(fresh.length === 0, `předchozí verze už má nová data: ${fresh}`);
   const oldSh = before.added['shortage.lists'] || [];
-  check(oldSh.length === 1 && oldSh[0].items.length === 2 && oldSh[0].items[0].cands.length === 1 && oldSh[0].items[0].note === 'Volat dodavatele', `předchozí verze neuložila seznam Shortage: ${JSON.stringify(oldSh).slice(0, 200)}`);
+  check(oldSh.length === 1 && oldSh[0].items.length === 2 && oldSh[0].items[0].subs.length === 2 && oldSh[0].items[0].note === 'Volat dodavatele' && !('sent' in oldSh[0]), `předchozí verze neuložila seznam Shortage: ${JSON.stringify(oldSh).slice(0, 200)}`);
   check(Object.keys(before.st.audit.plans).length === 1 && Object.keys(before.st.workAudit.pcs).length === 2 && before.st.workAudit.trainPct === 60, 'předchozí verze neuložila plán kontrol nebo KPI');
 
   // ---- 2. aktualizace, stará stránka zůstává otevřená ----
@@ -172,24 +173,17 @@ const STATE = added => `(() => {
     const want = await page.evaluate(`(() => { const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v; return JSON.stringify(canon(${expr})); })()`);
     check(JSON.stringify(after.added[p]) === want, `${p}: ${JSON.stringify(after.added[p])} ≠ ${want}`);
   }
-  // Shortage (2.70): nic původního nechybí ani se nezměnilo, čekající poddíl je mezi poddíly, nová pole mají výchozí hodnoty
+  // Shortage (2.71): položky beze změny, seznam má jen navíc prázdné odesláno na WPA
   {
     const was = before.added['shortage.lists'][0], now = (after.added['shortage.lists'] || [])[0] || { items: [] };
-    const same = (a, b, skip) => Object.keys(a).filter(k => !skip.includes(k)).every(k => JSON.stringify(a[k]) === JSON.stringify(b[k]));
-    check(same(was, now, ['items']) && now.items.length === was.items.length && JSON.stringify(now.records) === '[]', `seznam Shortage po aktualizaci: ${JSON.stringify(now).slice(0, 300)}`);
-    was.items.forEach((it, i) => {
-      const n = now.items[i] || {};
-      check(n.id === it.id && same(it, n, ['subs', 'cands']), `položka ${it.id} po aktualizaci: ${JSON.stringify(n).slice(0, 300)}`);
-      check(!(n.cands || []).length && n.qrKey === '' && JSON.stringify(n.qrChoices) === '[]' && n.qrConflict === false && n.planMismatch === false && n.planningNote === '', `nová pole položky ${it.id}: ${JSON.stringify(n).slice(0, 300)}`);
-      (it.subs || []).forEach((sb, k) => check(n.subs && n.subs[k] && same(sb, n.subs[k], []), `poddíl ${sb.id} po aktualizaci: ${JSON.stringify(n.subs && n.subs[k])}`));
-      (it.cands || []).forEach(c => check((n.subs || []).some(sb => /^sp/.test(sb.id) && sb.ean === c.ean && sb.code === c.code && sb.op === c.op && sb.link === c.link && sb.note === '' && !sb.rec), `čekající poddíl ${c.ean} se převedl mezi poddíly: ${JSON.stringify(n.subs)}`));
-    });
+    const { sent, ...rest } = now;
+    check(JSON.stringify(rest) === JSON.stringify(was) && JSON.stringify(sent) === '{}', `seznam Shortage po aktualizaci: ${JSON.stringify(now).slice(0, 300)}`);
     check(JSON.stringify(after.added['shortage.cols']) === JSON.stringify(before.added['shortage.cols']), `sloupce Shortage po aktualizaci: ${JSON.stringify(after.added['shortage.cols'])}`);
     check(JSON.stringify(after.added.tasks) === JSON.stringify(before.added.tasks) && JSON.stringify(after.added.undo) === JSON.stringify(before.added.undo), 'úkoly a Vrátit zpět po aktualizaci');
   }
   await page.evaluate(() => showView('shortage'));
   await page.waitForSelector('#view-shortage.on #shView table.sh-tab');
-  check(await page.locator('#shView tr.sh-sub').count() === 2 && await page.inputValue('#shView [data-shnote="siupg01"]') === 'Volat dodavatele', 'Shortage v nové verzi: oba poddíly a poznámka v tabulce');
+  check(await page.locator('#shView tr.sh-sub').count() === 2 && await page.inputValue('#shView [data-shnote="siupg01"]') === 'Volat dodavatele' && !(await page.locator('#shView [data-shsent]').count()), 'Shortage v nové verzi: oba poddíly, poznámka, bez množství zakázky žádný stav');
   await page.screenshot({ path: path.join(shots, '02-nova-shortage.png'), fullPage: true });
   check(await page.evaluate(() => store.rev) === beforeRev, 'stará stránka po aktualizaci něco uložila');
   check(await page.evaluate(() => S.log.length) === beforeLog, 'historie změn se po aktualizaci liší');
@@ -210,6 +204,10 @@ const STATE = added => `(() => {
   const LONG = 'Poznámka od plánování: ' + 'termín se posouvá, díl čeká na kontrolu rozměrů. '.repeat(30);
   await page.evaluate(long => { S.shortage.cols = { ...S.shortage.cols, list: { ...SH_URGENT_COLS, noteChosen: true } }; S.shortage.lists[0].items[1].note = long.trim(); S.employees['adámek|aleš'].end = '2027-02-28'; tkAdd(S, { title: 'Kontrola po aktualizaci', due: todayIso(), owner: 'Mistr' }, tkMeta()); save(); }, LONG);
   await saved(page);
+  // 2.71: množství zakázky a starší záznam „Odesláno na WPA“ (poslední záznam Hotovo zůstane) = zbytek u nás
+  await page.evaluate(() => { const l = S.shortage.lists[0]; l.items[0].oqty = 10; const b = shRecBuild([['1.1.1', '08.11.2026 10:00', '4', 'Odesláno na WPA'].map(text => ({ text, link: '', fill: '' }))], SH_COLS.move); shApplyRecs(l, b.recs, { at: Date.now(), by: 'test' }, b.sent); save(); renderShortage(); });
+  await page.waitForSelector('#shView [data-shsent="here"]', { state: 'attached' });
+  await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const again = await ctx3.newPage();
@@ -224,7 +222,9 @@ const STATE = added => `(() => {
   }
   const fsh = final.added['shortage.lists'][0];
   check(final.added['shortage.cols'].list && final.added['shortage.cols'].list.note === 'S' && final.added['shortage.cols'].list.noteChosen === true && fsh.items[1].note === LONG.trim() && fsh.items[1].note.length > 1000, `Shortage 2.70 po novém přihlášení: ${JSON.stringify(final.added['shortage.cols'])} ${fsh.items[1].note.length}`);
-  check(JSON.stringify(fsh.items[0]) === JSON.stringify(after.added['shortage.lists'][0].items[0]), 'převedená položka Shortage se po uložení nezměnila');
+  const fit0 = fsh.items[0], ait0 = after.added['shortage.lists'][0].items[0];
+  check(fit0.oqty === 10 && JSON.stringify({ ...fit0, oqty: undefined }) === JSON.stringify({ ...ait0, oqty: undefined }) && JSON.stringify(fsh.sent) === JSON.stringify({ '1.1.1': [[fsh.sent['1.1.1'][0][0], 4]] }), `Shortage 2.71 po novém přihlášení (množství zakázky, odesláno na WPA, poslední záznam beze změny): ${JSON.stringify([fit0.oqty, fsh.sent, fit0.rec])}`);
+  check(await again.evaluate(() => { const l = S.shortage.lists[0]; const x = shSentOf(l, l.items[0]); return x && x.st === 'here' && x.left === 6 && x.sent === 4; }), 'po novém přihlášení: zbytek 6 ks u nás');
   check(final.st.employees['adámek|aleš'] && final.st.employees['adámek|aleš'].end === '2027-02-28', 'konec trestu (2.43) po novém přihlášení');
   check(final.added.tasks && final.added.tasks.list.length === 1 && final.added.tasks.list[0].title === 'Kontrola po aktualizaci', `úkol (2.46) po novém přihlášení: ${JSON.stringify(final.added.tasks)}`);
   // Vrátit zpět (2.45): změna z kroku 5 má uložené hodnoty před změnou a odkaz z historie
