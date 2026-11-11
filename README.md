@@ -62,6 +62,14 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.71.1
+
+- Shortage: když do množství zakázky chybí kusy, počítá se zbytek jako **U nás** i tehdy, když je
+  poslední interní záznam „Odesláno na WPA“ (dřív „Odesláno X z Y ks“). Zakázka bez záznamu
+  a bez odeslání zůstává „Zakázka N ks · na WPA zatím nic“. Data beze změny.
+- Historie změn: každé nahrání evidence pohybu s odesláním na WPA má vlastní záznam (druhé
+  nahrání do 10 minut dřív přepsalo počet prvního).
+
 ## Co je nového ve verzi 2.71
 
 - Shortage, množství zakázky: výrobní plán má v obou listech nový volitelný sloupec Množství
@@ -71,7 +79,8 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   z dalšího nahrání se nezapočte dvakrát). U položky a poddílu je vidět:
   - **U nás N ks**: chybí kusy do množství zakázky a poslední interní záznam není „Odesláno na WPA“;
   - **Odesláno na WPA vše**: odeslané kusy pokryly celé množství zakázky;
-  - **Odesláno X z Y ks**: poslední záznam je odeslání, ale do celé zakázky ještě něco zbývá;
+  - **Odesláno X z Y ks**: poslední záznam je odeslání, ale do celé zakázky ještě něco zbývá
+    (od 2.71.1 se počítá jako U nás);
   - **Zakázka N ks · na WPA zatím nic**: množství je známé, záznam zatím žádný.
 - Stav je v tabulce, v PDF k tisku (pod posledním záznamem), v rozboru položek i v Excelu
   rozboru (sloupce Množství zakázky, Odesláno na WPA, Zbývá, Díl u nás). Dlaždice Poslední

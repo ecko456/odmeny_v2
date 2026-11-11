@@ -34,6 +34,19 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 11. 2026 (verze 2.71.1):
+
+- Uživatel na otázku k 2.71 (poslední záznam je „Odesláno na WPA“, ale do zakázky kusy chybí):
+  „ať to počítá jako u nás“.
+  - `shSentOf`: chybí kusy a díl má záznam (jakýkoli) nebo se už něco odeslalo = `here`; stav
+    `part` zrušený (`SH_SENT_ST`, `shSentText`, `sentHtml`, `shSentSum`, hláška bez „částečně“).
+    `open` zůstává jen pro zakázku bez záznamu a bez odeslání.
+  - Historie `shw:` má v klíči počet uložených odeslání, takže druhé nahrání do 10 minut nepřepíše
+    počet prvního.
+  - Testy: core „Shortage (2.71)“ (B.1 a data ze 2.70 = `here`, nový případ poslední záznam WPA),
+    `e2e_shkroky` (druhá evidence `pohyb2.xlsx`, poslední záznam odeslání, „U nás 5 ks“, historie).
+    `ODM_VERSION` 2.71.1, data beze změny (49).
+
 Stav k 11. 11. 2026 (verze 2.71):
 
 - Uživatel: „ty shortage načtou množství zakázky z výrobního plánu a dokud to množství nevyplní
@@ -56,8 +69,8 @@ Stav k 11. 11. 2026 (verze 2.71):
     záznamem (`L.sent`, „U nás“ tučně; orientační řádek sestavy bez stavu), rozbor, pole
     `oqty` v `shManualDialog`, kontrola vlastního sloupce množství v `shColsDialog`.
   - Server: `ODM_AI_SH_FIELDS` planItem/plan + `qty`, prompt.
-  - Výklad: „u nás“ jen když chybí kusy **a** poslední záznam existuje a není odeslání; poslední
-    záznam odeslání a chybí kusy = „odesláno X z Y, zbývá“ (zadání to neřešilo).
+  - Výklad (od 2.71.1): „u nás“ = chybí kusy a díl má záznam nebo se část odeslala; v 2.71 poslední
+    záznam odeslání s chybějícími kusy ukazoval „odesláno X z Y, zbývá“ (`part`).
   - Testy: core „Shortage (2.71)“, upravené 2.28/2.29/2.61/2.70 (nová pole výsledků), `test_odmeny`
     (`qty`, 426 pro 48), `e2e_shkroky` (plán s množstvím, evidence s WPA, tabulka, hláška, PDF,
     Excel rozboru, úprava tužkou), `e2e_upgrade_prev` 2.70 → 2.71 (archiv `04478bb`).
@@ -2650,7 +2663,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.69 | `ad4daf6` | plán v Kapacitách a zaškolení z Plánu kapacit, v přesčas a práci ve svátek plán poloviční |
 | 2.69.1 | `ce1ae20` | KPI přehled spojí kusy s lidmi v práci (lidé z docházky, kusy na osobu i bez skupin Matice) |
 | 2.70 | `04478bb` | Shortage ze samostatné aplikace (urgenty A–S, poznámka od plánování, plán ze dvou listů, QR varianty, evidence předem, úprava položek, poddíly všech operací) (data verze 48) |
-| 2.71 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – množství zakázky z výrobního plánu, odesláno na WPA z evidence pohybu, díl u nás (data verze 49) |
+| 2.71 | `b3256ac` | Shortage – množství zakázky z výrobního plánu, odesláno na WPA z evidence pohybu, díl u nás (data verze 49) |
+| 2.71.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – chybějící kusy po odeslání na WPA jsou u nás |
 
 Verze 2.1 přidala:
 

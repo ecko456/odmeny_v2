@@ -457,9 +457,9 @@ async function shMoveImport(file, force = false) {
   }
 }
 /** Poslední záznamy (schránka nebo soubor evidence pohybu) k položkám otevřeného seznamu (podle QR kódu). */
-/** Kolik položek a poddílů je u nás, odeslaných celých a částečně (2.71); total = s množstvím zakázky. */
+/** Kolik položek a poddílů je u nás a kolik odeslaných celých (2.71); total = s množstvím zakázky. */
 function shSentSum(l) {
-  const out = { here: 0, done: 0, part: 0, open: 0, total: 0 };
+  const out = { here: 0, done: 0, open: 0, total: 0 };
   ((l && l.items) || []).forEach(i => [i, ...(i.subs || [])].forEach(x => { const s = shSentOf(l, x); if (s && s.order != null) { out.total += 1; if (s.st in out) out[s.st] += 1; } }));
   return out;
 }
@@ -487,7 +487,7 @@ function shPasteRecs(rows, src = {}) {
   const what = [res.cached ? `${shPl(res.cached, 'uložen', 'uloženy', 'uloženo')} <b>${rec(res.cached)}</b> (pamatují se i pro QR varianty a pozdější plán)` : '', res.updated ? `${shPl(res.updated, 'aktualizován', 'aktualizovány', 'aktualizováno')} <b>${rec(res.updated)}</b> u položek a QR variant` : '', res.added ? `podle záznamu přidán${res.added === 1 ? '' : 'o'} <b>${res.added} ${shSubsN(res.added)}</b> s jinou operací` : ''].filter(Boolean).join(', ');
   // 2.71: odeslané kusy na WPA proti množství zakázky z plánu
   const sum = shSentSum(l);
-  const sentNote = res.sent ? `<div class="note i">Odesláno na WPA: <b>${res.sent}</b> ${shPl(res.sent, 'nový záznam', 'nové záznamy', 'nových záznamů')} s počtem kusů${sum.total ? ` · díl u nás ${sum.here} · odesláno vše ${sum.done} · částečně ${sum.part}` : ' · množství zakázky zatím chybí (výrobní plán se sloupcem Množství zakázky)'}.</div>` : '';
+  const sentNote = res.sent ? `<div class="note i">Odesláno na WPA: <b>${res.sent}</b> ${shPl(res.sent, 'nový záznam', 'nové záznamy', 'nových záznamů')} s počtem kusů${sum.total ? ` · díl u nás ${sum.here} · odesláno vše ${sum.done}` : ' · množství zakázky zatím chybí (výrobní plán se sloupcem Množství zakázky)'}.</div>` : '';
   msg.innerHTML = `<div class="note ${res.updated || res.added || res.cached || res.sent ? 'i' : 'w'}">Poslední záznamy k seznamu z <b>${esc(shWhen(l))}</b>: ${what || 'žádná položka se nezměnila'}.</div>${sentNote}${[
     res.truncated ? `${res.truncated} nejstarších záznamů přesahuje limit ${SH_MAX_RECORDS} uložených záznamů na seznam.` : '',
     res.wpa ? `${res.wpa} ${res.wpa === 1 ? 'poddíl má' : res.wpa <= 4 ? 'poddíly mají' : 'poddílů má'} záznam „Odesláno na WPA“, ${res.wpa === 1 ? 'nepřidal se' : 'nepřidaly se'}.` : '',
@@ -739,8 +739,8 @@ function renderShortage() {
     const st = shSentOf(l, x);
     if (!st) return '';
     const t = shSentText(st);
-    const cls = st.st === 'here' ? 'tag warn' : st.st === 'done' ? 'tag ok' : st.st === 'part' ? 'tag' : 'small muted';
-    return `<div class="sh-sent" data-shsent="${st.st}"><span class="${cls}">${esc(st.st === 'here' ? `U nás ${nf(st.left, 3)} ks` : st.st === 'done' ? 'Odesláno na WPA vše' : st.st === 'part' ? `Odesláno ${nf(st.sent, 3)} z ${nf(st.order, 3)} ks` : t)}</span>${st.st === 'info' || st.st === 'open' ? '' : `<span class="small muted">${esc(st.st === 'here' ? `odesláno na WPA ${nf(st.sent, 3)} z ${nf(st.order, 3)} ks` : st.st === 'done' ? `${nf(st.sent, 3)} z ${nf(st.order, 3)} ks` : `zbývá ${nf(st.left, 3)} ks`)}</span>`}</div>`;
+    const cls = st.st === 'here' ? 'tag warn' : st.st === 'done' ? 'tag ok' : 'small muted';
+    return `<div class="sh-sent" data-shsent="${st.st}"><span class="${cls}">${esc(st.st === 'here' ? `U nás ${nf(st.left, 3)} ks` : st.st === 'done' ? 'Odesláno na WPA vše' : t)}</span>${st.st === 'info' || st.st === 'open' ? '' : `<span class="small muted">${esc(st.st === 'here' ? `odesláno na WPA ${nf(st.sent, 3)} z ${nf(st.order, 3)} ks` : `${nf(st.sent, 3)} z ${nf(st.order, 3)} ks`)}</span>`}</div>`;
   };
   const recHtml = x => (x.rec ? `<div class="sh-rec">${x.rec.state ? `<span class="tag sh-state">${esc(x.rec.state)}</span>` : ''}${x.rec.qty ? `<b>${esc(/^[\d\s.,]+$/.test(x.rec.qty) ? `${x.rec.qty} ks` : x.rec.qty)}</b>` : ''}<span class="muted">${esc(x.rec.when)}</span></div>` : '');
   const eanHtml = x => `EAN ${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer" draggable="false">${esc(x.ean || 'odkaz')}</a>` : esc(x.ean || '—')}`;

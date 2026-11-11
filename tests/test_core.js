@@ -4927,19 +4927,24 @@ test('Shortage (2.71): množství zakázky z plánu, odesláno na WPA z evidence
   assert.deepStrictEqual(out.r2, [0, 0], 'stejná evidence podruhé nic nepřičte');
   assert.deepStrictEqual(out.keys, ['A.1', 'B.1', 'C.1', 'E.1', 'X.9'], 'odeslání se pamatuje i pro kód, který zatím žádná položka nemá');
   assert.deepStrictEqual(out.a.map(x => x[1]), [5, 3], 'u kódu čas a kusy, od nejstaršího');
-  assert.deepStrictEqual(out.st, [['here', 20, 8, 12, 2], ['part', 10, 6, 4, 2], ['done', 6, 6, 0, 1], ['open', 5, 0, 5, 0], ['info', null, 7, null, 1], ['open', 3, 0, 3, 0]]);
-  assert.deepStrictEqual(out.txt, ['U nás 12 ks · odesláno na WPA 8 z 20 ks', 'Odesláno na WPA 6 z 10 ks · zbývá 4 ks', 'Odesláno na WPA vše (6 z 6 ks)', 'Zakázka 5 ks · na WPA zatím nic', 'Odesláno na WPA 7 ks', 'Zakázka 3 ks · na WPA zatím nic']);
+  assert.deepStrictEqual(out.st, [['here', 20, 8, 12, 2], ['here', 10, 6, 4, 2], ['done', 6, 6, 0, 1], ['open', 5, 0, 5, 0], ['info', null, 7, null, 1], ['open', 3, 0, 3, 0]]);
+  assert.deepStrictEqual(out.txt, ['U nás 12 ks · odesláno na WPA 8 z 20 ks', 'U nás 4 ks · odesláno na WPA 6 z 10 ks', 'Odesláno na WPA vše (6 z 6 ks)', 'Zakázka 5 ks · na WPA zatím nic', 'Odesláno na WPA 7 ks', 'Zakázka 3 ks · na WPA zatím nic']);
   // díl s jiným posledním záznamem a nic neodesláno = celý u nás; bez množství a bez odeslání nic; víc než zakázka
   out = q(`const l = { items: [], sent: { 'Z.1': [[5, 30]] } };
     return [shSentOf(l, { code: 'Y.1', oqty: 4, rec: { state: 'Broušení', ts: 1 } }), shSentOf(l, { code: 'Y.2', rec: { state: 'Broušení' } }), shSentOf(l, { code: 'Z.1', oqty: 25 }), shSentOf(l, { oqty: 4 }),
       shSentText(shSentOf(l, { code: 'Z.1', oqty: 25 }))];`);
   assert.deepStrictEqual(out, [{ st: 'here', order: 4, sent: 0, left: 4, n: 0, last: 'other' }, null, { st: 'done', order: 25, sent: 30, left: 0, n: 1, last: 'none' }, { st: 'open', order: 4, sent: 0, left: 4, n: 0, last: 'none' }, 'Odesláno na WPA vše (30 ks, zakázka 25 ks)']);
+  // 2.71.1: poslední záznam „Odesláno na WPA“, ale do zakázky kusy chybí = zbytek je u nás; odesláno bez záznamu taky
+  out = q(`const l = { items: [], sent: { 'W.1': [[5, 3]] } };
+    return [shSentOf(l, { code: 'W.1', oqty: 10, rec: { state: 'Odesláno na WPA', ts: 5, qty: '3' } }), shSentOf(l, { code: 'W.1', oqty: 10 }), shSentOf(l, { code: 'W.2', oqty: 2, rec: { state: 'Odesláno na WPA', ts: 1, qty: 'neuvedeno' } }), Object.keys(SH_SENT_ST)];`);
+  assert.deepStrictEqual(out, [{ st: 'here', order: 10, sent: 3, left: 7, n: 1, last: 'wpa' }, { st: 'here', order: 10, sent: 3, left: 7, n: 1, last: 'none' },
+    { st: 'here', order: 2, sent: 0, left: 2, n: 0, last: 'wpa' }, ['done', 'here', 'open', 'info']]);
   // data ze 2.70: odeslání zná jen poslední záznam; po nahrání evidence se stejný záznam nezapočte dvakrát
   out = q(`const l = { items: [{ id: 'a', ean: '1', code: 'A.1', oqty: 10, rec: { ts: 100, qty: '4', state: 'Odesláno na WPA' } }] };
     const before = shSentOf(l, l.items[0]);
     shApplyRecs(l, new Map(), {}, new Map([['A.1', new Map([['100|4', [100, 4]], ['50|3', [50, 3]]])]]));
     return [before.sent, shSentOf(l, l.items[0]).sent, shSentOf(l, l.items[0]).st];`);
-  assert.deepStrictEqual(out, [4, 7, 'part']);
+  assert.deepStrictEqual(out, [4, 7, 'here']);
   // čištění: množství zakázky u položky i poddílu, odeslání bez duplicit, nejnovější do limitu, dvakrát = jednou
   out = q(`const raw = { lists: [{ id: 'shx', items: [{ id: 'si1', ean: '1', code: 'A.1', oqty: '1 200', subs: [{ id: 'sp1', ean: '9', code: 'S.1', oqty: 8 }, { id: 'sp2', ean: '8', code: 'S.2', oqty: 'x' }] }, { id: 'si2', ean: '2', oqty: -1 }],
       sent: { 'A.1': [[10, 5], [10, 5], [11, '2,5'], ['x', 1], [12, 'nic'], 'zlé'], 'bad code!': [[1, 1]], 'B.1': 'x' } }] };

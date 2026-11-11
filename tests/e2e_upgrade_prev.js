@@ -1,5 +1,5 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.70 → 2.71):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.70 → 2.71.1):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení, rozpracovaný seznam Shortage
 //      s poznámkami, záznamem, stavem, poddílem a čekajícím poddílem s jinou operací) a uloží je;
@@ -23,7 +23,7 @@ const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
 const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.70$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.71$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.71\\.1$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };

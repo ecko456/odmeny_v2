@@ -247,7 +247,7 @@ function shChanges(A,B,add){
     if(qch.length===1)add("shortage","Shortage: množství zakázky "+qch[0].lab+" (seznam "+shWhen(l)+"): "+(qch[0].x.oqty!=null?nf(qch[0].x.oqty,3)+" ks":"smazáno"),{m:"shq:"+l.id+":"+qch[0].x.id});
     else if(qch.length)add("shortage","Shortage: množství zakázky u "+qch.length+" položek a poddílů seznamu "+shWhen(l),{m:"shq:"+l.id});
     const sentN=c=>Object.values(c||{}).reduce((a,v)=>a+v.length,0),sn=sentN(l.sent)-sentN(o.sent);
-    if(sn>0)add("shortage","Shortage: odesláno na WPA, "+sn+" "+(sn===1?"nový záznam":sn<=4?"nové záznamy":"nových záznamů")+" u seznamu "+shWhen(l),{m:"shw:"+l.id});
+    if(sn>0)add("shortage","Shortage: odesláno na WPA, "+sn+" "+(sn===1?"nový záznam":sn<=4?"nové záznamy":"nových záznamů")+" u seznamu "+shWhen(l),{m:"shw:"+l.id+":"+sentN(l.sent)});   // každé nahrání zvlášť (jinak by druhé do 10 minut přepsalo počet prvního)
     // přesun kvůli změně TOP se jako změna pořadí nepočítá
     const keep=id=>oi.has(id)&&ni.has(id)&&shRank(oi.get(id))===shRank(ni.get(id))&&(oi.get(id).dept||"")===(ni.get(id).dept||"");
     if(ol.filter(keep).join()!==nl.filter(keep).join())add("shortage","Shortage: změněno pořadí položek v seznamu "+shWhen(l),{m:"sho:"+l.id});

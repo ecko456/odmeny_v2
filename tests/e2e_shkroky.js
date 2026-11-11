@@ -80,6 +80,11 @@ for r in [('Brus 2', '5.0.1', '06.11.2026 07:10', 4, 'Hotovo'), ('Lakovna', '5.0
           ('Expedice', '5.0.2', '04.11.2026 10:00', 3, 'Odesláno na WPA'), ('Expedice', '6.0.3', '06.11.2026 07:30', 2, 'Odesláno na WPA')]:
     ws.append(list(r))
 wb.save(out + '/pohyb.xlsx')
+# 2.71.1: další evidence, poslední záznam 5.0.2 je odeslání, ale do zakázky 10 ks pořád chybí 5 ks = zbytek u nás
+wb = Workbook(); ws = wb.active; ws.title = 'Pohyb'
+ws.append(['Pracoviště', 'QR kód', 'Datum a čas', 'Ks', 'Stav'])
+ws.append(['Expedice', '5.0.2', '07.11.2026 08:00', 2, 'Odesláno na WPA'])
+wb.save(out + '/pohyb2.xlsx')
 print('ok')`;
 
 (async () => {
@@ -192,7 +197,7 @@ print('ok')`;
   const uiOf = st => sentUi.filter(x => x[1] === st).map(x => x[2]);
   check(uiOf('here').some(t => /^U nás 7 ks odesláno na WPA 3 z 10 ks$/.test(t)) && uiOf('here').some(t => /^U nás 4 ks/.test(t)) && uiOf('done').some(t => /^Odesláno na WPA vše 2 z 2 ks$/.test(t)) && uiOf('open').length === 3, `stav v tabulce: ${JSON.stringify(sentUi)}`);
   check(/u nás 2/.test(await page.textContent('#shView .stats')), 'dlaždice Poslední záznam: díly u nás');
-  check(/Odesláno na WPA: 2 nové záznamy s počtem kusů · díl u nás 2 · odesláno vše 1 · částečně 0/.test((await page.textContent('#shMsg')).replace(/\s+/g, ' ')), `hláška o odeslání: ${(await page.textContent('#shMsg')).replace(/\s+/g, ' ')}`);
+  check(/Odesláno na WPA: 2 nové záznamy s počtem kusů · díl u nás 2 · odesláno vše 1\./.test((await page.textContent('#shMsg')).replace(/\s+/g, ' ')), `hláška o odeslání: ${(await page.textContent('#shMsg')).replace(/\s+/g, ' ')}`);
   await page.locator('#shView [data-shsent="here"]').first().scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(shots, '03a-u-nas.png') });
   // PDF: stav pod posledním záznamem
@@ -203,6 +208,18 @@ print('ok')`;
   const ptext = (pt.stdout || '').replace(/\s+/g, ' ');
   if (!/BEZ-PYPDF/.test(ptext)) check(/U nás 7 ks · odesláno na WPA 3 z 10 ks/.test(ptext) && /Odesláno na WPA vše \(2 z 2 ks\)/.test(ptext) && /Zakázka 4 ks · na WPA zatím nic/.test(ptext) && !/Zakázka 6 ks/.test(ptext), `PDF se stavem odeslání (orientační řádek sestavy bez stavu): ${pt.stderr || ptext.slice(0, 400)}`);
   spawnSync('python3', ['-c', 'import pymupdf,sys\nd=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2])', pf, path.join(shots, '03c-pdf-wpa.png')]);
+  // 2.71.1: poslední záznam „Odesláno na WPA“, kusy do zakázky chybí = zbytek je u nás (ne „odesláno částečně“)
+  await page.setInputFiles('#shMoveFile', file('pohyb2.xlsx'));
+  await page.waitForFunction(() => { const i = S.shortage.lists[0].items.find(x => x.ean === '8590000005002'); return i.rec && /Odesláno na WPA/.test(i.rec.state); }, null, { timeout: 20000 });
+  if (await page.locator('#dlg[open]').count()) problems.push('evidence se stejnými sloupci znovu ukázala okno se sloupci');
+  await saved(page);
+  const wpaLast = await page.evaluate(() => { const l = S.shortage.lists[0]; const r = shSentOf(l, l.items.find(x => x.ean === '8590000005002')); return [r.st, r.order, r.sent, r.left, r.last]; });
+  check(JSON.stringify(wpaLast) === JSON.stringify(['here', 10, 5, 5, 'wpa']), `poslední záznam odeslání a chybí kusy = u nás: ${JSON.stringify(wpaLast)}`);
+  const wpaUi = await page.evaluate(() => { const id = S.shortage.lists[0].items.find(x => x.ean === '8590000005002').id; const e = document.querySelector(`#shView tr[data-shid="${id}"] [data-shsent]`); return e && [e.dataset.shsent, [...e.children].map(c => c.textContent.trim()).join(' ')]; });
+  check(JSON.stringify(wpaUi) === JSON.stringify(['here', 'U nás 5 ks odesláno na WPA 5 z 10 ks']), `v tabulce u nás: ${JSON.stringify(wpaUi)}`);
+  check(/Odesláno na WPA: 1 nový záznam s počtem kusů · díl u nás 2 · odesláno vše 1\./.test((await page.textContent('#shMsg')).replace(/\s+/g, ' ')), `hláška po druhé evidenci: ${(await page.textContent('#shMsg')).replace(/\s+/g, ' ')}`);
+  await page.locator(`#shView [data-shsent="here"]`).nth(1).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, '03d-wpa-u-nas.png') });
 
   // ---------- úprava poddílu tužkou a QR varianty (2.70) ----------
   const sub3 = await page.evaluate(() => S.shortage.lists[0].items.find(x => x.ean === '8590000005003').subs[0].id);
@@ -304,7 +321,7 @@ print('ok')`;
 
   // historie
   const log = (await page.evaluate(() => S.log.filter(e => e.kind === 'shortage').map(e => e.text))).join(' | ');
-  check(/sloupce urgentních dílů/.test(log) && /sloupce prvního listu výrobního plánu: EAN dílu A, Číslo objednávky B/.test(log) && /sloupce druhého listu výrobního plánu/.test(log) && /barva EANu #FF0000 = TOP SHORTAGE/.test(log) && /evidence pohybu pohyb\.xlsx/.test(log) && /odesláno na WPA, 2 nové záznamy/.test(log) && /množství zakázky u \d+ položek a poddílů/.test(log), `historie změn: ${log.slice(0, 1200)}`);
+  check(/sloupce urgentních dílů/.test(log) && /sloupce prvního listu výrobního plánu: EAN dílu A, Číslo objednávky B/.test(log) && /sloupce druhého listu výrobního plánu/.test(log) && /barva EANu #FF0000 = TOP SHORTAGE/.test(log) && /evidence pohybu pohyb\.xlsx/.test(log) && /odesláno na WPA, 2 nové záznamy/.test(log) && /odesláno na WPA, 1 nový záznam/.test(log) && /množství zakázky u \d+ položek a poddílů/.test(log), `historie změn: ${log.slice(0, 1200)}`);
 
   // ---------- Vložit ze schránky (2.70): tlačítko čte schránku přes Clipboard API ----------
   await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);

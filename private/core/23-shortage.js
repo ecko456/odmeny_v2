@@ -38,8 +38,8 @@ function shSentEntries(list,x){
 }
 /**
  * Stav dílu proti množství zakázky: {st, order, sent, left, n, last}, nebo null (nic k ukázání).
- * st: done = odesláno vše, here = díl je u nás (chybí kusy a poslední záznam není „Odesláno na WPA“),
- * part = část odeslaná (poslední záznam je odeslání), open = zakázka bez odeslání a bez záznamu,
+ * st: done = odesláno vše, here = díl je u nás (chybí kusy a díl má záznam nebo se část už odeslala;
+ * od 2.71.1 i když je poslední záznam „Odesláno na WPA“), open = zakázka bez odeslání a bez záznamu,
  * info = odesláno bez známého množství zakázky.
  */
 function shSentOf(list,x){
@@ -51,10 +51,11 @@ function shSentOf(list,x){
   const last=x.rec?(shWpa(x.rec.state)?"wpa":"other"):"none";
   if(order==null)return {st:"info",order:null,sent,left:null,n:e.size,last};
   const left=Math.max(0,Math.round((order-sent)*1000)/1000);
-  const st=left<=0?"done":last==="other"?"here":sent>0||last==="wpa"?"part":"open";
+  // 2.71.1: chybí kusy a díl má záznam (i poslední „Odesláno na WPA“) nebo se už něco odeslalo = zbytek je u nás
+  const st=left<=0?"done":last!=="none"||sent>0?"here":"open";
   return {st,order,sent,left,n:e.size,last};
 }
-const SH_SENT_ST={done:"odesláno vše",here:"u nás",part:"odesláno částečně",open:"čeká na odeslání",info:"odesláno na WPA"};
+const SH_SENT_ST={done:"odesláno vše",here:"u nás",open:"čeká na odeslání",info:"odesláno na WPA"};
 /** Text stavu pro tabulku, PDF, rozbor a Excel. */
 function shSentText(s){
   if(!s)return "";
@@ -62,7 +63,6 @@ function shSentText(s){
   if(s.st==="info")return "Odesláno na WPA "+k(s.sent);
   if(s.st==="done")return "Odesláno na WPA vše ("+(s.sent>s.order?k(s.sent)+", zakázka "+k(s.order):nf(s.sent,3)+" z "+k(s.order))+")";
   if(s.st==="here")return "U nás "+k(s.left)+" · odesláno na WPA "+nf(s.sent,3)+" z "+k(s.order);
-  if(s.st==="part")return "Odesláno na WPA "+nf(s.sent,3)+" z "+k(s.order)+" · zbývá "+k(s.left);
   return "Zakázka "+k(s.order)+" · na WPA zatím nic";
 }
 /** Uložené záznamy „Odesláno na WPA“ seznamu: čištění, bez duplicit, nejnovější do SH_MAX_SENT. */
