@@ -1,16 +1,19 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.41 → 2.42):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.69.1 → 2.70):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
-//      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení) a uloží je;
+//      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení, rozpracovaný seznam Shortage
+//      s poznámkami, záznamem, stavem, poddílem a čekajícím poddílem s jinou operací) a uloží je;
 //   2. nechá otevřenou starou stránku a spustí instalaci nové verze (UPGRADE_CMD);
 //   3. stará stránka už nesmí nic uložit (426, výzva k obnovení); s SAME_DATA (verze dat beze změny)
 //      se krok vynechá, stará stránka smí dál ukládat;
 //   4. nová verze načte stejná data položku po položce, přibude jen to, co je v ADDED;
-//   5. v nové verzi vylosuje Rychlou kontrolu (2.39), uloží ji do dnešních kontrol a založí skupinu
-//      vybere skupinu Matice u skupiny KPI a sloupec normy (2.42); po novém přihlášení je vše
-//      uložené a ostatní data stejná.
+//   5. v nové verzi vylosuje Rychlou kontrolu (2.39), uloží ji do dnešních kontrol, založí úkol
+//      a v Shortage (2.70) vybere sloupec poznámek od plánování a dopíše dlouhou poznámku; po novém
+//      přihlášení je vše uložené a ostatní data stejná.
+//   Shortage se při převodu mění schválně (2.70: čekající poddíly mezi poddíly, nová pole položek),
+//   proto se kontroluje zvlášť: nic původního nesmí chybět ani se změnit.
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive 48ad143 | tar -x -C $S/v241 && sudo bash $S/v241/deploy/install.sh
+//   git archive ce1ae20 | tar -x -C $S/v2691 && sudo bash $S/v2691/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
@@ -18,14 +21,15 @@ const fs = require('fs');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.41$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.69\\.1$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.69\\.1$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.70$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
-/* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). */
-const ADDED = { agenda: '[]', calNotes: '[]', undo: '[]', tasks: '({ list: [] })', attEdits: '({})', attLocks: '({})', 'workAudit.dv.cols.work.norm': '""', 'workAudit.dv.sheets': '({ att: "", work: "" })', ...Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(i => [`workAudit.groups.${i}.mg`, '[]'])) };
-/* Verze dat se mění (2.42: skupiny Matice u skupin KPI, sloupec normy): stará stránka dostane 426. */
+/* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). Hodnota null = část,
+   která se při převodu mění schválně a kontroluje se zvlášť (Shortage 2.70); úkoly a Vrátit zpět mění krok 5. */
+const ADDED = { 'shortage.lists': null, 'shortage.cols': null, tasks: null, undo: null };
+/* Verze dat se mění (2.70: Shortage, verze dat 48): stará stránka dostane 426. */
 const SAME_DATA = false;
 
 async function watch(page, label, allow426 = false) {
@@ -98,6 +102,18 @@ const STATE = added => `(() => {
     });
     st.audit.tasks.Brus = [{ id: 't1', text: 'Kontrola prvního kusu' }];
     st.audit.tasks.Obrobna = [{ id: 't1', text: 'Úklid pracoviště' }];
+    // Shortage tak, jak ho ukládá 2.69.1: poznámky, záznam, stav, poddíl a čekající poddíl s jinou operací (cands)
+    const L = c => 'http://is.example/commission.production.detail/default/1?activeBarcode=' + c + '&componentProductionId=2';
+    const at = Date.UTC(2026, 10, 9, 7, 30), by = 'Vedoucí dílny';
+    st.shortage.lists = [{ id: 'shupg01', at, by, file: 'urgenty.xlsx', sheet: '', plan: { file: 'plan.xlsx', at, by }, gone: [], items: [
+      { id: 'siupg01', order: 'OBJ-2026-1', name: 'Hřídel velká', ean: '8590000000011', index: 'A', qty: '4', top: true, op: 'Broušení – hala 2', link: L('1.1.1'), code: '1.1.1',
+        note: 'Volat dodavatele', rec: { ts: at, when: '9. 11. 2026 08:00', qty: '4', state: 'Hotovo', at, by }, st: 'run', stAt: at, stBy: by,
+        subs: [{ id: 'spupg01', ean: '8590000000901', link: L('9.0.1'), code: '9.0.1', op: 'Leštění – hala 2', note: 'Poddíl s poznámkou', rec: null }],
+        cands: [{ ean: '8590000000902', link: L('9.0.2'), code: '9.0.2', op: 'Lakování' }] },
+      { id: 'siupg02', order: 'OBJ-2026-2', name: 'Kryt motoru', ean: '8590000000028', index: 'B', qty: '2', top: false, top2: true, op: 'Frézování Hala 2', link: '', code: '', note: '', rec: null, pdfHide: true },
+    ] }];
+    st.shortage.depts = [{ id: 'sdupg01', name: 'Brus', ops: [{ key: 'brouseni hala 2', label: 'Broušení – hala 2' }] }];
+    st.shortage.colors = { FF0000: 'top' };
     S = sanitizeState(st);
     const meta = { at: Date.now(), by: 'Vedoucí dílny' };
     generatePlan(shiftWeek(isoWeek(todayIso()).id, 1), meta);
@@ -120,7 +136,10 @@ const STATE = added => `(() => {
   const beforeRev = await reread.evaluate(() => store.rev);
   const beforeLog = await reread.evaluate(() => S.log.length);
   await ctx0.close();
-  check(Object.keys(before.added).length === 0, `předchozí verze už má nová data: ${Object.keys(before.added)}`);
+  const fresh = Object.keys(before.added).filter(p => ADDED[p] !== null);
+  check(fresh.length === 0, `předchozí verze už má nová data: ${fresh}`);
+  const oldSh = before.added['shortage.lists'] || [];
+  check(oldSh.length === 1 && oldSh[0].items.length === 2 && oldSh[0].items[0].cands.length === 1 && oldSh[0].items[0].note === 'Volat dodavatele', `předchozí verze neuložila seznam Shortage: ${JSON.stringify(oldSh).slice(0, 200)}`);
   check(Object.keys(before.st.audit.plans).length === 1 && Object.keys(before.st.workAudit.pcs).length === 2 && before.st.workAudit.trainPct === 60, 'předchozí verze neuložila plán kontrol nebo KPI');
 
   // ---- 2. aktualizace, stará stránka zůstává otevřená ----
@@ -149,9 +168,29 @@ const STATE = added => `(() => {
     fs.writeFileSync(path.join(S, 'uprev-after.json'), JSON.stringify(after.st, null, 1));
   }
   for (const [p, expr] of Object.entries(ADDED)) {
+    if (expr === null) continue;
     const want = await page.evaluate(`(() => { const canon = v => Array.isArray(v) ? v.map(canon) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).sort().map(k => [k, canon(v[k])])) : v; return JSON.stringify(canon(${expr})); })()`);
     check(JSON.stringify(after.added[p]) === want, `${p}: ${JSON.stringify(after.added[p])} ≠ ${want}`);
   }
+  // Shortage (2.70): nic původního nechybí ani se nezměnilo, čekající poddíl je mezi poddíly, nová pole mají výchozí hodnoty
+  {
+    const was = before.added['shortage.lists'][0], now = (after.added['shortage.lists'] || [])[0] || { items: [] };
+    const same = (a, b, skip) => Object.keys(a).filter(k => !skip.includes(k)).every(k => JSON.stringify(a[k]) === JSON.stringify(b[k]));
+    check(same(was, now, ['items']) && now.items.length === was.items.length && JSON.stringify(now.records) === '[]', `seznam Shortage po aktualizaci: ${JSON.stringify(now).slice(0, 300)}`);
+    was.items.forEach((it, i) => {
+      const n = now.items[i] || {};
+      check(n.id === it.id && same(it, n, ['subs', 'cands']), `položka ${it.id} po aktualizaci: ${JSON.stringify(n).slice(0, 300)}`);
+      check(!(n.cands || []).length && n.qrKey === '' && JSON.stringify(n.qrChoices) === '[]' && n.qrConflict === false && n.planMismatch === false && n.planningNote === '', `nová pole položky ${it.id}: ${JSON.stringify(n).slice(0, 300)}`);
+      (it.subs || []).forEach((sb, k) => check(n.subs && n.subs[k] && same(sb, n.subs[k], []), `poddíl ${sb.id} po aktualizaci: ${JSON.stringify(n.subs && n.subs[k])}`));
+      (it.cands || []).forEach(c => check((n.subs || []).some(sb => /^sp/.test(sb.id) && sb.ean === c.ean && sb.code === c.code && sb.op === c.op && sb.link === c.link && sb.note === '' && !sb.rec), `čekající poddíl ${c.ean} se převedl mezi poddíly: ${JSON.stringify(n.subs)}`));
+    });
+    check(JSON.stringify(after.added['shortage.cols']) === JSON.stringify(before.added['shortage.cols']), `sloupce Shortage po aktualizaci: ${JSON.stringify(after.added['shortage.cols'])}`);
+    check(JSON.stringify(after.added.tasks) === JSON.stringify(before.added.tasks) && JSON.stringify(after.added.undo) === JSON.stringify(before.added.undo), 'úkoly a Vrátit zpět po aktualizaci');
+  }
+  await page.evaluate(() => showView('shortage'));
+  await page.waitForSelector('#view-shortage.on #shView table.sh-tab');
+  check(await page.locator('#shView tr.sh-sub').count() === 2 && await page.inputValue('#shView [data-shnote="siupg01"]') === 'Volat dodavatele', 'Shortage v nové verzi: oba poddíly a poznámka v tabulce');
+  await page.screenshot({ path: path.join(shots, '02-nova-shortage.png'), fullPage: true });
   check(await page.evaluate(() => store.rev) === beforeRev, 'stará stránka po aktualizaci něco uložila');
   check(await page.evaluate(() => S.log.length) === beforeLog, 'historie změn se po aktualizaci liší');
 
@@ -167,8 +206,9 @@ const STATE = added => `(() => {
   check(drawn.length === Math.min(3, pool.length) && drawn.every(k => pool.includes(k)), `vylosováno: ${drawn}`);
   const work = await page.evaluate(() => audDays(isoWeek(todayIso()).id).includes(todayIso()));
   if (work) { await page.click('[data-qksave]'); await saved(page); }
-  // KPI (2.42): skupina Matice u skupiny KPI a sloupec normy
-  await page.evaluate(() => { S.workAudit.groups[0].mg = ['g_brus']; S.workAudit.dv.cols.work.norm = 'K'; S.workAudit.dv.sheets = { att: 'List2', work: '' }; S.employees['adámek|aleš'].end = '2027-02-28'; tkAdd(S, { title: 'Kontrola po aktualizaci', due: todayIso(), owner: 'Mistr' }, tkMeta()); save(); });
+  // Shortage (2.70): sloupec poznámek od plánování (tabulka A–S) a poznámka delší než dřívějších 300 znaků; úkol
+  const LONG = 'Poznámka od plánování: ' + 'termín se posouvá, díl čeká na kontrolu rozměrů. '.repeat(30);
+  await page.evaluate(long => { S.shortage.cols = { ...S.shortage.cols, list: { ...SH_URGENT_COLS, noteChosen: true } }; S.shortage.lists[0].items[1].note = long.trim(); S.employees['adámek|aleš'].end = '2027-02-28'; tkAdd(S, { title: 'Kontrola po aktualizaci', due: todayIso(), owner: 'Mistr' }, tkMeta()); save(); }, LONG);
   await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -182,7 +222,9 @@ const STATE = added => `(() => {
     const its = ((final.st.audit.plans[week] || {}).items || []).filter(i => i.day === today && i.extra);
     check(its.length === drawn.length && its.every(i => drawn.includes(i.key)), `rychlá kontrola po novém přihlášení: ${JSON.stringify(its)}`);
   }
-  check(JSON.stringify(final.added['workAudit.groups.0.mg']) === '["g_brus"]' && final.added['workAudit.dv.cols.work.norm'] === 'K' && final.added['workAudit.dv.sheets'].att === 'List2', `KPI 2.42 po novém přihlášení: ${JSON.stringify(final.added)}`);
+  const fsh = final.added['shortage.lists'][0];
+  check(final.added['shortage.cols'].list && final.added['shortage.cols'].list.note === 'S' && final.added['shortage.cols'].list.noteChosen === true && fsh.items[1].note === LONG.trim() && fsh.items[1].note.length > 1000, `Shortage 2.70 po novém přihlášení: ${JSON.stringify(final.added['shortage.cols'])} ${fsh.items[1].note.length}`);
+  check(JSON.stringify(fsh.items[0]) === JSON.stringify(after.added['shortage.lists'][0].items[0]), 'převedená položka Shortage se po uložení nezměnila');
   check(final.st.employees['adámek|aleš'] && final.st.employees['adámek|aleš'].end === '2027-02-28', 'konec trestu (2.43) po novém přihlášení');
   check(final.added.tasks && final.added.tasks.list.length === 1 && final.added.tasks.list[0].title === 'Kontrola po aktualizaci', `úkol (2.46) po novém přihlášení: ${JSON.stringify(final.added.tasks)}`);
   // Vrátit zpět (2.45): změna z kroku 5 má uložené hodnoty před změnou a odkaz z historie

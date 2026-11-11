@@ -62,6 +62,30 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.70
+
+Shortage převzal úpravy ze samostatné aplikace Shortage (verze 1.1 až 1.6):
+
+- Urgenty: kromě dosavadní tabulky (A–H) se načte i široká tabulka urgentů A–S (A EAN, C název,
+  F objednávka, G index, H množství, S oddělení v procesu). Okno se sloupci se ukáže při každém
+  nahrání a vložení; vybraný sloupec se vloží do poznámky jako „Poznámka od plánování: …“.
+  Tlačítkem Doplnit poznámky z Excelu jdou poznámky doplnit i do rozpracovaného seznamu, ručně
+  psaný text zůstane.
+- Výrobní plán ze dvou listů: 1. list (díly bez sestav) doplní QR kód a probíhající operaci podle
+  přesné shody EAN + objednávka + line/index, 2. list přidá poddíly sestav. Poddíly se přidají
+  hned u všech operací (nečekají na poslední záznam, „Odesláno na WPA“ je neskryje), až 500 na sestavu.
+- Víc QR kódů pro stejný díl: položka je nahoře v části „Nelze přidělit odkaz“ a variantu vybereš
+  podle operace a posledního záznamu. Uložený QR kód, který plánu neodpovídá, se ukáže ke kontrole.
+- Evidence pohybu se pamatuje i pro kódy, které zatím žádná položka nemá (nejvýš 3 000 záznamů
+  na seznam), takže pozdější plán nebo výběr QR varianty záznam rovnou použije.
+- Tužka u položky i poddílu otevře úpravu (údaje, QR kód, vlastní kód). Ručně upravený poddíl
+  nový plán nepřepíše, aktualizuje u něj jen probíhající operaci.
+- Poznámky jsou víceřádková pole až na 2 000 znaků (uloží se po opuštění pole nebo Ctrl+Enter).
+- Tlačítko Vložit ze schránky vedle Nahrát Excel, evidenci pohybu jde přeskočit tlačítkem
+  Přeskočit a vytvořit PDF.
+- Sloupce všech souborů dál navrhuje AI jen z nadpisů a druhu hodnot. Uložené seznamy se převedou
+  samy, čekající poddíly ze starší verze se objeví mezi poddíly.
+
 ## Co je nového ve verzi 2.69.1
 
 - KPI, Přehled: lidé v práci se u dnů bez souboru obsazenosti doplní z docházky a kusy na

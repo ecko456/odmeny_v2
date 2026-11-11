@@ -46,8 +46,11 @@ for i, (o, n, e, x, q, op, f) in enumerate(rows):
     ws.append([o, n, e, x, q, op]); c = ws.cell(row=i + 3, column=3); c.hyperlink = L('5.0.%d' % (i + 1))
     if f: c.fill = fills[f]
 wb.save(out + '/urgenty.xlsx')
-# 2. výrobní plán: list 1 souhrn, list 2 A objednávka, B EAN sestavy, C index, D EAN poddílu, E operace
-wb = Workbook(); ws = wb.active; ws.title = 'Souhrn'; ws.append(['Výrobní plán'])
+# 2. výrobní plán (od 2.70 dva listy): list 1 díly bez sestav (A EAN s odkazem, B objednávka, C index, D operace),
+#    list 2 A objednávka, B EAN sestavy, C index, D EAN poddílu, E operace
+wb = Workbook(); ws = wb.active; ws.title = 'Díly'; ws.append(['EAN dílu', 'Objednávka', 'Index', 'Probíhající operace'])
+for i, (e, o, x, op, code) in enumerate([('8590000005002', 'OBJ-502', 'B', 'Frézování Hala 2', '5.2.2'), ('8590000005003', 'OBJ-503', 'C', 'Frézování Hala 2', '5.0.3'), ('8590000005004', 'OBJ-777', '', 'Brush Hala 2', '5.4.4')]):
+    ws.append([e, o, x, op]); ws.cell(row=i + 2, column=1).hyperlink = L(code)
 p = wb.create_sheet('Poddíly'); p.append(['Objednávka', 'EAN sestavy', 'Index', 'EAN poddílu', 'Probíhající operace'])
 plan = [('OBJ-501', '8590000005001', 'A', '8590000005001', 'Broušení – hala 2', None),
         ('OBJ-501', '8590000005001', 'A', '8590000006001', 'Leštění – hala 2', '6.0.1'),
@@ -59,6 +62,15 @@ for i, (o, a, x, s, op, code) in enumerate(plan):
     p.append([o, a, x, s, op])
     if code: p.cell(row=i + 2, column=4).hyperlink = L(code)
 wb.save(out + '/plan.xlsx')
+# 2.70: druhý plán, v 1. listu dva QR kódy pro stejný díl (EAN + objednávka + index), 2. list stejný
+wb2 = Workbook(); ws = wb2.active; ws.title = 'Díly'; ws.append(['EAN dílu', 'Objednávka', 'Index', 'Probíhající operace'])
+for i, (code, op) in enumerate([('5.5.1', 'Leštění – hala 2'), ('5.5.2', 'Lakování')]):
+    ws.append(['8590000005005', 'OBJ-505', 'D', op]); ws.cell(row=i + 2, column=1).hyperlink = L(code)
+p2 = wb2.create_sheet('Poddíly')
+for row in p.iter_rows(values_only=True): p2.append(list(row))
+for i, (o, a, x, s, op, code) in enumerate(plan):
+    if code: p2.cell(row=i + 2, column=4).hyperlink = L(code)
+wb2.save(out + '/plan2.xlsx')
 # 3. evidence pohybu: A pracoviště, B QR kód, C datum a čas, D ks, E stav
 wb = Workbook(); ws = wb.active; ws.title = 'Pohyb'
 ws.append(['Pracoviště', 'QR kód', 'Datum a čas', 'Ks', 'Stav'])
@@ -95,13 +107,13 @@ print('ok')`;
   await page.click('#nav [data-view="shortage"]');
   await page.waitForSelector('#view-shortage.on');
   const steps = await page.$$eval('.sh-step', x => x.map(s => [s.querySelector('b').textContent, s.classList.contains('done')]));
-  check(JSON.stringify(steps) === JSON.stringify([['Urgentní díly', false], ['Výrobní plán', false], ['Evidence pohybu', false]]), `tři kroky: ${JSON.stringify(steps)}`);
+  check(JSON.stringify(steps) === JSON.stringify([['Urgentní díly', false], ['Výrobní plán', false], ['Evidence pohybu · volitelné', false]]), `tři kroky: ${JSON.stringify(steps)}`);
 
   // ---------- 1. krok: sloupce a barvy ----------
   await page.setInputFiles('#shFile', file('urgenty.xlsx'));
   await dlgOpen(page, /Jak se načte soubor urgentních dílů/);
   const cols = await page.$$eval('#dlg [data-shcol]', x => Object.fromEntries(x.map(s => [s.dataset.shcol, s.value])));
-  check(JSON.stringify(cols) === JSON.stringify({ order: 'A', name: 'B', ean: 'C', index: 'D', qty: 'E', top: 'G', op: 'F' }), `sloupce podle nadpisů: ${JSON.stringify(cols)}`);
+  check(JSON.stringify(cols) === JSON.stringify({ order: 'A', name: 'B', ean: 'C', index: 'D', qty: 'E', top: 'G', op: 'F', note: '' }), `sloupce podle nadpisů: ${JSON.stringify(cols)}`);
   const prev = await page.textContent('#shColPrev');
   check(/8590000005001/.test(prev) && /Hřídel velká/.test(prev) && /odhad podle nadpisů/.test(await page.textContent('#dlg')), `vzor prvních řádků: ${prev.slice(0, 120)}`);
   // změna písmene překreslí vzor; vrátit zpět
@@ -128,17 +140,30 @@ print('ok')`;
   check(/Sloupce urgentních dílů/.test(await page.textContent('#shMsg')) && await page.locator('#shMsg [data-shrecols="list"]').count() === 1, 'zpráva se sloupci a Upravit sloupce');
 
   // ---------- 2. krok: výrobní plán ----------
+  // 2.70: nejdřív 1. list (díly bez sestav, přesná shoda EAN + objednávka + index), pak 2. list (sestavy a poddíly)
   await page.setInputFiles('#shPlanFile', file('plan.xlsx'));
-  await dlgOpen(page, /Jak se načte soubor výrobního plánu/);
+  await dlgOpen(page, /výrobního plánu · 1\. list/);
+  const pic = await page.$$eval('#dlg [data-shcol]', x => Object.fromEntries(x.map(s => [s.dataset.shcol, s.value])));
+  check(JSON.stringify(pic) === JSON.stringify({ ean: 'A', order: 'B', index: 'C', op: 'D' }), `sloupce 1. listu plánu: ${JSON.stringify(pic)}`);
+  // stejný sloupec pro EAN a objednávku okno nepustí
+  await page.selectOption('#dlg [name="c-order"]', 'A');
+  await page.click('#dlgOk');
+  check(await page.locator('#dlg[open]').count() === 1 && /různé sloupce/.test(await page.textContent('#dlg')), 'EAN, objednávka a index musí mít různé sloupce');
+  await page.selectOption('#dlg [name="c-order"]', 'B');
+  await page.screenshot({ path: path.join(shots, '02b-plan-list1.png') });
+  await page.click('#dlgOk');
+  await dlgOpen(page, /výrobního plánu · 2\. list/);
   const pc = await page.$$eval('#dlg [data-shcol]', x => Object.fromEntries(x.map(s => [s.dataset.shcol, s.value])));
-  const psheet = await page.$eval('#dlg [name="sheet"]', s => s.options[s.selectedIndex].text);
-  check(JSON.stringify(pc) === JSON.stringify({ asm: 'B', sub: 'D', index: 'C', order: 'A', op: 'E' }) && psheet === 'Poddíly', `sloupce plánu a list: ${JSON.stringify(pc)} ${psheet}`);
+  check(JSON.stringify(pc) === JSON.stringify({ asm: 'B', sub: 'D', index: 'C', order: 'A', op: 'E' }), `sloupce 2. listu plánu: ${JSON.stringify(pc)}`);
   await page.click('#dlgOk');
   await page.waitForFunction(() => S.shortage.lists[0].plan && !/Čtu/.test(document.querySelector('#shMsg').textContent), null, { timeout: 20000 });
   await saved(page);
-  const sub = await page.evaluate(() => { const i = S.shortage.lists[0].items; const a = i.find(x => x.ean === '8590000005001'), c = i.find(x => x.ean === '8590000005003'); return { a: a.subs.map(s => [s.ean, s.code, s.op]), ac: a.cands.map(s => [s.ean, s.op]), cpop: c.pop, cc: c.cands.map(s => [s.ean, s.code]), plan: S.shortage.cols.plan }; });
-  check(JSON.stringify(sub.a) === JSON.stringify([['8590000006001', '6.0.1', 'Leštění – hala 2']]) && JSON.stringify(sub.ac) === JSON.stringify([['8590000006002', 'Lakování']]), `poddíly sestavy podle sloupců: ${JSON.stringify(sub)}`);
-  check(sub.cpop === 'Frézování Hala 2' && JSON.stringify(sub.cc) === JSON.stringify([['8590000006003', '6.0.3']]) && sub.plan.sheet === 'Poddíly', `operace sestavy z plánu a list: ${JSON.stringify(sub)}`);
+  const sub = await page.evaluate(() => { const i = S.shortage.lists[0].items; const f = e => i.find(x => x.ean === e); const a = f('8590000005001'), b = f('8590000005002'), c = f('8590000005003'), d = f('8590000005004'); return { a: a.subs.map(s => [s.ean, s.code, s.op]), cands: i.some(x => x.cands && x.cands.length), b: [b.op, b.code], c: [c.op, c.code, c.subs.map(s => [s.ean, s.code])], d: [d.op, d.code, d.planMismatch], cols: [S.shortage.cols.planItem.sheet, S.shortage.cols.plan.sheet] }; });
+  check(JSON.stringify(sub.a) === JSON.stringify([['8590000006001', '6.0.1', 'Leštění – hala 2'], ['8590000006002', '', 'Lakování']]) && !sub.cands, `poddíly sestavy všech operací (bez čekajících): ${JSON.stringify(sub)}`);
+  check(JSON.stringify(sub.b) === JSON.stringify(['Frézování Hala 2', '5.0.2']), `díl z 1. listu: operace z plánu, QR z urgentu zůstane: ${JSON.stringify(sub.b)}`);
+  check(sub.c[0] === 'Frézování Hala 2' && JSON.stringify(sub.c[2]) === JSON.stringify([['8590000006003', '6.0.3']]), `operace sestavy z plánu a poddíl: ${JSON.stringify(sub.c)}`);
+  check(sub.d[0] === 'Brush Hala 2' && sub.d[1] === '5.0.4', `jiná objednávka v 1. listu se nespáruje: ${JSON.stringify(sub.d)}`);
+  check(JSON.stringify(sub.cols) === JSON.stringify(['Díly', 'Poddíly']), `listy plánu se zapamatují: ${JSON.stringify(sub.cols)}`);
 
   // ---------- 3. krok: evidence pohybu (soubor) ----------
   await page.setInputFiles('#shMoveFile', file('pohyb.xlsx'));
@@ -155,6 +180,41 @@ print('ok')`;
   const steps2 = await page.$$eval('.sh-step', x => x.map(s => s.classList.contains('done')));
   check(steps2.every(Boolean) && /pohyb\.xlsx/.test(await page.textContent('#shSt3')), `všechny kroky hotové: ${JSON.stringify(steps2)}`);
   await page.screenshot({ path: path.join(shots, '03-kroky.png') });
+
+  // ---------- úprava poddílu tužkou a QR varianty (2.70) ----------
+  const sub3 = await page.evaluate(() => S.shortage.lists[0].items.find(x => x.ean === '8590000005003').subs[0].id);
+  await page.click(`#shView [data-shedit="${sub3}"]`);
+  await dlgOpen(page, /Upravit poddíl/);
+  check(await page.inputValue('#dlg [name="order"]') === 'OBJ-503' && await page.inputValue('#dlg [name="code"]') === '6.0.3', 'úprava poddílu: objednávka ze sestavy, kód');
+  await page.fill('#dlg [name="op"]', 'Montáž ručně');
+  await page.fill('#dlg [name="note"]', 'Upraveno ručně');
+  await page.click('#dlgOk');
+  await dlgClosed(page);
+  await page.waitForFunction(id => { const h = shEntry(S.shortage.lists[0], id); return h && h.entry.manual && h.entry.op === 'Montáž ručně'; }, sub3);
+  await saved(page);
+  await page.setInputFiles('#shPlanFile', file('plan2.xlsx'));
+  for (let k = 0; k < 2; k++) {   // sloupce sedí na uložené: okna se neukážou (kdyby ano, potvrdit)
+    await page.waitForFunction(() => document.querySelector('#dlg[open]') || /plan2\.xlsx/.test(document.querySelector('#shMsg').textContent), null, { timeout: 20000 });
+    if (await page.locator('#dlg[open]').count()) { problems.push('druhý plán znovu ukázal okno se sloupci'); await page.click('#dlgOk'); }
+  }
+  await page.waitForFunction(() => /plan2\.xlsx/.test(document.querySelector('#shMsg').textContent) && !/Čtu/.test(document.querySelector('#shMsg').textContent), null, { timeout: 20000 });
+  await saved(page);
+  const qi = await page.evaluate(() => { const l = S.shortage.lists[0]; const i = l.items.find(x => x.ean === '8590000005005'); const s3 = l.items.find(x => x.ean === '8590000005003').subs[0]; return { id: i.id, code: i.code, conflict: i.qrConflict, choices: i.qrChoices.map(c => [c.code, c.op]), sub: [s3.op, s3.note, s3.manual] }; });
+  check(qi.code === '5.0.5' && qi.conflict && JSON.stringify(qi.choices) === JSON.stringify([['5.5.1', 'Leštění – hala 2'], ['5.5.2', 'Lakování']]), `QR varianty a uložený kód ke kontrole: ${JSON.stringify(qi)}`);
+  // ruční úprava (údaje, kód, poznámka) zůstane, probíhající operace je živý údaj z nového plánu (jako v samostatné aplikaci)
+  check(JSON.stringify(qi.sub) === JSON.stringify(['Montáž', 'Upraveno ručně', true]), `ručně upravený poddíl: poznámka zůstane, operace z nového plánu: ${JSON.stringify(qi.sub)}`);
+  check(/Nelze přidělit odkaz/.test(await page.textContent('#shView')) && await page.locator(`#shView select[data-shqr="${qi.id}"] option`).count() === 3, 'část Nelze přidělit odkaz s výběrem varianty');
+  check(/liší od variant/.test(await page.textContent('#shMsg')), `hláška o uloženém kódu ke kontrole: ${await page.textContent('#shMsg')}`);
+  const fitQ = await page.evaluate(() => { const c = document.querySelector('#shView .table-card'); return c.scrollWidth - c.clientWidth; });
+  check(fitQ <= 1, `tabulka s výběrem QR varianty na 1440 px přetéká o ${fitQ} px (akce vpravo schované)`);
+  await page.locator(`#shView select[data-shqr="${qi.id}"]`).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(shots, '03b-qr-varianty.png') });
+  await page.selectOption(`#shView select[data-shqr="${qi.id}"]`, '5.5.2');
+  await page.waitForFunction(id => { const i = S.shortage.lists[0].items.find(x => x.id === id); return i.code === '5.5.2' && !i.qrConflict && i.op === 'Lakování'; }, qi.id);
+  check(!/Nelze přidělit odkaz/.test(await page.textContent('#shView')), 'po výběru varianty položka z části Nelze přidělit odkaz zmizí');
+  const overQ = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  check(overQ <= 1, `tabulka bez přetečení na 1440: ${overQ}`);
+  await saved(page);
 
   // ---------- Rozbor položek ----------
   await page.click('[data-shmode="rozbor"]');
@@ -183,7 +243,11 @@ print('ok')`;
   // ---------- znovu: sloupce zapamatované, barvy předvyplněné, Bez barev ----------
   await page.click('[data-shmode="list"]');
   await page.setInputFiles('#shFile', file('urgenty.xlsx'));
-  await dlgOpen(page, /Barvy v buňkách EANu/);   // okno se sloupci se neukáže: sedí na uložené
+  // od 2.70 se okno se sloupci urgentů ukáže vždy (volba sloupce poznámek od plánování), sloupce předvyplněné z minula
+  await dlgOpen(page, /Jak se načte soubor urgentních dílů/);
+  check(await page.$eval('#dlg [name="c-op"]', s => s.value) === 'F', 'sloupce urgentů zapamatované');
+  await page.click('#dlgOk');
+  await dlgOpen(page, /Barvy v buňkách EANu/);
   check(await page.$eval('#dlg [name="k-4F81BD"]', s => s.value) === 'top2', 'vzorník si barvu pamatuje');
   await page.click('#dlgCancel');
   await page.waitForFunction(() => S.shortage.lists.length === 2);
@@ -213,7 +277,20 @@ print('ok')`;
 
   // historie
   const log = (await page.evaluate(() => S.log.filter(e => e.kind === 'shortage').map(e => e.text))).join(' | ');
-  check(/sloupce urgentních dílů/.test(log) && /sloupce výrobního plánu/.test(log) && /barva EANu #FF0000 = TOP SHORTAGE/.test(log) && /evidence pohybu pohyb\.xlsx/.test(log), `historie změn: ${log.slice(0, 500)}`);
+  check(/sloupce urgentních dílů/.test(log) && /sloupce prvního listu výrobního plánu: EAN dílu A, Číslo objednávky B/.test(log) && /sloupce druhého listu výrobního plánu/.test(log) && /barva EANu #FF0000 = TOP SHORTAGE/.test(log) && /evidence pohybu pohyb\.xlsx/.test(log), `historie změn: ${log.slice(0, 1200)}`);
+
+  // ---------- Vložit ze schránky (2.70): tlačítko čte schránku přes Clipboard API ----------
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.evaluate(() => { ui.sh.mode = 'list'; renderShortage(); });
+  await page.evaluate(() => navigator.clipboard.writeText('Zakázka\tPopis\tEAN\tIndex\tMnožství\tProbíhající operace\nOBJ-601\tVíko\t8590000006601\tA\t3\tLeštění – hala 2\n'));
+  const nLists = await page.evaluate(() => S.shortage.lists.length);
+  await page.click('#shClipboard');
+  await dlgOpen(page, /Jak se načte soubor urgentních dílů/);
+  await page.click('#dlgOk');
+  await dlgClosed(page);
+  await page.waitForFunction(n => S.shortage.lists.length === n + 1, nLists);
+  check(await page.evaluate(() => { const l = S.shortage.lists[0]; return l.file === 'vloženo ze schránky' && l.items.length === 1 && l.items[0].ean === '8590000006601' && l.items[0].op === 'Leštění – hala 2'; }), 'Vložit ze schránky založí seznam');
+  await saved(page);
 
   // ---------- úzké okno (telefon): kroky pod sebou, rozbor bez přetečení ----------
   await page.setViewportSize({ width: 390, height: 844 });

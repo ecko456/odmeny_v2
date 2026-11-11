@@ -34,6 +34,38 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 11. 11. 2026 (verze 2.70):
+
+- Uživatel upravoval Shortage externě v samostatné aplikaci `ecko456/shortage` (Electron pro
+  Windows, offline, verze 1.6.0, vychází z V2 `ce1ae20`) a chtěl změny vidět. Na otázku vybral
+  „Převzít do V2“. Samostatný repozitář se neměnil.
+  - Převod: deklarace, které byly ve V2 stejné jako v původní samostatné verzi (bez komentářů),
+    nahrazené novým textem, nové vložené; `renderShortage`, `drawShortage` a `shColsFor` sloučené
+    třícestně (AI návrh sloupců zůstal, ruční volba sloupce poznámek má přednost i před AI).
+  - Core (23-shortage, 24-shortage-kroky): `SH_URGENT_COLS` (A–S), `shListBase` (A–S, nebo
+    Kooperace A–H, nebo uložené), `shPlanningNote`, `shApplyNotes` (`notesTarget`), `SH_MAX_NOTE`
+    2000, `SH_MAX_SUBS` 500, `SH_MAX_RECORDS` **3000** (samostatná 20 000; ve V2 méně kvůli
+    šifrovanému stavu, limit serveru 12 MB), `list.records` (evidence i pro nepřiřazené kódy),
+    `shRecordMap`, `shQrChoices`, `shSelectQr`, `shPlanDirectRow` (1. list: přesná shoda EAN +
+    objednávka + line), `shApplyPlan` (qrChoices, `qrConflict`, `planMismatch`, operace z plánu,
+    ruční poddíly `manual`/`sourceKey` zůstanou), `shAllSubs` (staré `cands` → `subs`, náhodné id
+    při převodu, čištění je idempotentní), `SH_COLS.planItem`, `cols.list.note/noteChosen`,
+    `cols.planItem.sheet/matchVersion`. `shPlanRow` bere všechny operace (`SH_SUB_OPS` už nefiltruje).
+  - UI (26-shortage): okno sloupců urgentů vždy, plán = dvě okna (`planItem`, pak `plan`; podruhé
+    jen když se liší), `shQrSelect`, `shEditBtn` (`[data-shedit]` → `shManualDialog` s id),
+    poznámka = `textarea.sh-note` (Ctrl+Enter, mezery a zalomení se slijí), `#shClipboard`
+    (`shReadClipboard`: Clipboard API, HTML i text), `#shSkipMove`, `#shPaste` pryč (Ctrl+V na
+    stránce zůstal), sloupec PDF „Oddělení / Probíhající operace“, akce poddílu v `.sh-acts`
+    (jinak tabulka na 1440 px přetékala o 7 px). Čeština hlášky po vložení záznamů opravená
+    („uloženy 4 záznamy“).
+  - Server `lib/ai.php`: `ODM_AI_SH_FIELDS` (`list` + `note`, nový `planItem`), prompt popisuje
+    tabulku A–S a oba listy plánu.
+  - Testy: core „Shortage (2.70)“ (převzaté testy samostatné aplikace), upravené 2.27–2.61,
+    `test_odmeny` (`note`, `planItem`, 426 pro 47), e2e `e2e_shortage`, `e2e_shkroky` (plán se dvěma
+    listy, kontrola různých sloupců), `e2e_upgrade_prev` 2.69.1 → 2.70 (seznam Shortage s `cands`
+    ze starší verze: nic původního nechybí, čekající poddíl mezi poddíly).
+  - Verze dat **48**, `ODM_VERSION` 2.70.
+
 Stav k 9. 11. 2026 (verze 2.69.1):
 
 - Uživatel: „v KPI přehledu mi to vypočítá kolik se zpracovalo kusů, ale už to nedokáže dát
@@ -2587,7 +2619,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.67 | `178d8f0` | Úkoly na časové ose jako samostatná část modulu Úkoly (přehled, hledání, úpravy, smazání) |
 | 2.68 | `2d4e65e` | vysouvací pravý panel na tabletu a menším monitoru (tlačítko u pravého okraje) |
 | 2.69 | `ad4daf6` | plán v Kapacitách a zaškolení z Plánu kapacit, v přesčas a práci ve svátek plán poloviční |
-| 2.69.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: KPI přehled spojí kusy s lidmi v práci (lidé z docházky, kusy na osobu i bez skupin Matice) |
+| 2.69.1 | `ce1ae20` | KPI přehled spojí kusy s lidmi v práci (lidé z docházky, kusy na osobu i bez skupin Matice) |
+| 2.70 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage ze samostatné aplikace (urgenty A–S, poznámka od plánování, plán ze dvou listů, QR varianty, evidence předem, úprava položek, poddíly všech operací) (data verze 48) |
 
 Verze 2.1 přidala:
 
@@ -2700,7 +2733,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `47` (od 2.66):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `48` (od 2.70):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;

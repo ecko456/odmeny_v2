@@ -2060,7 +2060,7 @@ table.sh-tab td.sh-opc { min-width: 130px; }
 .sh-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 13px; }
 .tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; white-space: normal; overflow-wrap: anywhere; max-width: 100%; text-align: left; border-radius: 8px; }
 table.sh-tab td.sh-notec { min-width: 150px; }
-.sh-note { width: 100%; min-width: 130px; min-height: 34px; padding: 6px 9px; font-size: 13.5px; }
+.sh-note { display: block; box-sizing: border-box; width: 100%; min-width: 130px; min-height: 54px; padding: 6px 9px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; resize: none; }
 table.sh-tab td.sh-actc, table.sh-tab th.sh-actc { width: 96px; text-align: right; }
 .sh-hint { margin: -4px 0 10px; }
 /* poddíly z výrobního plánu (2.29) */
@@ -3288,3 +3288,13 @@ button.rail-cpi { cursor: pointer; } button.rail-cpi:hover { background: color-m
 @keyframes railFade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { html.rail-open .rail, html.rail-open .rail-scrim { animation: none; } }
 @media print { .rail-tab, .rail-scrim { display: none !important; } }
+
+/* Shortage ze samostatné aplikace (2.70): tlačítka kroků, víceřádkové poznámky, výběr QR varianty */
+.sh-step[data-step="1"], .sh-step[data-step="3"] { grid-template-columns: auto minmax(0, 1fr); }
+.sh-step-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+table.sh-tab tbody tr textarea { cursor: text; user-select: text; }
+.sh-qrpick { display: grid; gap: 4px; width: 190px; max-width: 100%; margin-bottom: 6px; }   /* celé popisky variant ukáže rozbalená nabídka */
+table.sh-tab tr.sh-depthead td { white-space: normal; }
+.sh-qrpick select { width: 100%; font-size: 13px; }
+.sh-coldlg > .note { margin: 12px 0 4px; }
+.sh-coldlg > h4 { margin: 14px 0 6px; }
