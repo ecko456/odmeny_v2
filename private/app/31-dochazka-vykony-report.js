@@ -930,10 +930,11 @@ function kpHtml() {
     statTile('Lidí', String(t.people), `${shown.length === 1 ? '1 oddělení' : `${x.depts.length} oddělení`}`),
     statTile('Ø ks na den', t.ks1 != null ? nf(t.ks1, 1) : '—', `${nf(t.ks, 0)} ks ÷ ${nf(t.days, 1)} odpracovaných dnů (${nf(t.hrs, 1)} h)`),
     statTile('Kusy za hodinu', t.ph != null ? nf(t.ph, 1) : '—', x.time ? 'kusy ÷ vykázaný čas' : 'evidence bez času'),
-    statTile('Plnění normy', t.norm != null ? `${nf(t.norm, 1)} %` : '—', t.norm != null ? 'norma ÷ čas u řádků s normou' : 'norma v evidenci není'),
+    statTile('Plnění normy', t.norm != null ? `${nf(t.norm, 1)} %` : '—', t.norm != null ? (x.autoN ? 'podle norem systému (záložka Normy)' : 'norma ÷ čas u řádků s normou') : 'norma v evidenci není'),
   ].join('')}</div>`;
   const notes = [];
   if (x.noAtt) notes.push('Za měsíc chybí docházka: průměr na den nejde spočítat (jen kusy za hodinu a plnění normy).');
+  if (x.autoN) notes.push(`Plnění normy ${x.autoN === 1 ? 'u 1 člověka' : `u ${x.autoN} lidí`} podle norem, které si systém spočítal sám z vykázaných časů (záložka Normy): normominuty za hotové kusy ÷ vykázaný čas, záznamy do ${DV_NORM_MIN} minut se nepočítají.`);
   if (x.unmatched) notes.push(`${x.unmatched} ${x.unmatched === 1 ? 'záznam' : x.unmatched <= 4 ? 'záznamy' : 'záznamů'} z evidence práce nejde přiřadit nikomu z Lidí (chybí ID), ve výsledcích nejsou.`);
   const head = `<th class="r kp-rank">#</th><th>Zaměstnanec</th><th>Skupina</th><th class="r">Dny</th>${KP_COLS.map(([k, l]) => `<th class="r${k === x.sort ? ' kp-on' : ''}">${l}</th>`).join('')}`;
   const cards = depts.map(d => {
@@ -978,6 +979,89 @@ async function exportKpXlsx() {
       X.utils.book_append_sheet(wb, ws, sheet.name);
     });
     downloadFile(`vykonnost-na-osobu-${kp.month}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+  } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
+}
+
+/* ---------- KPI: normy z vykázaných časů (2.74) ----------
+   Normu (čas na kus) po dílech a operacích počítá core kpiNorms ze souboru Docházka a výkony:
+   primárně zkušení (hodnocení nad kpiNormPct %), jinak všichni; záznamy do DV_NORM_MIN minut ne.
+   Hledání filtruje řádky bez překreslení (nmFilter), Excel kpiNormSheets. */
+const nmMin = v => (v == null ? '—' : `${nf(v, v >= 100 ? 0 : v >= 10 ? 1 : 2)} min`);
+function nmState() {
+  const st = ui.wa.nm || (ui.wa.nm = { month: '', q: '' });
+  if (st.month && !kpiNormMonths().with.includes(st.month)) st.month = '';
+  return st;
+}
+function nmHtml() {
+  const mm = kpiNormMonths();
+  const st = nmState();
+  const dv = S.workAudit.dv;
+  const pct = kpiNormPct();
+  const lede = `<p class="small muted nm-lede">Normu (čas na 1 kus) si systém počítá sám z vykázané práce v souboru <b>Docházka a výkony</b>: vykázané minuty ÷ dokončené kusy, po dílech a operacích. Primárně ze <b>zkušených pracovníků</b> (hodnocení dovedností ve své skupině ke konci měsíce nad ${pct} %, <button class="link" type="button" data-watabgo="nastaveni" data-wafocus="waNormPct">změnit</button>); díl a operaci, kterou žádný zkušený nedělal, z průměru všech. Záznamy s časem do ${DV_NORM_MIN} minut se nepočítají (nejspíš chyba v evidenci). Název dílu se čte ze sloupce <b>${esc(dv.cols.work.part)}</b>, operace ze sloupce <b>${esc(dv.cols.work.op)}</b>; změníš je v okně Jak se soubor načte při nahrání.</p>`;
+  const old = mm.without.length ? `<div class="note w nm-old">${mm.without.length === 1 ? `Měsíc ${esc(monthLabel(mm.without[0]))} je nahraný` : `Měsíce ${esc(mm.without.slice().reverse().map(monthLabel).join(', '))} jsou nahrané`} před verzí 2.74 a data pro normy ${mm.without.length === 1 ? 'nemá' : 'nemají'}. Nahraj ${mm.without.length === 1 ? 'jeho' : 'jejich'} soubor Docházka a výkony znovu (tlačítko nahoře), normy se pak spočítají i z ${mm.without.length === 1 ? 'něj' : 'nich'}.</div>` : '';
+  if (!mm.with.length) return `${lede}${old}${emptyState('Zatím žádné normy', 'Normy se spočítají z vykázané práce s kusy a časem. Nahraj soubor tlačítkem <b>Nahrát docházku a výkony</b> nahoře.')}`;
+  const x = kpiNorms({ month: st.month });
+  const bar = `<div class="t5-weekbar kp-bar nm-bar">
+    <label class="kp-f"><span>Z období</span><select id="nmMonth"><option value="">Všechny nahrané měsíce (${mm.with.length})</option>${mm.with.map(m => `<option value="${m}"${m === st.month ? ' selected' : ''}>${esc(monthLabel(m))}</option>`).join('')}</select></label>
+    <label class="kp-f nm-q"><span>Hledat</span><input type="search" id="nmQ" value="${esc(st.q)}" placeholder="Díl nebo operace" autocomplete="off"></label>
+    <span class="spacer"></span><button class="btn sec" type="button" data-nmxlsx${x.n ? '' : ' disabled'}>Excel</button></div>`;
+  const fromExp = x.n - x.fromAll;
+  const tiles = `<div class="stats">${[
+    statTile('Dílů s normou', String(x.parts.length), `${x.n} ${x.n === 1 ? 'norma' : x.n >= 2 && x.n <= 4 ? 'normy' : 'norem'} (díl × operace)`),
+    statTile('Ze zkušených', x.n ? `${nf(fromExp / x.n * 100, 0)} %` : '—', `${fromExp} z ${x.n} · ${x.exp} ${x.exp === 1 ? 'zkušený pracovník' : x.exp >= 2 && x.exp <= 4 ? 'zkušení pracovníci' : 'zkušených pracovníků'} nad ${pct} %`, x.fromAll ? 'warn' : ''),
+    statTile('Záznamů v normách', nf(x.rows, 0), `od ${x.people} ${x.people === 1 ? 'člověka' : 'lidí'} · ${x.months.length === 1 ? esc(monthLabel(x.months[0])) : `${x.months.length} měsíce`}`),
+    statTile(`Vyřazeno do ${DV_NORM_MIN} min`, nf(x.short, 0), x.short ? 'záznamů s kusy a časem do 2 minut' : 'žádný krátký záznam', x.short ? 'warn' : ''),
+  ].join('')}</div>`;
+  const src = o => (o.src === 'exp'
+    ? `<span class="tag ok" title="${o.exp.people} ${o.exp.people === 1 ? 'zkušený pracovník' : 'zkušených pracovníků'}, ${o.exp.rows} ${o.exp.rows === 1 ? 'záznam' : o.exp.rows <= 4 ? 'záznamy' : 'záznamů'}">zkušení · ${o.exp.people}</span>`
+    : `<span class="tag warn" title="Díl a operaci žádný zkušený pracovník nedělal, norma je průměr všech">všichni · ${o.all.people}</span>`);
+  const rows = x.parts.map(p => {
+    const key = p.part.toLowerCase();
+    const ops = p.ops.map(o => `<tr class="nm-op" data-nmpart="${esc(key)}" data-nmrow="${esc(`${p.part} ${o.op}`.toLowerCase())}">
+        <td class="name" data-label="Operace"><span class="nm-opname">${esc(o.op || '(bez operace)')}</span></td>
+        <td class="r num nm-norm" data-label="Norma"><b>${nmMin(o.norm)}</b></td>
+        <td class="r num" data-label="Kusy za hodinu">${o.norm > 0 ? nf(60 / o.norm, 1) : '—'}</td>
+        <td data-label="Zdroj">${src(o)}</td>
+        <td class="r num" data-label="Ø všech" title="Průměr všech, kdo díl a operaci dělali (i nezkušení)">${nmMin(o.allNorm)}</td>
+        <td class="r num" data-label="Kusy">${nf(o.all.ks, 0)}</td>
+        <td class="r num" data-label="Záznamy">${o.all.rows}</td></tr>`).join('');
+    return `<tr class="nm-part" data-nmhead="${esc(key)}"><td class="name" data-label="Díl" colspan="${p.ops.length > 1 ? 1 : 7}"><b>${esc(p.part)}</b>${p.ops.length > 1 ? ` <span class="small muted">${p.ops.length} operace</span>` : ''}</td>${p.ops.length > 1 ? `<td class="r num nm-norm" data-label="Za díl celkem"><b>${nmMin(p.norm)}</b></td><td class="r num" data-label="Kusy za hodinu">${p.norm > 0 ? nf(60 / p.norm, 1) : '—'}</td><td colspan="4" class="small muted" data-label="">součet operací</td>` : ''}</tr>${ops}`;
+  }).join('');
+  return `${lede}${old}${bar}${tiles}
+    <div class="card nm-card"><div class="table-card flat"><table class="stack nm-tab"><thead><tr><th>Díl · operace</th><th class="r">Norma (min/ks)</th><th class="r">Kusy za hodinu</th><th>Zdroj</th><th class="r">Ø všech</th><th class="r">Kusy</th><th class="r">Záznamy</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="tiny muted nm-none" hidden>Hledání nic nenašlo.</p></div>
+    <p class="hint">Norma = vykázané minuty ÷ dokončené kusy (součty, ne průměr průměrů: kdo udělal víc kusů, váží víc). Zkušenost se bere ke konci měsíce záznamu, podle historie hodnocení v Matici dovedností. Vedoucí, lidé bez skupiny a ID, které v Lidech nejsou, jsou jen v průměru všech. Bez normy v evidenci počítá Výkonnost na osobu plnění normy podle těchto norem.</p>`;
+}
+function nmFilter() {
+  const q = (nmState().q || '').trim().toLowerCase();
+  const view = $('#waView');
+  if (!view) return;
+  const heads = $$('tr.nm-part', view);
+  let shown = 0;
+  heads.forEach(h => {
+    const key = h.dataset.nmhead;
+    const partHit = !q || key.includes(q);
+    let any = false;
+    $$(`tr.nm-op[data-nmpart="${CSS.escape(key)}"]`, view).forEach(r => { const on = partHit || r.dataset.nmrow.includes(q); r.hidden = !on; if (on) any = true; });
+    h.hidden = !any;
+    if (any) shown += 1;
+  });
+  const none = $('.nm-none', view);
+  if (none) none.hidden = shown > 0 || !heads.length;
+}
+async function exportNmXlsx() {
+  const st = nmState();
+  const x = kpiNorms({ month: st.month });
+  if (!x.n) return;
+  try {
+    const X = await xlsx();
+    const wb = X.utils.book_new();
+    kpiNormSheets(x).forEach(sheet => {
+      const ws = X.utils.aoa_to_sheet(sheet.rows.map(row => row.map(safeCell)));
+      ws['!cols'] = [30, 22, 12, 10, 26, 10, 10, 10, 10, 12, 10, 10, 10, 10].map(wch => ({ wch }));
+      X.utils.book_append_sheet(wb, ws, sheet.name);
+    });
+    downloadFile(`normy-${st.month || 'vse'}.xlsx`, new Blob([X.write(wb, { bookType: 'xlsx', type: 'array' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
   } catch (error) { toast(`Export se nepovedl: ${error.message}`, true); }
 }
 
@@ -1274,6 +1358,7 @@ function bindWorkAudit() {
     const kpd = t.closest('[data-kpdir]');
     if (kpd) { ui.wa.kp.dir = kpd.dataset.kpdir; renderWorkAudit(); return; }
     if (t.closest('[data-kpxlsx]')) { exportKpXlsx(); return; }
+    if (t.closest('[data-nmxlsx]')) { exportNmXlsx(); return; }
     const dvs = t.closest('[data-dvsort]');
     if (dvs) { ui.wa.dvSort = dvs.dataset.dvsort; renderWorkAudit(); return; }
     const dvpdf = t.closest('[data-dvpdf]');
@@ -1460,6 +1545,17 @@ function bindWorkAudit() {
     if (t.id === 'dvDaySel') { ui.wa.dvDay = t.value; renderWorkAudit(); return; }
     if (t.id === 'dvMonthSel') { ui.wa.dvMonth = t.value; renderWorkAudit(); return; }
     if (t.id === 'kpMonth') { ui.wa.kp.month = t.value; renderWorkAudit(); return; }
+    if (t.id === 'nmMonth') { nmState().month = t.value; renderWorkAudit(); return; }
+    if (t.id === 'waNormPct') {
+      const v = t.value.trim().replace(/\s|%/g, '');
+      const n = v ? Number(v.replace(',', '.')) : null;
+      if (v && !(Number.isInteger(n) && n >= 1 && n <= 99)) { toast('Hranice zkušených je celé procento (1 až 99), nebo nech pole prázdné.', true); renderWorkAudit(); return; }
+      S.workAudit.normPct = n === KPI_NORM_PCT ? null : n;
+      save();
+      toast(`Normy ze zkušených: hodnocení nad ${n || KPI_NORM_PCT} %.`);
+      renderWorkAudit();
+      return;
+    }
     if (t.id === 'kpSort') { ui.wa.kp.sort = t.value; renderWorkAudit(); return; }
     if (t.id === 'kpDept') { ui.wa.kp.dept = t.value; renderWorkAudit(); return; }
     if (t.id === 'dvUnit') { S.workAudit.dv.unit = DV_UNITS.includes(t.value) ? t.value : 'auto'; save(); renderWorkAudit(); return; }
@@ -1485,6 +1581,7 @@ function bindWorkAudit() {
   });
   wv.addEventListener('input', event => {
     if (event.target.matches('[data-wadate]')) { waDatesMark(event.target); return; }
+    if (event.target.id === 'nmQ') { nmState().q = event.target.value; nmFilter(); return; }
     if (event.target.id !== 'waOpQ') return;
     ui.wa.opQ = event.target.value;
     const pos = event.target.selectionStart;

@@ -3370,3 +3370,19 @@ table.sh-htab td .link { margin-left: 4px; }
   #shView .stats.sh-six, :root[data-look="glass"] #shView .stats.sh-six { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   @container (min-width: 1120px) { #shView .stats.sh-six, :root[data-look="glass"] #shView .stats.sh-six { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
 }
+
+/* ---------- KPI: normy z vykázaných časů (2.74) ---------- */
+.nm-lede { max-width: 1100px; margin: 0 0 12px; }
+.nm-old { margin-bottom: 12px; }
+.nm-bar .nm-q input { min-width: 220px; }
+.nm-card { margin-top: 4px; }
+table.nm-tab tr.nm-part td { padding-top: 12px; background: var(--surface-2); border-top: 1px solid var(--line-2, var(--line)); }
+table.nm-tab tr.nm-op td.name { padding-left: 26px; }
+table.nm-tab .nm-opname { color: var(--ink-2); }
+table.nm-tab td.nm-norm b { font-size: 14.5px; }
+table.nm-tab tr[hidden] { display: none; }
+.nm-none { margin: 10px 4px 2px; }
+@media screen and (max-width: 760px) {
+  table.nm-tab tr.nm-op td.name { padding-left: 12px; }
+  .nm-bar .nm-q input { min-width: 0; width: 100%; }
+}

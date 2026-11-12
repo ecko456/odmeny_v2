@@ -10,8 +10,12 @@
    ========================================================================== */
 const DV_COLS={att:{id:"A",first:"B"},work:{id:"A",part:"D",op:"E",order:"F",done:"G",time:"J",date:"",norm:""}};
 const DV_COL_LABEL={id:"ID zaměstnance",first:"První den (příchod)",part:"Název dílu",op:"Operace",order:"Množství v zakázce",done:"Dokončené množství",time:"Strávený čas",date:"Datum (prázdné = najde se samo)",norm:"Norma (prázdné = soubor normu nemá)"};
-const DV_MAX_DAYS=800,DV_MAX_MONTHS=36,DV_MAX_PEOPLE=800,DV_MAX_PARTS=300,DV_MAX_OPS=100;
+const DV_MAX_DAYS=800,DV_MAX_MONTHS=36,DV_MAX_PEOPLE=800,DV_MAX_PARTS=300,DV_MAX_OPS=100,DV_MAX_NORM=1000;
 const DV_UNITS=["auto","min","h"];
+/* Normy z vykázaných časů (2.74): záznam s dokončenými kusy a časem do DV_NORM_MIN minut se do
+   norem nepočítá (nejspíš chyba v evidenci); perf[m][id].n {díl: {operace: [kusy, minuty, řádků]}},
+   perf[m][id].s = počet takových krátkých záznamů. */
+const DV_NORM_MIN=2;
 function blankDv(){return {cols:JSON.parse(JSON.stringify(DV_COLS)),unit:"auto",sheets:{att:"",work:""},pres:{},perf:{},files:[]};}
 /** Datum bez času (hlavička docházky): číslo dne z Excelu, „1.10.2026“, „2026-10-01“. */
 function dvDate(v,ref){
@@ -174,16 +178,19 @@ function dvApply(wa,p,meta,opts){
   opts=opts||{};meta=meta||{};
   const dv=wa.dv||(wa.dv=blankDv()),a=p.att&&p.att.ok?p.att:null,w=p.work&&p.work.ok?p.work:null;
   if(a)a.dates.forEach(iso=>{if(a.pres[iso])dv.pres[iso]=a.pres[iso];else delete dv.pres[iso];});
-  const months=[];let audit=null;
+  const months=[];let audit=null,short=0;
   if(w){
     const fallback=((a&&a.to)||w.to||todayIso(meta.at)).slice(0,7),by={};
     const r2=v=>Math.round(v*100)/100;
     w.recs.forEach(x=>{
-      const m=x.iso&&w.dated?x.iso.slice(0,7):fallback,pm=by[m]||(by[m]={}),q=pm[x.wid]||(pm[x.wid]={p:{},o:{}});
+      const m=x.iso&&w.dated?x.iso.slice(0,7):fallback,pm=by[m]||(by[m]={}),q=pm[x.wid]||(pm[x.wid]={p:{},o:{},n:{},s:0});
       const pp=q.p[x.part]||(q.p[x.part]=[0,0,0,0]);pp[0]+=x.g;pp[1]+=x.f;pp[2]+=x.t;pp[3]++;
       if(x.op){const oo=q.o[x.op]||(q.o[x.op]=[0,0,0]);oo[0]+=x.g;oo[1]+=x.t;oo[2]++;}
+      // normy (2.74): jen záznamy s kusy a časem nad DV_NORM_MIN minut
+      if(x.g>0){if(x.t>DV_NORM_MIN){const np=q.n[x.part]||(q.n[x.part]={}),nn=np[x.op]||(np[x.op]=[0,0,0]);nn[0]+=x.g;nn[1]+=x.t;nn[2]++;}else{q.s++;short++;}}
     });
-    Object.values(by).forEach(pm=>Object.values(pm).forEach(q=>{Object.values(q.p).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));Object.values(q.o).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));}));
+    Object.values(by).forEach(pm=>Object.values(pm).forEach(q=>{Object.values(q.p).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));Object.values(q.o).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);}));
+      Object.values(q.n).forEach(np=>Object.values(np).forEach(v=>v.forEach((n,i)=>{v[i]=r2(n);})));if(!Object.keys(q.n).length)delete q.n;if(!q.s)delete q.s;}));
     Object.keys(by).sort().forEach(m=>{dv.perf[m]=by[m];months.push(m);});
     if(w.dated&&(opts.audit||w.recs.some(x=>dvOwns(x.iso)))){
       /* kusy do KPI: od listopadu 2026 vždy, dřív jen na přání (zaškrtnutí v dialogu) */
@@ -194,13 +201,13 @@ function dvApply(wa,p,meta,opts){
     }
   }
   dv.files.push({name:String(meta.name||"").slice(0,160),at:meta.at||Date.now(),by:String(meta.by||"").slice(0,60),from:a?a.from:(w?w.from:""),to:a?a.to:(w?w.to:""),
-    people:a?a.people:0,days:a?a.days:0,rows:w?w.rows:0,months:months.slice(0,24)});
+    people:a?a.people:0,days:a?a.days:0,rows:w?w.rows:0,months:months.slice(0,24),...(short?{short}:{})});
   dv.files=dv.files.slice(-40);
   /* od listopadu 2026 (2.42) jediný zdroj: docházka pro odměny, evidence práce a obsazenost v KPI */
   const periods=a?dvToPeriods(a,meta):[];
   const prod=w?dvToProduction(w,meta,((a&&a.to)||w.to||todayIso(meta.at)).slice(0,7)):[];
   const occ=a?dvToAudit(wa,a.dates,a.abs):[];
-  return {days:a?a.dates.length:0,months,audit,periods,prod,occ};
+  return {days:a?a.dates.length:0,months,audit,periods,prod,occ,short};
 }
 /** Vzor načtení (2.42.3): první člověk z listu docházky (prvních n dní s příchodem, odchodem,
     kódem a hodinami pro odměny) a jeho první záznamy práce, ať je vidět, co se odkud čte. */

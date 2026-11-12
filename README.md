@@ -62,6 +62,27 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.74
+
+- KPI má novou záložku **Normy**: systém si sám počítá normu (čas na 1 kus) z vykázané práce
+  v souboru Docházka a výkony, po dílech a operacích (vykázané minuty ÷ dokončené kusy, součty,
+  ne průměr průměrů). U dílu s více operacemi je i součet za díl a kusy za hodinu.
+- Normy se počítají primárně ze **zkušených pracovníků**: hodnocení dovedností v jejich skupině
+  ke konci měsíce **nad 45 %** (podle historie hodnocení v Matici dovedností). Díl a operaci,
+  kterou žádný zkušený nedělal, systém spočítá z průměru všech a označí to. Hranici jde změnit
+  v Nastavení KPI (karta Normy ze zkušených).
+- Záznamy s časem **do 2 minut** (včetně) se do norem nepočítají, nejspíš jde o chybu
+  v evidenci; počet vyřazených je vidět v dlaždici. Záznamy bez dokončených kusů se taky
+  nepočítají.
+- Název dílu se čte ze sloupce nastaveného v okně **Jak se soubor načte** při nahrání (výchozí
+  D; když je v souboru ve sloupci B, přepiš ho tam, nastavení se zapamatuje).
+- Záložka Normy: výběr období (všechny nahrané měsíce nebo jeden), hledání dílu nebo operace,
+  Excel. **Výkonnost na osobu** u lidí bez normy v evidenci počítá plnění normy podle těchto
+  norem (vidět v poznámce a v dlaždici).
+- Výkony nahrané před verzí 2.74 data pro normy nemají: záložka Normy je vyjmenuje, stačí
+  jejich soubor nahrát znovu.
+- Verze dat 52: stránka otevřená ve starší verzi po aktualizaci nic neuloží (obnovit Ctrl+Shift+R).
+
 ## Co je nového ve verzi 2.73
 
 - Shortage po dnech: tlačítkem **Zabalit den** jde seznam uložit do historie jen ke čtení (jde ho

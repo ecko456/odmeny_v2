@@ -18,6 +18,9 @@ function kpiPerf(month,opts){
   const endIso=last<today?last:today;
   return withPeriod(month,()=>{
     const idx=prodIndex(),time=!!prod.time,ord=dvGroupOrder();
+    // 2.74: bez normy v evidenci plnění podle norem, které si systém spočítal z vykázaných časů
+    const an=opts.auto===false?new Map():kpiAutoNorm(month);
+    let autoN=0;
     const people=[];
     Object.entries(idx).forEach(([key,pr])=>{
       const e=S.employees[key];if(!e||e.excluded||isLead(e))return;
@@ -26,6 +29,8 @@ function kpiPerf(month,opts){
       const q={key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",gid:g.id,group:g.name,dept:g.id==="-"?"Bez skupiny":(g.dept||"").trim()||g.name,
         days,wd,hrs:att&&att.found?att.totalHours:0,ks:pr.total,spent:time?pr.spent:null,norm:pr.nspent>0?pr.norm/pr.nspent*100:null,nm:pr.norm||0,ns:pr.nspent||0,
         fund:att&&att.found?att.totalHours*60:0};
+      const a=!(pr.nspent>0)&&an.get(key);
+      if(a){q.nm=a.nm;q.ns=a.ns;q.norm=a.nm/a.ns*100;q.autoN=true;autoN++;}
       q.v={ks:days?q.ks/days:null,h:time&&days?pr.spent/60/days:null,ph:time&&pr.spent>0?q.ks/(pr.spent/60):null,
         norm:q.norm,use:time&&att&&att.found&&att.totalHours>0?pr.spent/(att.totalHours*60)*100:null};
       people.push(q);
@@ -40,7 +45,7 @@ function kpiPerf(month,opts){
       return d;
     });
     const unmatched=Object.values(prod.names).filter(rec=>!prodKeyFor(rec.name)).length;
-    return {month,time,depts,people,tot:kpiAvg(people,time),unmatched,noAtt:!per,sort,dir};
+    return {month,time,depts,people,tot:kpiAvg(people,time),unmatched,noAtt:!per,sort,dir,autoN};
   });
 }
 /** Řazení: lepší výsledek nahoru (best) nebo dolů (worst); lidé bez hodnoty vždy na konci. */
@@ -71,6 +76,94 @@ function kpiSheets(x){
     rows.push([d.name,"","Průměr oddělení","","",d.avg.wd,r1(d.avg.hrs),d.avg.days,d.avg.ks,r1(d.avg.ks1),r1(d.avg.h),r1(d.avg.ph),r1(d.avg.norm),r1(d.avg.use)]);
   });
   rows.push(["Celkem","","","","",x.tot.wd,r1(x.tot.hrs),x.tot.days,x.tot.ks,r1(x.tot.ks1),r1(x.tot.h),r1(x.tot.ph),r1(x.tot.norm),r1(x.tot.use)]);
+  if(x.autoN)rows.push([],["Plnění normy u "+x.autoN+" "+(x.autoN===1?"člověka":"lidí")+" bez normy v evidenci podle norem systému z vykázaných časů (KPI → Normy)."]);
   return [{name:"Výkonnost na osobu",rows}];
 }
 
+/* ==========================================================================
+   KPI: NORMY Z VYKÁZANÝCH ČASŮ (verze 2.74)
+   Z vykázané práce souboru Docházka a výkony (perf[m][id].n): norma dílu a operace = minuty ÷
+   dokončené kusy (vážený průměr, ne průměr průměrů). Primárně ze zkušených pracovníků
+   (hodnocení dovedností jejich skupiny ke konci měsíce nad KPI_NORM_PCT %, mění se v Nastavení
+   KPI); když díl a operaci žádný zkušený nedělal, z průměru všech. Záznamy do DV_NORM_MIN minut
+   se vyřadí už při nahrání. Vedoucí, lidé bez skupiny a neznámá ID jsou jen v průměru všech.
+   ========================================================================== */
+const KPI_NORM_PCT=45;
+function kpiNormPct(){const n=S.workAudit&&S.workAudit.normPct;return n>=1&&n<=99?n:KPI_NORM_PCT;}
+/** Měsíce s vykázanou prací (nejnovější první); with = s daty pro normy (soubor nahraný od 2.74), without = bez nich. */
+function kpiNormMonths(){
+  const perf=(S.workAudit&&S.workAudit.dv&&S.workAudit.dv.perf)||{};
+  const all=Object.keys(perf).filter(m=>/^\d{4}-\d{2}$/.test(m)).sort().reverse();
+  const has=m=>Object.values(perf[m]).some(q=>q&&(q.n||q.s));
+  return {all,with:all.filter(has),without:all.filter(m=>!has(m))};
+}
+/** Zkušenost ke konci měsíce: procento dovedností skupiny, kam člověk tehdy patřil (null = vedoucí, bez skupiny, neznámé ID). */
+function kpiExpAt(e,month,today){
+  if(!e||isLead(e))return null;
+  const last=month+"-"+String(new Date(+month.slice(0,4),+month.slice(5,7),0).getDate()).padStart(2,"0"),end=last<today?last:today;
+  const g=dvGroupOf(e,end,today),pos=S.positions.find(p=>p.id===g.id&&isGroup(p));
+  return pos?ctPctAt(e,pos,ctDayEnd(end)).pct:null;
+}
+/**
+ * Normy: {pct, min, months (použité), without (bez dat pro normy), rows, short, n, fromAll, exp, people,
+ * parts: [{part, norm (součet operací), ks, rows, ops: [{op, norm, src exp|all, exp {ks, min, rows, people}, all {…}, allNorm}]}]}.
+ * opts.month = jen ten měsíc, jinak všechny měsíce s daty pro normy.
+ */
+function kpiNorms(opts){
+  opts=opts||{};
+  const pct=kpiNormPct(),today=todayIso(opts.now),dv=(S.workAudit&&S.workAudit.dv)||blankDv(),mm=kpiNormMonths();
+  const months=opts.month?mm.with.filter(m=>m===opts.month):mm.with;
+  const map=dvWidMap(),acc=new Map(),expP=new Set(),allP=new Set();
+  let rows=0,short=0;
+  const box=()=>({ks:0,min:0,rows:0,people:new Set()});
+  months.forEach(m=>Object.entries(dv.perf[m]||{}).forEach(([wid,q])=>{
+    short+=q.s||0;
+    if(!q.n)return;
+    const e=map.get(wid),who=e?e.key:"#"+wid,ep=e?kpiExpAt(e,m,today):null,isExp=ep!=null&&ep>pct;
+    allP.add(who);if(isExp)expP.add(who);
+    Object.entries(q.n).forEach(([part,ops])=>Object.entries(ops).forEach(([op,v])=>{
+      let a=acc.get(part);if(!a){a=new Map();acc.set(part,a);}
+      let o=a.get(op);if(!o){o={all:box(),exp:box()};a.set(op,o);}
+      const add=b=>{b.ks+=v[0];b.min+=v[1];b.rows+=v[2];b.people.add(who);};
+      add(o.all);if(isExp)add(o.exp);rows+=v[2];
+    }));
+  }));
+  const r2=v=>Math.round(v*100)/100,r3=v=>Math.round(v*1000)/1000,fin=b=>({ks:r2(b.ks),min:r2(b.min),rows:b.rows,people:b.people.size});
+  let n=0,fromAll=0;
+  const parts=[...acc.entries()].map(([part,a])=>{
+    const ops=[...a.entries()].map(([op,o])=>{
+      const exp=fin(o.exp),all=fin(o.all),src=exp.ks>0?"exp":"all",b=src==="exp"?exp:all;
+      n++;if(src==="all")fromAll++;
+      return {op,norm:b.ks>0?r3(b.min/b.ks):null,src,exp,all,allNorm:all.ks>0?r3(all.min/all.ks):null};
+    }).sort((x,y)=>x.op.localeCompare(y.op,"cs"));
+    return {part,ops,norm:r3(ops.reduce((s,o)=>s+(o.norm||0),0)),ks:r2(ops.reduce((s,o)=>s+o.all.ks,0)),rows:ops.reduce((s,o)=>s+o.all.rows,0)};
+  }).sort((x,y)=>x.part.localeCompare(y.part,"cs"));
+  return {pct,min:DV_NORM_MIN,months,without:mm.without,all:mm.all,rows,short,parts,n,fromAll,exp:expP.size,people:allP.size};
+}
+/** Norma dílu a operace (min/ks) z výsledku kpiNorms, jinak null. */
+function kpiNormOf(x,part,op){const p=x.parts.find(y=>y.part===part),o=p&&p.ops.find(y=>y.op===op);return o?o.norm:null;}
+/** Plnění podle norem systému za měsíc: Map klíč člověka → {nm (normominuty za kusy), ns (vykázané minuty)}. */
+function kpiAutoNorm(month,x){
+  x=x||kpiNorms();
+  const out=new Map(),perf=((S.workAudit&&S.workAudit.dv&&S.workAudit.dv.perf)||{})[month]||{},map=dvWidMap();
+  const idx=new Map(x.parts.map(p=>[p.part,new Map(p.ops.map(o=>[o.op,o.norm]))]));
+  Object.entries(perf).forEach(([wid,q])=>{
+    const e=map.get(wid);if(!e||!q.n)return;
+    let nm=0,ns=0;
+    Object.entries(q.n).forEach(([part,ops])=>Object.entries(ops).forEach(([op,v])=>{const nr=idx.get(part)&&idx.get(part).get(op);if(nr>0){nm+=v[0]*nr;ns+=v[1];}}));
+    if(ns>0){const o=out.get(e.key)||{nm:0,ns:0};o.nm+=nm;o.ns+=ns;out.set(e.key,o);}
+  });
+  return out;
+}
+/** Excel: list Normy (díl, operace, norma, kusy za hodinu, zdroj, zkušení a všichni). */
+function kpiNormSheets(x){
+  const r=v=>v==null?"":Math.round(v*100)/100;
+  const rows=[["Normy z vykázaných časů"+(x.months.length?" · "+x.months.slice().reverse().map(monthLabel).join(", "):"")],
+    ["Zkušení = hodnocení dovedností skupiny nad "+x.pct+" %; díl a operace bez zkušených = průměr všech. Záznamy do "+x.min+" minut se nepočítají."],[],
+    ["Díl","Operace","Norma (min/ks)","Kusy za hodinu","Zdroj","Zkušení: lidí","Zkušení: záznamů","Zkušení: kusů","Zkušení: minut","Ø všech (min/ks)","Všichni: lidí","Všichni: záznamů","Všichni: kusů","Všichni: minut"]];
+  x.parts.forEach(p=>{
+    p.ops.forEach(o=>rows.push([p.part,o.op||"(bez operace)",r(o.norm),o.norm>0?r(60/o.norm):"",o.src==="exp"?"zkušení":"všichni (zkušení díl nedělali)",o.exp.people,o.exp.rows,o.exp.ks,o.exp.min,r(o.allNorm),o.all.people,o.all.rows,o.all.ks,o.all.min]));
+    if(p.ops.length>1)rows.push([p.part,"celkem za díl",r(p.norm),p.norm>0?r(60/p.norm):"","","","","","","","",p.rows,p.ks,""]);
+  });
+  return [{name:"Normy",rows}];
+}

@@ -25,7 +25,7 @@ const WA_KEY=/^(am\.(plan|total|abs)|pm\.(plan|total)|g\.[A-Za-z0-9_]{1,20}\.(am
 const WA_ISO=/^\d{4}-\d{2}-\d{2}$/;
 /* Požadavek lidí na pracovní den (2.18.1): pevně 100 lidí, null = podle plánu v souboru obsazenosti. */
 const WA_TARGET=100;
-function blankWorkAudit(){return {groups:WA_GROUPS.map(g=>({...g,mg:[]})),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null,dv:blankDv(),drep:blankDrep()};}
+function blankWorkAudit(){return {groups:WA_GROUPS.map(g=>({...g,mg:[]})),cols:JSON.parse(JSON.stringify(WA_COLS)),ops:[],days:{},pcs:{},edits:{},notes:{},files:[],seq:0,target:WA_TARGET,plan:blankWaPlan(),rep:{place:"",firm:""},trainPct:null,normPct:null,dv:blankDv(),drep:blankDrep()};}
 /* Výrobní plán (2.18): vzor sloupců dvou listů, filtr technologie, kapacita brusičů. Položky plánu
    jsou mimo stav v šifrovaných souborech (chunks), ve stavu jsou jen součty po týdnech. */
 function blankWaPlan(){return {tpl:null,tech:{words:["G2","G"],mode:"token"},cap:{group:"brus",perShift:25},chunks:[],weeks:{},items:0,files:[],at:0,by:""};}
@@ -85,6 +85,8 @@ function cleanWorkAudit(o){
   const rp=obj(o.rep);out.rep={place:str(rp.place,60).replace(/\s+/g," ").trim(),firm:str(rp.firm,80).replace(/\s+/g," ").trim()};
   /* hranice zaškolení (2.33): od kolika % dovedností skupiny je pracovník zaškolený; null = podle Matice */
   const tp=cnt(o.trainPct);out.trainPct=tp!=null&&tp>=1&&tp<=100?Math.round(tp):null;
+  /* normy z vykázaných časů (2.74): zkušený = hodnocení dovedností skupiny nad tímto %; null = KPI_NORM_PCT */
+  const np=cnt(o.normPct);out.normPct=np!=null&&np>=1&&np<=99?Math.round(np):null;
   /* docházka a výkony z jednoho souboru (2.37) */
   out.dv=cleanDv(o.dv);
   /* report docházky (2.41): vlastní skupiny z oddělení a značky dnů (přesčas, práce ve svátek) */
@@ -699,6 +701,7 @@ function waChanges(A,B,add){
   });
   const da=A.dv||blankDv(),db=B.dv||blankDv();
   if(JSON.stringify(da.cols)!==JSON.stringify(db.cols)||da.unit!==db.unit||JSON.stringify(da.sheets||{})!==JSON.stringify(db.sheets||{}))add("workaudit","KPI: změněny sloupce souboru docházky a výkonů",{m:"wadvcols"});
+  if((A.normPct||null)!==(B.normPct||null))add("workaudit","",{m:"wanormpct",p:"KPI – normy ze zkušených: ",v0:"hodnocení nad "+(A.normPct||KPI_NORM_PCT)+" %",v1:"hodnocení nad "+(B.normPct||KPI_NORM_PCT)+" %"});
   if((A.trainPct||null)!==(B.trainPct||null))add("workaudit","",{m:"watrain",p:"KPI – hranice zaškolení: ",v0:A.trainPct?"od "+A.trainPct+" %":"podle Matice dovedností",v1:B.trainPct?"od "+B.trainPct+" %":"podle Matice dovedností"});
   const ra=A.rep||{},rb=B.rep||{};
   if((ra.place||"")!==(rb.place||"")||(ra.firm||"")!==(rb.firm||""))add("workaudit","",{m:"warep",p:"KPI – záhlaví reportů: ",v0:[ra.place,ra.firm].filter(Boolean).join(" · ")||"bez názvu",v1:[rb.place,rb.firm].filter(Boolean).join(" · ")||"bez názvu"});

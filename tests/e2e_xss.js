@@ -45,6 +45,8 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     const L = c => 'http://is.example/x?activeBarcode=' + c + '&y';
     S.shortage.lists.unshift({ id: 'shxss', at: Date.now(), by: P(), file: P(), sheet: P(), items: [{ id: 'si1', order: P(), name: P(), ean: P(), index: P(), qty: P(), top: true, op: P(), link: L('1.2'), code: '1.2', note: P(), rec: { ts: 1, when: P(), qty: P(), state: P(), op: P(), n: 2, at: 1, by: P() }, subs: [{ id: 'sp1', ean: P(), code: '3.4', op: P(), note: P() }], cands: [{ ean: P(), code: '', op: P(), link: '' }] }] });
     S.shortage.depts = [{ id: 'sdx', name: P(), ops: [] }];
+    // 2.74: normy z vykázaných časů s podvrženým názvem dílu a operace
+    S.workAudit.dv.perf['2026-11'] = { '101': { p: { [P()]: [2, 0, 10, 1] }, o: {}, n: { [P()]: { [P()]: [2, 10, 1], '': [1, 5, 1] } }, s: 1 } };
     // 2.73: zabalený předchozí den (položka, která v dalším seznamu není = odbouraná), ručně odebraná a souhrn dne v historii
     S.shortage.lists.push({ id: 'shxss0', at: Date.now() - 86400000, by: P(), file: P(), packed: { at: Date.now(), by: P() }, items: [{ id: 'si9', order: P(), name: P(), ean: P(), index: P(), qty: P(), op: P(), note: P(), rec: { ts: 1, when: P(), qty: P(), state: P() } }],
       out: [{ key: 'kx', name: P(), ean: P(), order: P(), index: P(), qty: P(), op: P(), manual: true, by: P(), at: 1, day: '2026-01-02', rec: { state: P(), when: P() } }] });
@@ -75,6 +77,7 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     ['matice: vedoucí', () => { ui.mxTab = 'leads'; showView('matice'); }],
     ['shortage: rozbor', () => { ui.sh.mode = 'rozbor'; showView('shortage'); }],
     ['shortage: historie', () => { ui.sh.mode = 'historie'; showView('shortage'); }],
+    ['kpi: normy', () => { ui.wa.tab = 'normy'; showView('audit'); }],
     ['shortage: zabalený den', () => { ui.sh.mode = 'list'; ui.sh.open = 'shxss0'; showView('shortage'); }],
     ['ukoly: detail', () => { ui.tk.sel = 'tkxss1'; showView('ukoly'); }],
     ['servis: zařízení', () => { ui.sv.tab = 'dev'; showView('servis'); }],

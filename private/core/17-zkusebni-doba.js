@@ -292,13 +292,19 @@ function cleanDv(o){
       const p={},op={};
       Object.entries(obj(obj(q).p)).slice(0,DV_MAX_PARTS).forEach(([nm,v])=>{const t=str(nm,120);if(t&&Array.isArray(v))p[t]=[n2(v[0]),n2(v[1]),n2(v[2]),Math.round(n2(v[3]))];});
       Object.entries(obj(obj(q).o)).slice(0,DV_MAX_OPS).forEach(([nm,v])=>{const t=str(nm,120);if(t&&Array.isArray(v))op[t]=[n2(v[0]),n2(v[1]),Math.round(n2(v[2]))];});
-      if(Object.keys(p).length||Object.keys(op).length)pm[k]={p,o:op};
+      // normy (2.74): díl → operace → [kusy, minuty, řádků] ze záznamů nad DV_NORM_MIN minut, s = krátkých záznamů
+      const nn={};let cnt=0;
+      Object.entries(obj(obj(q).n)).slice(0,DV_MAX_PARTS).forEach(([nm,v])=>{const t=str(nm,120);if(!t)return;const ops={};
+        Object.entries(obj(v)).slice(0,DV_MAX_OPS).forEach(([on,a])=>{if(cnt>=DV_MAX_NORM||!Array.isArray(a))return;const x=[n2(a[0]),n2(a[1]),Math.round(n2(a[2]))];if(x[0]>0&&x[1]>0){ops[str(on,120)]=x;cnt++;}});
+        if(Object.keys(ops).length)nn[t]=ops;});
+      const sh=Math.round(n2(obj(q).s));
+      if(Object.keys(p).length||Object.keys(op).length)pm[k]={p,o:op,...(Object.keys(nn).length?{n:nn}:{}),...(sh?{s:sh}:{})};
     });
     if(Object.keys(pm).length)out.perf[m]=pm;
   });
   out.files=(Array.isArray(o.files)?o.files:[]).filter(f=>f&&typeof f==="object").slice(-40).map(f=>({name:str(f.name,160),at:Number.isFinite(+f.at)?Math.round(+f.at):0,by:str(f.by,60),
     from:WA_ISO.test(String(f.from||""))?f.from:"",to:WA_ISO.test(String(f.to||""))?f.to:"",people:Math.round(n2(f.people)),days:Math.round(n2(f.days)),rows:Math.round(n2(f.rows)),
-    months:(Array.isArray(f.months)?f.months:[]).filter(m=>/^\d{4}-\d{2}$/.test(String(m))).slice(0,24)}));
+    months:(Array.isArray(f.months)?f.months:[]).filter(m=>/^\d{4}-\d{2}$/.test(String(m))).slice(0,24),...(Math.round(n2(f.short))?{short:Math.round(n2(f.short))}:{})}));
   return out;
 }
 /** ID → člověk (jedna mapa na výpočet). */

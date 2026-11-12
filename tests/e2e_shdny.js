@@ -158,6 +158,8 @@ const tsv = keys => [HEAD, ...keys.map(k => { const r = ROW[k]; return [r[0], r[
   check(/Zabalit seznam z 11\. 11\. 2026 7:05/.test(await page.textContent('#shMsg')), 'předchozí nezabalený seznam jde zabalit ze zprávy');
   await page.click('#shMsg [data-shpack]');
   await confirm();
+  // událost close dialogu přijde až v další úloze: počkat, až se seznam opravdu zabalí
+  await page.waitForFunction(() => S.shortage.lists[1].packed && /je zabalený v historii/.test(document.querySelector('#shMsg').textContent), null, { timeout: 10000 }).catch(() => {});
   await saved();
   check(await page.evaluate(() => S.shortage.lists.map(l => !!l.packed).join()) === 'false,true,true', `zabalený je i druhý den, dnešní zůstal otevřený: ${await page.evaluate(() => JSON.stringify(S.shortage.lists.map(l => [l.id, shWhen(l), !!l.packed])))}`);
   check(await page.evaluate(() => ui.sh.open === S.shortage.lists[0].id || shList().id === S.shortage.lists[0].id), 'otevřený zůstal dnešní seznam');

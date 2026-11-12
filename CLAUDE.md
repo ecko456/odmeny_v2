@@ -34,6 +34,36 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 12. 11. 2026 (verze 2.74):
+
+- Uživatel: „v KPI … by si systém tvořil sám normy podle odvedených časů … tabulka obsahuje i název
+  dílu, myslím ve sloupci B, ale to bych případně definoval při načítání … aby se při průměrování
+  počítali normy zkušenějších pracovníků, tedy všichni co mají hodnocení zkušenosti nad 45% …
+  pokud bude odvedený čas do 2 minut, tak to nepočítat“.
+  - Data (verze 52): `dv.perf[m][id].n {díl: {operace: [kusy, minuty, řádků]}}` jen ze záznamů
+    s kusy a časem nad `DV_NORM_MIN` 2 min (při nahrání, `dvApply`), `perf[m][id].s` = počet
+    krátkých záznamů (kusy a čas ≤ 2 min), `dv.files[].short`; `S.workAudit.normPct` (1–99, null
+    = `KPI_NORM_PCT` 45). Bez `n` a `s` se nic neukládá (starší data beze změny tvaru). `DV_MAX_NORM`
+    1000 položek na člověka a měsíc.
+  - Core (19-kpi-vykonnost, blok „Normy z vykázaných časů“): `kpiNormPct`, `kpiNormMonths` (`with`
+    = s daty pro normy, `without` = nahrané před 2.74), `kpiExpAt(e, měsíc, dnes)` (procento skupiny
+    ke konci měsíce: `dvGroupOf` + `ctPctAt`; vedoucí, bez skupiny, neznámé ID = null),
+    `kpiNorms({month, now})` (zkušený = procento **nad** hranicí; norma = Σ min ÷ Σ ks zkušených,
+    bez nich všech; `src` exp|all, `allNorm`, součet operací za díl), `kpiNormOf`, `kpiAutoNorm`
+    (normominuty ÷ minuty po lidech), `kpiNormSheets`. `kpiPerf`: bez normy v evidenci
+    (`nspent` 0) plnění podle norem systému (`autoN`, `opts.auto === false` vypne), `kpiSheets`
+    poznámka. Historie `wanormpct`.
+  - UI: záložka KPI `normy` (`nmHtml`, `ui.wa.nm {month, q}`, `nmState`, `#nmMonth`, `#nmQ`
+    filtruje řádky bez překreslení `nmFilter`, `[data-nmxlsx]` → `exportNmXlsx`, poznámka `.nm-old`
+    o měsících bez dat), karta `#waNormCard` v Nastavení (`#waNormPct`), Výkonnost: poznámka
+    a dlaždice. Sloupec dílu je dál `dv.cols.work.part` (výchozí D, uživatel ho mění v okně Jak se
+    soubor načte).
+  - Normy se do odměn (prémie, `perfOf`) **nepromítají**, jen do KPI. Kdyby uživatel chtěl, je to
+    další krok.
+  - Testy: core „KPI normy (2.74)“ (+ tvar `perf` v 2.37, verze 52), nový `tests/e2e_normy.js`
+    (díl ve sloupci B nastavený v okně načtení, hodiny stránky 20. 11. 2026), `e2e_upgrade_prev`
+    2.73 → 2.74 (archiv `b190c78`, Normy nad daty ze staré verze, hranice v kroku 5). `ODM_VERSION` 2.74.
+
 Stav k 11. 11. 2026 (verze 2.73):
 
 - Uživatel: „za předchozí den shortage půjde ‚zabalit‘ a budu moct nahrát nové? … Položka tam je již
@@ -2749,7 +2779,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.71.1 | `8184841` | Shortage – chybějící kusy po odeslání na WPA jsou u nás |
 | 2.72 | `ce9ffce` | Shortage – nabídka alternativních objednávek z plánu při neshodě objednávky / line (data verze 50) |
 | 2.72.1 | `a986739` | časová osa se posouvá a vrací na teď, panel bez posuvníku |
-| 2.73 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage po dnech – zabalení dne, kolikátý den na shortage, odbourané položky, filtr TOP / TOP 2 / 2 a více dní, Historie (data verze 51) |
+| 2.73 | `b190c78` | Shortage po dnech – zabalení dne, kolikátý den na shortage, odbourané položky, filtr TOP / TOP 2 / 2 a více dní, Historie (data verze 51) |
+| 2.74 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: KPI Normy – normy z vykázaných časů (zkušení nad 45 %, bez záznamů do 2 minut), plnění ve Výkonnosti na osobu (data verze 52) |
 
 Verze 2.1 přidala:
 
@@ -2862,7 +2893,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `51` (od 2.73):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `52` (od 2.74):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -3215,6 +3246,8 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_att_export.js` (2.45.2, 2.50): export docházky za měsíc (Excel jeden list s barvami přes openpyxl, PDF, telefon);
   - `e2e_hledani.js` (2.56): hledání lidí v menu na PC (jméno, ID, šipky, Enter, myš, Escape, „/“, telefon bez kolonky);
   - `e2e_xss.js` (2.62.1): podvržené HTML v datech se nikde nevykreslí;
+  - `e2e_shdny.js` (2.73): Shortage po dnech (zabalení, dny na shortage, odbourané, filtr, PDF, Historie, telefon);
+  - `e2e_normy.js` (2.74): KPI Normy (sloupec dílu v okně načtení, zkušení, záznamy do 2 min, hledání, Excel, hranice, plnění, telefon);
   - `e2e_soubeh.js` (2.62): dva lidé současně (sloučení, sankce obou, střet, průběžné načtení, rozepsané pole, otevřené okno, telefon);
   - `e2e_shkroky.js` (2.61): Shortage ve třech krocích (sloupce, vzorník barev, plán, evidence pohybu, AI, rozbor, telefon);
   - `e2e_lockbg.js` (2.60): pozadí zámku (kreslí, hýbe se, pauza, omezit pohyb, bez WebGL, po odemčení pryč, telefon);

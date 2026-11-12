@@ -105,7 +105,7 @@ const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
   await page.waitForSelector('#view-audit.on');
   check((await text(page, '#waTitle')) === 'KPI', 'nadpis KPI');
   const tabs = await page.$$eval('#waTabs [data-watab]', b => b.map(x => [x.dataset.watab, x.textContent]));
-  check(JSON.stringify(tabs.map(t => t[0])) === JSON.stringify(['prehled', 'lide', 'report', 'kapacity', 'vykon', 'dny', 'nastaveni']), `záložky: ${JSON.stringify(tabs)}`);
+  check(JSON.stringify(tabs.map(t => t[0])) === JSON.stringify(['prehled', 'lide', 'report', 'kapacity', 'vykon', 'normy', 'dny', 'nastaveni']), `záložky: ${JSON.stringify(tabs)}`);
   check(tabs.some(t => t[1] === 'Výkonnost na osobu'), 'záložka Výkonnost na osobu');
 
   // 3) Výkonnost na osobu: oddělení, pořadí od nejlepších podle Ø ks na den

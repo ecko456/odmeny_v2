@@ -4,7 +4,7 @@
    záložky, nahrání obou souborů, úpravy hodnot s důvodem, nastavení skupin a operací,
    PDF a Excel pro auditora.
    ========================================================================== */
-const WA_TABS = [['prehled', 'Přehled'], ['lide', 'Lidé v práci'], ['report', 'Report docházky'], ['kapacity', 'Kapacity a zaškolení'], ['vykon', 'Výkonnost na osobu'], ['dny', 'Dny'], ['nastaveni', 'Nastavení']];
+const WA_TABS = [['prehled', 'Přehled'], ['lide', 'Lidé v práci'], ['report', 'Report docházky'], ['kapacity', 'Kapacity a zaškolení'], ['vykon', 'Výkonnost na osobu'], ['normy', 'Normy'], ['dny', 'Dny'], ['nastaveni', 'Nastavení']];
 /* Výrobní plán a Úpravy jsou od 2.44 pryč z KPI (přání uživatele). Uložená data i kód zůstávají,
    záložky už nejdou otevřít z rozhraní. */
 const WA_OLD_TABS = ['plan', 'upravy'];
@@ -73,6 +73,7 @@ function renderWorkAudit() {
   if (tab === 'lide') { view.innerHTML = dvHtml(); setWidths(view); return; }   // docházka a výkony z jednoho souboru (2.37)
   if (tab === 'report') { view.innerHTML = drHtml(); drPaint(view); return; }   // report docházky po vzoru (2.40)
   if (tab === 'vykon') { view.innerHTML = kpHtml(); setWidths(view); return; }   // výkonnost na osobu (2.44)
+  if (tab === 'normy') { view.innerHTML = nmHtml(); nmFilter(); return; }   // normy z vykázaných časů (2.74)
   if (!has) { view.innerHTML = waStartHtml(); return; }
   if (tab === 'prehled') { view.innerHTML = waHistHtml(); setWidths(view); return; }
   const r = waRange();
