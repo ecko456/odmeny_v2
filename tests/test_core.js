@@ -5489,6 +5489,74 @@ test('Vrátit zpět (2.75): pole položek s id po položkách, jiné pořadí ce
   return null;
 });
 
+test('Konce trestů (2.75.1): párování jmen – ID, přejmenovaný, prohozené, celé jméno v jednom sloupci, titul, část jména, překlep, nejednoznačné, ručně', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    st.positions = [mkPos('g1', 'Brus', [])]; st.positions[0].dept = 'Broušení';
+    const emp = (k, last, first, x) => { st.employees[k] = { key: k, last, first, positionId: 'g1', shift: 'R', note: '', ...(x || {}) }; };
+    emp('novak|jan', 'Novák', 'Jan');
+    emp('svoboda|petr', 'Svoboda', 'Petr');
+    emp('dvorak|karel', 'Dvořák-Novotný', 'Karel');          // přejmenovaný v Lidech, klíč zůstal
+    emp('kral|tomas', 'Král', 'Tomáš');
+    emp('cerna novakova|jana', 'Černá Nováková', 'Jana');
+    emp('horak|milan', 'Horák', 'Milan');
+    emp('benes|ales', 'Beneš', 'Aleš');
+    emp('maly|ivan', 'Malý', 'Ivan'); emp('maly|ivan2', 'Malý', 'Ivan');
+    emp('zeman|ota', 'Zeman', 'Ota', { wid: '0042' });
+    emp('prazak|eva', 'Pražák', 'Eva');
+    emp('vedouci|jiri', 'Vedoucí', 'Jiří', { lead: ['Broušení'] });
+    S = sanitizeState(st);
+    const D = '31.12.2026';
+    const aoa = [['Příjmení', 'Jméno', 'Konec trestu', 'Směnnost', 'ID'],
+      ['NOVÁK', ' Jan ', D, 'Skupina 1', ''],               // 2 přesně (velká písmena, mezery)
+      ['Svobda', 'Petr', D, 'Skupina 1', ''],               // 3 překlep
+      ['Dvořák Novotný', 'Karel', D, 'Skupina 1', ''],      // 4 přejmenovaný, mezera místo pomlčky
+      ['Tomáš', 'Král', D, 'Skupina 1', ''],                // 5 prohozené
+      ['Černá', 'Jana', D, 'Skupina 1', ''],                // 6 část příjmení
+      ['Horák Milan', '', D, 'Skupina 2', ''],              // 7 celé jméno v jednom sloupci
+      ['Beneš', 'Bc. Aleš', D, 'Skupina 1', ''],            // 8 titul
+      ['Ivan', 'Malý', D, 'Skupina 1', ''],                 // 9 dva stejní lidé: nejednoznačné
+      ['Zemanová', 'Otakar', D, 'Skupina 1', '42'],         // 10 podle ID
+      ['Nový', 'Člověk', D, 'Skupina 1', ''],               // 11 nový
+      ['Nováková', 'Jana', D, 'Skupina 1', '']];            // 12 Novák Jan je už spárovaný: nová
+    const p = endParse(aoa, { wid: 'E' }, { today: '2026-11-12' });
+    const how = p.rows.map(r => [r.n, r.how, r.e ? r.e.key : null]);
+    const iss = n => p.rows.find(r => r.n === n).issues.map(i => i.l + ':' + i.t);
+    const cand9 = p.rows.find(r => r.n === 9).cand.slice().sort();
+    // bez sloupce ID se Zemanová Otakar nespáruje
+    const noId = endParse(aoa, null, { today: '2026-11-12' }).rows.find(r => r.n === 10).how;
+    // ručně: nový řádek k Pražákovi, překlep jako nový člověk
+    const p2 = endParse(aoa, { wid: 'E' }, { today: '2026-11-12', assign: new Map([[11, 'prazak|eva'], [3, ''], [9, 'maly|ivan2']]) });
+    const how2 = p2.rows.filter(r => [3, 9, 11].includes(r.n)).map(r => [r.n, r.how, r.e ? r.e.key : null, r.issues[0] && r.issues[0].t]);
+    const o = endApply(p2, { add: true, today: '2026-11-12' });
+    const E = k => S.employees[k] ? [S.employees[k].end || '', S.employees[k].shift || ''] : null;
+    return JSON.stringify({ how, i3: iss(3), i6: iss(6), i7: iss(7), i9: iss(9), i10: iss(10), i12: iss(12), cand9, noId, missing: p.missing, sum: p.sum, how2, missing2: p2.missing, o,
+      e: { horak: E('horak|milan'), dvorak: E('dvorak|karel'), prazak: E('prazak|eva'), svobda: E('svobda|petr'), svoboda: E('svoboda|petr'), maly2: E('maly|ivan2'), zeman: E('zeman|ota') },
+      tok: [endTok('Ing. Jan  Novák-Svoboda, Ph.D.'), endTok('O’Neil')], m0: endMatch([], S.employees).length });
+  })()`));
+  assert.deepStrictEqual(out.how, [[2, 'exact', 'novak|jan'], [3, 'fuzzy', 'svoboda|petr'], [4, 'exact', 'dvorak|karel'], [5, 'swap', 'kral|tomas'], [6, 'part', 'cerna novakova|jana'], [7, 'words', 'horak|milan'],
+    [8, 'exact', 'benes|ales'], [9, 'none', null], [10, 'id', 'zeman|ota'], [11, 'none', null], [12, 'none', null]], JSON.stringify(out.how));
+  assert.deepStrictEqual(out.i3[0], 'w:podobné jméno (překlep?), spáruje se s Svoboda Petr');
+  assert.deepStrictEqual(out.i6[0], 'w:liší se část jména, spáruje se s Černá Nováková Jana');
+  assert.ok(out.i7[0] === 'w:jinak zapsané jméno, spáruje se s Horák Milan' && !out.i7.some(t => /chybí/.test(t)), `celé jméno v jednom sloupci: ${out.i7}`);
+  assert.deepStrictEqual(out.cand9, ['maly|ivan', 'maly|ivan2']);
+  assert.ok(/^w:v Lidech není přesně, podobní: Malý Ivan, Malý Ivan\. Vyber v tabulce/.test(out.i9[0]), out.i9[0]);
+  assert.deepStrictEqual(out.i10[0], 'i:podle ID, spáruje se s Zeman Ota');
+  assert.ok(/přidá se jako nový/.test(out.i12.join(' ')), `Nováková Jana se k už spárovanému Novákovi nepřiřadí: ${out.i12}`);
+  assert.strictEqual(out.noId, 'none');
+  assert.deepStrictEqual(out.missing, ['Malý Ivan', 'Malý Ivan', 'Pražák Eva'], 'chybí jen nespárovaní (bez vedoucího)');
+  assert.deepStrictEqual([out.sum.fresh, out.sum.err], [3, 0]);
+  assert.deepStrictEqual(out.how2, [[3, 'new', null, 'ručně: nový člověk, přidá se (bez skupiny)'], [9, 'manual', 'maly|ivan2', 'ručně přiřazeno, spáruje se s Malý Ivan'], [11, 'manual', 'prazak|eva', 'ručně přiřazeno, spáruje se s Pražák Eva']]);
+  assert.deepStrictEqual(out.missing2, ['Malý Ivan', 'Svoboda Petr']);
+  assert.deepStrictEqual(out.e, { horak: ['2026-12-31', 'S2'], dvorak: ['2026-12-31', 'S1'], prazak: ['2026-12-31', 'S1'], svobda: ['2026-12-31', 'S1'], svoboda: ['', 'R'], maly2: ['2026-12-31', 'S1'], zeman: ['2026-12-31', 'S1'] },
+    'zápis: celé jméno v jednom sloupci, přejmenovaný, ručně přiřazený, překlep ručně jako nový');
+  assert.strictEqual(out.o.added, 2, 'nově Svobda Petr a Nováková Jana');
+  assert.deepStrictEqual(out.tok, [['jan', 'novak', 'svoboda'], ['o', 'neil']]);
+  assert.strictEqual(out.m0, 0);
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

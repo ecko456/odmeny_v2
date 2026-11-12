@@ -8,13 +8,28 @@ function endBestSheet(sheets) {
   (sheets || []).forEach(sh => { const r = endParse(sh.aoa); const sc = r.rows.filter(x => x.last && x.first && (x.end || x.shift)).length; if (sc > score) { score = sc; best = sh; } });
   return best;
 }
+/* Párování (2.75.1): u řádku, který nesedí přesně, jde vybrat člověka z Lidí ručně (návrhy nahoře). */
+const END_HOW = { exact: 'přesně', id: 'podle ID', swap: 'prohozené jméno a příjmení', words: 'jinak zapsané jméno', part: 'část jména', fuzzy: 'podobné jméno', manual: 'ručně', new: 'ručně nový', none: 'nespárováno' };
+function endPickHtml(x, people) {
+  const name = e => `${e.last} ${e.first}`.trim();
+  if (x.how === 'exact') return `<span class="end-ok">${esc(name(x.e))}</span>`;
+  if (!x.e && !x.last && !x.first) return '<span class="muted">—</span>';
+  const sel = x.e ? x.key : '';
+  const sug = [...new Set([...(x.e ? [x.key] : []), ...(x.cand || [])])].filter(k => S.employees[k]);
+  const opt = (e, on) => `<option value="${esc(e.key)}"${on ? ' selected' : ''}>${esc(name(e))}${e.wid ? ` · ID ${esc(e.wid)}` : ''}${e.excluded ? ' (vyřazen)' : ''}</option>`;
+  return `<select data-enda="${x.n}" aria-label="Přiřadit řádek ${x.n} (${esc(`${x.last} ${x.first}`.trim())})"><option value=""${sel ? '' : ' selected'}>— nový člověk —</option>
+    ${sug.length ? `<optgroup label="Návrh">${sug.map(k => opt(S.employees[k], k === sel)).join('')}</optgroup>` : ''}
+    <optgroup label="Všichni v Lidech">${people.filter(e => !sug.includes(e.key)).map(e => opt(e, false)).join('')}</optgroup></select>`;
+}
 function endTableHtml(r, all) {
   const rank = x => (x.issues.some(i => i.l === 'e') ? 0 : x.issues.some(i => i.l === 'w') ? 1 : x.issues.some(i => i.l === 'i') ? 2 : 3);
-  const list = r.rows.slice().sort((a, b) => rank(a) - rank(b) || a.n - b.n).filter(x => all || rank(x) < 2);
+  const people = Object.values(S.employees).filter(e => e && e.key && !isLead(e)).sort((a, b) => norm(`${a.last} ${a.first}`).localeCompare(norm(`${b.last} ${b.first}`), 'cs'));
+  // řádky, které nesedí přesně, jsou vidět vždy (i ručně přiřazené), ať jde přiřazení změnit
+  const list = r.rows.slice().sort((a, b) => rank(a) - rank(b) || a.n - b.n).filter(x => all || rank(x) < 2 || x.how !== 'exact');
   const shown = list.slice(0, all ? 400 : 60);
   const tag = l => ({ e: 'end-err', w: 'end-warn', i: 'end-info' }[l]);
-  return list.length ? `<div class="table-card flat end-tabwrap"><table class="stack end-tab"><thead><tr><th class="r">Řádek</th><th>Příjmení a jméno</th><th>Konec trestu</th><th>Směnnost</th><th>Kontrola</th></tr></thead><tbody>${shown.map(x => `<tr class="${['end-row-e', 'end-row-w', '', ''][rank(x)]}">
-      <td class="r num" data-label="Řádek">${x.n}</td><td data-label="Jméno"><b>${esc(x.last)}</b> ${esc(x.first)}</td>
+  return list.length ? `<div class="table-card flat end-tabwrap"><table class="stack end-tab"><thead><tr><th class="r">Řádek</th><th>Příjmení a jméno · přiřadit k</th><th>Konec trestu</th><th>Směnnost</th><th>Kontrola</th></tr></thead><tbody>${shown.map(x => `<tr class="${['end-row-e', 'end-row-w', '', ''][rank(x)]}">
+      <td class="r num" data-label="Řádek">${x.n}</td><td data-label="Jméno"><b>${esc(x.last)}</b> ${esc(x.first)}${x.how === 'exact' ? '' : `<div class="end-pick">${endPickHtml(x, people)}</div>`}</td>
       <td class="num" data-label="Konec trestu">${x.end ? esc(endDateText(x.end)) : `<span class="muted">${esc(x.endRaw || '—')}</span>`}</td>
       <td data-label="Směnnost">${x.shift ? esc(END_SHIFT_T[x.shift]) : `<span class="muted">${esc(x.shiftRaw || '—')}</span>`}</td>
       <td class="wrap" data-label="Kontrola">${x.issues.length ? x.issues.map(i => `<span class="${tag(i.l)}">${esc(i.t)}</span>`).join('') : '<span class="end-ok">v pořádku</span>'}</td></tr>`).join('')}</tbody></table></div>
@@ -27,8 +42,9 @@ async function endImport(file) {
   try { sheets = await readTable(file); } catch (error) { toast(`Soubor se nepodařilo otevřít: ${error.message}`, true); return; }
   const sheet = endBestSheet(sheets);
   if (!sheet) { toast('V souboru není žádný list.', true); return; }
-  const cols = { ...END_COLS };
+  const cols = { ...END_COLS, wid: '' };
   const labels = {};
+  const assign = new Map();   // ruční přiřazení řádků (2.75.1): číslo řádku → klíč člověka, "" = nový
   let ai = null;
   if (ui.me && ui.me.ai) {
     const sample = endAiSample(sheet, cols, Object.values(S.employees));
@@ -40,7 +56,14 @@ async function endImport(file) {
     }
   }
   let all = false;
-  const parse = () => endParse(sheet.aoa, cols, { labels });
+  const parse = () => endParse(sheet.aoa, cols, { labels, assign });
+  const howLine = r => {
+    const n = {};
+    r.rows.filter(x => x.e || x.last || x.first).forEach(x => { n[x.how] = (n[x.how] || 0) + 1; });
+    const parts = ['exact', 'id', 'swap', 'words', 'part', 'fuzzy', 'manual'].filter(k => n[k]).map(k => `${END_HOW[k]} ${n[k]}`);
+    const none = (n.none || 0) + (n.new || 0);
+    return `<p class="small end-howline">Spárováno s Lidmi: <b>${parts.join(' · ') || 'nikdo'}</b>${none ? ` · <span class="end-warn">bez páru ${none}</span>` : ''}. Řádky, které nesedí přesně, zkontroluj ve výběru pod jménem: jde tam vybrat kohokoli z Lidí, nebo nového člověka.</p>`;
+  };
   const body = r => `<div class="stats end-sum">
       ${statTile('Řádků', String(r.sum.rows), r.header ? 'bez řádku s nadpisy' : 'bez nadpisů')}
       ${statTile('Konec trestu', String(r.sum.ends), 'řádků s datem')}
@@ -48,6 +71,7 @@ async function endImport(file) {
       ${statTile('Noví', String(r.sum.fresh), 'v Lidech nejsou')}
       ${statTile('Chyby', String(r.sum.err), r.sum.err ? 'tyhle údaje se nezapíšou' : 'žádné', r.sum.err ? 'crit' : 'good')}
       ${statTile('Upozornění', String(r.sum.warn), 'zkontroluj', r.sum.warn ? 'warn' : '')}</div>
+    ${howLine(r)}
     ${r.unknown.length ? `<div class="note w"><b>Neznámé texty ve směnnosti</b>, přiřaď je, nebo se směna u těch řádků nezmění:<div class="end-labels">${r.unknown.map(u => `<label class="field"><span>„${esc(u.text)}“ (${u.n}×)</span><select data-endl="${esc(endKey(u.text))}">${END_SHIFT_OPTS.map(([k, l]) => `<option value="${k}"${(labels[endKey(u.text)] || '') === k ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`).join('')}</div></div>` : ''}
     ${endTableHtml(r, all)}
     <label class="check"><input type="checkbox" data-endall${all ? ' checked' : ''}><span>Ukázat všechny řádky (i bez upozornění)</span></label>
@@ -58,7 +82,7 @@ async function endImport(file) {
     title: 'Konce trestů a směnnost', ok: 'Zapsat', wide: true,
     html: `<p><b>${esc(file.name)}</b> ${sheets.length > 1 ? `<small class="muted">list ${esc(dvSheetName(sheet))}</small>` : ''} ${ai ? `<span class="tag acc">${I.sparkle} zkontrolováno AI</span>` : ''}</p>
       ${ai ? `<div class="note ${ai.ok ? 'i' : 'w'}">${ai.ok ? '<b>AI: rozložení souboru sedí.</b> ' : '<b>AI: v rozložení něco nesedí.</b> '}${esc(ai.note || '')}</div>` : ''}
-      <div class="end-cols">${[['last', 'Příjmení'], ['first', 'Jméno'], ['end', 'Konec trestu'], ['shift', 'Směnnost']].map(([k, l]) => `<label class="field wa-letter${cols[k] !== END_COLS[k] ? ' dv-aichg' : ''}"><span>${l}</span><input data-endc="${k}" value="${esc(cols[k])}" maxlength="3" autocapitalize="characters"></label>`).join('')}</div>
+      <div class="end-cols">${[['last', 'Příjmení'], ['first', 'Jméno'], ['end', 'Konec trestu'], ['shift', 'Směnnost'], ['wid', 'ID (nepovinné)']].map(([k, l]) => `<label class="field wa-letter${(cols[k] || '') !== (END_COLS[k] || '') ? ' dv-aichg' : ''}"><span>${l}</span><input data-endc="${k}" value="${esc(cols[k] || '')}" maxlength="3" autocapitalize="characters"${k === 'wid' ? ' placeholder="—"' : ''}></label>`).join('')}</div>
       <div id="endBody">${body(first)}</div>
       <p class="tiny muted">Chybné údaje se nezapíšou, ostatní z řádku ano. Prázdný konec trestu nebo směnnost nic nemaže. NEMOC zapne u člověka nemoc od dneška (směna zůstane), jiná směnnost nemoc vypne.${ai ? ' AI dostala jen nadpisy, typy buněk a texty směnnosti, žádná jména ani data.' : ''}</p>`,
     onOpen: dlg => {
@@ -68,11 +92,12 @@ async function endImport(file) {
         const k = event.target.dataset.endc;
         if (!k) return;
         clearTimeout(tm);
-        tm = setTimeout(() => { const v = waLetter(event.target.value); if (v) { cols[k] = v; redraw(); } }, 250);
+        tm = setTimeout(() => { const v = waLetter(event.target.value); if (v) { cols[k] = v; redraw(); } else if (k === 'wid' && !event.target.value.trim()) { cols.wid = ''; redraw(); } }, 250);
       });
       $('#endBody', dlg).addEventListener('change', event => {
         const t = event.target;
         if (t.dataset.endl != null) { if (t.value) labels[t.dataset.endl] = t.value; else delete labels[t.dataset.endl]; redraw(); }
+        else if (t.dataset.enda != null) { assign.set(+t.dataset.enda, t.value); redraw(); const again = dlg.querySelector(`[data-enda="${t.dataset.enda}"]`); if (again) again.focus(); }
         else if (t.matches('[data-endall]')) { all = t.checked; redraw(); }
       });
     },

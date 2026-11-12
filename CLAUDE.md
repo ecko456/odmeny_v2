@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 12. 11. 2026 (verze 2.75.1):
+
+- Uživatel: „lepší spárování v Konec trestů, když dám nahrát soubor, tak mi to nedokáže spárovat
+  správně jména i když v seznamu jsou“. Příčina: `endParse` hledal jen `S.employees[norm(příjmení)|
+  norm(jméno)]` (a prohozené); klíč je z doby založení, takže přejmenovaný člověk, druhé jméno,
+  titul, pomlčka, celé jméno v jednom sloupci nebo překlep = „nový“.
+  - Core (15-konce-trestu, blok „Párování jmen“): `END_TITLES`, `endTok` (bez diakritiky,
+    interpunkce, pomlček a titulů, Ph.D.), `endNameT`, `endMatch(rows, emps, assign)` po stupních
+    přes všechny řádky: ruční (`assign` Map číslo řádku → klíč, "" = nový), ID (`cols.wid`,
+    `widKey`), přesně (klíč nebo jméno v Lidech; stejný člověk víckrát zůstane a hlásí se),
+    prohozené, stejná slova (`sig`), část jména (všechna slova kratšího v delším, aspoň 2),
+    podobné (`attDist`, do 1 znaku u 5–8 písmen, do 2 od 9; jinak `cand` návrhy). Každý člověk
+    nejvýš jednou a jen jednoznačně. `endParse` řádky nejdřív posbírá, pak páruje; řádek má
+    `how` a `cand`; spárovaný řádek s celým jménem v jednom sloupci už není chyba (i `endApply`).
+  - UI (23-konce-trestu): `END_HOW`, `endPickHtml` (`select[data-enda]` pod jménem: Návrh, Všichni
+    v Lidech bez vedoucích, nový člověk), souhrn `.end-howline`, pole „ID (nepovinné)“ v
+    `.end-cols`, okno importu širší (`dialog.dlg.wide:has(.end-tab)` 940 px, dlaždice v jedné
+    řadě), řádky bez přesné shody vždy vidět.
+  - Docházka postaru (`attMatch`, 2.48) má vlastní párování, beze změny.
+  - Testy: core „Konce trestů (2.75.1)“, `e2e_konce` (soubor s jinak zapsanými jmény, ruční
+    přiřazení, nikdo nový). `ODM_VERSION` 2.75.1, data beze změny (53).
+
 Stav k 12. 11. 2026 (verze 2.75):
 
 - Uživatel: „optimalizaci shortage, přijde mi ta stránka hrozně zasekaná a pomalá odezva. Dále
@@ -2829,7 +2851,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.72.1 | `a986739` | časová osa se posouvá a vrací na teď, panel bez posuvníku |
 | 2.73 | `b190c78` | Shortage po dnech – zabalení dne, kolikátý den na shortage, odbourané položky, filtr TOP / TOP 2 / 2 a více dní, Historie (data verze 51) |
 | 2.74 | `fd89a32` | KPI Normy – normy z vykázaných časů (zkušení nad 45 %, bez záznamů do 2 minut), plnění ve Výkonnosti na osobu (data verze 52) |
-| 2.75 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: rychlejší Shortage (výška poznámek, ikony, uložení), Připnout / Odepnout do dalších seznamů, Duplikovat do vybraného oddělení (data verze 53) |
+| 2.75 | `14ecc9d` | rychlejší Shortage (výška poznámek, ikony, uložení), Připnout / Odepnout do dalších seznamů, Duplikovat do vybraného oddělení (data verze 53) |
+| 2.75.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Konce trestů – párování jmen po stupních (ID, přejmenovaný, prohozené, titul, část jména, překlep), ruční přiřazení v okně importu |
 
 Verze 2.1 přidala:
 

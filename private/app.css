@@ -3416,3 +3416,11 @@ table.sh-tab tr.sh-pinned > td.sh-gripc { box-shadow: inset 3px 0 0 var(--acc); 
 .sh-dupopt:has(input:checked) { border-color: var(--acc); background: var(--acc-soft); }
 .sh-dupopt input { margin: 0; accent-color: var(--acc); }
 .sh-dupopt span:first-of-type { flex: 1; font-weight: 600; }
+
+/* ---------- Konce trestů 2.75.1: ruční přiřazení řádku k člověku ---------- */
+.end-tab .end-pick { margin-top: 5px; min-width: 180px; }
+.end-tab .end-pick select { width: 100%; max-width: 260px; padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+.end-howline { margin: 4px 0 10px; }
+/* okno importu je širší, ať se vejde i sloupec Kontrola */
+dialog.dlg.wide:has(.end-tab) { width: min(calc(100vw - 24px), 940px); }
+@media screen and (min-width: 960px) { dialog.dlg.wide:has(.end-tab) .stats.end-sum { grid-template-columns: repeat(6, minmax(0, 1fr)); } }

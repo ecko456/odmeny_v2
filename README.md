@@ -62,6 +62,20 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.75.1
+
+- **Lepší párování jmen v Konce trestů a směnnost.** Dřív se člověk našel jen při přesné shodě
+  příjmení a jména s tím, jak byl kdysi založený, takže přejmenovaný člověk, druhé jméno, titul,
+  pomlčka, celé jméno v jednom sloupci nebo překlep vyšly jako „nový“. Teď se páruje po stupních:
+  podle ID (když soubor má sloupec ID, zadáš ho v okně jako „ID (nepovinné)“), přesně (i bez
+  diakritiky a velkými písmeny), prohozené jméno a příjmení, stejná slova v jiném pořadí nebo
+  s titulem, část jména (aspoň dvě společná slova) a podobné jméno (překlep do 1–2 znaků).
+  Každý člověk se přiřadí nejvýš jednou a jen jednoznačně.
+- V okně importu je nad tabulkou souhrn, kolik řádků se spárovalo jak. U každého řádku, který
+  nesedí přesně, je **pod jménem výběr**: návrh nahoře, pak kdokoli z Lidí, nebo nový člověk.
+  Nejednoznačné řádky (dva lidé stejného jména) se samy nepřiřadí, vybereš ručně.
+- Párování běží v prohlížeči, jména se nikam neposílají. Data beze změny (verze 53).
+
 ## Co je nového ve verzi 2.75
 
 - **Shortage je výrazně rychlejší.** Hlavní brzda byla výška poznámek: prohlížeč ji přepočítával

@@ -203,6 +203,34 @@ for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.5,1.5)).save(sys.a
   await page.waitForSelector('#view-konce.on');
   check(!(await page.isVisible('#dlg[open]')), 'bez chybějících se tabulka neukáže');
 
+  // 2.75.1: párování jmen – velká písmena, bez diakritiky, celé jméno v jednom sloupci, druhé jméno, překlep, ručně
+  const rows3 = [['Příjmení', 'Jméno', 'Konec trestu', 'Směnnost'],
+    ['ADÁMEK', 'Aleš ', ser(2027, 2, 1), 'Skupina 1'],
+    ['Bednar', 'Boris', ser(2027, 2, 2), 'Stálá odpolední'],
+    ['Cibulka Cyril', '', ser(2027, 2, 3), 'Skupina 2'],
+    ['Fiala', 'Filip Josef', ser(2027, 2, 4), 'Skupina 1'],
+    ['Gregr', 'Gustav', ser(2027, 2, 5), 'Skupina 1'],
+    ['Xaver', 'Zikmund', ser(2027, 2, 6), 'Stálá ranní']];
+  const before3 = await page.evaluate(() => Object.keys(S.employees).length);
+  await page.click('#nav [data-view="dochazka"]');
+  await page.setInputFiles('#endFile', { name: 'konce-jmena.xlsx', mimeType: XLSX_TYPE, buffer: await makeXlsx(page, [{ name: 'List1', rows: rows3 }]) });
+  await page.waitForSelector('#dlg[open] .end-sum');
+  const d3 = await text(page, '#endBody');
+  check(/Spárováno s Lidmi: přesně 2 · jinak zapsané jméno 1 · část jména 1 · podobné jméno 1 · bez páru 1/.test(d3), `souhrn párování: ${d3.slice(0, 500)}`);
+  check(/podobné jméno \(překlep\?\), spáruje se s Gregor Gustav/.test(d3) && /spáruje se s Cibulka Cyril/.test(d3) && /spáruje se s Fiala Filip/.test(d3) && !/chybí jméno/.test(d3), `kontrola párování: ${d3.slice(0, 900)}`);
+  check(await page.locator('#dlg select[data-enda]').count() === 4, `výběr Přiřadit k u řádků, které nesedí přesně: ${await page.locator('#dlg select[data-enda]').count()}`);
+  check(await page.$eval('#dlg select[data-enda="6"]', s => s.value) === 'gregor|gustav', 'překlep předvybraný v nabídce');
+  await page.screenshot({ path: path.join(shots, '02-parovani.png') });
+  await page.selectOption('#dlg select[data-enda="7"]', 'novy|ondrej');
+  await page.waitForFunction(() => /ručně 1/.test(document.querySelector('#endBody').textContent) && !/bez páru/.test(document.querySelector('#endBody').textContent));
+  check(/Noví\s*0/.test(await text(page, '#endBody')) && /ručně přiřazeno, spáruje se s Nový Ondřej/.test(await text(page, '#endBody')), `ruční přiřazení: ${(await text(page, '#endBody')).slice(0, 400)}`);
+  await page.click('#dlgOk');
+  await page.waitForSelector('#view-konce.on');
+  await saved(page);
+  const e3 = await page.evaluate(() => ['adamek|ales', 'bednar|boris', 'cibulka|cyril', 'fiala|filip', 'gregor|gustav', 'novy|ondrej'].map(k => [S.employees[k].end, S.employees[k].shift || '']));
+  check(JSON.stringify(e3) === JSON.stringify([['2027-02-01', 'S1'], ['2027-02-02', 'O'], ['2027-02-03', 'S2'], ['2027-02-04', 'S1'], ['2027-02-05', 'S1'], ['2027-02-06', 'R']]), `zápis po párování: ${JSON.stringify(e3)}`);
+  check(await page.evaluate(() => Object.keys(S.employees).length) === before3, 'nikdo nový nepřibyl');
+
   // 3) telefon a tmavý režim
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ colorScheme: 'dark' });

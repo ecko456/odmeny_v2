@@ -18,6 +18,77 @@ function endShiftOf(v,labels){
   return null;
 }
 function endKey(t){return norm(String(t==null?"":t)).replace(/\s+/g," ").trim();}
+
+/* ---------- Párování jmen se soubory (2.75.1) ----------
+   Dřív jen přesný klíč „příjmení|jméno“ (a prohozené pořadí), takže člověk přejmenovaný v Lidech,
+   s druhým jménem, titulem, pomlčkou, celým jménem v jednom sloupci nebo s překlepem vyšel jako
+   nový. Teď po stupních: ID (je-li sloupec), přesně (i podle jména v Lidech), prohozené, stejná
+   slova v jiném pořadí, část jména (aspoň dvě společná slova), podobné jméno (překlep), vždy jen
+   jednoznačně a každý člověk nejvýš jednou (kromě přesné shody: stejný člověk dvakrát se hlásí). */
+const END_TITLES=new Set(["bc","ing","mgr","mudr","mvdr","mddr","judr","phdr","rndr","paeddr","thdr","phd","dis","csc","drsc","mba","bba","doc","prof","dr","ml","st","mladsi","starsi","jr","sr"]);
+function endTok(s){return norm(String(s==null?"":s)).replace(/\b(ph|th)\.?\s?d\.?(?=[\s,;]|$)/g,"$1d").replace(/[.,;:()\[\]{}"'`´’‘“”/\\_*+]+/g," ").replace(/[-–—]+/g," ").split(" ").filter(t=>t&&!END_TITLES.has(t));}
+function endNameT(last,first){const L=endTok(last),F=endTok(first);return {l:L.join(" "),f:F.join(" "),all:[...L,...F],sig:[...L,...F].sort().join(" ")};}
+/** Řádky souboru [{n, last, first, wid}] → [{key, how, cand}]; how: id | exact | swap | words | part |
+    fuzzy | manual | new | none. assign = ruční přiřazení (Map n → klíč, "" = nový člověk). */
+function endMatch(rows,emps,assign){
+  emps=emps||S.employees;
+  const P=Object.values(emps||{}).filter(e=>e&&e.key).map(e=>({key:e.key,...endNameT(e.last,e.first)}));
+  const byKey=new Map(P.map(p=>[p.key,p])),multi=(m,k,p)=>{if(!k)return;if(!m.has(k))m.set(k,[]);m.get(k).push(p);};
+  const byLF=new Map(),bySig=new Map();
+  P.forEach(p=>{multi(byLF,p.l+"|"+p.f,p);multi(bySig,p.sig,p);});
+  const wids=new Map();Object.values(emps||{}).forEach(e=>{const w=widKey(e.wid);if(w&&e.key)wids.set(w,wids.has(w)&&wids.get(w)!==e.key?null:e.key);});
+  const out=rows.map(()=>({key:null,how:"none",cand:[]})),used=new Set();
+  const T=rows.map(r=>endNameT(r.last,r.first));
+  const open=i=>out[i].how==="none"&&!out[i].cand.length;
+  const take=(i,p,how)=>{out[i]={key:p.key,how,cand:[]};used.add(p.key);};
+  const free=list=>(list||[]).filter(p=>!used.has(p.key));
+  // ruční přiřazení z okna importu má přednost
+  rows.forEach((r,i)=>{
+    if(!assign||!assign.has(r.n))return;
+    const k=assign.get(r.n);
+    if(k&&byKey.has(k))take(i,byKey.get(k),"manual");else out[i]={key:null,how:"new",cand:[]};
+  });
+  // ID zaměstnance (nepovinný sloupec)
+  rows.forEach((r,i)=>{if(!open(i))return;const k=wids.get(widKey(r.wid));if(k&&byKey.has(k))take(i,byKey.get(k),"id");});
+  // přesně: klíč, nebo jméno a příjmení jako v Lidech (stejný člověk na víc řádcích zůstane, hlásí se zvlášť)
+  rows.forEach((r,i)=>{
+    if(!open(i))return;
+    const t=T[i],k=byKey.get(norm(r.last)+"|"+norm(r.first)),lf=t.l&&t.f?byLF.get(t.l+"|"+t.f)||[]:[];
+    if(k)take(i,k,"exact");else if(lf.length===1)take(i,lf[0],"exact");else if(lf.length>1)out[i].cand=lf.map(p=>p.key);
+  });
+  // prohozené jméno a příjmení
+  rows.forEach((r,i)=>{
+    if(!open(i))return;
+    const t=T[i],c=t.l&&t.f?free(byLF.get(t.f+"|"+t.l)):[];
+    if(c.length===1)take(i,c[0],"swap");else if(c.length>1)out[i].cand=c.map(p=>p.key);
+  });
+  // stejná slova v jiném pořadí, s pomlčkou, s titulem, celé jméno v jednom sloupci
+  rows.forEach((r,i)=>{
+    if(!open(i)||T[i].all.length<2)return;
+    const c=free(bySig.get(T[i].sig));
+    if(c.length===1)take(i,c[0],"words");else if(c.length>1)out[i].cand=c.map(p=>p.key);
+  });
+  // část jména: všechna slova kratšího jména jsou v delším (druhé jméno, druhé příjmení), aspoň dvě společná
+  rows.forEach((r,i)=>{
+    if(!open(i)||T[i].all.length<2)return;
+    const a=new Set(T[i].all);
+    const c=free(P).filter(p=>{const b=new Set(p.all),[s,l]=a.size<=b.size?[a,b]:[b,a];return s.size>=2&&[...s].every(x=>l.has(x));});
+    if(c.length===1)take(i,c[0],"part");else if(c.length>1)out[i].cand=c.map(p=>p.key);
+  });
+  // podobné jméno (překlep): do 1 znaku u krátkých, do 2 u delších jmen; jinak jen návrhy
+  rows.forEach((r,i)=>{
+    if(!open(i))return;
+    const t=T[i],len=(t.l+t.f).replace(/ /g,"").length;
+    if(len<4)return;
+    const lim=len>=9?2:len>=5?1:0;
+    const scored=free(P).map(p=>({p,d:Math.min(attDist(t.l,p.l)+attDist(t.f,p.f),attDist(t.l,p.f)+attDist(t.f,p.l),attDist(t.sig,p.sig))})).sort((x,y)=>x.d-y.d);
+    if(!scored.length)return;
+    const best=scored[0].d,top=scored.filter(x=>x.d===best);
+    if(best<=lim&&top.length===1)take(i,top[0].p,"fuzzy");
+    else out[i].cand=scored.filter(x=>x.d<=Math.max(lim+1,3)).slice(0,4).map(x=>x.p.key);
+  });
+  return out;
+}
 /** Konec trestu z buňky: datum Excelu, Date, „31.12.2026“, ISO. */
 function endDateOf(v){
   if(v==null||v==="")return "";
@@ -32,16 +103,26 @@ function endParse(aoa,cols,opts){
   const ix=k=>waIndex(cols[k]);
   const txt=v=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
   const rows=[],seen=new Map(),unknown=new Map();let header=false;
+  // nejdřív řádky souboru, pak párování všech najednou (přesné shody mají přednost před podobnými)
+  const raw=[];
   (aoa||[]).forEach((row,i)=>{
     row=row||[];
-    const last=txt(row[ix("last")]),first=txt(row[ix("first")]),endRaw=row[ix("end")],shiftRaw=txt(row[ix("shift")]);
+    const last=txt(row[ix("last")]),first=txt(row[ix("first")]),endRaw=row[ix("end")],shiftRaw=txt(row[ix("shift")]),wid=cols.wid?txt(row[ix("wid")]):"";
     if(!last&&!first&&!txt(endRaw)&&!shiftRaw)return;
     if(i<5&&/prijmeni|jmeno|^name/.test(norm(last+" "+first))&&endDateOf(endRaw)==null){header=true;return;}
+    raw.push({i,n:i+1,last,first,endRaw,shiftRaw,wid});
+  });
+  const match=endMatch(raw,S.employees,opts.assign);
+  const nm=e=>(e.last+" "+e.first).trim();
+  const HOW={id:"podle ID",swap:"jméno a příjmení jsou prohozené",words:"jinak zapsané jméno",part:"liší se část jména",fuzzy:"podobné jméno (překlep?)",manual:"ručně přiřazeno"};
+  raw.forEach((x,k)=>{
+    const {i,last,first,endRaw,shiftRaw}=x,m=match[k];
     const issues=[],add=(l,t)=>issues.push({l,t});
-    if(!last||!first)add("e","chybí "+(!last?"příjmení":"jméno")+", řádek se přeskočí");
-    const key=(norm(last)+"|"+norm(first));
-    let e=S.employees[key]||null,swapped=false;
-    if(!e&&last&&first){const k2=norm(first)+"|"+norm(last);if(S.employees[k2]){e=S.employees[k2];swapped=true;add("w","jméno a příjmení jsou prohozené, spáruje se s "+(e.last+" "+e.first).trim());}}
+    let e=m.key?S.employees[m.key]||null:null;
+    const swapped=m.how==="swap";
+    const key=e?e.key:(norm(last)+"|"+norm(first));
+    if((!last||!first)&&!e)add("e","chybí "+(!last?"příjmení":"jméno")+", řádek se přeskočí");
+    if(e&&m.how!=="exact")add(m.how==="manual"||m.how==="id"?"i":"w",HOW[m.how]+", spáruje se s "+nm(e));
     const end=endDateOf(endRaw);
     if(end===null)add("e","konec trestu „"+txt(endRaw)+"“ není datum, nezmění se");
     else if(!end)add("w","konec trestu chybí, nezmění se");
@@ -50,11 +131,13 @@ function endParse(aoa,cols,opts){
     let shift=endShiftOf(shiftRaw,labels);
     if(shift===null){add("e","směnnost „"+shiftRaw+"“ neznám, nezmění se");const k=endKey(shiftRaw);unknown.set(k,(unknown.get(k)||{text:shiftRaw,n:0}));unknown.get(k).n++;}
     else if(!shift)add("w","směnnost chybí, nezmění se");
-    if(last&&first){
+    if((last&&first)||e){
       const k=e?e.key:key;
       if(seen.has(k))add("e","stejný člověk už je na řádku "+seen.get(k)+", použije se poslední");
       seen.set(k,i+1);
-      if(!e)add("w","v Lidech není, přidá se jako nový (bez skupiny)");
+      if(!e&&m.how==="new")add("w","ručně: nový člověk, přidá se (bez skupiny)");
+      else if(!e&&m.cand.length)add("w","v Lidech není přesně, podobní: "+m.cand.map(c=>S.employees[c]?nm(S.employees[c]):c).join(", ")+". Vyber v tabulce, jinak se přidá jako nový");
+      else if(!e)add("w","v Lidech není, přidá se jako nový (bez skupiny)");
       else{
         if(e.excluded)add("w","v Lidech je vyřazený");
         if(end&&e.end&&e.end!==end)add("i","konec trestu "+endDateText(e.end)+" → "+endDateText(end));
@@ -63,9 +146,9 @@ function endParse(aoa,cols,opts){
         if(shift&&shift!=="SICK"&&e.sick)add("i","zpět po nemoci");
       }
     }
-    rows.push({n:i+1,last,first,key:e?e.key:key,e,swapped,end,endRaw:txt(endRaw),shift,shiftRaw,issues});
+    rows.push({n:i+1,last,first,key,e,swapped,how:e?m.how:m.how==="new"?"new":"none",cand:m.cand,end,endRaw:txt(endRaw),shift,shiftRaw,issues});
   });
-  const inFile=new Set(rows.filter(r=>r.last&&r.first).map(r=>r.key));
+  const inFile=new Set(rows.filter(r=>r.e||(r.last&&r.first)).map(r=>r.key));
   /* lidé z Lidí, kteří v souboru nejsou (2.44.1: v okně se dají vyřadit ze seznamu) */
   const missingP=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&!inFile.has(e.key))
     .map(e=>({key:e.key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",dept:endDeptOf(e),end:e.end||"",sick:!!e.sick}))
@@ -80,9 +163,10 @@ function endParse(aoa,cols,opts){
 function endApply(parsed,opts){
   opts=opts||{};const today=opts.today||todayIso();
   const out={ends:0,shifts:0,sick:0,back:0,added:0,skipped:0,excluded:0};
-  const lastRow=new Map();parsed.rows.forEach(r=>{if(r.last&&r.first)lastRow.set(r.key,r);});
+  const ok=r=>!!(r.e&&S.employees[r.key])||!!(r.last&&r.first);   // spárovaný člověk i s celým jménem v jednom sloupci (2.75.1)
+  const lastRow=new Map();parsed.rows.forEach(r=>{if(ok(r))lastRow.set(r.key,r);});
   parsed.rows.forEach(r=>{
-    if(!r.last||!r.first){out.skipped++;return;}
+    if(!ok(r)){out.skipped++;return;}
     if(lastRow.get(r.key)!==r)return;   // stejný člověk víckrát: platí poslední řádek
     let e=S.employees[r.key];
     if(!e){
