@@ -14,7 +14,10 @@ const uid=p=>p+Array.from(crypto.getRandomValues(new Uint8Array(5)),b=>(b%36).to
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const norm=s=>String(s==null?"":s).normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/\s+/g," ").trim();
-const nf=(n,d=1)=>Number(n||0).toLocaleString("cs-CZ",{minimumFractionDigits:0,maximumFractionDigits:d});
+/* Formátovač čísel se vytvoří jednou pro každý počet desetin (2.75): toLocaleString s volbami
+   ho stavěl při každém volání a velké tabulky (Shortage) se tím zdržovaly. Výsledek je stejný. */
+const NF_CACHE=new Map();
+const nf=(n,d=1)=>{let f=NF_CACHE.get(d);if(!f){f=new Intl.NumberFormat("cs-CZ",{minimumFractionDigits:0,maximumFractionDigits:d});NF_CACHE.set(d,f);}return f.format(Number(n||0));};
 const pct=n=>Math.round(n*100);
 const DOW=["Ne","Po","Út","St","Čt","Pá","So"];
 const MON=["led","úno","bře","dub","kvě","čvn","čvc","srp","zář","říj","lis","pro"];

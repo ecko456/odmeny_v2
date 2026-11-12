@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.75
+
+- **Shortage je výrazně rychlejší.** Hlavní brzda byla výška poznámek: prohlížeč ji přepočítával
+  u každého pole zvlášť a velký seznam se při každém kliknutí, hledání nebo změně okna zasekl
+  i na desítky sekund. Teď výšku řeší sám prohlížeč (CSS), ikony v řádcích jsou lehčí, hledání
+  u velkého seznamu počká na pauzu v psaní a uložení po drobné změně je rychlejší (Vrátit zpět
+  si pamatuje jen změněnou položku, ne celé seznamy). Na zkušebním seznamu se 400 položkami
+  a poddíly: vykreslení z 12,5 s na 0,5 s, uložení z 1 s na 0,6 s.
+- **Připnout / Odepnout** (špendlík v řádku položky): připnutá položka přejde do každého dalšího
+  nahraného seznamu, dokud ji neodepneš. Když je v nových urgentech, připnutí se převezme na ni;
+  když v nich není, přidá se i s poznámkou, stavem, posledním záznamem a poddíly a počítá se jí
+  další den na shortage. Štítek PŘIPNUTO, filtr Připnuté (platí i pro PDF), v PDF „Připnuto“.
+- **Duplikovat** (dvě kartičky v řádku): okno se zeptá, do jakého oddělení kopii vložit
+  (výchozí je jiné než to, kde položka je). Kopie má štítek KOPIE (v PDF „Kopie“), převezme
+  poznámku, stav i poslední záznam. Při porovnání s dalším dnem se kopie jako odbouraná zvlášť
+  nepočítá a její odebrání (×) se do Odstraněno ze shortage nezapíše.
+- Připnutí, odepnutí a duplikování jsou v Historii změn a jdou vrátit zpět.
+- Verze dat 53: stránka otevřená ve starší verzi po aktualizaci nic neuloží (obnovit Ctrl+Shift+R).
+
 ## Co je nového ve verzi 2.74
 
 - KPI má novou záložku **Normy**: systém si sám počítá normu (čas na 1 kus) z vykázané práce

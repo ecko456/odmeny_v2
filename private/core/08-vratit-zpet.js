@@ -33,10 +33,27 @@ function undoEq(a,b){
   for(const k of ka){if(!(k in b)||!undoEq(a[k],b[k]))return false;}
   return true;
 }
-/** Změny mezi dvěma stavy: objekty po klíčích, pole a hodnoty celé. */
+/* Pole položek se stejnými id ve stejném pořadí (2.75) se porovnávají po položkách: cesta má
+   místo indexu „@id“. Jinak by se u každé drobné změny (poznámka v Shortage) ukládalo celé pole,
+   velká data by se nevešla do limitu a uložení by se zdrželo. Při jiném pořadí nebo jiných
+   položkách zůstává celé pole jako dřív. */
+function undoSameIds(a,b){
+  if(a.length!==b.length||!a.length)return false;
+  const seen=new Set();
+  for(let i=0;i<a.length;i++){
+    const x=a[i],y=b[i];
+    if(!isPlain(x)||!isPlain(y)||typeof x.id!=="string"||!x.id||x.id!==y.id||seen.has(x.id))return false;
+    seen.add(x.id);
+  }
+  return true;
+}
+/** Položka pole podle segmentu cesty „@id“ (jen u pole; u objektu je „@…“ obyčejný klíč). */
+function undoIdx(arr,k){return typeof k==="string"&&k[0]==="@"?arr.findIndex(x=>isPlain(x)&&x.id===k.slice(1)):-1;}
+/** Změny mezi dvěma stavy: objekty po klíčích, pole položek s id po položkách, jinak pole a hodnoty celé. */
 function undoDiff(A,B){
   const out=[];
   const walk=(a,b,p)=>{
+    if(Array.isArray(a)&&Array.isArray(b)&&undoSameIds(a,b)){a.forEach((x,i)=>walk(x,b[i],[...p,"@"+x.id]));return;}
     if(isPlain(a)&&isPlain(b)){
       new Set([...Object.keys(a),...Object.keys(b)]).forEach(k=>{
         if(!p.length&&UNDO_SKIP.has(k))return;
@@ -53,11 +70,27 @@ function undoDiff(A,B){
   walk(A||{},B||{},[]);
   return out;
 }
-function undoGet(st,p){let o=st;for(const k of p){if(!isPlain(o)&&!Array.isArray(o))return undefined;o=o[k];if(o===undefined)return undefined;}return o;}
+function undoGet(st,p){
+  let o=st;
+  for(const k of p){
+    if(Array.isArray(o)){const j=undoIdx(o,k);if(j<0)return undefined;o=o[j];continue;}
+    if(!isPlain(o))return undefined;
+    o=o[k];if(o===undefined)return undefined;
+  }
+  return o;
+}
 function undoSet(st,p,v,del){
   let o=st;
-  for(let i=0;i<p.length-1;i++){if(!isPlain(o[p[i]])){if(del)return;o[p[i]]={};}o=o[p[i]];}
-  if(del)delete o[p[p.length-1]];else o[p[p.length-1]]=JSON.parse(JSON.stringify(v));
+  for(let i=0;i<p.length-1;i++){
+    const k=p[i];
+    if(Array.isArray(o)){const j=undoIdx(o,k);if(j<0)return;o=o[j];continue;}
+    // pole se nepřepisuje, další segment „@id“ v něm najde položku
+    if(!isPlain(o[k])&&!Array.isArray(o[k])){if(del)return;o[k]={};}
+    o=o[k];
+  }
+  const last=p[p.length-1];
+  if(Array.isArray(o)){const j=undoIdx(o,last);if(j<0)return;if(del)o.splice(j,1);else o[j]=JSON.parse(JSON.stringify(v));return;}
+  if(del)delete o[last];else o[last]=JSON.parse(JSON.stringify(v));
 }
 /** Nový záznam pro S.undo, nebo {big: true}, když je změna moc velká na uložení. */
 function undoRecord(base,shared,meta){

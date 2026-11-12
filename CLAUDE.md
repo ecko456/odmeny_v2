@@ -34,6 +34,54 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 12. 11. 2026 (verze 2.75):
+
+- Uživatel: „optimalizaci shortage, přijde mi ta stránka hrozně zasekaná a pomalá odezva. Dále
+  udělej u shortage možnost ‚Připnout‘ a bude se objevovat stále v následujících shortage, dokud
+  položku ‚Neodepneme‘“ a „po kliknutí na ‚Duplikovat‘ aby vyskočilo do jakého oddělení chci
+  vložit duplicitu“.
+  - Měřeno v Playwrightu na vymyšleném stavu (30 seznamů po 400 položkách, třetina s poddíly,
+    13 MB JSON; skript v paměti session, do repa nepatří). **Příčina zasekávání:** `shNotesSize`
+    nastavovalo výšku každé poznámky zvlášť (zápis `height`, čtení `scrollHeight`) = nové
+    rozložení celé tabulky pro každé pole: 25 s při každém vykreslení, filtru i `resize`.
+    Teď CSS `field-sizing: content` (`SH_FIELD_SIZING`, JS nic neměří), jinak měření najednou
+    (zápis všem, čtení všem, zápis) a jen neprázdná pole. Vykreslení 12,5 s → 0,4 s.
+  - `nf` (core 01) drží `Intl.NumberFormat` v `NF_CACHE` (toLocaleString s volbami ho stavěl při
+    každém volání; ve vykreslení Shortage 110 ms). Výsledky stejné, hlídá test.
+  - Vrátit zpět (core 08): `undoDiff` porovnává pole položek se stejnými id ve stejném pořadí
+    po položkách, segment cesty `@id` (`undoSameIds`, `undoIdx`; `undoGet`/`undoSet` ho umí jen
+    u pole, u objektu je „@…“ obyčejný klíč). Jiné pořadí nebo jiné položky = celé pole jako dřív.
+    Dřív každá poznámka v Shortage ukládala celé `lists` (u velkých dat nad `UNDO_PATCH_MAX`,
+    takže Vrátit zpět u Shortage nešlo) a uložení se zdrželo; undoRecord 330 → 110 ms.
+  - Ikony v řádcích Shortage (úchyt, oko, propiska, ×, nové špendlík a kopie) jsou CSS masky
+    (`SH_IC(n)` → `span.icon.sh-ic.sh-ic-…`, data URI v `app.css`, CSP `img-src data:`), o 5 000
+    prvků méně. Tlačítka v řádku 30 px, tři v řadě (`.sh-acts` min 96 px, buňka bez velkého
+    odsazení), tabulka se na 1440 px vejde.
+  - Hledání `#shQ`: nad 300 řádků (`shRowsN`) filtr po 160 ms pauzy (`shQTimer`), jinak hned.
+  - Zkoušeno a zamítnuto: `table-layout: fixed` a `content-visibility` na buňkách (bez měřitelného
+    přínosu). Posouvání velké tabulky v headless Chromiu stojí ~100 ms na krok (vykreslení
+    50 000 prvků, ne CSS skla); se skutečnou grafickou kartou nejspíš méně, neřešeno.
+  - Data (verze 53): položka `pin {at, by}` (`shPinClean`) a `dup: true` (jen když jsou).
+  - Core (23-shortage, blok „Připnout a duplikovat“): `shItemCopy`, `shCarryPins(prev, items)`
+    (nejnovější dosavadní seznam; stejný `shItemKey` v urgentech převezme připnutí, jinak kopie
+    celé položky na konec skupiny, `shTopFirst`), `shSetPin`, `shDuplicate(sh, list, id, dept)`
+    (hned pod originálem, bez připnutí, oddělení jako výběr v řádku). `shLinkDays`: kopie má dny
+    jako originál v tomtéž seznamu, páruje se jen bez originálu; zbylá kopie se neodbourá, když
+    díl v seznamu zůstal nebo odešel i originál (jinak jednou). Historie `shpin:`, `shdup:`,
+    nahrání seznamu „připnuté N“, kopie není „doplněná“.
+  - UI (26-shortage): `shPinBtn` (`[data-shpin]`, `.sh-pinbtn.on`), `shDupBtn` (`[data-shdup]` →
+    `shDupDialog`: radio `name="dept"`, `.sh-dupdepts`, výchozí jiné oddělení než teď),
+    `shPinTags` (PŘIPNUTO, KOPIE, i v zabaleném seznamu), řádek `tr.sh-pinned` + `data-shpinned`
+    (i poddíly, filtr), `shNewest`, filtr věku `age = 'pin'` (čip Připnuté, i PDF), `shAddList`
+    přenese připnuté (`.sh-pinnote`; zpráva počítá jen vložené urgenty), ruční přidání bez
+    seznamu taky. Odebrání kopie (×) „Odebrat kopii?“, bez `out` a `gone`. PDF: „Připnuto ·
+    Kopie · N. den na shortage“ pod EANem.
+  - Testy: core „Shortage (2.75)“ a „Vrátit zpět (2.75)“, nový `tests/e2e_shpin.js` (tři dny,
+    připnout, filtr, duplikovat, odebrat kopii, PDF, odepnout, velký seznam pod limitem, telefon),
+    `e2e_xss` (připnutí, kopie, okno Duplikovat), `test_odmeny` (426 pro 52), `e2e_upgrade_prev`
+    2.74 → 2.75 (archiv `fd89a32`, připnutí, kopie a další den nad převzatými daty).
+    `ODM_VERSION` 2.75.
+
 Stav k 12. 11. 2026 (verze 2.74):
 
 - Uživatel: „v KPI … by si systém tvořil sám normy podle odvedených časů … tabulka obsahuje i název
@@ -2373,7 +2421,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36, zabalení dne a dny na shortage 2.73)
+## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36, zabalení dne a dny na shortage 2.73, připnout a duplikovat 2.75)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -2386,7 +2434,7 @@ Data `S.shortage` (`blankShortage`, čištění `cleanShortage` v `core.js`):
 - `S.shortage.depts` (2.32): oddělení s přiřazenými operacemi, viz „Kde jsme skončili“ 2.32;
 - seznam `packed` a `out`, položka `since`, `days`, `again`, `S.shortage.hist` (2.73): zabalený den,
   odbourané položky a dny na shortage, viz „Kde jsme skončili“ 2.73;
-- položka `{id, order, name, ean, index, qty, top, top2, op, link, code, note, rec, subs, cands, pdfHide, full, dept}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1, `full` od 2.31 = sestava zobrazená plně; `top` jde od 2.31 přepnout ručně; `top2` a `dept` od 2.32, `shSetTier`): texty tak, jak je ukazuje Excel
+- položka `{id, order, name, ean, index, qty, top, top2, op, link, code, note, rec, subs, cands, pdfHide, full, dept}` (`id`, `note`, `rec` od 2.28, `subs` od 2.29, `cands` a `pdfHide` od 2.29.1, `full` od 2.31 = sestava zobrazená plně; `top` jde od 2.31 přepnout ručně; `top2` a `dept` od 2.32, `shSetTier`; `pin` a `dup` od 2.75, jen když jsou): texty tak, jak je ukazuje Excel
   (EAN s nulami na začátku, množství s formátem); `top` jen `true`/`false`; `link` projde
   `shLink` (jen `http(s)://`, `www.` doplní `https://`, bez mezer a `<>"`, nejvýš 2000 znaků),
   jinak `""`, slouží jen ke klikání v aplikaci; `code` = activeBarcode z odkazu (`shCode`: text
@@ -2780,7 +2828,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.72 | `ce9ffce` | Shortage – nabídka alternativních objednávek z plánu při neshodě objednávky / line (data verze 50) |
 | 2.72.1 | `a986739` | časová osa se posouvá a vrací na teď, panel bez posuvníku |
 | 2.73 | `b190c78` | Shortage po dnech – zabalení dne, kolikátý den na shortage, odbourané položky, filtr TOP / TOP 2 / 2 a více dní, Historie (data verze 51) |
-| 2.74 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: KPI Normy – normy z vykázaných časů (zkušení nad 45 %, bez záznamů do 2 minut), plnění ve Výkonnosti na osobu (data verze 52) |
+| 2.74 | `fd89a32` | KPI Normy – normy z vykázaných časů (zkušení nad 45 %, bez záznamů do 2 minut), plnění ve Výkonnosti na osobu (data verze 52) |
+| 2.75 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: rychlejší Shortage (výška poznámek, ikony, uložení), Připnout / Odepnout do dalších seznamů, Duplikovat do vybraného oddělení (data verze 53) |
 
 Verze 2.1 přidala:
 
@@ -2893,7 +2942,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `52` (od 2.74):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `53` (od 2.75):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -3248,6 +3297,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_xss.js` (2.62.1): podvržené HTML v datech se nikde nevykreslí;
   - `e2e_shdny.js` (2.73): Shortage po dnech (zabalení, dny na shortage, odbourané, filtr, PDF, Historie, telefon);
   - `e2e_normy.js` (2.74): KPI Normy (sloupec dílu v okně načtení, zkušení, záznamy do 2 min, hledání, Excel, hranice, plnění, telefon);
+  - `e2e_shpin.js` (2.75): Shortage Připnout a Duplikovat (tři dny, filtr, oddělení kopie, odebrání kopie, PDF, odepnutí, rychlost velkého seznamu, telefon);
   - `e2e_soubeh.js` (2.62): dva lidé současně (sloučení, sankce obou, střet, průběžné načtení, rozepsané pole, otevřené okno, telefon);
   - `e2e_shkroky.js` (2.61): Shortage ve třech krocích (sloupce, vzorník barev, plán, evidence pohybu, AI, rozbor, telefon);
   - `e2e_lockbg.js` (2.60): pozadí zámku (kreslí, hýbe se, pauza, omezit pohyb, bez WebGL, po odemčení pryč, telefon);

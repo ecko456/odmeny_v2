@@ -195,7 +195,7 @@ function shChanges(A,B,add){
   const TIER={top:"TOP SHORTAGE",top2:"TOP 2",none:"běžná shortage"};
   Object.keys(B.colors||{}).forEach(h=>{if((A.colors||{})[h]!==B.colors[h])add("shortage","Shortage: barva EANu #"+h+" = "+TIER[B.colors[h]],{m:"shk:"+h});});
   B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&l.moves&&JSON.stringify(o.moves||null)!==JSON.stringify(l.moves))add("shortage","Shortage: evidence pohybu "+(l.moves.file||"")+" u seznamu "+shWhen(l)+" ("+l.moves.rows+" záznamů)",{m:"shv:"+l.id+":"+l.moves.at});});
-  const what=l=>{const n=l.items.length,top=l.items.filter(i=>i.top).length;return " ("+n+" "+shItemsN(n)+(top?", z toho "+top+" TOP":"")+(l.file?", "+l.file:"")+")";};
+  const what=l=>{const n=l.items.length,top=l.items.filter(i=>i.top).length,pin=l.items.filter(i=>i.pin).length;return " ("+n+" "+shItemsN(n)+(top?", z toho "+top+" TOP":"")+(pin?", připnuté "+pin:"")+(l.file?", "+l.file:"")+")";};
   B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+what(l),{m:"shl:"+l.id});});
   // zabalení dne (2.73)
   B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&!!o.packed!==!!l.packed)add("shortage",l.packed?"Shortage: zabalen seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+")":"Shortage: rozbalen seznam "+shWhen(l),{m:"shpk:"+l.id});});
@@ -211,7 +211,11 @@ function shChanges(A,B,add){
     const os=subsOf(o),ns=subsOf(l),planChanged=JSON.stringify(o.plan||null)!==JSON.stringify(l.plan||null);
     o.items.forEach(i=>{if(!ni.has(i.id))add("shortage","Shortage: ze seznamu "+shWhen(l)+" odebrána položka "+label(i),{m:"shr:"+l.id+":"+i.id});});
     // doplnění chybějících (2.36)
-    const fresh=l.items.filter(i=>!oi.has(i.id));
+    const fresh=l.items.filter(i=>!oi.has(i.id)&&!i.dup);
+    // duplikát do jiného oddělení a připnutí (2.75)
+    const dupName=i=>i.dept==="-"?"Nezařazeno":i.dept?((B.depts||[]).find(d=>d.id===i.dept)||{}).name||"oddělení":"podle operace";
+    l.items.filter(i=>!oi.has(i.id)&&i.dup).forEach(i=>add("shortage","Shortage: položka "+label(i)+" zduplikována, kopie v oddělení "+dupName(i)+" (seznam "+shWhen(l)+")",{m:"shdup:"+l.id+":"+i.id}));
+    l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.pin!==!!i.pin)add("shortage","Shortage: položka "+label(i)+(i.pin?" připnuta (přejde i do dalších seznamů)":" odepnuta")+" (seznam "+shWhen(l)+")",{m:"shpin:"+l.id+":"+i.id});});
     if(fresh.length)add("shortage","Shortage: do seznamu "+shWhen(l)+" doplněn"+(fresh.length===1?"a ":fresh.length<=4?"y ":"o ")+fresh.length+" "+shItemsN(fresh.length)+": "+fresh.slice(0,5).map(label).join(", ")+(fresh.length>5?" …":""),{m:"shm:"+l.id+":"+fresh[0].id});   // každé doplnění zvlášť
     l.items.forEach(i=>{
       const p=oi.get(i.id);

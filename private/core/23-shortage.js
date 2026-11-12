@@ -479,7 +479,7 @@ function cleanShortage(o){
     // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec; ze 2.28 nemá subs
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,top2:i.top2===true&&i.top!==true,op:line(i.op,300),link:shLink(i.link),
-      qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,
+      qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,...shPinClean(i.pin,line),...(i.dup===true?{dup:true}:{}),
       dept:i.dept==="-"||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),...(shQtyNum(i.oqty)!=null?{oqty:shQtyNum(i.oqty)}:{}),
       since:shIsoDay(i.since),days:Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+i.days||1))),again:shIsoDay(i.again),   // dny na shortage (2.73), dopočítá shLinkDays
       subs:shAllSubs(i).map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),
@@ -618,16 +618,25 @@ function shLinkDays(lists){
     }else{
       const pday=shListDay(prev),pm=new Map();
       prev.items.forEach(p=>{const k=shItemKey(p);if(!pm.has(k))pm.set(k,[]);pm.get(k).push(p);});
-      l.items.forEach(i=>{
-        const k=shItemKey(i),arr=pm.get(k),p=arr&&arr.shift();
+      // duplikát (2.75) má dny jako originál v tomto seznamu; páruje se jen, když originál chybí
+      const pick=(arr,dup)=>{if(!arr||!arr.length)return null;let j=arr.findIndex(x=>!!x.dup===dup);if(j<0)j=0;return arr.splice(j,1)[0];};
+      const link=(i,p,k)=>{
         if(p){i.since=p.since||pday;i.days=Math.min(SH_MAX_DAYS,(p.days||1)+(day!==pday?1:0));i.again=p.again||"";}
         else{i.since=day;i.days=1;i.again=lastOut.get(k)||"";}
-      });
+      };
+      const here=new Map();
+      l.items.filter(i=>!i.dup).forEach(i=>{const k=shItemKey(i);link(i,pick(pm.get(k),false),k);if(!here.has(k))here.set(k,i);});
+      l.items.filter(i=>i.dup).forEach(i=>{const k=shItemKey(i),o=here.get(k);if(o){i.since=o.since;i.days=o.days;i.again=o.again;return;}link(i,pick(pm.get(k),true),k);here.set(k,i);});
       // ručně odebraná v tomto seznamu v urgentech byla: jako zmizelá se nepočítá podruhé
       const manual=new Map();
       l.out.forEach(o=>{if(o.manual)manual.set(o.key,(manual.get(o.key)||0)+1);});
       const auto=[];
-      pm.forEach((arr,k)=>arr.forEach(p=>{const m=manual.get(k)||0;if(m>0){manual.set(k,m-1);return;}auto.push(shOutOf(p,day,null));}));
+      pm.forEach((arr,k)=>{
+        // zbylý duplikát se jako odbouraný nepočítá, když je díl v seznamu dál nebo odešel i originál
+        let left=arr;
+        if(left.some(p=>p.dup)){const plain=left.filter(p=>!p.dup);left=plain.length||here.has(k)?plain:left.slice(0,1);}
+        left.forEach(p=>{const m=manual.get(k)||0;if(m>0){manual.set(k,m-1);return;}auto.push(shOutOf(p,day,null));});
+      });
       l.out=[...auto,...l.out.filter(o=>o.manual).map(o=>({...o,day:o.day||day,since:o.since||o.day||day}))].slice(0,SH_MAX_OUT);
     }
     l.out.forEach(o=>lastOut.set(o.key,o.day||day));
@@ -840,4 +849,56 @@ function shEntry(list,id){
     if(s)return {entry:s,item:it,sub:true};
   }
   return null;
+}
+
+/* ==========================================================================
+   Připnout a duplikovat (2.75)
+   Připnutá položka (pin = {at, by}) přejde do každého dalšího nahraného seznamu, dokud ji
+   někdo neodepne. Zdrojem je nejnovější dosavadní seznam: když je stejná položka (shItemKey)
+   v nových urgentech, připnutí se převezme na ni, jinak se přidá kopie celé položky (poznámka,
+   stav, záznam, poddíly) na konec své skupiny. Duplikát (dup = true) je ruční kopie položky
+   v jiném oddělení; při porovnání dnů se jako odbouraný zvlášť nepočítá.
+   ========================================================================== */
+function shPinClean(p,line){return p&&typeof p==="object"?{pin:{at:Number.isFinite(+p.at)?Math.max(0,Math.round(+p.at)):0,by:line(p.by,60)}}:{};}
+/** Kopie položky bez id (cleanShortage dá nová id položce i poddílům). */
+function shItemCopy(i){
+  const c=JSON.parse(JSON.stringify(i));
+  c.id="";
+  c.subs=(c.subs||[]).map(s=>({...s,id:""}));
+  return c;
+}
+/** Nové položky seznamu s připnutými z předchozího seznamu → {items, carried, kept}. */
+function shCarryPins(prev,items){
+  const pins=((prev&&prev.items)||[]).filter(i=>i.pin);
+  if(!pins.length)return {items,carried:0,kept:0};
+  const have=new Map();
+  items.forEach(i=>{const k=shItemKey(i);if(!have.has(k))have.set(k,[]);have.get(k).push(i);});
+  const add=[];let kept=0;
+  pins.forEach(p=>{
+    const arr=have.get(shItemKey(p)),hit=arr&&arr.shift();
+    if(hit){hit.pin={...p.pin};kept++;}
+    else add.push(shItemCopy(p));
+  });
+  return {items:shTopFirst([...items,...add]),carried:add.length,kept};
+}
+/** Připnout (on) nebo odepnout položku; vrací true, když se něco změnilo. */
+function shSetPin(list,id,on,meta){
+  const it=list&&list.items.find(i=>i.id===id);
+  if(!it||!!it.pin===!!on)return false;
+  if(on)it.pin={at:(meta&&meta.at)||Date.now(),by:(meta&&meta.by)||""};
+  else delete it.pin;
+  return true;
+}
+/** Duplikát položky hned pod originálem, v oddělení dept ("" = podle operace, "-" = nezařazeno,
+    jinak id oddělení). Vrací novou položku (id dá cleanShortage), nebo null. */
+function shDuplicate(sh,list,id,dept){
+  const k=list?list.items.findIndex(i=>i.id===id):-1;
+  if(k<0)return null;
+  const it=list.items[k],c=shItemCopy(it);
+  delete c.pin;
+  c.dup=true;
+  const auto=shAutoDept(sh,it);
+  c.dept=dept===""||dept==null?"":dept==="-"?(auto?"-":""):(dept===auto?"":dept);
+  list.items.splice(k+1,0,c);
+  return c;
 }

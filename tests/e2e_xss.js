@@ -43,7 +43,7 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     S.sanctions.push({ id: 'sxss1', key: k, period: S.current, name: P(), pct: 10, note: P(), at: Date.now() });
     S.tasks.list.push({ id: 'tkxss1', title: P(), desc: P(), due: '', owner: P(), state: 'new', repeat: '', remind: 2, at: Date.now(), by: P(), tl: [{ id: 'tex1', at: Date.now(), by: P(), k: 'c', text: P() }] });
     const L = c => 'http://is.example/x?activeBarcode=' + c + '&y';
-    S.shortage.lists.unshift({ id: 'shxss', at: Date.now(), by: P(), file: P(), sheet: P(), items: [{ id: 'si1', order: P(), name: P(), ean: P(), index: P(), qty: P(), top: true, op: P(), link: L('1.2'), code: '1.2', note: P(), rec: { ts: 1, when: P(), qty: P(), state: P(), op: P(), n: 2, at: 1, by: P() }, subs: [{ id: 'sp1', ean: P(), code: '3.4', op: P(), note: P() }], cands: [{ ean: P(), code: '', op: P(), link: '' }] }] });
+    S.shortage.lists.unshift({ id: 'shxss', at: Date.now(), by: P(), file: P(), sheet: P(), items: [{ id: 'si1', order: P(), name: P(), ean: P(), index: P(), qty: P(), top: true, op: P(), link: L('1.2'), code: '1.2', note: P(), rec: { ts: 1, when: P(), qty: P(), state: P(), op: P(), n: 2, at: 1, by: P() }, subs: [{ id: 'sp1', ean: P(), code: '3.4', op: P(), note: P() }], cands: [{ ean: P(), code: '', op: P(), link: '' }], pin: { at: 1, by: P() } }, { id: 'si2', order: P(), name: P(), ean: P(), index: P(), qty: P(), op: P(), note: P(), dup: true, dept: 'sdx' }] });   // připnutí a kopie (2.75)
     S.shortage.depts = [{ id: 'sdx', name: P(), ops: [] }];
     // 2.74: normy z vykázaných časů s podvrženým názvem dílu a operace
     S.workAudit.dv.perf['2026-11'] = { '101': { p: { [P()]: [2, 0, 10, 1] }, o: {}, n: { [P()]: { [P()]: [2, 10, 1], '': [1, 5, 1] } }, s: 1 } };
@@ -82,6 +82,7 @@ const check = (ok, message) => { if (!ok) problems.push(message); };
     ['ukoly: detail', () => { ui.tk.sel = 'tkxss1'; showView('ukoly'); }],
     ['servis: zařízení', () => { ui.sv.tab = 'dev'; showView('servis'); }],
     ['protokoly: detail', () => { ui.lb.sel = 'lbxss'; showView('protokoly'); }],
+    ['shortage: duplikovat', () => { ui.sh.mode = 'list'; ui.sh.open = null; showView('shortage'); shDupDialog('si1'); }],
     ['historie', () => { openLog(); }],
   ];
   for (const [name, fn] of extra) {
