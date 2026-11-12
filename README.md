@@ -62,6 +62,21 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.75.2
+
+- Konce trestů, okno **Lidé, kteří v souboru nejsou**: u každého člověka je výběr **Je v souboru
+  jako** s řádky souboru, které zůstaly bez páru. Podobné řádky jsou nahoře jako návrh; jistá shoda
+  (třeba „Novák J.“ pro Nováka Jana) je rovnou předvybraná s poznámkou „návrh, zkontroluj“. Po
+  výběru se člověku zapíše konec trestu a směnnost z toho řádku a řádek se nepřidá jako nový.
+  Stejný řádek dvěma lidem přidělit nejde.
+- Buňka ve sloupci jména, která je datum nebo číslo (Excel ji ukázal jako „Invalid Date“), se už
+  za jméno nebere, takže nevznikne člověk „… Invalid Date“. Řádky s nadpisy (Zaměstnanec, Příjmení…)
+  se přeskočí kdekoli v souboru, popisek „Zaměstnanec:“ před jménem se odstraní a nový člověk
+  s číslicemi ve jméně se nezaloží. U zaškrtávátka „Přidat nové lidi“ jsou jejich jména.
+- Lidé s chybným jménem z dřívějšího importu („Invalid Date“, číslice) jsou v okně označení
+  a předvybraní k vyřazení. Smazat je jde v Lidech (detail člověka, Smazat), nebo celý dřívější
+  import vrátit v Posledních změnách (Vrátit zpět, do 3 dnů).
+
 ## Co je nového ve verzi 2.75.1
 
 - **Lepší párování jmen v Konce trestů a směnnost.** Dřív se člověk našel jen při přesné shodě

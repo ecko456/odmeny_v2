@@ -76,7 +76,7 @@ async function endImport(file) {
     ${endTableHtml(r, all)}
     <label class="check"><input type="checkbox" data-endall${all ? ' checked' : ''}><span>Ukázat všechny řádky (i bez upozornění)</span></label>
     ${r.missing.length ? `<div class="note w end-miss"><b>${r.missing.length} ${lidiN(r.missing.length)} z Lidí v souboru není.</b> Po zapsání se ukážou v tabulce a u každého rozhodneš, jestli ho vyřadit ze seznamu.</div>` : ''}
-    ${r.sum.fresh ? `<label class="check"><input type="checkbox" name="add" checked><span>Přidat ${r.sum.fresh} ${r.sum.fresh === 1 ? 'nového člověka' : 'nových lidí'} do Lidí (bez skupiny, zařadíš je potom)</span></label>` : ''}`;
+    ${r.sum.fresh ? `<label class="check"><input type="checkbox" name="add" checked><span>Přidat ${r.sum.fresh} ${r.sum.fresh === 1 ? 'nového člověka' : 'nových lidí'} do Lidí (bez skupiny, zařadíš je potom): ${esc(r.rows.filter(x => !x.e && !x.bad && x.last && x.first).slice(0, 12).map(x => `${x.last} ${x.first}`).join(', '))}${r.sum.fresh > 12 ? ' …' : ''}</span></label>` : ''}`;
   const first = parse();
   const res = await dialog({
     title: 'Konce trestů a směnnost', ok: 'Zapsat', wide: true,
@@ -103,9 +103,15 @@ async function endImport(file) {
     },
   });
   if (res.value !== 'ok') return;
-  const r = parse();
+  let r = parse();
   const addEl = res.form.elements.namedItem('add');
-  const exclude = r.missingP.length ? await endExcludeDialog(r.missingP, file.name) : [];
+  let exclude = [];
+  if (r.missingP.length) {
+    // 2.75.2: chybějícímu člověku jde přidělit řádek souboru bez páru (je tam pod jiným jménem)
+    const x = await endExcludeDialog(r, file.name);
+    if (x.assign.size) { x.assign.forEach((n, key) => assign.set(n, key)); r = parse(); }
+    exclude = x.exclude;
+  }
   const out = endApply(r, { add: !!(addEl && addEl.checked), exclude });
   store.note = { kind: 'person', keep: true, text: `Nahrány konce trestů a směnnost (${file.name}): konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}, zpět po nemoci ${out.back}${out.added ? `, nově přidáno ${out.added}` : ''}${out.excluded ? `, vyřazeno ze seznamu ${out.excluded}` : ''}` };
   save();
@@ -115,28 +121,62 @@ async function endImport(file) {
 }
 
 /* Lidé z Lidí, kteří v nahraném souboru chybí (2.44.1): tabulka, u každého zaškrtnutí Vyřadit.
-   Výchozí nikdo; Zrušit = nikoho nevyřadit (zbytek importu se zapíše tak jako tak).
-   Vyřazený zůstane v evidenci a jde vrátit v Lidech. */
-async function endExcludeDialog(list, fileName) {
-  const rows = list.map(x => `<tr><td class="c" data-label="Vyřadit"><input type="checkbox" name="ex" value="${esc(x.key)}" aria-label="Vyřadit ${esc(x.name)}"></td>
-    <td class="name" data-label="Zaměstnanec"><b>${esc(x.name)}</b>${x.wid ? ` <small class="muted num">ID ${esc(x.wid)}</small>` : ''}</td>
-    <td data-label="Oddělení">${esc(x.dept)}</td><td class="num" data-label="Konec trestu">${x.end ? esc(endDateText(x.end)) : '<span class="muted">—</span>'}${x.sick ? ' <span class="tag warn">nemoc</span>' : ''}</td></tr>`).join('');
+   2.75.2: když je člověk v souboru pod jiným jménem, vybere se jeho řádek („Je v souboru jako“,
+   nabídka = řádky souboru bez páru, podobné nahoře, jistá shoda předvybraná); zapíše se mu konec
+   trestu a směnnost z řádku a řádek se nepřidá jako nový. Vrací {exclude: [klíče], assign:
+   Map klíč → číslo řádku}. Zrušit (Přeskočit) = nic nevyřadit ani nepřiřadit, zbytek importu
+   se zapíše tak jako tak. Vyřazený zůstane v evidenci a jde vrátit v Lidech. */
+async function endExcludeDialog(parsed, fileName) {
+  const list = parsed.missingP;
+  const free = parsed.rows.filter(x => !x.e && (x.last || x.first));
+  const hints = endMissingHints(parsed);
+  const rowText = x => `Řádek ${x.n}: ${`${x.last} ${x.first}`.trim()}${x.end ? ` · ${endDateText(x.end)}` : ''}${x.shift ? ` · ${END_SHIFT_T[x.shift]}` : ''}`;
+  const pickHtml = m => {
+    const h = hints.get(m.key) || { cand: [], pick: null };
+    const sug = h.cand.map(n => free.find(x => x.n === n)).filter(Boolean);
+    const opt = (x, on) => `<option value="${x.n}"${on ? ' selected' : ''}>${esc(rowText(x))}</option>`;
+    return `<select name="ea" data-eakey="${esc(m.key)}" aria-label="${esc(m.name)} je v souboru jako"><option value="">— v souboru není —</option>
+      ${sug.length ? `<optgroup label="Návrh">${sug.map(x => opt(x, x.n === h.pick)).join('')}</optgroup>` : ''}
+      <optgroup label="Ostatní řádky bez páru">${free.filter(x => !sug.includes(x)).map(x => opt(x, false)).join('')}</optgroup></select>${h.pick ? '<small class="end-hint">návrh, zkontroluj</small>' : ''}`;
+  };
+  const rows = list.map(x => `<tr${x.bad ? ' class="end-badname"' : ''}><td class="c" data-label="Vyřadit"><input type="checkbox" name="ex" value="${esc(x.key)}" aria-label="Vyřadit ${esc(x.name)}"${x.bad ? ' checked' : ''}></td>
+    <td class="name" data-label="Zaměstnanec"><b>${esc(x.name)}</b>${x.wid ? ` <small class="muted num">ID ${esc(x.wid)}</small>` : ''}${x.bad ? '<small class="end-hint">chybné jméno z dřívějšího importu, předvybráno k vyřazení</small>' : ''}</td>
+    <td data-label="Oddělení">${esc(x.dept)}</td><td class="num" data-label="Konec trestu">${x.end ? esc(endDateText(x.end)) : '<span class="muted">—</span>'}${x.sick ? ' <span class="tag warn">nemoc</span>' : ''}</td>
+    ${free.length ? `<td class="end-asg" data-label="Je v souboru jako">${pickHtml(x)}</td>` : ''}</tr>`).join('');
   const res = await dialog({
-    title: 'Lidé, kteří v souboru nejsou', ok: 'Vyřadit vybrané', cancel: 'Nikoho nevyřazovat', wide: true,
-    html: `<p>V souboru <b>${esc(fileName)}</b> chybí ${list.length} ${lidiN(list.length)} z Lidí. Zaškrtni, koho vyřadit ze seznamu (třeba už odešli). Vyřazený zůstane v evidenci a vrátit ho jde v Lidech.</p>
-      <div class="end-exbar"><button class="btn sec small" type="button" data-endex="all">Vybrat všechny</button><button class="btn sec small" type="button" data-endex="none">Zrušit výběr</button><span class="small muted" id="endExN">vybráno 0</span></div>
-      <div class="table-card flat end-extab"><table class="stack"><thead><tr><th class="c">Vyřadit</th><th>Zaměstnanec</th><th>Oddělení</th><th>Konec trestu</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    title: 'Lidé, kteří v souboru nejsou', ok: 'Vyřadit vybrané', cancel: free.length ? 'Přeskočit' : 'Nikoho nevyřazovat', wide: true,
+    html: `<p>V souboru <b>${esc(fileName)}</b> chybí ${list.length} ${lidiN(list.length)} z Lidí.${free.length ? ` Když je člověk v souboru pod jiným jménem, vyber jeho řádek ve sloupci <b>Je v souboru jako</b>: zapíše se mu konec trestu a směnnost z toho řádku a řádek se nepřidá jako nový (bez páru je ${free.length} ${free.length === 1 ? 'řádek' : free.length <= 4 ? 'řádky' : 'řádků'}).` : ' Všechny řádky souboru jsou spárované.'} Koho v souboru opravdu není (třeba už odešel), zaškrtni k vyřazení ze seznamu; vyřazený zůstane v evidenci a vrátit ho jde v Lidech.</p>
+      <div class="end-exbar"><button class="btn sec small" type="button" data-endex="all">Vybrat všechny k vyřazení</button><button class="btn sec small" type="button" data-endex="none">Zrušit výběr</button><span class="small muted" id="endExN">vybráno 0</span></div>
+      <div class="table-card flat end-extab"><table class="stack"><thead><tr><th class="c">Vyřadit</th><th>Zaměstnanec</th><th>Oddělení</th><th>Konec trestu</th>${free.length ? '<th>Je v souboru jako</th>' : ''}</tr></thead><tbody>${rows}</tbody></table></div>`,
+    validate: form => {
+      const seen = new Map();
+      for (const sel of form.querySelectorAll('select[name="ea"]')) {
+        if (!sel.value) continue;
+        if (seen.has(sel.value)) return `Řádek ${sel.value} je přidělený dvěma lidem (${seen.get(sel.value)} a ${(list.find(m => m.key === sel.dataset.eakey) || {}).name}). Každý řádek patří jen jednomu člověku.`;
+        seen.set(sel.value, (list.find(m => m.key === sel.dataset.eakey) || {}).name);
+      }
+      return null;
+    },
     onOpen: dlg => {
       const boxes = () => [...dlg.querySelectorAll('input[name="ex"]')];
-      const count = () => { const n = boxes().filter(b => b.checked).length; $('#endExN', dlg).textContent = `vybráno ${n}`; $('#dlgOk').disabled = !n; };
-      dlg.querySelector('.end-exbar').addEventListener('click', event => { const b = event.target.closest('[data-endex]'); if (!b) return; boxes().forEach(x => { x.checked = b.dataset.endex === 'all'; }); count(); });
-      dlg.querySelector('.end-extab').addEventListener('change', count);
+      const sels = () => [...dlg.querySelectorAll('select[name="ea"]')];
+      const count = () => {
+        // člověk s přiděleným řádkem se nevyřazuje
+        sels().forEach(s2 => { const b = dlg.querySelector(`input[name="ex"][value="${CSS.escape(s2.dataset.eakey)}"]`); if (b) { b.disabled = !!s2.value; if (s2.value) b.checked = false; } });
+        const n = boxes().filter(b => b.checked).length, a = sels().filter(x => x.value).length;
+        $('#endExN', dlg).textContent = `vybráno k vyřazení ${n}${a ? ` · přiděleno ${a}` : ''}`;
+        $('#dlgOk').disabled = !n && !a;
+        $('#dlgOk').textContent = a && n ? 'Přidělit a vyřadit' : a ? 'Přidělit vybrané' : 'Vyřadit vybrané';
+      };
+      dlg.querySelector('.end-exbar').addEventListener('click', event => { const b = event.target.closest('[data-endex]'); if (!b) return; boxes().forEach(x => { x.checked = b.dataset.endex === 'all' && !x.disabled; }); count(); });
+      dlg.querySelector('.end-extab').addEventListener('change', () => { const err = dlg.querySelector('.dlg-error'); if (err) err.remove(); count(); });
       count();
     },
   });
   $('#dlgOk').disabled = false;
-  if (res.value !== 'ok') return [];
-  return [...res.form.querySelectorAll('input[name="ex"]:checked')].map(x => x.value);
+  if (res.value !== 'ok') return { exclude: [], assign: new Map() };
+  const assign = new Map([...res.form.querySelectorAll('select[name="ea"]')].filter(x => x.value).map(x => [x.dataset.eakey, +x.value]));
+  return { exclude: [...res.form.querySelectorAll('input[name="ex"]:checked')].map(x => x.value).filter(k => !assign.has(k)), assign };
 }
 
 function endWhoHtml(x) {

@@ -5557,6 +5557,83 @@ test('Konce trestů (2.75.1): párování jmen – ID, přejmenovaný, prohozen�
   return null;
 });
 
+test('Konce trestů (2.75.2): chybějícím lidem návrhy řádků bez páru, jistá shoda předvybraná, přidělení řádku', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    st.positions = [mkPos('g1', 'Brus', [])]; st.positions[0].dept = 'Broušení';
+    const emp = (k, last, first) => { st.employees[k] = { key: k, last, first, positionId: 'g1', shift: 'R', note: '' }; };
+    emp('novak|jan', 'Novák', 'Jan'); emp('svoboda|petr', 'Svoboda', 'Petr'); emp('kral|tomas', 'Král', 'Tomáš'); emp('mala|eva', 'Malá', 'Eva'); emp('adam|ota', 'Adam', 'Ota');
+    S = sanitizeState(st);
+    const aoa = [['Příjmení', 'Jméno', 'Konec trestu', 'Směnnost'],
+      ['Adam', 'Ota', '1.2.2027', 'Skupina 1'],          // 2 přesně
+      ['Novák J.', '', '2.2.2027', 'Skupina 2'],         // 3 příjmení a iniciála: jistý návrh pro Nováka
+      ['Svobodová', 'Petra', '3.2.2027', 'Skupina 1'],   // 4 podobné, ale ne jisté (může to být někdo jiný)
+      ['Malá', 'E.', '4.2.2027', 'Skupina 1'],           // 5 a 6: dva možné řádky pro Malou Evu, nic se nepředvybere
+      ['Malá', 'Eliška', '5.2.2027', 'Skupina 1'],
+      ['Xyz', 'Abc', '6.2.2027', 'Skupina 1']];          // 7 nic podobného
+    const p = endParse(aoa, null, { today: '2026-11-12' });
+    const h = endMissingHints(p);
+    const H = k => h.get(k) ? { cand: h.get(k).cand, pick: h.get(k).pick } : null;
+    const p2 = endParse(aoa, null, { today: '2026-11-12', assign: new Map([[3, 'novak|jan'], [5, 'mala|eva']]) });
+    const o = endApply(p2, { add: false, today: '2026-11-12' });
+    return JSON.stringify({ how: p.rows.map(r => [r.n, r.how]), missing: p.missing, novak: H('novak|jan'), svoboda: H('svoboda|petr'), mala: H('mala|eva'), kral: H('kral|tomas'), adam: H('adam|ota'),
+      missing2: p2.missing, o, e: ['novak|jan', 'mala|eva'].map(k => [S.employees[k].end, S.employees[k].shift]), none: endMissingHints({ rows: [], missingP: [] }).size });
+  })()`));
+  assert.deepStrictEqual(out.how, [[2, 'exact'], [3, 'none'], [4, 'none'], [5, 'none'], [6, 'none'], [7, 'none']], 'žádný z nich se sám nespáruje');
+  assert.deepStrictEqual(out.missing, ['Král Tomáš', 'Malá Eva', 'Novák Jan', 'Svoboda Petr']);
+  assert.deepStrictEqual(out.novak, { cand: [3], pick: 3 }, 'Novák J. = jistý návrh');
+  assert.deepStrictEqual(out.svoboda, { cand: [4], pick: null }, 'Svobodová Petra jen návrh');
+  assert.deepStrictEqual([out.mala.cand.slice().sort(), out.mala.pick], [[5, 6], null], 'dva možné řádky: nic předvybrané');
+  assert.deepStrictEqual(out.kral, { cand: [], pick: null });
+  assert.strictEqual(out.adam, null, 'spárovaný člověk návrhy nemá');
+  assert.deepStrictEqual(out.missing2, ['Král Tomáš', 'Svoboda Petr'], 'přidělení ubere chybějící');
+  assert.deepStrictEqual(out.e, [['2027-02-02', 'S2'], ['2027-02-04', 'S1']], 'přidělený řádek se zapíše člověku');
+  assert.strictEqual(out.o.added, 0);
+  assert.strictEqual(out.none, 0);
+  return null;
+});
+
+test('Konce trestů (2.75.2): datum, číslo ani „Invalid Date“ ve sloupci jména nejsou jméno, nadpisy uprostřed, popisek Zaměstnanec:', () => {
+  const core = loadCore();
+  const out = JSON.parse(run(core, `(() => {
+    const st = blank();
+    st.positions = [mkPos('g1', 'Brus', [])]; st.positions[0].dept = 'Broušení';
+    st.employees['sasak|jan'] = { key: 'sasak|jan', last: 'Sasák', first: 'Jan', positionId: 'g1', shift: 'R', note: '' };
+    st.employees['sasak|invalid date'] = { key: 'sasak|invalid date', last: 'SASÁK', first: 'Invalid Date', positionId: null, note: '' };   // z dřívějšího importu
+    S = sanitizeState(st);
+    const before = Object.keys(S.employees).length;
+    const aoa = [['Zaměstnanec', '', 'Konec trestu', 'Směnnost'],
+      ['SASÁK', new Date(NaN), '1.2.2027', 'Skupina 1'],                // 2 jméno je neplatné datum: jen příjmení → chyba
+      ['Zaměstnanec', '', '', ''],                                      // 3 nadpis uprostřed: přeskočí se
+      ['Zaměstnanec: Sasák', 'Jan', '2.2.2027', 'Skupina 2'],          // 4 popisek před jménem: Sasák Jan
+      ['Kovář', 'Invalid Date', '3.2.2027', 'Skupina 1'],              // 5 text „Invalid Date“ není jméno
+      ['Novák2', 'Petr', '4.2.2027', 'Skupina 1'],                     // 6 číslice: nový se nezaloží
+      [45000, 'Eva', '5.2.2027', 'Skupina 1'],                         // 7 číslo jako příjmení
+      ['', '', '', 'poznámka'],                                         // 8 jen poznámka bez jména a data
+      ['Bílá', 'Iva', '6.2.2027', 'Skupina 1']];                       // 9 nový člověk v pořádku
+    const p = endParse(aoa, null, { today: '2026-11-12' });
+    const o = endApply(p, { add: true, today: '2026-11-12' });
+    const names = Object.values(S.employees).map(e => (e.last + ' ' + e.first).trim()).sort();
+    return JSON.stringify({ bad: p.missingP.map(m => [m.name, !!m.bad]), rows: p.rows.map(r => [r.n, r.last, r.first, r.how, r.issues.filter(i => i.l === 'e').map(i => i.t)]), header: p.header, fresh: p.sum.fresh, o, names, sasak: [S.employees['sasak|jan'].end, S.employees['sasak|jan'].shift], grew: Object.keys(S.employees).length - before });
+  })()`));
+  assert.strictEqual(out.header, true);
+  assert.deepStrictEqual(out.rows.map(r => r[0]), [2, 4, 5, 6, 7, 9], 'nadpis uprostřed a řádek bez jména i data se přeskočí');
+  const R = n => out.rows.find(r => r[0] === n);
+  assert.deepStrictEqual(R(2).slice(1, 3), ['SASÁK', ''], 'neplatné datum ve sloupci jména = prázdné');
+  assert.deepStrictEqual(R(2)[4], ['chybí jméno, řádek se přeskočí']);
+  assert.deepStrictEqual(R(4).slice(1, 4), ['Sasák', 'Jan', 'exact'], 'popisek Zaměstnanec: pryč');
+  assert.deepStrictEqual(R(5).slice(1, 3), ['Kovář', ''], '„Invalid Date“ jako text = prázdné');
+  assert.deepStrictEqual(R(6)[4], ['„Novák2 Petr“ nevypadá jako jméno (jsou v něm číslice), řádek se přeskočí']);
+  assert.deepStrictEqual(R(7).slice(1, 3), ['', 'Eva'], 'číslo ve sloupci příjmení = prázdné');
+  assert.strictEqual(out.fresh, 1, 'nový jen Bílá Iva');
+  assert.deepStrictEqual(out.names, ['Bílá Iva', 'SASÁK Invalid Date', 'Sasák Jan'], 'žádný nový „… Invalid Date“ (ten z dřívějška zůstal)');
+  assert.deepStrictEqual(out.bad, [['SASÁK Invalid Date', true]], 'chybné jméno z dřívějšího importu je označené');
+  assert.deepStrictEqual([out.o.added, out.grew], [1, 1]);
+  assert.deepStrictEqual(out.sasak, ['2027-02-02', 'S2']);
+  return null;
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

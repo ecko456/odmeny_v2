@@ -186,7 +186,7 @@ for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.5,1.5)).save(sys.a
   await page.click('#dlgOk');
   await page.waitForFunction(() => document.querySelector('#dlg[open] .end-extab'));
   await page.check('#dlg input[name="ex"][value="havel|hugo"]');
-  check(/vybráno 1/.test(await text(page, '#endExN')), 'počet vybraných');
+  check(/vybráno k vyřazení 1/.test(await text(page, '#endExN')), 'počet vybraných');
   await page.click('#dlgOk');
   await page.waitForSelector('#view-konce.on');
   await saved(page);
@@ -230,6 +230,50 @@ for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.5,1.5)).save(sys.a
   const e3 = await page.evaluate(() => ['adamek|ales', 'bednar|boris', 'cibulka|cyril', 'fiala|filip', 'gregor|gustav', 'novy|ondrej'].map(k => [S.employees[k].end, S.employees[k].shift || '']));
   check(JSON.stringify(e3) === JSON.stringify([['2027-02-01', 'S1'], ['2027-02-02', 'O'], ['2027-02-03', 'S2'], ['2027-02-04', 'S1'], ['2027-02-05', 'S1'], ['2027-02-06', 'R']]), `zápis po párování: ${JSON.stringify(e3)}`);
   check(await page.evaluate(() => Object.keys(S.employees).length) === before3, 'nikdo nový nepřibyl');
+
+  // 2.75.2: chybějícím lidem přidělit řádek souboru (jsou tam pod jiným jménem), nadpis uprostřed souboru
+  const rows4 = [['Příjmení', 'Jméno', 'Konec trestu', 'Směnnost'],
+    ['Adámek', 'Aleš', ser(2027, 3, 1), 'Skupina 1'],
+    ['Bednář', 'Boris', ser(2027, 3, 2), 'Stálá odpolední'],
+    ['Cibulka', 'Cyril', ser(2027, 3, 3), 'Skupina 2'],
+    ['Zaměstnanec', '', '', ''],
+    ['Fiala F.', '', ser(2027, 3, 6), 'Skupina 2'],
+    ['Gregorová', 'Gustava', ser(2027, 3, 7), 'Stálá ranní'],
+    ['Nový', 'Ondřej', ser(2027, 3, 8), 'Stálá ranní'],
+    ['Kovář', 'Pavel', ser(2027, 3, 9), 'Skupina 1']];
+  // člověk, kterého dřívější import založil z buňky s datem („Invalid Date“)
+  await page.evaluate(() => { S.employees['sasak|invalid date'] = { key: 'sasak|invalid date', last: 'SASÁK', first: 'Invalid Date', positionId: null, level: null, note: '' }; save(); });
+  await saved(page);
+  const before4 = await page.evaluate(() => Object.keys(S.employees).length);
+  await page.click('#nav [data-view="dochazka"]');
+  await page.setInputFiles('#endFile', { name: 'konce-chybi.xlsx', mimeType: XLSX_TYPE, buffer: await makeXlsx(page, [{ name: 'List1', rows: rows4 }]) });
+  await page.waitForSelector('#dlg[open] .end-sum');
+  const d4 = await text(page, '#endBody');
+  check(/Řádků\s*7/.test(d4) && !/Zaměstnanec\s/.test(d4.replace(/Příjmení a jméno · přiřadit k/, '')) && /Přidat 2 nových lidí do Lidí \(bez skupiny, zařadíš je potom\): Gregorová Gustava, Kovář Pavel/.test(d4), `nadpis uprostřed se přeskočí, noví vyjmenovaní: ${d4.slice(0, 700)}`);
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => document.querySelector('#dlg[open] .end-extab td.end-asg'));
+  const ex4 = await page.evaluate(() => [...document.querySelectorAll('#dlg .end-extab tbody tr')].map(r => ({ name: r.querySelector('td.name b').textContent, sel: r.querySelector('select[name="ea"]').value, opts: [...r.querySelectorAll('select[name="ea"] optgroup[label="Návrh"] option')].map(o => o.textContent), hint: !!r.querySelector('.end-hint'), ex: r.querySelector('input[name="ex"]').disabled })));
+  const fia = ex4.find(x => x.name === 'Fiala Filip'), gre = ex4.find(x => x.name === 'Gregor Gustav');
+  const bad4 = ex4.find(x => x.name === 'SASÁK Invalid Date');
+  check(bad4 && await page.isChecked('#dlg input[name="ex"][value="sasak|invalid date"]') && /chybné jméno z dřívějšího importu/.test(await text(page, '#dlg .end-badname')), `chybné jméno předvybrané k vyřazení: ${JSON.stringify(bad4)}`);
+  check(ex4.length === 3 && fia && fia.sel === '6' && fia.hint && fia.ex && /Řádek 6: Fiala F\. · 6\. 3\. 2027 · Skupina 2/.test(fia.opts[0] || ''), `Fiala: jistý návrh předvybraný: ${JSON.stringify(ex4)}`);
+  check(gre && gre.sel === '' && !gre.hint && !gre.ex && gre.opts.some(o => /Řádek 7: Gregorová Gustava/.test(o)), `Gregor: jen návrh, nic předvybrané: ${JSON.stringify(gre)}`);
+  check(await page.textContent('#dlgOk') === 'Přidělit a vyřadit' && !(await page.isDisabled('#dlgOk')), `tlačítko: ${await page.textContent('#dlgOk')}`);
+  // dvakrát stejný řádek: okno to nedovolí
+  await page.selectOption('#dlg select[data-eakey="gregor|gustav"]', '6');
+  await page.click('#dlgOk');
+  await page.waitForSelector('#dlg[open] .dlg-error');
+  check(/Řádek 6 je přidělený dvěma lidem/.test(await text(page, '#dlg .dlg-error')), `kontrola dvojího přidělení: ${await text(page, '#dlg .dlg-error')}`);
+  await page.selectOption('#dlg select[data-eakey="gregor|gustav"]', '7');
+  check(/vybráno k vyřazení 1 · přiděleno 2/.test(await text(page, '#endExN')) && !(await page.$('#dlg .dlg-error')), `počet přidělených, chyba pryč: ${await text(page, '#endExN')}`);
+  await page.screenshot({ path: path.join(shots, '02b-chybejici-prideleni.png') });
+  await page.click('#dlgOk');
+  await page.waitForSelector('#view-konce.on');
+  await saved(page);
+  check(await page.evaluate(() => S.employees['sasak|invalid date'].excluded === true), 'chybné jméno vyřazené');
+  const e4 = await page.evaluate(() => ({ fiala: [S.employees['fiala|filip'].end, S.employees['fiala|filip'].shift], gregor: [S.employees['gregor|gustav'].end, S.employees['gregor|gustav'].shift], names: Object.values(S.employees).map(e => `${e.last} ${e.first}`) }));
+  check(JSON.stringify(e4.fiala) === JSON.stringify(['2027-03-06', 'S2']) && JSON.stringify(e4.gregor) === JSON.stringify(['2027-03-07', 'R']), `přidělené řádky zapsané: ${JSON.stringify(e4)}`);
+  check(await page.evaluate(() => Object.keys(S.employees).length) === before4 + 1 && e4.names.includes('Kovář Pavel') && !e4.names.some(n => /Gregorová|Zaměstnanec/.test(n)), `nově jen Kovář Pavel: ${JSON.stringify(e4.names)}`);
 
   // 3) telefon a tmavý režim
   await page.setViewportSize({ width: 390, height: 844 });

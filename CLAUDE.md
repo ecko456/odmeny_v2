@@ -34,6 +34,28 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 12. 11. 2026 (verze 2.75.2):
+
+- Uživatel: „možnost v ‚Lidé, kteří v souboru nejsou‘ přidělení jména ze seznamu, stále mi to
+  nesedí“ a „Právě mi to vložilo třeba ‚Zaměstnanec SASÁK Invalid Date‘“. „Zaměstnanec“ je nadpis
+  sloupce okna; „SASÁK Invalid Date“ je nejspíš člověk, kterého dřívější import založil z buňky
+  jména s neplatným datem (`String(Date)`). Soubor jsme neviděli.
+  - Core (15-konce-trestu): `endParse` čte jména přes `nameTxt` (Date, číslo, „Invalid Date“,
+    #N/A = prázdné; popisek „Zaměstnanec:“ / „Odsouzený“ před jménem pryč), řádek jen ze slov
+    `END_HEAD` bez platného data se přeskočí kdekoli, řádek bez jména i data taky; nový člověk
+    s číslicemi ve jméně = chyba, `row.bad`, nezaloží se (`endApply`, `sum.fresh`).
+    `endBadName(e)` → `missingP[].bad`. `endMissingHints(parsed)` → Map klíč → `{cand, pick}`:
+    řádky bez páru (`!e`, jméno nebo příjmení) podle společných slov a `attDist`; `pick` jen při
+    silné shodě (2 společná slova, nebo příjmení + iniciála jména), jednoznačné z obou stran.
+  - UI (23-konce-trestu): `endExcludeDialog(parsed, file)` vrací `{exclude, assign}` (klíč →
+    řádek), sloupec „Je v souboru jako“ (`select[name="ea"][data-eakey]`, Návrh / Ostatní řádky
+    bez páru, `.end-hint`), kontrola dvojího přidělení (`validate`), přidělený člověk se nevyřazuje,
+    tlačítko Vyřadit vybrané / Přidělit vybrané / Přidělit a vyřadit, Zrušit = Přeskočit. Chybné
+    jméno `.end-badname` předvybrané k vyřazení. `endImport` po přidělení znovu `parse()` s `assign`.
+    U zaškrtávátka nových lidí jejich jména.
+  - Testy: core „Konce trestů (2.75.2)“ ×2, `e2e_konce` (návrh předvybraný, dvojí přidělení,
+    chybné jméno, nadpis uprostřed, nikdo „Invalid Date“). `ODM_VERSION` 2.75.2, data beze změny.
+
 Stav k 12. 11. 2026 (verze 2.75.1):
 
 - Uživatel: „lepší spárování v Konec trestů, když dám nahrát soubor, tak mi to nedokáže spárovat
@@ -2852,7 +2874,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.73 | `b190c78` | Shortage po dnech – zabalení dne, kolikátý den na shortage, odbourané položky, filtr TOP / TOP 2 / 2 a více dní, Historie (data verze 51) |
 | 2.74 | `fd89a32` | KPI Normy – normy z vykázaných časů (zkušení nad 45 %, bez záznamů do 2 minut), plnění ve Výkonnosti na osobu (data verze 52) |
 | 2.75 | `14ecc9d` | rychlejší Shortage (výška poznámek, ikony, uložení), Připnout / Odepnout do dalších seznamů, Duplikovat do vybraného oddělení (data verze 53) |
-| 2.75.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Konce trestů – párování jmen po stupních (ID, přejmenovaný, prohozené, titul, část jména, překlep), ruční přiřazení v okně importu |
+| 2.75.1 | `5099564` | Konce trestů – párování jmen po stupních (ID, přejmenovaný, prohozené, titul, část jména, překlep), ruční přiřazení v okně importu |
+| 2.75.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Konce trestů – chybějícím lidem přidělit řádek souboru, jméno z buňky s datem („Invalid Date“) už nevznikne |
 
 Verze 2.1 přidala:
 

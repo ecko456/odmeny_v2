@@ -25,6 +25,8 @@ function endKey(t){return norm(String(t==null?"":t)).replace(/\s+/g," ").trim();
    nový. Teď po stupních: ID (je-li sloupec), přesně (i podle jména v Lidech), prohozené, stejná
    slova v jiném pořadí, část jména (aspoň dvě společná slova), podobné jméno (překlep), vždy jen
    jednoznačně a každý člověk nejvýš jednou (kromě přesné shody: stejný člověk dvakrát se hlásí). */
+/* Slova nadpisů v sloupcích jmen: řádek jen z nich (bez data) je nadpis, ne člověk (2.75.2). */
+const END_HEAD=new Set(["prijmeni","jmeno","jmena","name","surname","first","last","zamestnanec","zamestnankyne","zamestnanci","odsouzeny","odsouzena","odsouzeni","osoba","osoby","pracovnik","pracovnice","konec","trestu","smennost","celkem","datum","seznam","id","cislo","poradi","c"]);
 const END_TITLES=new Set(["bc","ing","mgr","mudr","mvdr","mddr","judr","phdr","rndr","paeddr","thdr","phd","dis","csc","drsc","mba","bba","doc","prof","dr","ml","st","mladsi","starsi","jr","sr"]);
 function endTok(s){return norm(String(s==null?"":s)).replace(/\b(ph|th)\.?\s?d\.?(?=[\s,;]|$)/g,"$1d").replace(/[.,;:()\[\]{}"'`´’‘“”/\\_*+]+/g," ").replace(/[-–—]+/g," ").split(" ").filter(t=>t&&!END_TITLES.has(t));}
 function endNameT(last,first){const L=endTok(last),F=endTok(first);return {l:L.join(" "),f:F.join(" "),all:[...L,...F],sig:[...L,...F].sort().join(" ")};}
@@ -102,14 +104,26 @@ function endParse(aoa,cols,opts){
   const today=opts.today||todayIso(),labels=opts.labels||{};
   const ix=k=>waIndex(cols[k]);
   const txt=v=>String(v==null?"":v).replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
+  // jméno z buňky (2.75.2): datum, číslo ani „Invalid Date“ jméno není; popisek „Zaměstnanec:“ před jménem pryč
+  const nameTxt=v=>{
+    if(v==null||v instanceof Date||typeof v==="number"||typeof v==="boolean")return "";
+    const t=txt(v);
+    if(/^(invalid date|nan|undefined|null|#n\/a|#hodnota!?|#value!?|#ref!?)$/i.test(t))return "";
+    const rest=t.replace(/^(zam[eě]stnan(ec|kyn[eě])|odsouzen[yýaá]|osoba|pracovn[ií]k|jm[eé]no|p[rř][ií]jmen[ií])\s*[:\-–]?\s+/i,"");
+    return rest||t;
+  };
   const rows=[],seen=new Map(),unknown=new Map();let header=false;
   // nejdřív řádky souboru, pak párování všech najednou (přesné shody mají přednost před podobnými)
   const raw=[];
   (aoa||[]).forEach((row,i)=>{
     row=row||[];
-    const last=txt(row[ix("last")]),first=txt(row[ix("first")]),endRaw=row[ix("end")],shiftRaw=txt(row[ix("shift")]),wid=cols.wid?txt(row[ix("wid")]):"";
+    const lastRaw=row[ix("last")],firstRaw=row[ix("first")];
+    const last=nameTxt(lastRaw),first=nameTxt(firstRaw),endRaw=row[ix("end")],shiftRaw=txt(row[ix("shift")]),wid=cols.wid?txt(row[ix("wid")]):"";
     if(!last&&!first&&!txt(endRaw)&&!shiftRaw)return;
-    if(i<5&&/prijmeni|jmeno|^name/.test(norm(last+" "+first))&&endDateOf(endRaw)==null){header=true;return;}
+    // řádek s nadpisy (i uprostřed souboru, třeba „Zaměstnanec“ nad dalším blokem) bez platného data se přeskočí
+    const head=endTok(txt(lastRaw)+" "+txt(firstRaw));
+    if(head.length&&head.every(t=>END_HEAD.has(t))&&!endDateOf(endRaw)){if(i<5)header=true;return;}
+    if(!last&&!first&&!endDateOf(endRaw))return;   // bez jména a bez data (třeba jen poznámka) není řádek s člověkem
     raw.push({i,n:i+1,last,first,endRaw,shiftRaw,wid});
   });
   const match=endMatch(raw,S.employees,opts.assign);
@@ -121,7 +135,9 @@ function endParse(aoa,cols,opts){
     let e=m.key?S.employees[m.key]||null:null;
     const swapped=m.how==="swap";
     const key=e?e.key:(norm(last)+"|"+norm(first));
+    const bad=!e&&/\d/.test(last+first);   // nový člověk s číslicemi ve jméně se nezaloží (2.75.2)
     if((!last||!first)&&!e)add("e","chybí "+(!last?"příjmení":"jméno")+", řádek se přeskočí");
+    else if(bad)add("e","„"+(last+" "+first).trim()+"“ nevypadá jako jméno (jsou v něm číslice), řádek se přeskočí");
     if(e&&m.how!=="exact")add(m.how==="manual"||m.how==="id"?"i":"w",HOW[m.how]+", spáruje se s "+nm(e));
     const end=endDateOf(endRaw);
     if(end===null)add("e","konec trestu „"+txt(endRaw)+"“ není datum, nezmění se");
@@ -136,8 +152,8 @@ function endParse(aoa,cols,opts){
       if(seen.has(k))add("e","stejný člověk už je na řádku "+seen.get(k)+", použije se poslední");
       seen.set(k,i+1);
       if(!e&&m.how==="new")add("w","ručně: nový člověk, přidá se (bez skupiny)");
-      else if(!e&&m.cand.length)add("w","v Lidech není přesně, podobní: "+m.cand.map(c=>S.employees[c]?nm(S.employees[c]):c).join(", ")+". Vyber v tabulce, jinak se přidá jako nový");
-      else if(!e)add("w","v Lidech není, přidá se jako nový (bez skupiny)");
+      else if(!e&&m.cand.length&&!bad)add("w","v Lidech není přesně, podobní: "+m.cand.map(c=>S.employees[c]?nm(S.employees[c]):c).join(", ")+". Vyber v tabulce, jinak se přidá jako nový");
+      else if(!e){if(!bad)add("w","v Lidech není, přidá se jako nový (bez skupiny)");}
       else{
         if(e.excluded)add("w","v Lidech je vyřazený");
         if(end&&e.end&&e.end!==end)add("i","konec trestu "+endDateText(e.end)+" → "+endDateText(end));
@@ -146,18 +162,43 @@ function endParse(aoa,cols,opts){
         if(shift&&shift!=="SICK"&&e.sick)add("i","zpět po nemoci");
       }
     }
-    rows.push({n:i+1,last,first,key,e,swapped,how:e?m.how:m.how==="new"?"new":"none",cand:m.cand,end,endRaw:txt(endRaw),shift,shiftRaw,issues});
+    rows.push({n:i+1,last,first,key,e,bad,swapped,how:e?m.how:m.how==="new"?"new":"none",cand:m.cand,end,endRaw:txt(endRaw),shift,shiftRaw,issues});
   });
   const inFile=new Set(rows.filter(r=>r.e||(r.last&&r.first)).map(r=>r.key));
   /* lidé z Lidí, kteří v souboru nejsou (2.44.1: v okně se dají vyřadit ze seznamu) */
   const missingP=Object.values(S.employees).filter(e=>!e.excluded&&!isLead(e)&&!inFile.has(e.key))
-    .map(e=>({key:e.key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",dept:endDeptOf(e),end:e.end||"",sick:!!e.sick}))
+    .map(e=>({key:e.key,name:(e.last+" "+e.first).trim(),wid:e.wid||"",dept:endDeptOf(e),end:e.end||"",sick:!!e.sick,...(endBadName(e)?{bad:true}:{})}))
     .sort((a,b)=>a.name.localeCompare(b.name,"cs"));
   const missing=missingP.map(x=>x.name);
   const cnt=l=>rows.filter(r=>r.issues.some(x=>x.l===l)).length;
   return {rows,header,unknown:[...unknown.values()],missing,missingP,
-    sum:{rows:rows.length,err:cnt("e"),warn:cnt("w"),fresh:rows.filter(r=>!r.e&&r.last&&r.first).length,
+    sum:{rows:rows.length,err:cnt("e"),warn:cnt("w"),fresh:rows.filter(r=>!r.e&&!r.bad&&r.last&&r.first).length,
       ends:rows.filter(r=>r.end).length,shifts:rows.filter(r=>r.shift&&r.shift!=="SICK").length,sick:rows.filter(r=>r.shift==="SICK").length}};
+}
+/** Člověk s chybným jménem z dřívějšího importu (2.75.2): „Invalid Date“, NaN nebo číslice ve jméně. */
+function endBadName(e){return !!e&&/invalid date|\bnan\b|\d/.test(norm((e.last||"")+" "+(e.first||"")));}
+/** Lidé, kteří v souboru chybí (2.75.2): které řádky souboru bez páru by mohly být oni.
+    Vrací Map klíč → {cand: [číslo řádku], pick}; pick (předvybraný řádek) jen při silné shodě,
+    jednoznačné z obou stran: aspoň dvě společná slova, nebo stejné příjmení a jméno začíná
+    stejným písmenem („Novák J.“). Řádek bez páru = bez člověka z Lidí, s jménem nebo příjmením. */
+function endMissingHints(parsed){
+  const free=((parsed&&parsed.rows)||[]).filter(x=>!x.e&&(x.last||x.first)).map(x=>({n:x.n,t:endNameT(x.last,x.first)}));
+  const out=new Map(),strongOf=new Map();
+  ((parsed&&parsed.missingP)||[]).forEach(m=>{
+    const e=S.employees[m.key];
+    if(!e)return;
+    const P=endNameT(e.last,e.first),sur=P.l.split(" ")[0]||"",ini=(P.f||"")[0]||"";
+    const sc=free.map(r=>{
+      const set=new Set(r.t.all),common=P.all.filter(x=>set.has(x)).length,len=Math.max(P.sig.length,r.t.sig.length)||1,d=attDist(P.sig,r.t.sig);
+      const strong=common>=2||(!!sur&&set.has(sur)&&!!ini&&r.t.all.some(x=>x!==sur&&x[0]===ini));
+      return {n:r.n,common,d,rel:d/len,strong};
+    }).filter(x=>x.common>=1||x.rel<=0.34).sort((a,b)=>(b.strong-a.strong)||(b.common-a.common)||(a.d-b.d)||(a.n-b.n));
+    const strong=sc.filter(x=>x.strong).map(x=>x.n);
+    strong.forEach(n=>strongOf.set(n,(strongOf.get(n)||0)+1));
+    out.set(m.key,{cand:sc.slice(0,4).map(x=>x.n),strong});
+  });
+  out.forEach(v=>{v.pick=v.strong.length===1&&strongOf.get(v.strong[0])===1?v.strong[0]:null;delete v.strong;});
+  return out;
 }
 /** Zapíše řádky do Lidí (poslední řádek člověka vyhrává). Nový člověk jen s opts.add. */
 function endApply(parsed,opts){
@@ -166,7 +207,7 @@ function endApply(parsed,opts){
   const ok=r=>!!(r.e&&S.employees[r.key])||!!(r.last&&r.first);   // spárovaný člověk i s celým jménem v jednom sloupci (2.75.1)
   const lastRow=new Map();parsed.rows.forEach(r=>{if(ok(r))lastRow.set(r.key,r);});
   parsed.rows.forEach(r=>{
-    if(!ok(r)){out.skipped++;return;}
+    if(!ok(r)||(r.bad&&!r.e)){out.skipped++;return;}
     if(lastRow.get(r.key)!==r)return;   // stejný člověk víckrát: platí poslední řádek
     let e=S.employees[r.key];
     if(!e){

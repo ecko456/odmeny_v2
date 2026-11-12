@@ -3424,3 +3424,8 @@ table.sh-tab tr.sh-pinned > td.sh-gripc { box-shadow: inset 3px 0 0 var(--acc); 
 /* okno importu je širší, ať se vejde i sloupec Kontrola */
 dialog.dlg.wide:has(.end-tab) { width: min(calc(100vw - 24px), 940px); }
 @media screen and (min-width: 960px) { dialog.dlg.wide:has(.end-tab) .stats.end-sum { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+/* 2.75.2: chybějící člověk je v souboru pod jiným jménem */
+.end-extab td.end-asg { min-width: 220px; }
+.end-extab td.end-asg select { width: 100%; max-width: 320px; padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
+.end-extab .end-hint { display: block; margin-top: 3px; color: var(--warn); font-size: 12px; }
+dialog.dlg.wide:has(.end-extab td.end-asg) { width: min(calc(100vw - 24px), 900px); }
