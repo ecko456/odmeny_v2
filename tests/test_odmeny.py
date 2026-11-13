@@ -81,7 +81,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "56", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "57", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -500,6 +500,9 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.77 by zahodila předchozí záznamy dílů, K prověření a přednastavení sloupců Shortage z verze 2.78.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "55"})
         self.assertEqual(status, 426)
+        # Stránka verze 2.78 by zahodila modul Po termínu ze verze 2.79.
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "56"})
+        self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
         # Čtení a přihlášení staré stránce nevadí, jen zápis.
@@ -512,7 +515,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.78")
+        self.assertEqual(result["version"], "2.79")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)
@@ -778,6 +781,10 @@ class OdmenyAiTests(unittest.TestCase):
         self.assertEqual(sent["shortage"]["listy"][0]["radky"][0], {"A": "Objednávka", "B": "Název", "C": "EAN"})
         status, result = self.client.api("POST", "ai_shcols", {**sample, "kind": "move"})
         self.assertEqual((status, result["cols"]["code"], result["header"]), (200, "B", 1))
+        status, result = self.client.api("POST", "ai_shcols", {**sample, "kind": "late"})   # Po termínu (2.79)
+        self.assertEqual(status, 200, result)
+        self.assertEqual(sorted(result["cols"]), ["delay", "ean", "index", "name", "note", "op", "order", "qty"], "pole tabulky po termínu se skluzem")
+        self.assertEqual(json.loads(self.api_mock.requests[-1]["body"]["messages"][0]["content"])["shortage"]["druh"], "late")
         status, result = self.client.api("POST", "ai_shcols", {**sample, "kind": "planItem"})   # 1. list plánu (2.70)
         self.assertEqual(status, 200, result)
         self.assertEqual(sorted(result["cols"]), ["ean", "index", "op", "order", "qty"], "jen pole prvního listu")

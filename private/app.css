@@ -2907,10 +2907,11 @@ h1 .prob-ic .icon, h2 .prob-ic .icon { width: 16px; height: 16px; }
 .sv-rejpick span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-rejimg { display: block; max-width: 100%; max-height: 62vh; margin: 8px auto 12px; border-radius: 10px; background: #fff; object-fit: contain; }
 @media screen and (max-width: 900px) { .sv-stbtns { display: inline-flex; } .sv-stbtns .btn { margin: 0 0 0 8px; } }
-/* s kolonkou hledání se menu na nižším monitoru (výška do 1000 px) zahustí, ať je vidět celé */
+/* s kolonkou hledání se menu na nižším monitoru (výška do 1000 px) zahustí, ať je vidět celé
+   (od 2.79 má menu 18 položek, proto 34 px) */
 @media screen and (min-width: 901px) and (max-height: 1000px) {
   .side-top { row-gap: 12px; }
-  :root[data-look="glass"] .nav button, .nav button { min-height: 36px; padding-top: 7px; padding-bottom: 7px; }
+  :root[data-look="glass"] .nav button, .nav button { min-height: 34px; padding-top: 6px; padding-bottom: 6px; }
   .period-box { padding: 10px 12px; gap: 5px; }
 }
 
@@ -3532,3 +3533,16 @@ table.sh-tab tr.sh-subaway .sh-ean, table.sh-tab tr.sh-subaway .sh-ean a { color
 .sh-away { margin-top: 4px; font-size: 12.5px; color: var(--ink-2); }
 .sh-away b { color: var(--ink); }
 .sh-awaytag { background: var(--surface-3); color: var(--ink-2); }
+
+/* ---------- Po termínu (2.79): skluz místo TOP ---------- */
+table.sh-tab tr.sh-latecrit td { background: color-mix(in srgb, var(--crit-soft) 55%, transparent); }
+table.sh-tab tr.sh-latecrit td:first-child { box-shadow: inset 3px 0 0 var(--crit); }
+table.sh-tab tr.sh-latewarn td { background: color-mix(in srgb, var(--warn-soft) 45%, transparent); }
+table.sh-tab tr.sh-latewarn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.sh-delaytag { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
+.sh-deptsro { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; padding: 12px 16px; }
+/* okno se sloupci importu: širší a obsah se nevyleje doprava (tabulka vzoru se posouvá) */
+dialog.dlg.wide:has(.sh-coldlg) { width: min(calc(100vw - 24px), 900px); }
+.sh-coldlg { min-width: 0; max-width: 100%; }
+.sh-coldlg .dv-prevwrap { max-width: 100%; }
+.sh-coldlg .sh-colgrid { grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); }

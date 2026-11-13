@@ -310,6 +310,7 @@ function describeChanges(a,b,meta){
   waChanges(a.workAudit,b.workAudit,add);
   svChanges(a.service,b.service,add);
   shChanges(a.shortage,b.shortage,add);
+  lateChanges(a,b,add);
   cpChanges(a.capPlan,b.capPlan,add,b);
   tkChanges(a.tasks,b.tasks,add);
   attEditChanges(a,b,add);

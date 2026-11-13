@@ -34,6 +34,44 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 11. 2026 (verze 2.79):
+
+- Uživatel: „převzít modul shortage a udělat druhý modul s podobnými funkcemi ‚Po termínu‘ … nahrál
+  místo shortage položky po termínu, spárovalo by to s výrobním plánem následně evidencí a měl bych
+  stejný list jako je v shortage, ale … tříděné namísto TOP shortage podle skluzu, ten je ve sloupci F
+  … čím větší skluz, tím je to horší. Zase AI může pomoci rozpoznat sloupce podle prvního řádku
+  a přidělit v návrhu ke kontrole co je co“.
+  - **Jeden kód, dva moduly**: pohled `potermin` ukazuje stejnou sekci `#view-shortage` (showView
+    přepne sekci a `shSwitch`). `shKey()` = `late` | `shortage` podle `ui.view`, `shLate()`, `shc()`
+    vrací `S.late` nebo `S.shortage`, **`shPut(x)`** uloží vyčištěné do otevřeného modulu (všechna
+    dřívější `S.shortage = cleanShortage(…)` v 26-shortage). `ui.sh` je pro každý modul zvlášť
+    (`ui.shStates`), výrobní plán v paměti okna (`ui.sh.plan`) společný. `SH_TXT` / `shT()` texty
+    (název, PDF, soubor, záhlaví, krok 1, dny), `shHeadDraw` záhlaví a lede, `.sh-late` na sekci.
+    Rychlý scan a pravý panel jsou jen pro Shortage.
+  - Data (verze 57): `S.late = {lists, hist, scans: []}` (stejný tvar seznamů jako Shortage, položka
+    `delay` = skluz, číslo). `depts`, `cols` a `colors` jsou na `S.late` **nevypisované přístupy**
+    do `S.shortage` (`shLateLink(st)`, getter i setter), neukládají se (sharedState je nevidí);
+    sloupce tabulky po termínu jsou proto v `S.shortage.cols.late`. `cleanLate(o, sh)` čistí se
+    společnými odděleními (ruční oddělení položky zůstane) a řadí `shLateOrder`; `sanitizeState`
+    `out.late = cleanLate(…, out.shortage)` + `shLateLink(out)`.
+  - Core: `SH_COLS.late` (A–E, delay F), `SH_COL_NAMES/NEED/WORDS.late`, `shBuild(rows, cols, colors,
+    kind)` (late: skluz, bez TOP a barev, `warn.noDelay`), `shDelayNum`, `shLateOrder` (skluz sestupně,
+    bez skluzu na konci otevřených, Hotovo na konci, stabilní), `shDelayTiers` (crit = čtvrtina,
+    warn = polovina otevřených se skluzem), `lateChanges` (historie kind `late`, „Po termínu:“, m `pt…`,
+    bez oddělení a sloupců), `LOG_KINDS` + `late`, `MERGE_TOP.late`, `blank().late`.
+  - UI 26-shortage: import seznamu `shLK()` (`late` / `list`) v `shImportFile`, `shPaste` (v Po termínu
+    bez seznamu nebo s nadpisem Skluz = seznam, ne záznamy), `shColsFor` (`listKind`: okno vždy, bez
+    přednastavení), poznámka o skluzu v okně, `SH_LATE_NONE`; `renderShortage` pořadí podle skluzu
+    (srovná i po změně stavu), dlaždice Největší skluz, `shDelayTag`, řádky `sh-latecrit/sh-latewarn`,
+    bez TOP tlačítek, sloupec Množství, nápověda, oddělení jen ke čtení `.sh-deptsro`
+    + `[data-shtoshortage]`; šipky na úchytu jen hláška; PDF (`late`, `lab`, `lateCrit`: SKLUZ N
+    jako TOP / TOP 2, záhlaví HALA 2 · PO TERMÍNU, název Položky po termínu, soubor `po-terminu-…`).
+    34-průvodce: `SH_WIZ_STEPS_ALL`, `shWizSteps()`, texty. Menu `#nav [data-view="potermin"]`,
+    `HOME_TILES`, `homeTileMeta`, historie filtr a ikona `late`. Okno sloupců `dialog.dlg.wide:has(.sh-coldlg)` 900 px.
+  - Server `lib/ai.php`: `ODM_AI_SH_FIELDS.late` (order, name, ean, index, qty, delay, op, note), prompt.
+  - Testy: core „Po termínu (2.79)“, nový `tests/e2e_potermin.js`, `test_odmeny` (late, 426 pro 56),
+    `e2e_mobil` (18 položek menu), `e2e_upgrade_prev` 2.78 → 2.79 (archiv `3afd2dd`). `ODM_VERSION` 2.79.
+
 Stav k 13. 11. 2026 (verze 2.78):
 
 - Uživatel (Shortage): „1. Při importu výrobního plánu … AI, aby rozpoznala sloupce a nadefinovala je
@@ -2992,7 +3030,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.75.2 | `e18cb06` | Konce trestů – chybějícím lidem přidělit řádek souboru, jméno z buňky s datem („Invalid Date“) už nevznikne |
 | 2.76 | `b054487` | Shortage – zelená buňka EANu = Hotovo, hotové položky vždy na konci seznamu (data verze 54) |
 | 2.77 | `ac24fb4` | Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
-| 2.78 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
+| 2.78 | `3afd2dd` | Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
+| 2.79 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
 
 Verze 2.1 přidala:
 
@@ -3105,7 +3144,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `56` (od 2.78):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `57` (od 2.79):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -3246,7 +3285,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app/*.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `scan` (2.77), `audit`, `nastaveni`
+  `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `potermin` (2.79, sekce `#view-shortage`), `scan` (2.77), `audit`, `nastaveni`
   (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
@@ -3461,6 +3500,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_shdny.js` (2.73): Shortage po dnech (zabalení, dny na shortage, odbourané, filtr, PDF, Historie, telefon);
   - `e2e_normy.js` (2.74): KPI Normy (sloupec dílu v okně načtení, zkušení, záznamy do 2 min, hledání, Excel, hranice, plnění, telefon);
   - `e2e_shpin.js` (2.75): Shortage Připnout a Duplikovat (tři dny, filtr, oddělení kopie, odebrání kopie, PDF, odepnutí, rychlost velkého seznamu, telefon);
+  - `e2e_potermin.js` (2.79): modul Po termínu (AI návrh sloupců se skluzem, seřazení, plán, evidence, společná oddělení, Hotovo, PDF, oddělení od Shortage, nové přihlášení, telefon);
   - `e2e_shpruvodce.js` (2.78): Shortage průvodce nahráním, přednastavení sloupců plánu, velká evidence ze schránky, poslední 3 záznamy, K prověření, poznámka připnuté položky, sestava rozdělená do oddělení, PDF, telefon;
   - `e2e_scan.js` (2.77): Rychlý scan (falešná kamera s QR, pozice, dávka, množství, stejný kód v záběru, čtečka, potvrzení do Shortage, mobilní záznamy, Excel, Odesláno na WPA hned, kamera mimo modul, zabalený seznam, monitor);
   - `e2e_shhotovo.js` (2.76): Shortage zelená = Hotovo (vzorník, pořadí, blok Hotovo za odděleními, ruční stav, filtr, PDF i po odděleních, Doplnit chybějící, pravý panel, historie, telefon);

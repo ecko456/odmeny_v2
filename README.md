@@ -62,6 +62,22 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.79
+
+- Nový modul **Po termínu** (v menu hned pod Shortage, na telefonu v Ostatní). Funguje stejně jako
+  Shortage, jen místo urgentů nahraješ tabulku **položek po termínu**:
+  - sloupce navrhne **AI podle prvního řádku** a ukáže je ke kontrole v okně se vzorem (skluz bývá
+    ve sloupci F); bez AI je odhad podle nadpisů;
+  - seznam je seřazený podle **skluzu**: čím větší, tím výš (nejhorší čtvrtina červeně, druhá
+    oranžově, Hotovo na konci). TOP SHORTAGE tu není, pořadí se nemění přetažením, jen oddělení;
+  - páruje se s **výrobním plánem** (poddíly, operace, množství zakázky, QR kódy) a **interní
+    evidencí** (poslední 3 záznamy, odesláno na WPA, K prověření), jako u Shortage;
+  - průvodce nahráním, zabalení dne, historie, rozbor, PDF (Položky po termínu, štítek SKLUZ),
+    připnutí, ruční položky: všechno jako u Shortage, ale data jsou zvlášť;
+  - **oddělení a sloupce výrobního plánu a evidence jsou společné se Shortage** (nastavují se
+    v Shortage, Po termínu je jen čte).
+- Okno se sloupci importu je širší a obsah se už nevyleje doprava.
+
 ## Co je nového ve verzi 2.78
 
 Shortage:

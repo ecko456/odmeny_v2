@@ -600,6 +600,7 @@ function cleanShortage(o){
       qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,...shPinClean(i.pin,line),...(i.dup===true?{dup:true}:{}),
       dept:i.dept==="-"||i.dept===SH_CHECK_DEPT||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),...(shQtyNum(i.oqty)!=null?{oqty:shQtyNum(i.oqty)}:{}),
       since:shIsoDay(i.since),days:Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+i.days||1))),again:shIsoDay(i.again),   // dny na shortage (2.73), dopočítá shLinkDays
+      ...(shDelayNum(i.delay)!=null?{delay:shDelayNum(i.delay)}:{}),   // skluz Po termínu (2.79)
       subs:shAllSubs(i).map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),
       cands:[],_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
@@ -647,11 +648,12 @@ function shIsHeader(t){
  * buňky řádku. Nadpisy sloupců se poznají v prvních 15 řádcích (nad nimi může být titulek).
  * Vrací {items, more, header, top, warn}; položky TOP SHORTAGE jsou první.
  */
-function shBuild(rows,cols,colors){
+function shBuild(rows,cols,colors,kind="list"){
   rows=Array.isArray(rows)?rows:[];
-  const t=(r,c)=>c<0?"":String((r&&r[c]&&r[c].text)!=null?r[c].text:"").replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
+  const late=kind==="late";   // Po termínu (2.79): skluz místo TOP, seřazení od největšího skluzu
+  const t=(r,c)=>c==null||c<0?"":String((r&&r[c]&&r[c].text)!=null?r[c].text:"").replace(/[\u0000-\u001F\u007F]/g," ").replace(/\s+/g," ").trim();
   // Podle šířky tabulky urgenty A–S nebo Shortage z Kooperace A–H; ruční volba má přednost.
-  const x=shColIdx("list",cols||shListBase(rows));
+  const x=shColIdx(late?"late":"list",cols||(late?SH_COLS.late:shListBase(rows)));
   let header=-1;
   for(let i=0;i<Math.min(rows.length,15);i++)if(shIsHeader([x.order,x.name,x.ean,x.index,x.qty].map(c=>t(rows[i],c)))){header=i;break;}
   const items=[],warn={noLink:0,noCode:0,noEan:0,skipped:0},fills=new Map();
@@ -668,16 +670,71 @@ function shBuild(rows,cols,colors){
     if(!raw)warn.noLink++;else if(!code)warn.noCode++;
     if(!ean)warn.noEan++;
     // G: „TOP“ = TOP SHORTAGE, „TOP2“ / „TOP 2“ = zpracovat hned po TOP (2.32)
-    const g=t(r,x.top),top2=/^top\s*-?\s*2\b/i.test(g);
+    const g=late?"":t(r,x.top),top2=/^top\s*-?\s*2\b/i.test(g);
     // barva výplně buňky EANu (2.61): vzorník po importu přiřadí barvám TOP / TOP 2
-    const fill=shHex(r&&r[x.ean]&&r[x.ean].fill);
+    const fill=late?"":shHex(r&&r[x.ean]&&r[x.ean].fill);
     if(fill)fills.set(fill,(fills.get(fill)||0)+1);
-    items.push({order,name,ean,index,qty,top:!top2&&/^top\b/i.test(g),top2,op,link:shLink(raw),code,note:shPlanningNote(t(r,x.note)),planningNote:shPlanningNote(t(r,x.note)),...(fill?{fill}:{})});
+    const delay=late?shDelayNum(t(r,x.delay)):null;
+    if(late&&delay==null)warn.noDelay=(warn.noDelay||0)+1;
+    const note=late?t(r,x.note).slice(0,SH_MAX_NOTE):shPlanningNote(t(r,x.note));
+    items.push({order,name,ean,index,qty,top:!top2&&/^top\b/i.test(g),top2,op,link:shLink(raw),code,note,planningNote:late?"":note,...(fill?{fill}:{}),...(delay!=null?{delay}:{})});
   });
-  if(colors)shApplyColors(items,colors);
-  const all=shTopFirst(items);
+  if(colors&&!late)shApplyColors(items,colors);
+  const all=late?shLateOrder(items):shTopFirst(items);
   const open=items.filter(i=>i.st!=="done");   // Hotovo podle barvy (2.76) se do TOP nepočítá
   return {items:all.slice(0,SH_MAX_ITEMS),more:Math.max(0,all.length-SH_MAX_ITEMS),header,top:open.filter(i=>i.top).length,top2:open.filter(i=>i.top2).length,done:items.length-open.length,warn,fills};
+}
+/* ---------- Po termínu (2.79) ----------
+   Druhý modul se stejným seznamem jako Shortage: místo urgentů tabulka položek po termínu, ve sloupci F
+   skluz (o kolik je položka po termínu; čím větší, tím hůř). Seznam je seřazený od největšího skluzu,
+   TOP SHORTAGE tu není, Hotovo je na konci. Data S.late = {lists, hist, scans}; oddělení, sloupce a barvy
+   jsou společné se Shortage (S.late.depts, .cols a .colors jsou přístupy do S.shortage, neukládají se). */
+/** Skluz z buňky: „12“, „12 dní“, „-3“, „2,5“, „1 200“ → číslo, jinak null. */
+function shDelayNum(v){
+  if(typeof v==="number")return Number.isFinite(v)&&Math.abs(v)<1e6?Math.round(v*100)/100:null;
+  const m=/^\s*([-−–]?)\s*(\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+)(?:[.,](\d+))?\s*[a-zá-ž.%]*\s*$/i.exec(String(v==null?"":v));
+  if(!m)return null;
+  const n=+(m[2].replace(/[ \u00a0\u202f]/g,"")+(m[3]?"."+m[3]:""))*(m[1]?-1:1);
+  return Number.isFinite(n)&&Math.abs(n)<1e6?Math.round(n*100)/100:null;
+}
+/** Pořadí Po termínu: od největšího skluzu (bez skluzu na konci otevřených), Hotovo na konci; stejný skluz zachová pořadí. */
+function shLateOrder(items){
+  const d=i=>Number.isFinite(i.delay)?i.delay:-Infinity;
+  const open=(items||[]).filter(i=>i.st!=="done"),done=(items||[]).filter(i=>i.st==="done");
+  return [...open.map((i,k)=>({i,k})).sort((a,b)=>d(b.i)-d(a.i)||a.k-b.k).map(x=>x.i),...done];
+}
+/** Přístupy S.late.depts, .cols a .colors do S.shortage (společná oddělení a sloupce), neukládají se. */
+function shLateLink(st){
+  if(!st||!st.late||typeof st.late!=="object")return st;
+  if(!st.shortage)st.shortage=blankShortage();
+  ["depts","cols","colors"].forEach(k=>{
+    const d=Object.getOwnPropertyDescriptor(st.late,k);
+    if(d&&d.get)return;
+    delete st.late[k];
+    Object.defineProperty(st.late,k,{get(){return st.shortage[k];},set(v){st.shortage[k]=v;},enumerable:false,configurable:true});
+  });
+  return st;
+}
+/** Čištění Po termínu: jako Shortage se společnými odděleními a sloupci, seřazené podle skluzu. */
+function cleanLate(o,sh){
+  o=o&&typeof o==="object"?o:{};
+  const base=sh||blankShortage();
+  const c=cleanShortage({lists:o.lists,hist:o.hist,scans:[],depts:base.depts,cols:base.cols,colors:{}});
+  c.lists.forEach(l=>{l.items=shLateOrder(l.items);});
+  return {lists:c.lists,hist:c.hist,scans:[]};
+}
+/** Historie změn Po termínu (2.79): jako u Shortage, texty „Po termínu:“, oddělení a sloupce se zapisují u Shortage. */
+function lateChanges(a,b,add){
+  const depts=((b&&b.shortage)||{}).depts||[];
+  const side=st=>({...blankShortage(),...((st&&st.late)||{}),depts,cols:{},colors:{}});
+  const fix=t=>typeof t==="string"?t.replace(/^Shortage:/,"Po termínu:").replace(/TOP SHORTAGE/g,"TOP"):t;
+  shChanges(side(a),side(b),(k,t,x)=>add("late",fix(t),x?{...x,m:x.m?"pt"+x.m:x.m,...(x.p?{p:fix(x.p)}:{})}:x));
+}
+/** Skluz: o kolik je nejhorší čtvrtina a druhá čtvrtina položek seznamu (štítek červeně / oranžově). */
+function shDelayTiers(items){
+  const v=(items||[]).filter(i=>i.st!=="done"&&Number.isFinite(i.delay)&&i.delay>0).map(i=>i.delay).sort((a,b)=>b-a);
+  if(!v.length)return {crit:Infinity,warn:Infinity,max:null};
+  return {crit:v[Math.max(0,Math.ceil(v.length/4)-1)],warn:v[Math.max(0,Math.ceil(v.length/2)-1)],max:v[0]};
 }
 /* Doplnění chybějících (2.36): položka se pozná podle EANu (bez něj podle názvu), indexu
    a čísla objednávky, stejně jako sestava u poddílů z plánu. */

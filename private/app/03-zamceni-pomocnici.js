@@ -113,7 +113,7 @@ function renderAll() {
   if (ui.view === 'domu') renderHome();
   if (ui.view === 'protokoly') renderLogbooks();
   if (ui.view === 'servis') renderService();
-  if (ui.view === 'shortage') renderShortage();
+  if (ui.view === 'shortage' || ui.view === 'potermin') renderShortage();
   if (ui.view === 'audit') renderWorkAudit(); else renderWaBadge();
   if (ui.view === 'plankap') renderCapPlan();
   if (ui.view === 'rychla') renderQuick();
@@ -138,7 +138,8 @@ function showView(name) {
   if (name === 'domu') renderHome();
   if (name === 'protokoly') renderLogbooks();
   if (name === 'servis') renderService();
-  if (name === 'shortage') renderShortage();
+  // Po termínu (2.79): stejná obrazovka jako Shortage, jiný modul (data, stav obrazovky)
+  if (name === 'shortage' || name === 'potermin') { shSwitch(name === 'potermin' ? 'late' : 'shortage'); renderShortage(); }
   if (name === 'audit') renderWorkAudit();
   if (name === 'plankap') renderCapPlan();
   if (name === 'rychla') renderQuick();
@@ -147,7 +148,7 @@ function showView(name) {
   if (name === 'ukoly') renderTasks();
   closeFab();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === (name === 'vyroba' ? 'audit' : name))));
-  $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name}`));
+  $$('.view').forEach(view => view.classList.toggle('on', view.id === `view-${name === 'potermin' ? 'shortage' : name}`));
   $('#main').dataset.view = name;
   document.body.dataset.view = name;
   $$(`#view-${name} .chips.t5-tabs`).forEach(showActiveChip);

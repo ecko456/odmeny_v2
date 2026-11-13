@@ -100,13 +100,14 @@ const LOG_ICON = {
   workaudit: svg('<path d="M3.5 20.5h11M6 16.5v-5M10 16.5V8"/><circle cx="16.5" cy="10.5" r="4"/><path d="m19.4 13.4 2.6 2.6"/>'),
   service: svg('<path d="M15 4.5a4.5 4.5 0 0 0-4.3 5.8L4 17a2.1 2.1 0 0 0 3 3l6.7-6.7A4.5 4.5 0 0 0 19.5 9l-2.7 2.7-3-.6-.6-3z"/>'),
   shortage: svg('<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 9v4.5M12 16.5v.1"/>'),
+  late: svg('<circle cx="12" cy="12.5" r="8"/><path d="M12 8v4.8l3 1.8"/>'),
   capplan: svg('<circle cx="9" cy="7.5" r="3"/><path d="M3.5 20v-1a5 5 0 0 1 5-5h1M15 20v-4M18.5 20v-7M22 20V10"/>'),
   task: svg('<path d="M9 5h11M9 12h11M9 19h11"/><path d="m3.5 5 1.2 1.2L7 4M3.5 12l1.2 1.2L7 11"/><circle cx="5" cy="19" r="1.4"/>'),
   data: svg('<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5"/>'),
 };
 const LOG_FILTERS = [
   ['all', 'Vše', null],
-  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit', 'logbook', 'workaudit', 'service', 'shortage', 'capplan', 'task']],
+  ['manual', 'Ruční úpravy', ['person', 'level', 'sanction', 'adjust', 'issue', 'position', 'settings', 'eff', 'audit', 'logbook', 'workaudit', 'service', 'shortage', 'late', 'capplan', 'task']],
   ['people', 'Lidé a úrovně', ['person', 'level']],
   ['sanction', 'Sankce', ['sanction']],
   ['tab', 'Tabáky a výdej', ['adjust', 'issue']],
@@ -118,6 +119,7 @@ const LOG_FILTERS = [
   ['workaudit', 'KPI', ['workaudit']],
   ['service', 'Servis', ['service']],
   ['shortage', 'Shortage', ['shortage']],
+  ['late', 'Po termínu', ['late']],
   ['capplan', 'Plán kapacit', ['capplan']],
   ['task', 'Úkoly', ['task']],
 ];

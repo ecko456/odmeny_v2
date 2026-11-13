@@ -7,11 +7,11 @@
    je od jeho spuštění hotové, a po dokončení kroku sám přejde na další.
    Stav ui.sh.wiz = {at, step 1–4, adv {krok: true}} je jen v paměti okna.
    ========================================================================== */
-const SH_WIZ_STEPS = [
-  [1, 'Urgentní díly', 'tabulka shortage'],
-  [2, 'Výrobní plán', 'poddíly a operace'],
-  [3, 'Interní evidence', 'poslední záznamy'],
-];
+const SH_WIZ_STEPS_ALL = {
+  shortage: [[1, 'Urgentní díly', 'tabulka shortage'], [2, 'Výrobní plán', 'poddíly a operace'], [3, 'Interní evidence', 'poslední záznamy']],
+  late: [[1, 'Položky po termínu', 'tabulka se skluzem'], [2, 'Výrobní plán', 'poddíly a operace'], [3, 'Interní evidence', 'poslední záznamy']],   // Po termínu (2.79)
+};
+const shWizSteps = () => SH_WIZ_STEPS_ALL[shKey()];
 /** Co je od spuštění průvodce hotové: {1, 2, 3} (true / false) a seznam, ke kterému se nahrává. */
 function shWizDone(w) {
   const l = shWork(), at = (w && w.at) || 0;
@@ -42,16 +42,17 @@ function shWizPlanRange(today = todayIso()) {
 /** Karta, když není aktivní seznam: den zabalený, nebo zatím nic. */
 function shWizIntroHtml(c) {
   const last = c.lists[0];
+  const late = shLate();
   const lede = last
-    ? `Den je zabalený. Seznam z <b>${esc(shWhen(last))}</b> (${last.items.length} ${shItemsN(last.items.length)}) je v historii; dnešní urgenty se s ním porovnají a u položky uvidíš, kolikátý den je na shortage.`
-    : `Zatím žádný seznam. ${esc(SH_NONE)} Tabulku vlož přes Ctrl+V, ze schránky nebo nahraj soubor.`;
+    ? `Den je zabalený. Seznam z <b>${esc(shWhen(last))}</b> (${last.items.length} ${shItemsN(last.items.length)}) je v historii; ${late ? 'dnešní položky po termínu se s ním porovnají a u položky uvidíš, kolikátý den je v seznamu.' : 'dnešní urgenty se s ním porovnají a u položky uvidíš, kolikátý den je na shortage.'}`
+    : `Zatím žádný seznam. ${esc(late ? SH_LATE_NONE : SH_NONE)} Tabulku vlož přes Ctrl+V, ze schránky nebo nahraj soubor.`;
   return `<section class="card sh-wiz sh-wizintro${last ? ' sh-newday' : ''}">
       <div class="sh-wizhero">
         <p class="eyebrow">Průvodce · ${last ? 'nový den' : 'první seznam'}</p>
-        <h2>Nahrání shortage ve třech krocích</h2>
+        <h2>Nahrání ${late ? 'položek po termínu' : 'shortage'} ve třech krocích</h2>
         <p class="sh-wizlede">${lede}</p>
-        <ol class="sh-wizpre" aria-label="Co tě čeká">${SH_WIZ_STEPS.map(([n, t, sub]) => `<li><span class="sh-wizn" aria-hidden="true">${n}</span><b>${t}</b><small>${sub}</small></li>`).join('')}</ol>
-        <button class="btn sh-wizgo" type="button" data-shwiz="start">${I.upload || ''}<span>Spustit nahrávání shortage</span></button>
+        <ol class="sh-wizpre" aria-label="Co tě čeká">${shWizSteps().map(([n, t, sub]) => `<li><span class="sh-wizn" aria-hidden="true">${n}</span><b>${t}</b><small>${sub}</small></li>`).join('')}</ol>
+        <button class="btn sh-wizgo" type="button" data-shwiz="start">${I.upload || ''}<span>Spustit nahrávání ${late ? 'po termínu' : 'shortage'}</span></button>
       </div>
       <div class="sh-wizalt">
         <button class="btn ghost small" type="button" data-shmanual>Přidat položku ručně</button>
@@ -70,8 +71,8 @@ function shWizStepHtml(w, d) {
   const l = d.l;
   if (w.step === 1) {
     return `<div class="sh-wizbody">
-        <h3>1 · Urgentní díly</h3>
-        <p class="small">Zkopíruj v Excelu celé sloupce shortage (urgenty A–S, i s nadpisy) a vlož je sem. Odkazy u EANů zůstanou, takže v PDF budou QR kódy; barvy v buňkách EANu (TOP, TOP 2, Hotovo) se převezmou.</p>
+        <h3>1 · ${shLate() ? 'Položky po termínu' : 'Urgentní díly'}</h3>
+        <p class="small">${shLate() ? 'Zkopíruj v Excelu tabulku položek po termínu (celé sloupce i s nadpisy; skluz bývá ve sloupci F) a vlož ji sem. AI navrhne podle prvního řádku, co je v kterém sloupci, a ukáže to ke kontrole. Seznam se seřadí od největšího skluzu; odkazy u EANů zůstanou kvůli QR kódům.' : 'Zkopíruj v Excelu celé sloupce shortage (urgenty A–S, i s nadpisy) a vlož je sem. Odkazy u EANů zůstanou, takže v PDF budou QR kódy; barvy v buňkách EANu (TOP, TOP 2, Hotovo) se převezmou.'}</p>
         ${shWizDrop('list', 'Klepni sem a stiskni Ctrl+V', 'nebo sem přetáhni soubor Excelu se seznamem')}
         <div class="sh-wizacts"><button class="btn" type="button" data-shwzfile="list">Nahrát tabulku</button><button class="btn sec" type="button" data-shwzclip>Vložit ze schránky</button></div>
         ${l ? `<div class="note i">Hotovo: seznam z <b>${esc(shWhen(l))}</b>, ${l.items.length} ${shItemsN(l.items.length)}. <button class="link" type="button" data-shwiz="2">Pokračovat na výrobní plán</button></div>` : ''}
@@ -106,10 +107,10 @@ function shWizStepHtml(w, d) {
   const chk = l && (shc().depts || []).length ? l.items.filter(i => shDeptOf(shc(), i) === SH_CHECK_DEPT).length : 0;
   const top = l ? l.items.filter(i => i.top && i.st !== 'done').length : 0;
   return `<div class="sh-wizbody sh-wizfin">
-      <h3>Shortage je nahraná</h3>
+      <h3>${shLate() ? 'Položky po termínu jsou nahrané' : 'Shortage je nahraná'}</h3>
       <div class="sh-wizsum">
         <div><b class="num">${l ? l.items.length : 0}</b><small>${shItemsN(l ? l.items.length : 0)}</small></div>
-        <div><b class="num">${top}</b><small>TOP shortage</small></div>
+        ${shLate() ? `<div><b class="num">${l && shDelayTiers(l.items).max != null ? esc(nf(shDelayTiers(l.items).max, 2)) : '—'}</b><small>největší skluz</small></div>` : `<div><b class="num">${top}</b><small>TOP shortage</small></div>`}
         <div><b class="num">${subsN}</b><small>${shSubsN(subsN)} z plánu</small></div>
         <div><b class="num">${recs}</b><small>se záznamem</small></div>
         ${chk ? `<div class="warn"><b class="num">${chk}</b><small>${esc(SH_CHECK_NAME)}</small></div>` : ''}
@@ -122,9 +123,9 @@ function shWizHtml() {
   const w = ui.sh.wiz, d = shWizSync();
   const cur = Math.min(4, w.step);
   return `<section class="card sh-wiz" aria-labelledby="shWizTitle">
-      <div class="sh-wizhead"><div><p class="eyebrow">Průvodce nahráním</p><h2 id="shWizTitle">Nahrání shortage</h2></div>
+      <div class="sh-wizhead"><div><p class="eyebrow">Průvodce nahráním</p><h2 id="shWizTitle">Nahrání ${shLate() ? 'položek po termínu' : 'shortage'}</h2></div>
         <button class="btn ghost small" type="button" data-shwiz="end">${d.l ? 'Zavřít průvodce' : 'Zrušit'}</button></div>
-      <ol class="sh-wizsteps">${SH_WIZ_STEPS.map(([n, t, sub]) => {
+      <ol class="sh-wizsteps">${shWizSteps().map(([n, t, sub]) => {
         const st = d[n] ? 'done' : n === cur ? 'on' : '';
         const can = n === 1 || d[1];
         return `<li class="sh-wizstep ${st}${n === cur ? ' cur' : ''}"><button type="button" data-shwiz="${n}"${can ? '' : ' disabled'} aria-current="${n === cur ? 'step' : 'false'}"><span class="sh-wizn" aria-hidden="true">${d[n] ? I.check : n}</span><span><b>${t}</b><small>${d[n] ? 'hotovo' : n === 3 || n === 2 ? `${sub} · volitelné` : sub}</small></span></button></li>`;

@@ -7,6 +7,8 @@ const SH_COLS={
   planItem:{ean:"A",order:"",index:"",op:"",qty:""},
   plan:{asm:"A",sub:"E",index:"H",order:"M",op:"AM",qty:""},
   move:{code:"A",when:"B",qty:"C",state:"D",op:""},
+  // Po termínu (2.79): tabulka položek po termínu, ve sloupci F skluz (čím větší, tím hůř)
+  late:{order:"A",name:"B",ean:"C",index:"D",qty:"E",delay:"F",op:"",note:""},
 };
 const SH_URGENT_COLS={order:"F",name:"C",ean:"A",index:"G",qty:"H",top:"",op:"S",note:"S"};
 const SH_MAX_CLIP_COLS=80;
@@ -19,12 +21,13 @@ function shListBase(rows,saved){
   const base=width>=19?SH_URGENT_COLS:SH_COLS.list;
   return saved&&sig(saved)===sig(base)&&saved.noteChosen?{...base,note:saved.note,noteChosen:true}:base;
 }
-const SH_COL_NEED={list:["ean"],planItem:["ean"],plan:["asm","sub"],move:["code","when"]};
+const SH_COL_NEED={list:["ean"],planItem:["ean"],plan:["asm","sub"],move:["code","when"],late:["ean","delay"]};
 const SH_COL_NAMES={
   list:{order:"Číslo objednávky",name:"Název dílu",ean:"EAN (s odkazem, barva = TOP)",index:"Index",qty:"Urgentní množství",top:"TOP (text)",op:"Oddělení / operace v procesu",note:"Poznámka od plánování"},
   planItem:{ean:"EAN dílu (s odkazem)",order:"Číslo objednávky",index:"Line / index",op:"Probíhající operace (volitelné)",qty:"Množství zakázky (volitelné)"},
   plan:{asm:"EAN sestavy",sub:"EAN poddílu (s odkazem)",index:"Index",order:"Číslo objednávky",op:"Probíhající operace",qty:"Množství zakázky (volitelné)"},
   move:{code:"QR kód",when:"Datum a čas",qty:"Počet ks",state:"Stav",op:"Operace / pracoviště"},
+  late:{order:"Číslo objednávky",name:"Název dílu",ean:"EAN (s odkazem)",index:"Index",qty:"Množství",delay:"Skluz (čím větší, tím hůř)",op:"Oddělení / operace v procesu",note:"Poznámka"},
 };
 const SH_COL_WORDS={
   list:{order:/objedn|zakaz/,name:/nazev|popis|^dil\b/,ean:/\bean\b|carov/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,qty:/mnozstv|urgent|^ks\b|pocet/,top:/^top\b|priorit/,op:/operac|probih|oddeleni|kde.*proces/,note:/poznam|planovan/},
@@ -32,6 +35,7 @@ const SH_COL_WORDS={
   planItem:{ean:/\bean\b|carov/,order:/^(?!.*(mnozstv|pocet|\bks\b|\bqty\b)).*(objedn|zakaz|\border\b)/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,op:/probih|operac/,qty:/mnozstv|^pocet|\bks\b|\bqty\b|quantity/},
   plan:{asm:/sestav/,sub:/poddil|komponent/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,order:/^(?!.*(mnozstv|pocet|\bks\b|\bqty\b)).*(objedn|zakaz)/,op:/probih|operac/,qty:/mnozstv|^pocet|\bks\b|\bqty\b|quantity/},
   move:{code:/\bqr\b|barcode|^kod/,when:/datum|\bcas\b|time/,qty:/\bks\b|mnozstv|pocet/,state:/stav|status|udalost/,op:/operac|pracovist/},
+  late:{order:/^(?!.*skluz).*(objedn|zakaz)/,name:/nazev|popis|^dil\b/,ean:/\bean\b|carov/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,qty:/mnozstv|^ks\b|pocet/,delay:/skluz|zpozd|prodlen|po termin|dni po|delay|overdue/,op:/operac|probih|oddeleni|kde.*proces/,note:/poznam/},
 };
 const SH_TIERS=["top","top2","none","done"],SH_MAX_COLORS=40;   // done = Hotovo (2.76)
 /** Barva jako šest číslic HEX velkými (FF0000), jinak "". Bílá a bez výplně = "". */

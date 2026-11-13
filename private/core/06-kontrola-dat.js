@@ -6,10 +6,10 @@ const SAFE_ID=/^[A-Za-z0-9_-]{1,40}$/;
 const PERIOD_ID=/^\d{4}-\d{2}$/;
 const ISO_DAY=/^\d{4}-\d{2}-\d{2}$/;
 const OV_COLUMN_KEYS=["days","hours","wk","kafe","lvl","prod","att","pen","adj","iss","raise","ncut"];
-const DATA_VERSION=56;
+const DATA_VERSION=57;
 const LOG_MAX=2000;
 const HIST_MAX=200;
-const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage"];
+const LOG_KINDS=["person","level","sanction","adjust","issue","import","position","settings","data","eff","audit","logbook","workaudit","service","shortage","late"];
 function sanitizeState(input){
   const o=(input&&typeof input==="object"&&!Array.isArray(input))?input:{};
   const obj=v=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
@@ -313,6 +313,9 @@ function sanitizeState(input){
   out.shortage=cleanShortage(o.shortage);
   // 2.76: zelená uložená ve vzorníku dřív jako „běžná shortage“ (volba Hotovo ještě nebyla) = Hotovo
   if(!(+o.v>=54))Object.keys(out.shortage.colors).forEach(h=>{if(out.shortage.colors[h]==="none"&&shColorGuess(h)==="done")out.shortage.colors[h]="done";});
+  /* Po termínu (2.79): starší data ho nemají, začíná prázdný; oddělení a sloupce jsou společné se Shortage */
+  out.late=cleanLate(o.late,out.shortage);
+  shLateLink(out);
   /* Plán kapacit (2.38): starší data ho nemají, začíná prázdný; jen existující skupiny */
   out.capPlan=cleanCapPlan(o.capPlan,new Set(out.positions.filter(isGroup).map(x=>x.id)));
   /* Úkoly (2.46): starší data je nemají, začínají prázdné */

@@ -16,7 +16,7 @@ const BASE = process.env.BASE || 'http://127.0.0.1:8490/';
 const shots = path.join(S, 'oshots-mobil');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
-const SECTIONS = ['prehled', 'lide', 'sankce', 'kontroly', 'rychla', 'ukoly', 'protokoly', 'servis', 'shortage', 'scan', 'top5', 'matice', 'plankap', 'dochazka', 'konce', 'audit', 'nastaveni'];
+const SECTIONS = ['prehled', 'lide', 'sankce', 'kontroly', 'rychla', 'ukoly', 'protokoly', 'servis', 'shortage', 'potermin', 'scan', 'top5', 'matice', 'plankap', 'dochazka', 'konce', 'audit', 'nastaveni'];
 
 async function watch(page, label) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
@@ -326,7 +326,7 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
       text: getComputedStyle(document.querySelector('.brand-text')).display,
     };
   });
-  check(desk.visible === 17 && desk.navPos === 'static' && desk.fab === 'none', `desktop menu: ${JSON.stringify(desk)}`);
+  check(desk.visible === 18 && desk.navPos === 'static' && desk.fab === 'none', `desktop menu: ${JSON.stringify(desk)}`);
   check(desk.row && desk.below && desk.text !== 'none', `desktop logo, historie a období: ${JSON.stringify(desk)}`);
   await page.click('#brandHome');
   await page.waitForFunction(() => ui.view === 'prehled');

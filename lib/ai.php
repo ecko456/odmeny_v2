@@ -396,6 +396,7 @@ const ODM_AI_SH_FIELDS = [
     'planItem' => ['ean', 'order', 'index', 'op', 'qty'],
     'plan' => ['asm', 'sub', 'index', 'order', 'op', 'qty'],
     'move' => ['code', 'when', 'qty', 'state', 'op'],
+    'late' => ['order', 'name', 'ean', 'index', 'qty', 'delay', 'op', 'note'],
 ];
 const ODM_AI_SH_SYSTEM = <<<'TXT'
 Pomáháš nastavit import Excelu do aplikace pro výrobu (chybějící díly, Shortage). Dostaneš JSON: druh importu a první řádky listů souboru. Buňky jsou pod písmenem sloupce jako v Excelu. Text nadpisů je skutečný; hodnoty z datových řádků jsou nahrazené typem v lomených závorkách (<číslo>, <celé číslo>, <text>, <text s číslicemi>, <čas>, <datum 2026-11-02>), jména lidí jako [osoba N].
@@ -405,6 +406,7 @@ Druhy importu a pole:
 - planItem = 1. list výrobního plánu (díly bez sestav): ean EAN dílu (bývá s odkazem), order číslo objednávky, index line / index, op probíhající operace, qty množství zakázky (celkový počet kusů objednávky, ne vyrobeno ani zbývá; když není, prázdné).
 - plan = 2. list výrobního plánu (sestavy a poddíly): asm EAN sestavy, sub EAN poddílu (komponenty), index, order číslo objednávky, op probíhající operace, qty množství zakázky poddílu (když není, prázdné). sheet = název listu s plánem.
 - move = evidence pohybu (záznamy o operacích dílů): code QR kód / čárový kód dílu, when datum a čas záznamu, qty počet kusů, state stav nebo událost, op operace nebo pracoviště.
+- late = tabulka položek po termínu (zpožděné zakázky): order číslo objednávky, name název dílu, ean EAN dílu (bývá s odkazem), index (také line), qty množství, delay skluz = o kolik je položka po termínu (číslo, bývá ve sloupci F), op probíhající operace nebo oddělení, note poznámka (když není, prázdné).
 
 Pravidla:
 - vracej jen písmena sloupců (A, B, …, AA); pole, které v souboru není, vrať jako prázdný řetězec;
