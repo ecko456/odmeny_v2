@@ -62,6 +62,18 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.79.2
+
+- Kontrola vzhledu s nejhoršími daty (dlouhé názvy dílů, čísla objednávek bez mezer, dlouhé QR kódy,
+  množství 1 000 000, poznámka od plánování o 2000 znacích, jména s diakritikou a pomlčkami):
+  - na telefonu se Shortage a Po termínu už neposouvají do strany (dlouhý název oddělení nebo operace
+    ve filtru se zalomí);
+  - tabulka Shortage a Po termínu se na monitoru vejde, dlouhé texty se zalomí v buňce;
+  - dlouhá poznámka zabere nejvýš 10 řádků, zbytek se v poli posouvá;
+  - Docházka: dlouhé jméno se zalomí a na menším monitoru (1280 px) je vidět celý měsíc i Hodiny a Víkend;
+  - PDF: kód pod QR už nevyjede přes okraj strany, u sestavy je celé číslo objednávky, název, index
+    i množství (dřív „1…“).
+
 ## Co je nového ve verzi 2.79.1
 
 - Shortage a Po termínu, PDF: poddíl rozdělené sestavy, který se zpracovává na jiném oddělení,

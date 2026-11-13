@@ -2018,6 +2018,13 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
     out[max - 1] = `${out[max - 1].replace(/\s*\S{0,3}$/, '')}…`;
     return out;
   };
+  // kód pod QR (2.79.2): zmenší se až na 4 pt, delší se zalomí (dřív vyjel přes okraj strany)
+  const qrCap = code => {
+    if (!code) return { size: 5.6, lines: [] };
+    let size = 5.6;
+    while (size > 4 && k.width(code, size) > widths[1] - 1.6) size -= 0.4;
+    return { size, lines: k.width(code, size) > widths[1] - 1.6 ? k.split(code, widths[1] - 1.6, size).slice(0, 8) : [code] };
+  };
   const vlines = (top, h) => {
     doc.setDrawColor(...C.line); doc.setLineWidth(0.25);
     xs.slice(1).forEach(x => doc.line(x, top, x, top + h));
@@ -2093,17 +2100,18 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
     const ageH = age.length ? 0.5 + age.length * k.LH(6.8, 1.2) : 0;
     if (asm) {
       const A = {
-        asm, order: clip(it.order || '—', widths[2] - 3.6, 9, 2, true), name: clip(it.name || '—', widths[3] - 3.6, 8.8, 2),
-        index: clip(it.index || '—', widths[4] - 3.6, 8.8, 2), qty: clip(it.qty || '—', widths[5] - 3.6, 11, 1, true), op: clip(it.op || '—', widths[6] - 3.6, 8.4, 2), rec: [],
+        asm, order: clip(it.order || '—', widths[2] - 3.6, 9, 6, true), name: clip(it.name || '—', widths[3] - 3.6, 8.8, 4),
+        index: clip(it.index || '—', widths[4] - 3.6, 8.8, 8), qty: clip(it.qty || '—', widths[5] - 3.6, 11, 2, true), op: clip(it.op || '—', widths[6] - 3.6, 8.4, 4), rec: [],
         note: noteTxt ? clip(noteTxt, widths[9] - 3.6, 8, 32) : [], age,   // dříve dopsaná poznámka se neztratí; stav (2.65) před ní
       };
-      A.h = Math.max(11, PAD + A.order.length * k.LH(9, 1.25) + PAD, 1.6 + (it.top || it.top2 || it.st === 'done' || lab(it) ? 4.6 : 0) + (it.top2 && it.st !== 'done' ? 3.4 : 0) + A.name.length * k.LH(8.8, 1.22) + 0.6 + (it.ean ? k.LH(7.8, 1.2) : 0) + ageH + 1.4, PAD + A.op.length * k.LH(8.4, 1.25) + PAD, PAD + A.note.length * k.LH(8, 1.22) + PAD);
+      A.h = Math.max(11, PAD + A.order.length * k.LH(9, 1.25) + PAD, 1.6 + (it.top || it.top2 || it.st === 'done' || lab(it) ? 4.6 : 0) + (it.top2 && it.st !== 'done' ? 3.4 : 0) + A.name.length * k.LH(8.8, 1.22) + 0.6 + (it.ean ? k.LH(7.8, 1.2) : 0) + ageH + 1.4, PAD + A.op.length * k.LH(8.4, 1.25) + PAD, PAD + A.note.length * k.LH(8, 1.22) + PAD,
+        PAD + A.index.length * k.LH(8.8, 1.25) + PAD, 1.6 + A.qty.length * k.LH(12, 1.15) + PAD);
       return A;
     }
     const L = {
       order: clip(src.order || '—', widths[2] - (parent ? 7.2 : 3.6), parent ? 7.8 : 9, 6, !parent),
       name: parent && !it.name ? [] : clip(it.name || '—', widths[3] - 3.6, 8.8, 6),
-      index: clip(src.index || '—', widths[4] - 3.6, 8.8, 4),
+      index: clip(src.index || '—', widths[4] - 3.6, 8.8, 8),
       qty: parent && !it.qty ? [] : clip(it.qty || '—', widths[5] - 3.6, 12, 2, true),
       op: clip(it.op || '—', widths[6] - 3.6, 8.4, 8),
       rec: it.rec ? clip([it.rec.state, recQty(it.rec)].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, 7.8, 16, true) : [],
@@ -2111,12 +2119,14 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
       prev: it.rec ? (it.rec.prev || []).flatMap(r => clip([r.when, r.state, recQty(r)].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, 6.8, 3)) : [],
       // 2.71: odesláno na WPA proti množství zakázky, díl u nás
       sent: (st => (st ? clip(shSentText(st), widths[6] - 3.6, 7.4, 4, st.st === 'here') : []))(shSentOf(l, it)),
-      note: noteTxt ? clip(noteTxt, widths[9] - 3.6, 8, 32) : [], age,
+      note: noteTxt ? clip(noteTxt, widths[9] - 3.6, 8, 32) : [], age, code: qrCap(it.code),
     };
     L.h = Math.max(ROW,
+      L.code.lines.length > 1 ? 1 + QR + 0.7 + L.code.lines.length * k.LH(L.code.size, 1.15) + 1 : 0,
       PAD + L.order.length * k.LH(9, 1.25) + PAD,
       1.6 + ((parent || it.top || it.top2 || it.st === 'done' || lab(it)) ? 4.6 : 0) + (!parent && it.top2 && it.st !== 'done' ? 3.4 : 0) + L.name.length * k.LH(8.8, 1.22) + 0.6 + (it.ean ? k.LH(7.8, 1.2) : 0) + ageH + PAD,
       PAD + L.op.length * k.LH(8.4, 1.25) + recH(it, L) + (L.sent.length ? 1.2 + L.sent.length * k.LH(7.4, 1.2) : 0) + PAD,
+      PAD + L.index.length * k.LH(8.8, 1.25) + PAD,
       L.note.length ? PAD + L.note.length * k.LH(8, 1.22) + 1.5 + 4.5 : 0);
     return L;
   };
@@ -2152,9 +2162,8 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
     const qx = xs[1] + (widths[1] - QR) / 2;
     if (L.asm) k.text('sestava', xs[1] + widths[1] / 2, top + PAD + 0.4, 7, { color: C.ink3, align: 'center' });
     else if (it.code && pdfQr(doc, it.code, qx, top + 1, QR)) {
-      let size = 5.6;
-      while (size > 4 && k.width(it.code, size) > widths[1] - 1.6) size -= 0.4;
-      k.text(it.code, xs[1] + widths[1] / 2, top + 1 + QR + 0.7, size, { color: C.ink, align: 'center' });
+      const cap = L.code || qrCap(it.code);
+      cap.lines.forEach((line, i) => k.text(line, xs[1] + widths[1] / 2, top + 1 + QR + 0.7 + i * k.LH(cap.size, 1.15), cap.size, { color: C.ink, align: 'center' }));
     } else {
       k.split(it.link ? 'odkaz bez activeBarcode' : 'bez odkazu', widths[1] - 4, 6.8).forEach((line, i) => k.text(line, xs[1] + widths[1] / 2, top + ROW / 2 - 2 + i * 3, 6.8, { color: C.ink3, align: 'center' }));
     }

@@ -28,7 +28,7 @@ dřív měl 290 kB a session se zahlcovala. Nic se nesmazalo, jen přesunulo do 
 | soubor | co tam je | kdy číst |
 |---|---|---|
 | `CLAUDE.md` (tento) | pravidla, poslední 3 zápisy, architektura, datový model, výpočty, testy v kostce | vždy (načte se sám) |
-| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.77) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
+| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.78) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
 | `docs/moduly.md` | podrobný popis modulů: data, funkce, UI (Matice, Přeformulování, Top 5, Kontroly, Protokoly, Servis, Shortage, KPI, Plán kapacit) | před prací na modulu |
 | `docs/testy.md` | všechny průchody v prohlížeči a co hlídají, testy na Apachi | před psaním nebo úpravou testu |
 | `README.md` | pro uživatele (novinky, instalace, zálohy) | při každé verzi doplnit „Co je nového“ |
@@ -60,6 +60,43 @@ Klony na serveru jsou `/root/trading_desk` a `/root/odmeny_v2`. Všechny repozit
 nepushne), celá tabulka je v `docs/historie.md`.
 
 ## Kde jsme skončili
+
+Stav k 13. 11. 2026 (verze 2.79.2):
+
+- Uživatel vybral z dalších skillů (mattpocock, ponytail, cloudflare security-audit, impeccable, anatomy,
+  diagram-design, graphify, superpowers, taste-skill, hallmark) jako přínosné: bezpečnostní audit Cloudflare
+  (zatím nespuštěn, víc agentů) a kontrolu UI (break-ui z emilkowalski/skills + kontrolní seznam auditu
+  z Impeccable). Spuštění detektoru Impeccable z npm zablokovalo oprávnění session, neobcházeno.
+  Uživatel: „muzes se pustit do kontroly UI“.
+  - Průzkum (skript jen v paměti session): Shortage 1000 položek a 1049 poddílů, Po termínu 300 položek,
+    Docházka a Lidé s dlouhými jmény, 1280 / 1440 / 1920 / 390 / 320 px, PDF; měřeno přetečení, oříznutý
+    text, dotykové plochy, kontrast (přibližně), fokus, popisky polí, NaN v textu, omezení pohybu, výkon.
+  - Opraveno (CSS na konci `app.css` „Kontrola UI nejhoršími daty (2.79.2)“):
+    - čip filtru s dlouhým názvem oddělení nebo operace na telefonu stránku posunul o 212–282 px
+      (`.chip` na telefonu `flex: none`) → `.chip { max-width: 100%; overflow-wrap: anywhere }`;
+    - tabulka Shortage / Po termínu na 1440 px měla 2370 px kvůli nezalomitelné objednávce a kódu
+      → `td.sh-ord` (min 11ch), `td.name`, `td.sh-opc`, index, `.sh-ean`, `.tag.sh-code` se zalomí,
+      `select` nejvýš šířka buňky; běžné hodnoty zůstanou na řádku;
+    - poznámka od plánování o 2000 znacích natáhla řádek přes obrazovku → `.sh-note` nejvýš 10 řádků,
+      zbytek se posouvá (`field-sizing` z 2.75 zůstává);
+    - Docházka: dlouhé jméno schovalo konec měsíce a součty, na telefonu 320 px přetečení 179 px →
+      `.att-table td.name` max 16rem a zalomení; 901–1400 px dny nejméně 17 px (`min-width: 0`),
+      na 1280 a 1366 px jsou vidět Hodiny i Víkend (dřív posun 122 px); 1024 px se dál posouvá v kartě.
+  - Opraveno v PDF (`drawShortage`): kód pod QR se zmenšoval jen na 4 pt a delší vyjel přes levý okraj
+    strany do sousedních sloupců → `qrCap` (zalomení, nejvýš 8 řádků, výška řádku podle něj); řádek sestavy
+    ořezával objednávku a název na 2 řádky, množství na 1 („1 000 000“ → „1…“), operaci na 2 → 6 / 4 / 2 / 4
+    a výška podle nich; index nejvýš 8 řádků a nově ve výšce běžného řádku (dřív ji nezapočítával).
+  - Bez nálezu: omezení pohybu, popisky polí, NaN / undefined v textu, fokus (`:focus-visible` v lock.css;
+    programové měření bylo nespolehlivé, klávesa Tab rámeček potvrdila), PDF Docházky. Falešné nálezy:
+    tlačítka „bez názvu“ ve sbaleném `<details>`, `.sr-only`.
+  - Neřešeno, k rozhodnutí uživatele: kontrast bílého textu na oranžové `--acc` #ff7a2e je 2,6 : 1
+    (tlačítka, menu, odznak úrovně 4, buňky Docházky ranní 3,6 : 1, číslo kroku 3,4 : 1; WCAG AA chce 4,5).
+    Návrh: tmavý text na oranžové (7,4 : 1), nebo tmavší oranžová (#c2470a, 5 : 1). Dále: vykreslení
+    Shortage s 2049 řádky 1,3 s (lineárně, ~400 řádků 0,4 s); prázdná 1. strana PDF, když se extrémně velký
+    první blok nevejde; dny kalendáře Docházky 22 px (výjimka WCAG za rozestupy); na 1024 px posun tabulky.
+  - Test: nový `tests/e2e_zatez.js` (90 položek, Po termínu 45, pět extrémních jmen, 5 velikostí, PDF přes
+    PyMuPDF: nic mimo stranu ani přes sebe, objednávka, množství, kód a index celé); proti kódu před
+    opravou selže (ověřeno). `ODM_VERSION` 2.79.2, data beze změny (57).
 
 Stav k 13. 11. 2026 (verze 2.79.1):
 
@@ -126,58 +163,7 @@ Stav k 13. 11. 2026 (verze 2.79):
   - Testy: core „Po termínu (2.79)“, nový `tests/e2e_potermin.js`, `test_odmeny` (late, 426 pro 56),
     `e2e_mobil` (18 položek menu), `e2e_upgrade_prev` 2.78 → 2.79 (archiv `3afd2dd`). `ODM_VERSION` 2.79.
 
-Stav k 13. 11. 2026 (verze 2.78):
-
-- Uživatel (Shortage): „1. Při importu výrobního plánu … AI, aby rozpoznala sloupce a nadefinovala je
-  v přednastavení … když to bude dělat nějaký kolega. 2. Pokud zabalím den … hezký grafický průvodce
-  ‚Spustit nahrávání shortage‘ (2.1 urgenty vložit / nahrát / ze schránky, 2.2 výrobní plán 7 měsíců zpět
-  + 8 dopředu, 2.3 evidence interní ze schránky; zkontroluj, zda se pojde víc než 3000 řádků). 3. … u dílů
-  aspoň 3 záznamy poslední. 4. … položky, které mají u nás záznam, ale nemají poslední status ‚Expedováno
-  na WPA‘ a operace neodpovídají žádné naší … do oddělení ‚K prověření‘.“ Během práce: „u připnutých
-  položek ať se zachovává poznámka“ a „sestava má více poddílů a každý má být na jiném oddělení …
-  duplicity sestav … poddíl, který na to oddělení nepatří … ‚Tento díl se zpracovává na jiném oddělení‘
-  … ‚plné zobrazení‘ a ukáže se QR“.
-  - Data (verze 56): záznam `rec.prev[≤ 2]` = `{ts, when, qty, state, op}` (jen když je, `SH_REC_HIST` 3),
-    položka `dept: '?'` (`SH_CHECK_DEPT`, ručně K prověření), poddíl `full: true` (jen když je),
-    `S.shortage.cols[kind].heads {pole: nadpis}` a `set {at, by}` (přednastavení, jen když jsou).
-  - Core 23-shortage: `shRecMerge` (sloučení, bez zdvojení, nejnovější hlavní s at/by/n), `shRecList`,
-    `shRecBuild` drží 3 ke kódu, `shApplyRecs` slučuje (starší = `older` + `hist`, jen když je), `shOwnCodes`,
-    `shRecordsKeep(list, records, foreign)` (kódy seznamu vždy, cizí nejnovější `SH_MAX_RECORDS`; zabalený
-    seznam cizí ne, i v `cleanShortage`), `out.cached` = opravdu uložené. `shWpa` zná Expedováno na WPA.
-    K prověření: `shCheckHit` (záznam položky, bez něj poddílů, poslední ne WPA), `shAutoFull` (oddělení
-    podle operace, jinak „?“, jen s odděleními), `shDeptOf`, `shDeptName`, `shSections` (oddělení,
-    K prověření, Nezařazeno), `shDrop` a `shDuplicate` s „?“. Rozdělení: `shSplitDepts` (domovské + oddělení
-    poddílů; ručně zařazená, bez poddílů nebo bez oddělení se nerozdělí), `shSubDept`, `shSubHere`,
-    `shSplitView` (pohled `{...it, splitDept, splitOf}` v `shSections`, data jen v originálu).
-    Připnutí: `shPinNote` v `shCarryPins` (ruční poznámka bez staré poznámky od plánování, poddíly když nové nejsou).
-  - Core 24-shortage-kroky: přednastavení `shHeadNorm`, `shColsLetters`, `shColsHeads`, `shColsPreset`
-    (`same` = stejné nadpisy na místech, `moved` = každý nadpis v řádku jednou jinde, jinak null; nadpisy
-    aspoň 2 a u povinných polí), `shColsClean` s `heads`/`set`, historie „· uloženo jako přednastavení“,
-    `shsf:` poddíl plně, rozbor sloupec Předchozí záznamy (poslední), názvy K prověření v historii.
-  - UI 26-shortage: `shColsFor` (kromě urgentů: přednastavení → bez AI a okna; jinak AI a okno s `.sh-prewarn`,
-    potvrzené sloupce uloží nadpisy; bez okna nadpisy jen když je soubor má a přednastavení ještě není;
-    bez nadpisů v souboru postaru), `shColsDialog` vrací `header`, `shColsNote` (přednastavení, posunuté).
-    Velká evidence: `shClipRecs` (TSV, `SH_MAX_REC_ROWS` 300 000), `shReadClipboard` velké HTML přeskočí,
-    `shSheetCols` (soubor evidence: jen potřebné sloupce), zpráva „přečteno N řádků“. `shRecPrevHtml`
-    (`ol.sh-recprev`), PDF `L.prev` / `recH`. K prověření ve výběru u položky, Duplikovat, nadpis
-    `tr.sh-chkhead`, panel Oddělení. Rozdělení: `rowHtml(i, j, secId)`, `shSubAwayHtml` (`tr.sh-subaway`,
-    `[data-shaway]`, `[data-shsubfull]`), plně `tr.sh-subfull` + `.sh-awaytag`, `.sh-splitnote`, výběr
-    „Podle poddílů: A + B“, `shDeptPick` podle `shSplitDepts`, PDF bloky jen vybraných oddělení a poddíl
-    jinde = nízký řádek „jiné oddělení“. `shPackList` hned `cleanShortage`. `shNewDayHtml` pryč.
-  - Nový díl `private/app/34-shortage-pruvodce.js`: `ui.sh.wiz {at, step 1–4, adv}`, `shWizDone`,
-    `shWizSync` (po dokončení kroku jednou dál), `shWizPlanRange` (7 zpět, 8 dopředu, konec měsíce),
-    `shWizIntroHtml` (`.sh-wizintro`, `.sh-newday` u zabaleného dne), `shWizHtml`, `shWizStepHtml`,
-    `shWizDrop` (`[data-shwzdrop]`: Ctrl+V a přetažení souboru, `bindShWizDrop`), `[data-shwiz]`,
-    `[data-shwzfile]`, `[data-shwzclip]` (klikne `#shClipboard`). `renderShortage` průvodce / úvod
-    a tři kroky nahoře `.sh-steps` schované. Ikony `I.upload`, `I.clipboard`.
-  - Testy: core „Shortage (2.78)“ (+ starší test 2.28 older = historie, rozbor sloupce), nový
-    `tests/e2e_shpruvodce.js` (průvodce, AI náhradní odpověď, přednastavení, posunutý a jiný plán, 25 000
-    řádků ze schránky, 3 záznamy v tabulce i PDF, K prověření, poznámka připnuté, rozdělená sestava
-    v tabulce i PDF po odděleních, telefon), `e2e_shortage` (úvod průvodce, blok K prověření, přetažení na
-    nadpis za Montáží), `e2e_shkroky` (stejná evidence podle přednastavení bez AI), `e2e_shpin` (volby
-    oddělení), `test_odmeny` (426 pro 55), `e2e_upgrade_prev` 2.77 → 2.78 (archiv `ac24fb4`). `ODM_VERSION` 2.78.
-
-Starší zápisy (2.77 a dál dozadu) jsou v `docs/historie.md`.
+Starší zápisy (2.78 a dál dozadu) jsou v `docs/historie.md`.
 
 ## Pravidla spolupráce
 
@@ -222,11 +208,11 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
 
 | verze | commit | obsah |
 |---|---|---|
-| 2.76 | `b054487` | Shortage – zelená buňka EANu = Hotovo, hotové položky vždy na konci seznamu (data verze 54) |
 | 2.77 | `ac24fb4` | Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
 | 2.78 | `3afd2dd` | Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
 | 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
-| 2.79.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
+| 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
+| 2.79.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
 
 ## Pojmy
 
@@ -509,7 +495,7 @@ OUT=$S/e2e PW=/opt/node22/lib/node_modules/playwright bash tests/run_e2e.sh [tes
 - `run_e2e.sh` (od 2.63): každý test má vlastní adresář, data a PHP server (port 8500 + pořadí),
   `JOBS` = počet najednou, souhrn `$OUT/summary.txt`, výstupy `$OUT/<test>/out.log`, snímky
   `$OUT/<test>/oshots-*` (**prohlédni si je**). Bez `e2e_upgrade*` a `e2e_vedle` (ty běží na Apachi).
-  Celá sada (44 testů) trvá kolem 8 minut.
+  Celá sada (45 testů) trvá kolem 8 minut.
 - Playwright: `require('/opt/node22/lib/node_modules/playwright')`, Chromium
   `/opt/pw-browsers/chromium`. Příkaz `playwright install` nespouštěj.
 - **Test aktualizace z předchozí verze** (`tests/e2e_upgrade_prev.js`, lokální Apache v kontejneru):

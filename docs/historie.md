@@ -6,13 +6,64 @@ Text zápisů se nepřepisuje (jsou to zadání uživatele a rozhodnutí v době
 
 Obsah:
 
-- Zápisy „Kde jsme skončili“ (od 2.77 dozadu po 1. 10. 2026)
+- Zápisy „Kde jsme skončili“ (od 2.78 dozadu po 1. 10. 2026)
 - Verze a stav (celá tabulka verzí s commity, zadání 2.1)
 - Ostrá verze a verze 2 (původní text, platil do 7. 11. 2026)
 - Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, nezačato)
 - Původní úvod a Tři oddělené projekty
 
 ## Zápisy „Kde jsme skončili“
+
+Stav k 13. 11. 2026 (verze 2.78):
+
+- Uživatel (Shortage): „1. Při importu výrobního plánu … AI, aby rozpoznala sloupce a nadefinovala je
+  v přednastavení … když to bude dělat nějaký kolega. 2. Pokud zabalím den … hezký grafický průvodce
+  ‚Spustit nahrávání shortage‘ (2.1 urgenty vložit / nahrát / ze schránky, 2.2 výrobní plán 7 měsíců zpět
+  + 8 dopředu, 2.3 evidence interní ze schránky; zkontroluj, zda se pojde víc než 3000 řádků). 3. … u dílů
+  aspoň 3 záznamy poslední. 4. … položky, které mají u nás záznam, ale nemají poslední status ‚Expedováno
+  na WPA‘ a operace neodpovídají žádné naší … do oddělení ‚K prověření‘.“ Během práce: „u připnutých
+  položek ať se zachovává poznámka“ a „sestava má více poddílů a každý má být na jiném oddělení …
+  duplicity sestav … poddíl, který na to oddělení nepatří … ‚Tento díl se zpracovává na jiném oddělení‘
+  … ‚plné zobrazení‘ a ukáže se QR“.
+  - Data (verze 56): záznam `rec.prev[≤ 2]` = `{ts, when, qty, state, op}` (jen když je, `SH_REC_HIST` 3),
+    položka `dept: '?'` (`SH_CHECK_DEPT`, ručně K prověření), poddíl `full: true` (jen když je),
+    `S.shortage.cols[kind].heads {pole: nadpis}` a `set {at, by}` (přednastavení, jen když jsou).
+  - Core 23-shortage: `shRecMerge` (sloučení, bez zdvojení, nejnovější hlavní s at/by/n), `shRecList`,
+    `shRecBuild` drží 3 ke kódu, `shApplyRecs` slučuje (starší = `older` + `hist`, jen když je), `shOwnCodes`,
+    `shRecordsKeep(list, records, foreign)` (kódy seznamu vždy, cizí nejnovější `SH_MAX_RECORDS`; zabalený
+    seznam cizí ne, i v `cleanShortage`), `out.cached` = opravdu uložené. `shWpa` zná Expedováno na WPA.
+    K prověření: `shCheckHit` (záznam položky, bez něj poddílů, poslední ne WPA), `shAutoFull` (oddělení
+    podle operace, jinak „?“, jen s odděleními), `shDeptOf`, `shDeptName`, `shSections` (oddělení,
+    K prověření, Nezařazeno), `shDrop` a `shDuplicate` s „?“. Rozdělení: `shSplitDepts` (domovské + oddělení
+    poddílů; ručně zařazená, bez poddílů nebo bez oddělení se nerozdělí), `shSubDept`, `shSubHere`,
+    `shSplitView` (pohled `{...it, splitDept, splitOf}` v `shSections`, data jen v originálu).
+    Připnutí: `shPinNote` v `shCarryPins` (ruční poznámka bez staré poznámky od plánování, poddíly když nové nejsou).
+  - Core 24-shortage-kroky: přednastavení `shHeadNorm`, `shColsLetters`, `shColsHeads`, `shColsPreset`
+    (`same` = stejné nadpisy na místech, `moved` = každý nadpis v řádku jednou jinde, jinak null; nadpisy
+    aspoň 2 a u povinných polí), `shColsClean` s `heads`/`set`, historie „· uloženo jako přednastavení“,
+    `shsf:` poddíl plně, rozbor sloupec Předchozí záznamy (poslední), názvy K prověření v historii.
+  - UI 26-shortage: `shColsFor` (kromě urgentů: přednastavení → bez AI a okna; jinak AI a okno s `.sh-prewarn`,
+    potvrzené sloupce uloží nadpisy; bez okna nadpisy jen když je soubor má a přednastavení ještě není;
+    bez nadpisů v souboru postaru), `shColsDialog` vrací `header`, `shColsNote` (přednastavení, posunuté).
+    Velká evidence: `shClipRecs` (TSV, `SH_MAX_REC_ROWS` 300 000), `shReadClipboard` velké HTML přeskočí,
+    `shSheetCols` (soubor evidence: jen potřebné sloupce), zpráva „přečteno N řádků“. `shRecPrevHtml`
+    (`ol.sh-recprev`), PDF `L.prev` / `recH`. K prověření ve výběru u položky, Duplikovat, nadpis
+    `tr.sh-chkhead`, panel Oddělení. Rozdělení: `rowHtml(i, j, secId)`, `shSubAwayHtml` (`tr.sh-subaway`,
+    `[data-shaway]`, `[data-shsubfull]`), plně `tr.sh-subfull` + `.sh-awaytag`, `.sh-splitnote`, výběr
+    „Podle poddílů: A + B“, `shDeptPick` podle `shSplitDepts`, PDF bloky jen vybraných oddělení a poddíl
+    jinde = nízký řádek „jiné oddělení“. `shPackList` hned `cleanShortage`. `shNewDayHtml` pryč.
+  - Nový díl `private/app/34-shortage-pruvodce.js`: `ui.sh.wiz {at, step 1–4, adv}`, `shWizDone`,
+    `shWizSync` (po dokončení kroku jednou dál), `shWizPlanRange` (7 zpět, 8 dopředu, konec měsíce),
+    `shWizIntroHtml` (`.sh-wizintro`, `.sh-newday` u zabaleného dne), `shWizHtml`, `shWizStepHtml`,
+    `shWizDrop` (`[data-shwzdrop]`: Ctrl+V a přetažení souboru, `bindShWizDrop`), `[data-shwiz]`,
+    `[data-shwzfile]`, `[data-shwzclip]` (klikne `#shClipboard`). `renderShortage` průvodce / úvod
+    a tři kroky nahoře `.sh-steps` schované. Ikony `I.upload`, `I.clipboard`.
+  - Testy: core „Shortage (2.78)“ (+ starší test 2.28 older = historie, rozbor sloupce), nový
+    `tests/e2e_shpruvodce.js` (průvodce, AI náhradní odpověď, přednastavení, posunutý a jiný plán, 25 000
+    řádků ze schránky, 3 záznamy v tabulce i PDF, K prověření, poznámka připnuté, rozdělená sestava
+    v tabulce i PDF po odděleních, telefon), `e2e_shortage` (úvod průvodce, blok K prověření, přetažení na
+    nadpis za Montáží), `e2e_shkroky` (stejná evidence podle přednastavení bez AI), `e2e_shpin` (volby
+    oddělení), `test_odmeny` (426 pro 55), `e2e_upgrade_prev` 2.77 → 2.78 (archiv `ac24fb4`). `ODM_VERSION` 2.78.
 
 Stav k 13. 11. 2026 (verze 2.77):
 
@@ -2552,7 +2603,8 @@ Stav k 1. 10. 2026:
 | 2.77 | `ac24fb4` | Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
 | 2.78 | `3afd2dd` | Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
 | 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
-| 2.79.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
+| 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
+| 2.79.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
 
 Verze 2.1 přidala:
 

@@ -3546,3 +3546,20 @@ dialog.dlg.wide:has(.sh-coldlg) { width: min(calc(100vw - 24px), 900px); }
 .sh-coldlg { min-width: 0; max-width: 100%; }
 .sh-coldlg .dv-prevwrap { max-width: 100%; }
 .sh-coldlg .sh-colgrid { grid-template-columns: repeat(auto-fill, minmax(min(190px, 100%), 1fr)); }
+/* Kontrola UI nejhoršími daty (2.79.2): dlouhý název oddělení nebo operace v čipu ani nezalomitelné texty
+   z Excelu (objednávka, EAN, QR kód) nerozjedou řádek ani tabulku; běžné hodnoty zůstanou na jednom řádku */
+.chip { max-width: 100%; overflow-wrap: anywhere; }
+table.sh-tab td.sh-ord { white-space: normal; overflow-wrap: anywhere; min-width: 11ch; }
+table.sh-tab td.name, table.sh-tab td.sh-opc, table.sh-tab td[data-label="Index"] { overflow-wrap: anywhere; }
+table.sh-tab .sh-ean, .tag.sh-code { white-space: normal; overflow-wrap: anywhere; max-width: 100%; }
+table.sh-tab select { max-width: 100%; }
+/* poznámka od plánování o 2000 znacích nesmí natáhnout řádek přes celou obrazovku: nejvýš 10 řádků, zbytek se posouvá */
+.sh-note { max-height: calc(10 * 1.45em + 14px); overflow-y: auto; }
+/* Docházka: dlouhé jméno se zalomí, kalendář měsíce a součty zůstanou vidět */
+.att-table td.name { max-width: 16rem; }
+.att-table td.name b { white-space: normal; overflow-wrap: anywhere; }
+@media screen and (min-width: 901px) and (max-width: 1400px) {
+  /* menší monitor a tablet na šířku: dny se zúží (nejméně 17 px), ať jsou vidět i Hodiny a Víkend bez posouvání */
+  .att-table .calrow, .att-dayhead .calrow { grid-auto-columns: minmax(17px, 1fr); gap: 2px; min-width: 0; }
+  .att-table .cell, .att-table button.cell { font-size: 10px; }
+}
