@@ -949,7 +949,7 @@ class OdmenyStaticTests(unittest.TestCase):
     def test_deploy_keeps_apps_apart(self):
         install = (APP / "deploy" / "install.sh").read_text(encoding="utf-8")
         # Testy (i s původní aplikací), poznámky pro vývoj a dokumentace se na server nekopírují.
-        for pattern in ("--exclude '/tests/'", "--exclude 'CLAUDE.md'", "--exclude '/README.md'", "--exclude '/deploy/'"):
+        for pattern in ("--exclude '/tests/'", "--exclude 'CLAUDE.md'", "--exclude '/docs/'", "--exclude '/README.md'", "--exclude '/deploy/'"):
             self.assertIn(pattern, install)
         conf = (APP / "deploy" / "apache-odmeny_v2.conf").read_text(encoding="utf-8")
         self.assertIn("private", conf.split("DirectoryMatch")[1])
@@ -962,6 +962,16 @@ class OdmenyStaticTests(unittest.TestCase):
         # Manifest pro plochu telefonu má na Apachi správný typ i ochranné hlavičky (2.14).
         self.assertIn("AddType application/manifest+json .webmanifest", conf)
         self.assertIn("webmanifest)$", conf)
+
+    def test_notes_for_claude_stay_small(self):
+        # CLAUDE.md se načítá celý do každé session; historie a popisy modulů jsou v docs/ (2.79.1).
+        notes = APP / "CLAUDE.md"
+        self.assertLess(notes.stat().st_size, 60_000, "CLAUDE.md přerostl: nejstarší zápisy přesuň do docs/historie.md")
+        text = notes.read_text(encoding="utf-8")
+        self.assertLessEqual(text.split("## Kde jsme skončili", 1)[1].split("\n## ", 1)[0].count("\nStav k "), 3)
+        for name in ("historie.md", "moduly.md", "testy.md"):
+            self.assertTrue((APP / "docs" / name).is_file(), name)
+            self.assertIn(f"docs/{name}", text, name)
 
     def test_version_2_never_touches_live_install(self):
         # Verze 2 má vlastní adresu, kód, data i konfiguraci Apache. Ostrá /odmeny/ se jen čte

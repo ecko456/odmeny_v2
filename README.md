@@ -68,6 +68,8 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   se v bloku cizího oddělení **netiskne vůbec** (v aplikaci zůstává řádek „Tento díl se zpracovává
   na jiném oddělení“). Kdo u něj klepne na **Zobrazit plně**, má ho v PDF celý i tam. Počet
   poddílů v záhlaví oddělení sedí s tím, co je vytištěné.
+- Pro vývoj: poznámky pro Clauda jsou zeštíhlené (`CLAUDE.md` jen jádro, historie, popisy modulů
+  a seznam testů v `docs/`). Na server se nekopírují a aplikace se tím nemění.
 
 ## Co je nového ve verzi 2.79
 
