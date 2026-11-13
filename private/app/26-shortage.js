@@ -2034,8 +2034,17 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
   };
   // kompaktní záhlaví, ať se na stránku vejde víc položek; sec = papír jednoho oddělení (2.34)
   const HINT = 'Stav doplň k 10:00 a k 13:00. QR kód nese activeBarcode z odkazu u EANu.';
+  // 2.79.1: poddíl rozdělené sestavy, který patří jinému oddělení, se v tomto bloku netiskne
+  // vůbec (v aplikaci je řádek „Tento díl se zpracovává na jiném oddělení“); plně zobrazený ano.
+  // Sestava bez poddílů v bloku je pak obyčejný řádek s QR kódem.
+  const pdfOne = (sec, it) => {
+    const ds = sec.id === SH_DONE_SEC ? [] : shSplitDepts(sh, it), here = it.splitDept || ds[0];
+    if (ds.length < 2) return it;
+    const subs = it.subs.filter(x => x.full || shSubHere(sh, it, x, here));
+    return subs.length === it.subs.length ? it : { ...it, subs };
+  };
   const title = sec => {
-    const its = sec ? sec.items : items;
+    const its = sec ? sec.items.map(i => pdfOne(sec, i)) : items;
     const n = its.length, open = its.filter(i => i.st !== 'done'), tops = open.filter(i => i.top).length, top2s = open.filter(i => i.top2).length, dones = n - open.length, subsN = its.reduce((a, i) => a + i.subs.length, 0);
     k.text(`${EXPORT_NAME} · ${shT().head}`, k.M, k.y, 7.5, { bold: true, color: C.ink, space: 0.35 });
     k.text(`Seznam z ${shWhen(l)} · ${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${tops ? ` · ${tops} TOP SHORTAGE` : ''}${top2s ? ` · ${top2s} TOP 2` : ''}${late && dT.max != null ? ` · seřazeno podle skluzu, největší ${nf(dT.max, 2)}` : ''}${dones ? ` · hotovo ${dones} (na konci)` : ''}`, k.M + k.CW, k.y, 8.5, { color: C.ink2, align: 'right' });
@@ -2082,14 +2091,6 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
     const ageTxt = parent ? '' : [it.pin ? 'Připnuto' : '', it.dup ? 'Kopie' : '', (it.days || 1) >= 2 ? `${it.days}. den ${shT().day}${it.since ? ` (od ${dayText(it.since, false)})` : ''}` : it.again ? `znovu na shortage (odbouráno ${dayText(it.again, false)})` : ''].filter(Boolean).join(' · ');   // + připnuto a kopie (2.75)
     const age = ageTxt ? clip(ageTxt, widths[3] - 3.6, 6.8, 2, true) : [];
     const ageH = age.length ? 0.5 + age.length * k.LH(6.8, 1.2) : 0;
-    // poddíl na jiném oddělení (2.78): nízký šedý řádek bez QR, záznamu a kolonek
-    if (parent && it.away && !it.full) {
-      const A = { asm: true, away: true, order: clip(src.order || '—', widths[2] - 7.2, 7.8, 2), name: it.name ? clip(it.name, widths[3] - 3.6, 8.8, 2) : [],
-        index: clip(src.index || '—', widths[4] - 3.6, 8.8, 2), qty: it.qty ? clip(it.qty, widths[5] - 3.6, 11, 1, true) : [],
-        op: clip(`${it.op || '—'} · Tento díl se zpracovává na jiném oddělení: ${it.away}`, widths[6] - 3.6, 8.4, 5), rec: [], note: [], age: [] };
-      A.h = Math.max(11, PAD + A.op.length * k.LH(8.4, 1.25) + PAD, 1.6 + 4.6 + A.name.length * k.LH(8.8, 1.22) + 0.6 + (it.ean ? k.LH(7.8, 1.2) : 0) + 1.4);
-      return A;
-    }
     if (asm) {
       const A = {
         asm, order: clip(it.order || '—', widths[2] - 3.6, 9, 2, true), name: clip(it.name || '—', widths[3] - 3.6, 8.8, 2),
@@ -2149,7 +2150,7 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
     // QR nese jen activeBarcode; pod ním kód písmem pro opsání. Klikací odkaz v PDF ne,
     // jsPDF 4.2 by v adrese přepsal & na &amp;.
     const qx = xs[1] + (widths[1] - QR) / 2;
-    if (L.asm) k.text(L.away ? 'jiné oddělení' : 'sestava', xs[1] + widths[1] / 2, top + PAD + 0.4, 7, { color: C.ink3, align: 'center' });
+    if (L.asm) k.text('sestava', xs[1] + widths[1] / 2, top + PAD + 0.4, 7, { color: C.ink3, align: 'center' });
     else if (it.code && pdfQr(doc, it.code, qx, top + 1, QR)) {
       let size = 5.6;
       while (size > 4 && k.width(it.code, size) > widths[1] - 1.6) size -= 0.4;
@@ -2225,20 +2226,18 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
       k.onPage = cont;
       head();
     } else if ((sh.depts || []).length) {
-      const first = sec.items[0];
+      const first = pdfOne(sec, sec.items[0]);
       k.need(7.5 + lay(first, null).h + (first.subs.length ? lay(first.subs[0], first).h : 0));
       k.box(C.head, k.M, k.y, k.CW, 6.5, 0);
       doc.setFillColor(...C.ink); doc.rect(k.M, k.y, k.CW, 0.5, 'F');
       k.text(`${sec.name} · ${sec.items.length} ${shItemsN(sec.items.length)}`, k.M + 2, k.y + 1.7, 9, { bold: true, color: C.ink });
       k.y += 7.5;
     }
-    sec.items.forEach(it => {
+    sec.items.forEach(it0 => {
       j += 1;
-      // 2.78: poddíl jiného oddělení u rozdělené sestavy bez QR kódu a kolonek (dokud není zobrazený plně)
-      const ds = sec.id === SH_DONE_SEC ? [] : shSplitDepts(sh, it), here = it.splitDept || ds[0];
-      const sub = x => (ds.length > 1 && !shSubHere(sh, it, x, here) ? { ...x, away: shDeptName(sh, shSubDept(sh, x)) } : x);
-      row(it, String(j), null, it.subs.length ? lay(sub(it.subs[0]), it).h : 0);
-      it.subs.forEach((x, i) => row(sub(x), `${j}.${i + 1}`, it));
+      const it = pdfOne(sec, it0);
+      row(it, String(j), null, it.subs.length ? lay(it.subs[0], it).h : 0);
+      it.subs.forEach((x, i) => row(x, `${j}.${i + 1}`, it));
     });
   });
   const left = `${EXPORT_NAME} · ${shT().name} · seznam z ${shWhen(l)}${l.file ? ` · ${l.file}` : ''}`;

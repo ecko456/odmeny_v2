@@ -282,12 +282,18 @@ function evidence() {
   const [dl2] = await Promise.all([page.waitForEvent('download'), page.click('[data-shpdfdept]')]);
   const pdf2 = path.join(S, 'shpruvodce-oddeleni.pdf');
   await dl2.saveAs(pdf2);
-  const pp = spawnSync('python3', ['-c', 'import sys,json\nfrom pypdf import PdfReader\nprint(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))', pdf2], { encoding: 'utf8' });
-  if (pp.status === 0) {
+  const pdfPages = file => {
+    const pp = spawnSync('python3', ['-c', 'import sys,json\nfrom pypdf import PdfReader\nprint(json.dumps([p.extract_text() for p in PdfReader(sys.argv[1]).pages]))', file], { encoding: 'utf8' });
+    if (pp.status !== 0) return null;
     const pages = JSON.parse(pp.stdout).map(t => t.replace(/\s+/g, ' '));
-    const brus = pages.find(t => /Chybějící díly · Brus/.test(t)) || '', lak = pages.find(t => /Chybějící díly · Lakovna/.test(t)) || '';
-    check(/9\.0\.51/.test(brus) && !/9\.0\.52/.test(brus) && /zpracovává na jiném oddělení: Lakovna/.test(brus), `PDF Brus: poddíl Lakovny bez QR: ${brus.slice(0, 600)}`);
-    check(/9\.0\.52/.test(lak) && !/9\.0\.51/.test(lak) && /zpracovává na jiném oddělení: Brus/.test(lak), `PDF Lakovna: poddíl Brusu bez QR: ${lak.slice(0, 600)}`);
+    return { brus: pages.find(t => /Chybějící díly · Brus/.test(t)) || '', lak: pages.find(t => /Chybějící díly · Lakovna/.test(t)) || '' };
+  };
+  const pg = pdfPages(pdf2);
+  if (pg) {
+    // 2.79.1: poddíl jiného oddělení (bez Zobrazit plně) v PDF vůbec není
+    const { brus, lak } = pg;
+    check(/9\.0\.51/.test(brus) && !/9\.0\.52|8590000009052|jiném oddělení/.test(brus) && /8590000008005/.test(brus) && /2 položky · 1 poddíl\b/.test(brus), `PDF Brus: sestava a jen poddíl Brusu (i v počtu): ${brus.slice(0, 600)}`);
+    check(/9\.0\.52/.test(lak) && !/9\.0\.51|8590000009051|jiném oddělení/.test(lak) && /8590000008005/.test(lak), `PDF Lakovna: sestava a jen poddíl Lakovny: ${lak.slice(0, 600)}`);
   }
   // Zobrazit plně: poddíl Lakovny i v Brusu s QR kódem
   await awayRow.locator('[data-shsubfull]').click();
@@ -295,6 +301,12 @@ function evidence() {
   const fullRow = page.locator(`#shView tr.sh-subfull[data-shparent="${asmId}"][data-shdeptrow="dbrus"]`);
   check(await fullRow.count() === 1 && /9\.0\.52/.test(await fullRow.locator('.sh-code').textContent()) && /Lakovna/.test(await fullRow.locator('.sh-awaytag').textContent()), 'Zobrazit plně: poddíl jiného oddělení s QR kódem a štítkem oddělení');
   await saved(page);
+  // plně zobrazený poddíl jiného oddělení se tiskne celý i tady
+  const [dl3] = await Promise.all([page.waitForEvent('download'), page.click('[data-shpdfdept]')]);
+  const pdf3 = path.join(S, 'shpruvodce-oddeleni-plne.pdf');
+  await dl3.saveAs(pdf3);
+  const pg3 = pdfPages(pdf3);
+  if (pg3) check(/9\.0\.51/.test(pg3.brus) && /9\.0\.52/.test(pg3.brus) && !/9\.0\.51/.test(pg3.lak), `PDF po Zobrazit plně: poddíl Lakovny i v Brusu: ${pg3.brus.slice(0, 600)}`);
   await page.click(`#shView tr.sh-subfull[data-shparent="${asmId}"] [data-shsubfull]`);
   await page.waitForFunction(id => !('full' in S.shortage.lists[0].items.find(i => i.id === id).subs.find(x => x.code === '9.0.52')), asmId);
   await saved(page);

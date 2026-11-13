@@ -34,6 +34,18 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 11. 2026 (verze 2.79.1):
+
+- Uživatel: „u položek, kde bude ‚Tento díl se zpracovává na jiném oddělení: …‘ a nebude mít plné
+  zobrazení, tak v PDF reportech ať nejsou nakonec viditelné vůbec, zabírá to zbytečně místo.“
+  - `drawShortage`: `pdfOne(sec, it)` (před `title`) vrátí sestavu jen s poddíly, které do bloku
+    patří (`shSubHere`) nebo jsou `full`; používá ho nadpis oddělení (`k.need`), řádky i počet
+    poddílů v záhlaví po odděleních. Nízký řádek „jiné oddělení“ z 2.78 v PDF zrušený. Sestava,
+    které v bloku nezůstane žádný poddíl, se vytiskne jako obyčejný řádek s QR kódem.
+  - V aplikaci beze změny (řádek `tr.sh-subaway` s textem a Zobrazit plně zůstal).
+  - Testy: `e2e_shpruvodce` (PDF po odděleních bez cizího poddílu a s počtem 1 poddíl, po
+    Zobrazit plně cizí poddíl i v Brusu). `ODM_VERSION` 2.79.1, data beze změny (57).
+
 Stav k 13. 11. 2026 (verze 2.79):
 
 - Uživatel: „převzít modul shortage a udělat druhý modul s podobnými funkcemi ‚Po termínu‘ … nahrál
@@ -3031,7 +3043,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.76 | `b054487` | Shortage – zelená buňka EANu = Hotovo, hotové položky vždy na konci seznamu (data verze 54) |
 | 2.77 | `ac24fb4` | Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
 | 2.78 | `3afd2dd` | Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
-| 2.79 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
+| 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
+| 2.79.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
 
 Verze 2.1 přidala:
 

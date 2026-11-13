@@ -62,6 +62,13 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.79.1
+
+- Shortage a Po termínu, PDF: poddíl rozdělené sestavy, který se zpracovává na jiném oddělení,
+  se v bloku cizího oddělení **netiskne vůbec** (v aplikaci zůstává řádek „Tento díl se zpracovává
+  na jiném oddělení“). Kdo u něj klepne na **Zobrazit plně**, má ho v PDF celý i tam. Počet
+  poddílů v záhlaví oddělení sedí s tím, co je vytištěné.
+
 ## Co je nového ve verzi 2.79
 
 - Nový modul **Po termínu** (v menu hned pod Shortage, na telefonu v Ostatní). Funguje stejně jako
