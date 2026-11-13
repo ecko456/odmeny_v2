@@ -143,6 +143,28 @@ wb.save(out + '/urgenty.xlsx')
   await saved();
   check((await order())[2][0] === 'Šroub M8', 'Čekáme na díl pořadí nemění');
   await page.screenshot({ path: path.join(shots, '03-rucne.png'), fullPage: true });
+  // přesuny kvůli Hotovo se v historii jako změna pořadí nepíšou (pořadí mění až přetažení níž)
+  const ordLog = await page.evaluate(() => S.log.filter(x => /pořadí/.test(x.text || '')).map(x => x.text));
+  check(!ordLog.length, `přesun kvůli Hotovo není změna pořadí: ${ordLog.join(' | ')}`);
+  // přetažení myší: v bloku Hotovo jde měnit pořadí, oddělení zůstane; hotová nad nehotové nejde
+  const dataRows = () => page.$$eval('#shView tbody tr[data-shid]', rs => rs.map(r => r.querySelector('td.name').textContent.replace(/HOTOVO|TOP SHORTAGE|TOP 2|Zpracovat hned po TOP shortage|EAN.*/g, '').trim()));
+  const drag = async (from, to) => {
+    const rs = page.locator('#shView tbody tr[data-shid]');
+    await rs.nth(to).scrollIntoViewIfNeeded();
+    const t = await rs.nth(to).boundingBox(), b = await rs.nth(from).boundingBox();
+    const x = b.x + b.width * 0.42, y = b.y + b.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down();
+    await page.mouse.move(x, y + 8, { steps: 2 }); await page.mouse.move(x, t.y + 6, { steps: 12 });
+    await page.waitForTimeout(60); await page.mouse.up();
+    await saved();
+  };
+  check(JSON.stringify(await dataRows()) === JSON.stringify(['Hřídel zelená', 'Kryt červený', 'Šroub M8', 'Příruba světlá', 'Pouzdro']), `řádky před přetažením: ${JSON.stringify(await dataRows())}`);
+  await drag(4, 3);
+  const dd = await page.evaluate(() => S.shortage.lists[0].items.map(i => [i.name, i.dept || '']));
+  check(JSON.stringify(dd.slice(-2)) === JSON.stringify([['Pouzdro', ''], ['Příruba světlá', '']]) && JSON.stringify((await dataRows()).slice(-2)) === JSON.stringify(['Pouzdro', 'Příruba světlá']), `pořadí v bloku Hotovo, oddělení beze změny: ${JSON.stringify(dd)}`);
+  await drag(3, 1);
+  const dd2 = await page.evaluate(() => S.shortage.lists[0].items.map(i => [i.name, i.st || '', i.dept || '']));
+  check(dd2.at(-2)[0] === 'Pouzdro' && dd2.at(-2)[2] === '' && JSON.stringify((await dataRows()).slice(0, 3)) === JSON.stringify(['Hřídel zelená', 'Kryt červený', 'Šroub M8']), `hotová nad nehotové nejde, oddělení zůstane: ${JSON.stringify(dd2)}`);
 
   // ---------- PDF ----------
   const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#shView [data-shpdf]')]);
@@ -151,7 +173,7 @@ wb.save(out + '/urgenty.xlsx')
   const t = pdfText(pf);
   if (t) {
     check(/hotovo 2 \(na konci\)/.test(t), `záhlaví PDF s hotovými: ${t.slice(0, 300)}`);
-    const pos = ['Brusírna', 'Hřídel zelená', 'Nezařazeno', 'Kryt červený', 'Šroub M8', 'Hotovo · 2 položky', 'Příruba světlá', 'Pouzdro'].map(n => t.indexOf(n));
+    const pos = ['Brusírna', 'Hřídel zelená', 'Nezařazeno', 'Kryt červený', 'Šroub M8', 'Hotovo · 2 položky', 'Pouzdro', 'Příruba světlá'].map(n => t.indexOf(n));   // Pouzdro přetažené nad Přírubu
     check(pos.every(p => p >= 0) && pos.every((p, k) => !k || p > pos[k - 1]), `pořadí v PDF: ${JSON.stringify(pos)}`);
     check((t.match(/HOTOVO/g) || []).length === 2 && /Stav: Hotovo/.test(t), `štítek HOTOVO v PDF: ${(t.match(/HOTOVO/g) || []).length}`);
     check((t.match(/TOP SHORTAGE/g) || []).length === 3 && /2 TOP SHORTAGE/.test(t), `TOP SHORTAGE jen u nehotových (štítky Kryt a Hřídel, záhlaví „2 TOP SHORTAGE“): ${(t.match(/TOP SHORTAGE/g) || []).length}`);
@@ -198,7 +220,7 @@ ${tr('OBJ-707', 'Matice nová', '8590000007007', 'G', 9, '', 'Broušení', '')}
   await page.waitForFunction(() => S.shortage.lists[0].items.length === 7);
   await saved();
   const o2 = await order();
-  check(JSON.stringify(o2.map(x => x[0] + ':' + x[1])) === JSON.stringify(['Hřídel zelená:run', 'Šroub M8:wait', 'Matice nová:', 'Příruba světlá:done', 'Pouzdro:done', 'Kryt červený:done', 'Víko nové:done']), `po doplnění: ${JSON.stringify(o2)}`);
+  check(JSON.stringify(o2.map(x => x[0] + ':' + x[1])) === JSON.stringify(['Hřídel zelená:run', 'Šroub M8:wait', 'Matice nová:', 'Pouzdro:done', 'Příruba světlá:done', 'Kryt červený:done', 'Víko nové:done']), `po doplnění: ${JSON.stringify(o2)}`);
   const msg2 = (await page.textContent('#shMsg')).replace(/\s+/g, ' ');
   check(/doplněny 2 položky/.test(msg2) && /1 položka označena Hotovo/.test(msg2), `hláška doplnění: ${msg2.slice(0, 300)}`);
   // znovu stejné: nic nechybí, nic dalšího se neoznačí
@@ -220,14 +242,13 @@ ${tr('OBJ-707', 'Matice nová', '8590000007007', 'G', 9, '', 'Broušení', '')}
   check(log.some(x => /barva EANu #00B050 = Hotovo/.test(x)), `historie barvy: ${log.slice(0, 6).join(' | ')}`);
   check(log.some(x => /nahrán seznam .*hotovo 2/.test(x)), `historie nahrání: ${log.slice(0, 6).join(' | ')}`);
   check(log.some(x => /Pouzdro.* – stav: bez stavu → Hotovo/.test(x)), `historie ručního Hotovo: ${log.slice(0, 8).join(' | ')}`);
-  check(!log.some(x => /pořadí/.test(x)), `přesun kvůli Hotovo není změna pořadí: ${log.filter(x => /pořadí/.test(x)).join(' | ')}`);
 
   // ---------- pravý panel (široký monitor): hotové na konci a v počtech ----------
   await page.setViewportSize({ width: 3840, height: 1400 });   // karta Shortage jen v širokém panelu (2.64)
   await page.waitForFunction(() => { const c = document.querySelector('#rail .rail-short'); return c && getComputedStyle(c).display !== 'none'; });
   const rail = await page.$$eval('.rail-short .rail-sh', x => x.map(r => [r.querySelector('.rail-shname').textContent.trim(), r.querySelector('.rail-shtag').textContent.trim()]));
   const railSum = (await page.textContent('.rail-short .rail-sum')).replace(/\s+/g, ' ');
-  check(JSON.stringify(rail) === JSON.stringify([['Hřídel zelená', 'TOP'], ['Šroub M8', 'TOP 2'], ['Matice nová', '·'], ['Příruba světlá', '✓'], ['Pouzdro', '✓']]) && /hotovo 4/.test(railSum) && /1 TOP/.test(railSum), `pravý panel: ${JSON.stringify(rail)} ${railSum}`);
+  check(JSON.stringify(rail) === JSON.stringify([['Hřídel zelená', 'TOP'], ['Šroub M8', 'TOP 2'], ['Matice nová', '·'], ['Pouzdro', '✓'], ['Příruba světlá', '✓']]) && /hotovo 4/.test(railSum) && /1 TOP/.test(railSum), `pravý panel: ${JSON.stringify(rail)} ${railSum}`);
   await page.screenshot({ path: path.join(shots, '06-panel.png') });
   // stav z panelu: Hotovo u Matice ji přesune na konec i v modulu
   await page.hover('.rail-short .rail-sh:nth-child(3)');

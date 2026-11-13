@@ -271,7 +271,7 @@ const STATE = added => `(() => {
   const nextId = await page.evaluate(() => S.shortage.lists[0].items.find(i => i.ean === '8590000000011').id);
   await page.selectOption(`#shView select[data-shst="${nextId}"]`, 'done');
   await page.waitForFunction(() => S.shortage.lists[0].items.at(-1).ean === '8590000000011');
-  check(/^HOTOVO Hřídel velká/.test(await page.evaluate(() => [...document.querySelectorAll('#shView tbody tr[data-shid]')].at(-1).querySelector('td.name').textContent.trim())), 'Hotovo nad převzatými daty: štítek a konec seznamu');
+  check(/^HOTOVO PŘIPNUTO Hřídel velká/.test(await page.evaluate(() => [...document.querySelectorAll('#shView tbody tr[data-shid]')].at(-1).querySelector('td.name').textContent.trim())), 'Hotovo nad převzatými daty: štítek a konec seznamu');
   await page.evaluate(() => { S.shortage.colors = { ...S.shortage.colors, '00B050': 'done' }; save(); });
   await saved(page);
   await page.screenshot({ path: path.join(shots, '02-nova-hotovo.png'), fullPage: true });

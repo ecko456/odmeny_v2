@@ -53,8 +53,8 @@ Stav k 13. 11. 2026 (verze 2.76):
   - UI (26-shortage): vzorník volba Hotovo, hláška po nahrání, řádek `tr.sh-done` + `data-shtier="done"`,
     štítek `.sh-donetag` místo TOP, hotové mimo blok Nelze přidělit odkaz, blok `tr.sh-donehead`,
     dlaždice a karta seznamu „hotovo N“, filtr TOP / TOP 2 bez hotových (`shAgeHit`, `shAgeChips`),
-    výběr stavu při změně Hotovo překreslí a ohlásí přesun, `shRowDept` a `shDragMark` (hotová mezi
-    nehotové oddělení nemění), `shGripKey` po blocích `shBlocks`, `shMergeInto` (`doneN`, `.sh-mdone`).
+    výběr stavu při změně Hotovo překreslí a ohlásí přesun, `shRowDept` a `shDragMark` (přetažená
+    hotová položka i položka puštěná na hotový řádek si nechá oddělení), `shGripKey` po blocích `shBlocks`, `shMergeInto` (`doneN`, `.sh-mdone`).
     Filtr oddělení a jeho čipy dál podle `shSections` (skutečné oddělení). PDF: `shBlocks`, štítek
     HOTOVO bez pruhu TOP, záhlaví „hotovo N (na konci)“, po odděleních vlastní strana Hotovo.
     Pravý panel (15): hotové za ostatními, „hotovo N“, značka ✓.

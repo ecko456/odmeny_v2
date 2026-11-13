@@ -1386,8 +1386,6 @@ function shDragMark() {
   const own = shDeptOf(shc(), it);
   let drop;
   if (target && target.dataset.shid) drop = { dept: shRowDept(target) ?? own, before: target.dataset.shid };
-  // 2.76: hotová mezi nehotové (a naopak) oddělení nemění, pořadí stejně drží Hotovo na konci
-  if (drop && target && target.dataset.shid && target.classList.contains('sh-done') !== (it.st === 'done')) drop.dept = own;
   else if (target) {
     // nadpis: konec oddělení nad ním; nad prvním nadpisem začátek prvního oddělení
     const above = target.previousElementSibling ? shRowDept(target.previousElementSibling) : null;
@@ -1397,6 +1395,8 @@ function shDragMark() {
     const heads = $$('#shView tbody tr.sh-depthead');
     drop = { dept: heads.length ? shRowDept(heads[heads.length - 1]) : own, before: null };
   }
+  // 2.76: hotová položka i položka puštěná na hotový řádek si oddělení nechá (blok Hotovo je za odděleními)
+  if (it.st === 'done' || (target && target.dataset.shid && target.classList.contains('sh-done'))) drop.dept = own;
   d.drop = drop;
   const all = $$('#shView tbody tr');
   all.forEach(r => r.classList.remove('sh-drop-before', 'sh-drop-after'));
