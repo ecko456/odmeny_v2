@@ -348,10 +348,11 @@ function shMoveItem(list,id,to){
   list.items.splice(to,0,it);
   return true;
 }
-/** Pořadí skupin: TOP SHORTAGE 0, TOP 2 (zpracovat hned po TOP, 2.32) 1, ostatní 2. */
-function shRank(i){return i.top?0:i.top2?1:2;}
-/** Položky TOP SHORTAGE první, za nimi TOP 2, jinak pořadí ze souboru nebo ruční. */
-function shTopFirst(items){return [0,1,2].flatMap(r=>items.filter(i=>shRank(i)===r));}
+/** Pořadí skupin: TOP SHORTAGE 0, TOP 2 (zpracovat hned po TOP, 2.32) 1, ostatní 2,
+    se stavem Hotovo 3 (2.76: vždy na konci, i TOP). */
+function shRank(i){return i.st==="done"?3:i.top?0:i.top2?1:2;}
+/** Položky TOP SHORTAGE první, za nimi TOP 2, ostatní (pořadí ze souboru nebo ruční), hotové na konci. */
+function shTopFirst(items){return [0,1,2,3].flatMap(r=>items.filter(i=>shRank(i)===r));}
 /** Ruční TOP (2.31) a TOP 2 (2.32): tier "top" | "top2" | "". Položka jde na konec nové skupiny
     (po snížení na začátek), pořadí ostatních zůstane. */
 function shSetTier(list,id,tier){
@@ -391,6 +392,14 @@ function shSections(sh,items){
   const by=new Map(depts.map(d=>[d.id,[]]));by.set("",[]);
   items.forEach(i=>by.get(shDeptOf(sh,i,map)).push(i));
   return depts.map(d=>({id:d.id,name:d.name,items:by.get(d.id)})).concat([{id:"",name:"Nezařazeno",items:by.get("")}]).filter(x=>x.items.length);
+}
+/** Bloky k zobrazení a tisku (2.76): oddělení jako shSections, hotové položky (stav Hotovo) až
+    v posledním bloku „Hotovo“ za všemi odděleními. Bez oddělení jeden blok, hotové jsou na jeho konci. */
+const SH_DONE_SEC="=done";
+function shBlocks(sh,items){
+  if(!((sh&&sh.depts)||[]).length)return shSections(sh,items);
+  const done=items.filter(i=>i.st==="done");
+  return shSections(sh,items.filter(i=>i.st!=="done")).concat(done.length?[{id:SH_DONE_SEC,name:"Hotovo",items:done}]:[]);
 }
 /** Ruční přesun (2.32): položka do oddělení dept ("" = nezařazená) před položku before, bez ní na konec
     oddělení. Pořadí TOP / TOP 2 / ostatní zůstane (shTopFirst). Vrací true, když se něco změnilo. */
@@ -451,8 +460,33 @@ function shSetStatus(list,id,st,meta){
   if(!hit)return false;
   const e=hit.entry,v=SH_ST_KEYS.has(st)?st:"";
   if((e.st||"")===v)return false;
+  const was=e.st==="done";
   if(v){e.st=v;e.stAt=(meta&&meta.at)||Date.now();e.stBy=(meta&&meta.by)||"";}else{delete e.st;delete e.stAt;delete e.stBy;}
+  // 2.76: položka s Hotovo jde na konec seznamu, bez něj zpátky na konec své skupiny (poddíl zůstává u sestavy)
+  if(!hit.sub&&was!==(v==="done"))shDoneMove(list,e);
   return true;
+}
+/** Přesun položky po změně Hotovo (2.76): hotová na úplný konec, jinak na konec své skupiny. */
+function shDoneMove(list,it){
+  const rest=list.items.filter(i=>i!==it);
+  rest.push(it);
+  list.items.splice(0,list.items.length,...shTopFirst(rest));
+}
+/**
+ * Doplnění chybějících (2.76): položky, které v novém souboru mají barvu Hotovo (st done ze vzorníku)
+ * a v seznamu už jsou bez Hotovo, dostanou Hotovo. Páruje se jako u doplnění (shItemKey), stejná
+ * položka víckrát po kusech. Vrací označené položky seznamu; dry = jen spočítat, nic neměnit.
+ */
+function shMergeDone(list,items,meta,dry){
+  const want=new Map();
+  (items||[]).forEach(i=>{if(i&&i.st==="done"){const k=shItemKey(i);want.set(k,(want.get(k)||0)+1);}});
+  if(!want.size||!list)return [];
+  // nejdřív se započítají položky, které už Hotovo mají, zbytek dostanou nehotové
+  const take=i=>{const k=shItemKey(i),n=want.get(k)||0;if(!n)return false;want.set(k,n-1);return true;};
+  list.items.filter(i=>i.st==="done").forEach(take);
+  const hit=list.items.filter(i=>i.st!=="done"&&take(i));
+  if(!dry)hit.forEach(i=>shSetStatus(list,i.id,"done",meta));
+  return hit;
 }
 function cleanShortage(o){
   o=o&&typeof o==="object"?o:{};
@@ -555,7 +589,8 @@ function shBuild(rows,cols,colors){
   });
   if(colors)shApplyColors(items,colors);
   const all=shTopFirst(items);
-  return {items:all.slice(0,SH_MAX_ITEMS),more:Math.max(0,all.length-SH_MAX_ITEMS),header,top:items.filter(i=>i.top).length,top2:items.filter(i=>i.top2).length,warn,fills};
+  const open=items.filter(i=>i.st!=="done");   // Hotovo podle barvy (2.76) se do TOP nepočítá
+  return {items:all.slice(0,SH_MAX_ITEMS),more:Math.max(0,all.length-SH_MAX_ITEMS),header,top:open.filter(i=>i.top).length,top2:open.filter(i=>i.top2).length,done:items.length-open.length,warn,fills};
 }
 /* Doplnění chybějících (2.36): položka se pozná podle EANu (bez něj podle názvu), indexu
    a čísla objednávky, stejně jako sestava u poddílů z plánu. */

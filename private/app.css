@@ -3429,3 +3429,13 @@ dialog.dlg.wide:has(.end-tab) { width: min(calc(100vw - 24px), 940px); }
 .end-extab td.end-asg select { width: 100%; max-width: 320px; padding-top: 6px; padding-bottom: 6px; font-size: 13px; }
 .end-extab .end-hint { display: block; margin-top: 3px; color: var(--warn); font-size: 12px; }
 dialog.dlg.wide:has(.end-extab td.end-asg) { width: min(calc(100vw - 24px), 900px); }
+
+/* 2.76: Hotovo (zelená ve vzorníku barev nebo ručně) = vždy na konci seznamu */
+table.sh-tab tr.sh-done td { background: color-mix(in srgb, var(--good-soft) 55%, transparent); }
+table.sh-tab tr.sh-done td:first-child { box-shadow: inset 3px 0 0 var(--good); }
+table.sh-tab tr.sh-done td.name, table.sh-tab tr.sh-done td.sh-ord, table.sh-tab tr.sh-done td.sh-qty { color: var(--ink-2); }
+.tag.sh-donetag { background: var(--good); color: var(--surface); font-weight: 800; letter-spacing: .03em; margin-right: 4px; }
+.rail-sh.st-done .rail-shtag { background: color-mix(in srgb, var(--good) 22%, transparent); color: var(--good); }
+.sh-mdone { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--good-soft) 70%, transparent); }
+table.sh-tab tr.sh-depthead.sh-donehead td { box-shadow: inset 3px 0 0 var(--good); }
+table.sh-tab tr.sh-depthead.sh-donehead b { color: var(--good); }

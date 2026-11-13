@@ -33,7 +33,7 @@ const SH_COL_WORDS={
   plan:{asm:/sestav/,sub:/poddil|komponent/,index:/^index|^idx|\bline\b|^radek\b|cislo radku/,order:/^(?!.*(mnozstv|pocet|\bks\b|\bqty\b)).*(objedn|zakaz)/,op:/probih|operac/,qty:/mnozstv|^pocet|\bks\b|\bqty\b|quantity/},
   move:{code:/\bqr\b|barcode|^kod/,when:/datum|\bcas\b|time/,qty:/\bks\b|mnozstv|pocet/,state:/stav|status|udalost/,op:/operac|pracovist/},
 };
-const SH_TIERS=["top","top2","none"],SH_MAX_COLORS=40;
+const SH_TIERS=["top","top2","none","done"],SH_MAX_COLORS=40;   // done = Hotovo (2.76)
 /** Barva jako šest číslic HEX velkými (FF0000), jinak "". Bílá a bez výplně = "". */
 function shHex(v){const t=String(v==null?"":v).trim().replace(/^#/,"").toUpperCase();const h=/^[0-9A-F]{8}$/.test(t)?t.slice(2):t;return /^[0-9A-F]{6}$/.test(h)&&h!=="FFFFFF"?h:"";}
 function shColLetter(v){const t=String(v==null?"":v).trim().toUpperCase();return /^[A-Z]{1,3}$/.test(t)?t:"";}
@@ -95,21 +95,26 @@ function shColsFromAi(kind,ai,base){
   if(kind==="plan"&&typeof ai.sheet==="string"&&ai.sheet.trim())c.sheet=ai.sheet.trim().slice(0,80);
   return shColsClean(kind,c);
 }
-/** Barvy EANu podle vzorníku: top = TOP SHORTAGE, top2 = TOP 2; text TOP ve sloupci má přednost. */
-function shApplyColors(items,colors){
+/** Barvy EANu podle vzorníku: top = TOP SHORTAGE, top2 = TOP 2, done = stav Hotovo (2.76, položka
+    jde na konec seznamu); text TOP ve sloupci má přednost. meta = {at, by} pro stav. */
+function shApplyColors(items,colors,meta){
   (items||[]).forEach(i=>{
     const t=i.fill&&colors?colors[i.fill]:"";
     if(t==="top"){i.top=true;i.top2=false;}
     else if(t==="top2"&&!i.top)i.top2=true;
+    else if(t==="done"){i.st="done";i.stAt=(meta&&meta.at)||Date.now();i.stBy=(meta&&meta.by)||"";}
   });
   return items;
 }
-/** Výchozí přiřazení barvy, kterou vzorník ještě nezná: červená = TOP, oranžová a žlutá = TOP 2. */
+/** Výchozí přiřazení barvy, kterou vzorník ještě nezná: červená = TOP, oranžová a žlutá = TOP 2,
+    zelená = Hotovo (2.76). */
 function shColorGuess(hex){
   const h=shHex(hex);if(!h)return "none";
   const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
   if(r>=170&&g<=110&&b<=110)return "top";
   if(r>=200&&g>=110&&b<=120)return "top2";
+  // zelená i světle zelená (C6EFCE, E2EFDA) a žlutozelená (92D050); tyrkysová a šedá ne
+  if(g>=100&&g-Math.max(r,b)>=12)return "done";
   return "none";
 }
 /** Standardní paleta Excelu (indexované barvy 0–63), SheetJS je u výplně nepřevede na RGB. */
@@ -192,10 +197,10 @@ function shChanges(A,B,add){
     const a=(A.cols||{})[k],b=(B.cols||{})[k];
     if(b&&JSON.stringify(a||null)!==JSON.stringify(b))add("shortage","Shortage: sloupce "+KIND[k]+": "+Object.keys(SH_COL_NAMES[k]).filter(f=>b[f]).map(f=>SH_COL_NAMES[k][f].split(" (")[0]+" "+b[f]).join(", ")+(b.sheet?", list "+b.sheet:""),{m:"shc:"+k});
   });
-  const TIER={top:"TOP SHORTAGE",top2:"TOP 2",none:"běžná shortage"};
+  const TIER={top:"TOP SHORTAGE",top2:"TOP 2",none:"běžná shortage",done:"Hotovo"};
   Object.keys(B.colors||{}).forEach(h=>{if((A.colors||{})[h]!==B.colors[h])add("shortage","Shortage: barva EANu #"+h+" = "+TIER[B.colors[h]],{m:"shk:"+h});});
   B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&l.moves&&JSON.stringify(o.moves||null)!==JSON.stringify(l.moves))add("shortage","Shortage: evidence pohybu "+(l.moves.file||"")+" u seznamu "+shWhen(l)+" ("+l.moves.rows+" záznamů)",{m:"shv:"+l.id+":"+l.moves.at});});
-  const what=l=>{const n=l.items.length,top=l.items.filter(i=>i.top).length,pin=l.items.filter(i=>i.pin).length;return " ("+n+" "+shItemsN(n)+(top?", z toho "+top+" TOP":"")+(pin?", připnuté "+pin:"")+(l.file?", "+l.file:"")+")";};
+  const what=l=>{const n=l.items.length,top=l.items.filter(i=>i.top&&i.st!=="done").length,pin=l.items.filter(i=>i.pin).length,done=l.items.filter(i=>i.st==="done").length;return " ("+n+" "+shItemsN(n)+(top?", z toho "+top+" TOP":"")+(done?", hotovo "+done:"")+(pin?", připnuté "+pin:"")+(l.file?", "+l.file:"")+")";};
   B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+what(l),{m:"shl:"+l.id});});
   // zabalení dne (2.73)
   B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&!!o.packed!==!!l.packed)add("shortage",l.packed?"Shortage: zabalen seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+")":"Shortage: rozbalen seznam "+shWhen(l),{m:"shpk:"+l.id});});

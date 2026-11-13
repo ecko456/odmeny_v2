@@ -62,6 +62,24 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.76
+
+- Shortage: **zelená výplň buňky s EANem = Hotovo**. Ve vzorníku barev (okno Barvy v buňkách EANu po
+  nahrání Excelu nebo vložení přes Ctrl+V) přibyla volba **Hotovo (na konec seznamu)**; zelené odstíny
+  ji mají předvybranou, každou barvu jde přiřadit i jinak. Aplikace si přiřazení pamatuje. Zelená,
+  kterou máš ve vzorníku uloženou ze starší verze jako „Běžná shortage“, se po aktualizaci přepne na
+  Hotovo (volba tehdy nebyla); vrátit ji jde ve vzorníku při dalším nahrání.
+- Položka se stavem Hotovo (podle barvy, nebo nastavená ručně v řádku či v pravém panelu) je **vždy na
+  konci seznamu**, i když je TOP SHORTAGE, a má zelený štítek HOTOVO. S odděleními jsou hotové
+  v posledním bloku **Hotovo** za všemi odděleními (filtr oddělení je dál najde v jejich oddělení).
+  Když stav Hotovo zrušíš, položka se vrátí na konec své skupiny (TOP SHORTAGE, TOP 2, ostatní).
+- Do počtů TOP SHORTAGE a TOP 2 (dlaždice, filtr, pravý panel, záhlaví PDF) se hotové nepočítají;
+  počet hotových je u seznamu i v PDF.
+- PDF: hotové jsou na konci se štítkem HOTOVO (bez pruhu TOP), v PDF po odděleních na vlastní
+  poslední straně.
+- **Doplnit chybějící**: když má položka, která v seznamu už je, v novém souboru barvu Hotovo, dostane
+  stav Hotovo a přesune se na konec (okno to předem napíše).
+
 ## Co je nového ve verzi 2.75.2
 
 - Konce trestů, okno **Lidé, kteří v souboru nejsou**: u každého člověka je výběr **Je v souboru

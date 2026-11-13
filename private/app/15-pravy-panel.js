@@ -59,20 +59,22 @@ function railShortage() {
   }
   if (!l) return { sig: null, html: '' };
   const items = l.items || [];
-  const top = items.filter(i => i.top), top2 = items.filter(i => !i.top && i.top2);
+  // 2.76: hotové až za ostatními a mimo počty TOP
+  const open = items.filter(i => i.st !== 'done'), done = items.length - open.length;
+  const top = open.filter(i => i.top), top2 = open.filter(i => !i.top && i.top2);
   const rec = items.filter(i => i.rec).length;
   const old = items.filter(i => (i.days || 1) >= 2).length;
-  const shown = [...top, ...top2, ...items.filter(i => !i.top && !i.top2)].slice(0, 5);
+  const shown = [...top, ...top2, ...open.filter(i => !i.top && !i.top2), ...items.filter(i => i.st === 'done')].slice(0, 5);
   // položka (2.65): název otevře Shortage, EAN je odkaz, po najetí se rozbalí volba stavu
-  const row = i => `<div class="rail-sh ${i.top ? 'top' : i.top2 ? 'top2' : ''}${i.st ? ` st-${i.st}` : ''}" data-railshid="${esc(i.id)}"><span class="rail-shtag">${i.top ? 'TOP' : i.top2 ? 'TOP 2' : '·'}</span><span class="rail-tmain"><button type="button" class="rail-shname" data-railgo="shortage">${esc(i.name || i.ean || '—')}</button>
+  const row = i => `<div class="rail-sh ${i.st === 'done' ? '' : i.top ? 'top' : i.top2 ? 'top2' : ''}${i.st ? ` st-${i.st}` : ''}" data-railshid="${esc(i.id)}"><span class="rail-shtag">${i.st === 'done' ? '✓' : i.top ? 'TOP' : i.top2 ? 'TOP 2' : '·'}</span><span class="rail-tmain"><button type="button" class="rail-shname" data-railgo="shortage">${esc(i.name || i.ean || '—')}</button>
       <small>${i.ean ? (i.link ? `<a href="${esc(i.link)}" target="_blank" rel="noopener noreferrer" title="Otevřít odkaz">EAN ${esc(i.ean)} ↗</a>` : `EAN ${esc(i.ean)}`) : ''}${[i.qty ? `${i.qty} ks` : '', i.op || ''].filter(Boolean).map(x => ` · ${esc(x)}`).join('')}</small>
       ${i.st ? `<span class="rail-shst st-${i.st}">${esc(shStName(i.st))}</span>` : ''}
       <span class="rail-shstset" role="group" aria-label="Stav položky ${esc(i.ean || i.name)}">${SH_ST.map(([k, n]) => `<button type="button" class="${i.st === k ? 'on' : ''}" data-railshst="${k}" aria-pressed="${i.st === k}">${n}</button>`).join('')}</span></span></div>`;
   const html = `<section class="rail-card rail-short"><div class="rail-hrow"><h2 class="rail-h">Shortage</h2><button class="link small" type="button" data-railgo="shortage">Otevřít</button></div>
-    <p class="rail-sum"><span class="tag">${items.length} ${items.length === 1 ? 'položka' : items.length <= 4 && items.length ? 'položky' : 'položek'}</span>${top.length ? `<span class="tag crit">${top.length} TOP</span>` : ''}${top2.length ? `<span class="tag warn">${top2.length} TOP 2</span>` : ''}${old ? `<span class="tag warn">2 a více dní ${old}</span>` : ''}${rec ? `<span class="tag">se záznamem ${rec}</span>` : ''}</p>
+    <p class="rail-sum"><span class="tag">${items.length} ${items.length === 1 ? 'položka' : items.length <= 4 && items.length ? 'položky' : 'položek'}</span>${top.length ? `<span class="tag crit">${top.length} TOP</span>` : ''}${top2.length ? `<span class="tag warn">${top2.length} TOP 2</span>` : ''}${old ? `<span class="tag warn">2 a více dní ${old}</span>` : ''}${rec ? `<span class="tag">se záznamem ${rec}</span>` : ''}${done ? `<span class="tag ok">hotovo ${done}</span>` : ''}</p>
     ${shown.length ? `<div class="rail-tlist">${shown.map(row).join('')}</div>` : '<p class="small muted">Seznam je prázdný.</p>'}
     <p class="tiny muted rail-shfile">${esc(l.file || '')}${l.at ? ` · ${esc(tsText(l.at))}` : ''}</p></section>`;
-  return { sig: [l.id, l.at, items.length, top.length, top2.length, rec, old, shown.map(i => [i.id, i.name, i.qty, i.op, i.link, i.st, i.rec && i.rec.state])], html };
+  return { sig: [l.id, l.at, items.length, top.length, top2.length, rec, old, done, shown.map(i => [i.id, i.name, i.qty, i.op, i.link, i.st, i.rec && i.rec.state])], html };
 }
 // Kalendář (2.65): měsíc po dnech, svátky, víkendy a tečky událostí (úkoly s termínem, konce trestů,
 // poznámky). Po najetí (nebo klepnutí) na den bublina se soupisem a tlačítkem Přidat poznámku.

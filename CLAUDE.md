@@ -34,6 +34,36 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 11. 2026 (verze 2.76):
+
+- Uživatel: „do shortage, když bude zeleně vyplněná buňka, tak u těchto položek bude možné
+  nadefinovat ‚Hotovo‘ a bude vždy na konci seznamu se statusem ‚Hotovo‘“. Vzali jsme to jako
+  buňku s EANem (stejně jako červená = TOP z 2.61); kdyby byla zelená jinde, je potřeba doplnit.
+  - Data (verze 54): `S.shortage.colors` zná `done` (`SH_TIERS`), stav položky `st: 'done'` je ze 2.65.
+    `sanitizeState` u dat starších než 54: zelená (`shColorGuess` = done) uložená jako `none` → `done`.
+  - Core (23-shortage): `shRank` = 3 pro `st === 'done'` (i TOP), `shTopFirst` [0,1,2,3];
+    `shSetStatus` u položky (ne poddílu) při změně Hotovo zavolá `shDoneMove` (hotová na úplný konec,
+    bez Hotovo na konec své skupiny); `shMergeDone(list, items, meta, dry)` (doplnění chybějících:
+    položka ze souboru s Hotovo dá Hotovo stejné položce v seznamu podle `shItemKey`, nejdřív se
+    započítají už hotové); `shBlocks(sh, items)` = `shSections` a hotové v posledním bloku
+    `SH_DONE_SEC` („=done“, Hotovo), jen s odděleními; `shBuild` vrací `done`, `top`/`top2` bez hotových.
+    24-shortage-kroky: `shApplyColors(items, colors, meta)` (done = stav Hotovo s `stAt`, `stBy`),
+    `shColorGuess` zelená (g ≥ 100 a o 12 víc než r i b) = done, historie „barva … = Hotovo“,
+    nahrání „hotovo N“.
+  - UI (26-shortage): vzorník volba Hotovo, hláška po nahrání, řádek `tr.sh-done` + `data-shtier="done"`,
+    štítek `.sh-donetag` místo TOP, hotové mimo blok Nelze přidělit odkaz, blok `tr.sh-donehead`,
+    dlaždice a karta seznamu „hotovo N“, filtr TOP / TOP 2 bez hotových (`shAgeHit`, `shAgeChips`),
+    výběr stavu při změně Hotovo překreslí a ohlásí přesun, `shRowDept` a `shDragMark` (hotová mezi
+    nehotové oddělení nemění), `shGripKey` po blocích `shBlocks`, `shMergeInto` (`doneN`, `.sh-mdone`).
+    Filtr oddělení a jeho čipy dál podle `shSections` (skutečné oddělení). PDF: `shBlocks`, štítek
+    HOTOVO bez pruhu TOP, záhlaví „hotovo N (na konci)“, po odděleních vlastní strana Hotovo.
+    Pravý panel (15): hotové za ostatními, „hotovo N“, značka ✓.
+  - Testy: core „Shortage (2.76)“ (+ odhad 00B050 v 2.61, verze 54), nový `tests/e2e_shhotovo.js`,
+    `test_odmeny` (426 pro 53), `e2e_upgrade_prev` 2.75.2 → 2.76 (archiv `e18cb06`, hotová TOP ze
+    staré verze po aktualizaci na konci, ruční Hotovo a barva v kroku 5). `ODM_VERSION` 2.76.
+  - Pozor v testech: s `ctx.clock.setFixedTime` stojí přechody CSS, čtverečky barev ve vzorníku jsou
+    na snímku prázdné (barvy hlídá `e2e_shkroky` bez pevných hodin).
+
 Stav k 12. 11. 2026 (verze 2.75.2):
 
 - Uživatel: „možnost v ‚Lidé, kteří v souboru nejsou‘ přidělení jména ze seznamu, stále mi to
@@ -2875,7 +2905,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.74 | `fd89a32` | KPI Normy – normy z vykázaných časů (zkušení nad 45 %, bez záznamů do 2 minut), plnění ve Výkonnosti na osobu (data verze 52) |
 | 2.75 | `14ecc9d` | rychlejší Shortage (výška poznámek, ikony, uložení), Připnout / Odepnout do dalších seznamů, Duplikovat do vybraného oddělení (data verze 53) |
 | 2.75.1 | `5099564` | Konce trestů – párování jmen po stupních (ID, přejmenovaný, prohozené, titul, část jména, překlep), ruční přiřazení v okně importu |
-| 2.75.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Konce trestů – chybějícím lidem přidělit řádek souboru, jméno z buňky s datem („Invalid Date“) už nevznikne |
+| 2.75.2 | `e18cb06` | Konce trestů – chybějícím lidem přidělit řádek souboru, jméno z buňky s datem („Invalid Date“) už nevznikne |
+| 2.76 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – zelená buňka EANu = Hotovo, hotové položky vždy na konci seznamu (data verze 54) |
 
 Verze 2.1 přidala:
 
@@ -2988,7 +3019,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `53` (od 2.75):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `54` (od 2.76):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -3344,6 +3375,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_shdny.js` (2.73): Shortage po dnech (zabalení, dny na shortage, odbourané, filtr, PDF, Historie, telefon);
   - `e2e_normy.js` (2.74): KPI Normy (sloupec dílu v okně načtení, zkušení, záznamy do 2 min, hledání, Excel, hranice, plnění, telefon);
   - `e2e_shpin.js` (2.75): Shortage Připnout a Duplikovat (tři dny, filtr, oddělení kopie, odebrání kopie, PDF, odepnutí, rychlost velkého seznamu, telefon);
+  - `e2e_shhotovo.js` (2.76): Shortage zelená = Hotovo (vzorník, pořadí, blok Hotovo za odděleními, ruční stav, filtr, PDF i po odděleních, Doplnit chybějící, pravý panel, historie, telefon);
   - `e2e_soubeh.js` (2.62): dva lidé současně (sloučení, sankce obou, střet, průběžné načtení, rozepsané pole, otevřené okno, telefon);
   - `e2e_shkroky.js` (2.61): Shortage ve třech krocích (sloupce, vzorník barev, plán, evidence pohybu, AI, rozbor, telefon);
   - `e2e_lockbg.js` (2.60): pozadí zámku (kreslí, hýbe se, pauza, omezit pohyb, bez WebGL, po odemčení pryč, telefon);
