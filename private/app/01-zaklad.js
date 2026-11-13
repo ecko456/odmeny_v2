@@ -18,6 +18,8 @@ const ui = {
   t5: { tab: 'week', week: null, caseId: null, filter: 'active', q: '', cdraft: null },
   kt: { tab: 'plan', week: null, range: '12', dept: '' },
   qk: { n: 5, dept: '', slot: null, present: true, list: null, want: 0, short: 0, at: 0, anim: false, swapped: '' },
+  // Rychlý scan (2.77): dávka jen v paměti okna, kamera, poslední kód (ať se hned nenačte znovu)
+  sc: { batch: [], list: '', range: 'today', cam: false, busy: false, last: '', lastAt: 0, lastQty: null, badText: '', done: '' },
   hist: [], popping: false, listY: 0, homeShift: '', fabOpen: false,
   lb: { sel: null, open: false, listY: 0, openSteps: new Set(), mode: 'year', year: new Date().getFullYear(), from: '', to: '', intro: true, extra: true },
   sv: { tab: 'ship', draft: null, open: null, all: false, q: '' },
@@ -65,6 +67,9 @@ function cleanPrefs(input) {
     matrixIds: x.matrixIds === true,   // matice jen s ID z evidence práce místo jmen (2.20)
     // filtr seznamu Lidé (2.23): g = id skupiny nebo „d:“ + oddělení, st = stav (LIDE_STATES)
     lideF: { g: str(x.lideF?.g, 80), st: LIDE_STATES.some(t => t[0] === x.lideF?.st) ? x.lideF.st : '' },
+    // Rychlý scan (2.77): poslední pozice a hromadné načítání (výchozí zapnuté)
+    scanPos: str(x.scanPos, 120),
+    scanBatch: x.scanBatch !== false,
   };
 }
 

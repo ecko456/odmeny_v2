@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.77
+
+- Nový modul **Rychlý scan** (hlavně pro telefon: v plovoucím menu hned pod Vyhledat člověka,
+  v hlavním menu i na monitoru). Doplňuje interní evidenci Shortage čtením QR kódů:
+  1. zadáš **pozici** (kde díl je / stav záznamu, třeba „Odesláno na WPA“; nabídnou se dřívější);
+  2. zapneš kameru (nebo použiješ čtečku či napíšeš kód) a načítáš kódy; po každém se zadá
+     jen **množství** (rychlé volby: urgentní množství položky, poslední množství);
+  3. s **hromadným načítáním** (výchozí) se kódy sbírají do dávky, stejný kód se sečte, množství
+     jde upravit nebo kód odebrat, a pak **Potvrdit a doplnit do Shortage**; bez hromadného
+     načítání se každý kód zapíše hned.
+- Kód se bere jako QR v PDF Shortage: z odkazu hodnota activeBarcode, jinak celý text. Štítek,
+  který zůstává v záběru, se znovu nenačte, dokud z kamery aspoň na 2,5 s nezmizí.
+- Zapisuje se do nejnovějšího nezabaleného seznamu urgentů stejně jako evidence pohybu: poslední
+  záznam položky nebo poddílu (stav = pozice), kódy mimo seznam se uloží pro pozdější přiřazení,
+  pozice „Odesláno na WPA“ se počítá do odeslaných kusů (díl u nás).
+- **Mobilní záznamy**: každé potvrzené načtení se uloží (kdy, pozice, kód, množství, díl, kdo),
+  přehled Dnes / 7 dní / Vše a **Excel** s listy Záznamy a Souhrn (po kódech a pozicích).
+- Kamera se vypne při přechodu jinam a při zamčení telefonu nebo přepnutí do jiné aplikace.
+
 ## Co je nového ve verzi 2.76
 
 - Shortage: **zelená výplň buňky s EANem = Hotovo**. Ve vzorníku barev (okno Barvy v buňkách EANu po

@@ -136,7 +136,7 @@ function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm'
 function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
 function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
 function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
-const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['audit', 'KPI'], ['nastaveni', 'Nastavení']];
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['scan', 'Rychlý scan'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['audit', 'KPI'], ['nastaveni', 'Nastavení']];
 
 function homeTileMeta(view, sd) {
   const p = curPeriod();
@@ -161,6 +161,7 @@ function homeTileMeta(view, sd) {
     case 'audit': { const sp = waSpan(S.workAudit); return sp ? `data do ${dayText(sp.to, false)}` : 'lidé v práci a kusy'; }
     case 'servis': { const c = svc(), n = c.devices.filter(d => svHistory(c, d.id).out).length; return n ? `na servisu ${n}` : c.shipments.length ? 'vše je zpátky' : 'předávací protokoly'; }
     case 'ukoly': { const o = tkOverview(S, todayIso()); return o.late.length ? `${o.late.length} po termínu` : o.soon.length ? `${o.soon.length} blíží se termín` : o.open ? `otevřené ${o.open}` : 'zadat úkol'; }
+    case 'scan': { const b = ui.sc.batch.length, n = scRange(shc().scans || [], 'today').length; return b ? `v dávce ${b}` : n ? `dnes zapsáno ${n}` : 'načíst QR kódy'; }
     case 'shortage': { const l = shc().lists[0]; return l ? `${l.items.length} ${shItemsN(l.items.length)} · ${dayText(todayIso(l.at), false)}` : 'nahrát seznam'; }
     default: return 'pravidla a zálohy';
   }
@@ -375,7 +376,7 @@ function playSplash() {
 }
 
 /* ---------- plovoucí menu vpravo dole (2.15) ---------- */
-const FAB_ITEMS = [['search', 'Vyhledat člověka'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['sankce', 'Sankce'], ['top5', 'Top 5'], ['kontroly', 'Kontroly']];
+const FAB_ITEMS = [['search', 'Vyhledat člověka'], ['scan', 'Rychlý scan'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['sankce', 'Sankce'], ['top5', 'Top 5'], ['kontroly', 'Kontroly']];
 /* 2.53: Hlavní stránka nahoře, rychlé volby, dole Ostatní: rozbalí v menu posuvný seznam ostatních
    částí (bez přechodu na jinou stránku, dokud se nevybere). */
 function fabOthers() { const q = new Set(FAB_ITEMS.map(x => x[0])); return HOME_TILES.filter(([v]) => !q.has(v)); }

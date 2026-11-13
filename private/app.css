@@ -3439,3 +3439,30 @@ table.sh-tab tr.sh-done td.name, table.sh-tab tr.sh-done td.sh-ord, table.sh-tab
 .sh-mdone { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--good-soft) 70%, transparent); }
 table.sh-tab tr.sh-depthead.sh-donehead td { box-shadow: inset 3px 0 0 var(--good); }
 table.sh-tab tr.sh-depthead.sh-donehead b { color: var(--good); }
+
+/* ================================================================ Rychlý scan (2.77) */
+.sc-set .field input, .sc-set .field select { width: 100%; }
+.sc-mode small { display: block; color: var(--ink-3); font-size: 12px; font-weight: 400; }
+.sc-cam { max-height: 52vh; }
+/* kamera běží: tlačítko Vypnout je klidné, ať je vidět rozdíl (i ve skle) */
+.qk-go.sc-go.on, :root[data-look="glass"] .qk-go.sc-go.on { background: var(--surface-3); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
+.sc-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.sc-row.sc-miss .ps-av { background: var(--warn-soft); color: var(--warn); }
+.sc-row .ps-av .icon { width: 20px; height: 20px; }
+.sc-qtybtn { min-width: 74px; font-family: var(--mono); font-weight: 700; }
+.sc-logrow { grid-template-columns: auto minmax(0, 1fr) auto; min-height: 54px; }
+.sc-when { min-width: 44px; color: var(--ink-3); font: 600 12.5px/1.2 var(--mono); }
+.sc-q { font: 700 14px/1 var(--mono); white-space: nowrap; }
+.sc-found { display: grid; gap: 3px; margin: 0 0 10px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
+.sc-found b { font-size: 16px; }
+.sc-found span { color: var(--ink-2); font-size: 13px; }
+.sc-found small { color: var(--ink-3); font-size: 12px; word-break: break-all; }
+.sc-found .sc-fname { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--ink); }
+.sc-found.miss { border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); }
+.sc-found.miss span { color: var(--warn); }
+.sc-qty { display: grid; grid-template-columns: 64px minmax(0, 1fr) 64px; align-items: center; gap: 10px; margin-top: 8px; }
+.sc-qin { width: 100%; min-height: 64px; padding: 6px 10px; border-radius: 18px; font: 700 34px/1 var(--disp); text-align: center; }
+.sc-quick { margin-top: 10px; }
+.sc-quick .chip { display: grid; gap: 2px; justify-items: center; }
+.sc-quick .chip em { color: var(--ink-3); font: 500 10px/1 var(--body); font-style: normal; }
+.sc-done { margin: 0; }

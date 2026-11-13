@@ -202,6 +202,12 @@ function shChanges(A,B,add){
   B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&l.moves&&JSON.stringify(o.moves||null)!==JSON.stringify(l.moves))add("shortage","Shortage: evidence pohybu "+(l.moves.file||"")+" u seznamu "+shWhen(l)+" ("+l.moves.rows+" záznamů)",{m:"shv:"+l.id+":"+l.moves.at});});
   const what=l=>{const n=l.items.length,top=l.items.filter(i=>i.top&&i.st!=="done").length,pin=l.items.filter(i=>i.pin).length,done=l.items.filter(i=>i.st==="done").length;return " ("+n+" "+shItemsN(n)+(top?", z toho "+top+" TOP":"")+(done?", hotovo "+done:"")+(pin?", připnuté "+pin:"")+(l.file?", "+l.file:"")+")";};
   B.lists.forEach(l=>{if(!ia.has(l.id))add("shortage","Shortage: nahrán seznam "+shWhen(l)+what(l),{m:"shl:"+l.id});});
+  // Rychlý scan (2.77): potvrzená načtení z mobilu, jeden záznam na potvrzení dávky
+  const scA=new Set((A.scans||[]).map(s=>s.id)),scNew=(B.scans||[]).filter(s=>!scA.has(s.id));
+  if(scNew.length){
+    const byPos=new Map();scNew.forEach(s=>{const x=byPos.get(s.pos)||{n:0,q:0};x.n++;x.q=Math.round((x.q+s.qty)*1000)/1000;byPos.set(s.pos,x);});
+    add("shortage","Shortage: rychlý scan "+[...byPos.entries()].map(([p,x])=>p+" "+x.n+" "+(x.n===1?"kód":x.n<=4?"kódy":"kódů")+" ("+nf(x.q,3)+" ks)").join(", "),{m:"shsc:"+scNew[scNew.length-1].id});
+  }
   // zabalení dne (2.73)
   B.lists.forEach(l=>{const o=A.lists.find(x=>x.id===l.id);if(o&&!!o.packed!==!!l.packed)add("shortage",l.packed?"Shortage: zabalen seznam "+shWhen(l)+" ("+l.items.length+" "+shItemsN(l.items.length)+")":"Shortage: rozbalen seznam "+shWhen(l),{m:"shpk:"+l.id});});
   // smazání má vlastní klíč, ať v historii zůstane i záznam o nahrání

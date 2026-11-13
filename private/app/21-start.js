@@ -238,6 +238,7 @@ function bindEvents() {
   bindTop5Events();
   bindKontrolyEvents();
   bindQuick();
+  bindScan();
   bindEnds();
   window.addEventListener('beforeunload', event => {
     if (store.dirty || store.saving) { event.preventDefault(); event.returnValue = ''; }

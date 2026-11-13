@@ -34,6 +34,39 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 11. 2026 (verze 2.77):
+
+- Uživatel: „modul spíše pro mobil pro ‚Rychlý scan‘ … doplnění dat pomocí mobilu a rychlého čtení
+  QR kódů, nastavím třeba hromadné načítání a nastavím jednu pozici a budu moct načíst rychle více
+  kódů a poté to potvrdit. Po každém scanu to jen bude chtít množství. A poté to doplní do shortage.
+  Je to doplnění evidenci interní.“ a „ať je možné udělat z těchto mobilních záznamů výstup třeba
+  do excelu“. Pozice = stav záznamu evidence pohybu (sloupec D), operace se nevyplňuje.
+  - Data (verze 55): `S.shortage.scans[≤ SC_MAX_LOG 3000]` = deník potvrzených načtení
+    `{id 'sc…', ts, code, qty, n, pos, by, list, hit, kind item|sub|qr, ean, name, order, index}`
+    (snímek dílu v době načtení, nejnovější první, `scClean` v `cleanShortage`).
+  - Core nový díl `private/core/27-rychly-scan.js`: `scCode` (odkaz → activeBarcode jako `shCode`,
+    jinak text přes `shCodeClean`; odkaz bez activeBarcode = ""), `scQty`, `scPos`, `scAdd` (stejný
+    kód se sečte, `n` načtení, `SC_MAX_BATCH` 500), `scFind` (položka, poddíl, varianta QR),
+    `scRecs` (tvar `shRecBuild`: stav = pozice, `n`, sent jen u Odesláno na WPA), `scApply(sh, list,
+    batch, pos, meta)` (`shApplyRecs`, `list.moves` „Rychlý scan · pozice“, deník), `scPositions`,
+    `scRange` (today | week | all), `scSheets` (Záznamy, Souhrn). Historie `shChanges` „rychlý scan
+    pozice N kódů (M ks)“, m `shsc:`.
+  - UI nový díl `private/app/33-rychly-scan.js`, pohled `scan` (`#view-scan`, `#scView`): části
+    `#scHead`, `#scSet` (pozice `#scPos` + datalist a čipy `[data-scpos]`, `#scBatchOn`, `#scList`
+    při víc nezabalených seznamech), `#scCamBox` (kamera `#scCam` se nepřekresluje, `[data-sccam]`,
+    `#scCode` + Enter / `#scCodeAdd`), `#scBatch` (dávka, `[data-scqty]`, `[data-scdel]`,
+    `[data-scok]`, `[data-scclear]`, hláška `ui.sc.done`), `#scLog` (`[data-scrange]`, `[data-scxlsx]`
+    → `exportScXlsx`). Kamera přes `startCodeScan` (ZXing / BarcodeDetector ze 2.13), `scSeen`
+    (během okna množství nic; stejný kód v záběru obnovuje `lastAt`, znovu až po `SC_SAME_MS` 2,5 s
+    mimo záběr; po zapnutí kamery se paměť vynuluje), `scQtyDialog` (`.sc-found`, −/+, rychlé
+    volby urgentně / poslední, validace), `scConfirm`. Stav `ui.sc` (dávka jen v paměti okna),
+    prefs `scanPos`, `scanBatch`. `showView` mimo `scan` → `scStop`, `visibilitychange` taky.
+    Menu: `#nav`, `HOME_TILES`, `FAB_ITEMS` (druhá položka), `homeTileMeta`.
+  - Testy: core „Rychlý scan (2.77)“ (+ prázdný Shortage se `scans`, verze 55), nový
+    `tests/e2e_scan.js` (falešná kamera Y4M s QR z `static/vendor/qrcode.js`, telefon, Excel přes
+    openpyxl), `test_odmeny` (426 pro 54), `e2e_upgrade_prev` 2.76 → 2.77 (archiv `b054487`).
+    `ODM_VERSION` 2.77.
+
 Stav k 13. 11. 2026 (verze 2.76):
 
 - Uživatel: „do shortage, když bude zeleně vyplněná buňka, tak u těchto položek bude možné
@@ -2906,7 +2939,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.75 | `14ecc9d` | rychlejší Shortage (výška poznámek, ikony, uložení), Připnout / Odepnout do dalších seznamů, Duplikovat do vybraného oddělení (data verze 53) |
 | 2.75.1 | `5099564` | Konce trestů – párování jmen po stupních (ID, přejmenovaný, prohozené, titul, část jména, překlep), ruční přiřazení v okně importu |
 | 2.75.2 | `e18cb06` | Konce trestů – chybějícím lidem přidělit řádek souboru, jméno z buňky s datem („Invalid Date“) už nevznikne |
-| 2.76 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – zelená buňka EANu = Hotovo, hotové položky vždy na konci seznamu (data verze 54) |
+| 2.76 | `b054487` | Shortage – zelená buňka EANu = Hotovo, hotové položky vždy na konci seznamu (data verze 54) |
+| 2.77 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
 
 Verze 2.1 přidala:
 
@@ -3019,7 +3053,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `54` (od 2.76):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `55` (od 2.77):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -3160,7 +3194,7 @@ Stav `S` definují `blank()` a `sanitizeState()` v `private/core.js`.
 ## UI (`private/app.html`, `private/app/*.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `audit`, `nastaveni`
+  `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `scan` (2.77), `audit`, `nastaveni`
   (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
@@ -3375,6 +3409,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_shdny.js` (2.73): Shortage po dnech (zabalení, dny na shortage, odbourané, filtr, PDF, Historie, telefon);
   - `e2e_normy.js` (2.74): KPI Normy (sloupec dílu v okně načtení, zkušení, záznamy do 2 min, hledání, Excel, hranice, plnění, telefon);
   - `e2e_shpin.js` (2.75): Shortage Připnout a Duplikovat (tři dny, filtr, oddělení kopie, odebrání kopie, PDF, odepnutí, rychlost velkého seznamu, telefon);
+  - `e2e_scan.js` (2.77): Rychlý scan (falešná kamera s QR, pozice, dávka, množství, stejný kód v záběru, čtečka, potvrzení do Shortage, mobilní záznamy, Excel, Odesláno na WPA hned, kamera mimo modul, zabalený seznam, monitor);
   - `e2e_shhotovo.js` (2.76): Shortage zelená = Hotovo (vzorník, pořadí, blok Hotovo za odděleními, ruční stav, filtr, PDF i po odděleních, Doplnit chybějící, pravý panel, historie, telefon);
   - `e2e_soubeh.js` (2.62): dva lidé současně (sloučení, sankce obou, střet, průběžné načtení, rozepsané pole, otevřené okno, telefon);
   - `e2e_shkroky.js` (2.61): Shortage ve třech krocích (sloupce, vzorník barev, plán, evidence pohybu, AI, rozbor, telefon);

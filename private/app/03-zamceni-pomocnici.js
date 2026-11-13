@@ -117,6 +117,7 @@ function renderAll() {
   if (ui.view === 'audit') renderWorkAudit(); else renderWaBadge();
   if (ui.view === 'plankap') renderCapPlan();
   if (ui.view === 'rychla') renderQuick();
+  if (ui.view === 'scan') renderScan();
   if (ui.view === 'konce') renderEnds();
   if (ui.view === 'ukoly') renderTasks(); else renderTaskBadge();
   renderTaskAlert();
@@ -141,6 +142,7 @@ function showView(name) {
   if (name === 'audit') renderWorkAudit();
   if (name === 'plankap') renderCapPlan();
   if (name === 'rychla') renderQuick();
+  if (name === 'scan') renderScan(); else scStop();   // kamera se mimo Rychlý scan vypne
   if (name === 'konce') renderEnds();
   if (name === 'ukoly') renderTasks();
   closeFab();

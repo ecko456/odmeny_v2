@@ -16,7 +16,7 @@ const BASE = process.env.BASE || 'http://127.0.0.1:8490/';
 const shots = path.join(S, 'oshots-mobil');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
-const SECTIONS = ['prehled', 'lide', 'sankce', 'kontroly', 'rychla', 'ukoly', 'protokoly', 'servis', 'shortage', 'top5', 'matice', 'plankap', 'dochazka', 'konce', 'audit', 'nastaveni'];
+const SECTIONS = ['prehled', 'lide', 'sankce', 'kontroly', 'rychla', 'ukoly', 'protokoly', 'servis', 'shortage', 'scan', 'top5', 'matice', 'plankap', 'dochazka', 'konce', 'audit', 'nastaveni'];
 
 async function watch(page, label) {
   page.on('console', msg => { if (msg.type() === 'error' && !/Failed to load resource/.test(msg.text())) problems.push(`${label} console: ${msg.text()}`); });
@@ -142,7 +142,7 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
   await page.click('#fabMenu [data-fabmore]');
   await page.waitForFunction(() => document.body.classList.contains('fab-more-on'));
   await page.waitForTimeout(300);
-  const QUICK = ['search', 'rychla', 'ukoly', 'sankce', 'top5', 'kontroly'];
+  const QUICK = ['search', 'scan', 'rychla', 'ukoly', 'sankce', 'top5', 'kontroly'];
   const more = await page.evaluate(() => ({ list: [...document.querySelectorAll('#fabMore [data-fab]')].map(b => b.dataset.fab), view: ui.view, quick: getComputedStyle(document.querySelector('.fab-quick')).display,
     box: document.querySelector('.fab-more-list').getBoundingClientRect().toJSON(), sh: document.querySelector('.fab-more-list').scrollHeight, ch: document.querySelector('.fab-more-list').clientHeight,
     label: document.querySelector('[data-fabmore] .fab-l').textContent }));
@@ -181,8 +181,8 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
     badge: document.querySelector('#fabMenu [data-fab="top5"] .nav-badge')?.textContent,
     exp: document.querySelector('#fab').getAttribute('aria-expanded'), scrim: !document.querySelector('#fabScrim').hidden,
   }));
-  check(JSON.stringify(menu.items) === JSON.stringify(['domu', 'search', 'rychla', 'ukoly', 'sankce', 'top5', 'kontroly']), `plovoucí menu: ${menu.items.join(', ')}`);
-  check(menu.labels.join('|') === 'Hlavní stránka|Vyhledat člověka|Rychlá kontrola|Úkoly|Sankce|Top 5|Kontroly|Ostatní' && menu.badge === '2' && menu.exp === 'true' && menu.scrim, `plovoucí menu: ${JSON.stringify(menu)}`);
+  check(JSON.stringify(menu.items) === JSON.stringify(['domu', 'search', 'scan', 'rychla', 'ukoly', 'sankce', 'top5', 'kontroly']), `plovoucí menu: ${menu.items.join(', ')}`);
+  check(menu.labels.join('|') === 'Hlavní stránka|Vyhledat člověka|Rychlý scan|Rychlá kontrola|Úkoly|Sankce|Top 5|Kontroly|Ostatní' && menu.badge === '2' && menu.exp === 'true' && menu.scrim, `plovoucí menu: ${JSON.stringify(menu)}`);
   await page.screenshot({ path: `${shots}/06-fab.png` });
   await page.goBack();
   await page.waitForFunction(() => !ui.fabOpen);
@@ -326,7 +326,7 @@ const results = page => page.evaluate(() => [...document.querySelectorAll('#psLi
       text: getComputedStyle(document.querySelector('.brand-text')).display,
     };
   });
-  check(desk.visible === 16 && desk.navPos === 'static' && desk.fab === 'none', `desktop menu: ${JSON.stringify(desk)}`);
+  check(desk.visible === 17 && desk.navPos === 'static' && desk.fab === 'none', `desktop menu: ${JSON.stringify(desk)}`);
   check(desk.row && desk.below && desk.text !== 'none', `desktop logo, historie a období: ${JSON.stringify(desk)}`);
   await page.click('#brandHome');
   await page.waitForFunction(() => ui.view === 'prehled');

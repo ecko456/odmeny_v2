@@ -206,7 +206,7 @@ function shApplyNotes(list,items){
   }
   return {updated,missing,ambiguous};
 }
-function blankShortage(){return {lists:[],depts:[],cols:{},colors:{},hist:[]};}
+function blankShortage(){return {lists:[],depts:[],cols:{},colors:{},hist:[],scans:[]};}
 /** Cíl odkazu ze souboru xlsx: SheetJS 0.18.5 v něm nechá XML zápis (&amp; místo &, &#38; …). */
 function shUnxml(s){
   return String(s==null?"":s).replace(/&(amp|lt|gt|quot|apos|#\d{1,7}|#x[0-9a-f]{1,6});/gi,(m,e)=>{
@@ -546,7 +546,8 @@ function cleanShortage(o){
   Object.keys(SH_COLS).forEach(k=>{if(o.cols&&o.cols[k]&&typeof o.cols[k]==="object")cols[k]=shColsClean(k,o.cols[k]);});
   const colors={};
   if(o.colors&&typeof o.colors==="object")Object.keys(o.colors).slice(0,SH_MAX_COLORS).forEach(k=>{const h=shHex(k);if(h&&SH_TIERS.includes(o.colors[k]))colors[h]=o.colors[k];});
-  return {lists:kept,depts,cols,colors,hist};
+  // deník Rychlého scanu (2.77): potvrzená načtení z mobilu kvůli výstupu do Excelu
+  return {lists:kept,depts,cols,colors,hist,scans:scClean(o.scans)};
 }
 /** Řádek s nadpisy sloupců (Číslo objednávky, Název dílu, EAN …), ne položka: aspoň dva nadpisy, v E žádná číslice. */
 function shIsHeader(t){
