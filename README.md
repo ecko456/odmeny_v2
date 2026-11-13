@@ -62,6 +62,39 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.78
+
+Shortage:
+
+- **Průvodce nahráním.** Když není aktivní seznam (den je zabalený, nebo zatím nic), místo prázdné stránky
+  je karta **Spustit nahrávání shortage**. Průvodce vede třemi kroky a po každém sám přejde na další:
+  1. **Urgentní díly**: zkopíruj v Excelu celé sloupce shortage a vlož je na plochu (Ctrl+V), nebo
+     Nahrát tabulku, nebo Vložit ze schránky;
+  2. **Výrobní plán**: doporučené období (7 měsíců zpět a 8 dopředu, s konkrétními daty), Nahrát
+     výrobní plán nebo soubor přetáhnout na plochu;
+  3. **Interní evidence**: vložit (Ctrl+V), Vložit ze schránky, nebo Nahrát soubor; jde přeskočit.
+  Na konci shrnutí (položky, TOP, poddíly, se záznamem, K prověření) a Otevřít seznam / Vytvořit PDF.
+- **Přednastavení sloupců.** Po potvrzení sloupců výrobního plánu (i evidence) se uloží i jejich nadpisy.
+  Soubor se stejnými nadpisy se příště načte rovnou, bez AI a bez okna (kolega nic nevybírá); když jsou
+  stejné nadpisy v jiných sloupcích, najdou se podle nich. Jen když soubor přednastavení neodpovídá,
+  navrhne sloupce AI a okno ukáže upozornění „Soubor neodpovídá přednastavení“.
+- **Velká evidence.** Načtou se všechny řádky (dřív jen prvních 20 000, ze schránky i ze souboru, teď až
+  300 000; vyzkoušeno 25 000 řádků ze schránky za méně než sekundu). Evidence ze schránky se čte
+  z textu (rychlejší, bez limitu velikosti HTML). Limit 3 000 platí jen pro uložené kódy, které v seznamu
+  nejsou; kódy položek, poddílů a variant QR se uloží vždy. Zpráva po vložení řekne, kolik řádků se přečetlo.
+- **Poslední 3 záznamy u dílu**: v tabulce pod posledním záznamem dva předchozí, v PDF menším písmem,
+  v rozboru do Excelu sloupec Předchozí záznamy. Další vložení evidence se sloučí (starší řádky doplní
+  historii, stejné se nezdvojí).
+- **Oddělení K prověření**: díl se záznamem v interní evidenci u nás (poslední není Odesláno ani
+  Expedováno na WPA), jehož operace nepatří do žádného oddělení, je v bloku K prověření (za odděleními,
+  před Nezařazeno). Ručně jde přesunout jinam i do něj; v PDF má vlastní blok. „Expedováno na WPA“ se
+  počítá stejně jako „Odesláno na WPA“.
+- **Sestava rozdělená podle poddílů**: když poddíly sestavy patří do víc oddělení, sestava se ukáže
+  v každém z nich (i v PDF po odděleních). Poddíl jiného oddělení je bez QR kódu s textem „Tento díl se
+  zpracovává na jiném oddělení“ a tlačítkem **Zobrazit plně** (pak i tam s QR kódem). Poznámka, stav
+  i záznamy sestavy jsou jedny, v každém oddělení stejné. Ručně zařazená sestava se nerozděluje.
+- **Připnutá položka**, která je i v dalších urgentech, si nechá svou poznámku (i poznámky u poddílů).
+
 ## Co je nového ve verzi 2.77
 
 - Nový modul **Rychlý scan** (hlavně pro telefon: v plovoucím menu hned pod Vyhledat člověka,

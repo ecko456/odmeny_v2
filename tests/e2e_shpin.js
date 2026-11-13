@@ -116,7 +116,7 @@ const tsv = keys => [HEAD, ...keys.map(k => { const r = ROW[k]; return [r[0], r[
   await page.waitForSelector('#dlg[open] .sh-dupdepts');
   const dlg = (await page.textContent('#dlg[open]')).replace(/\s+/g, ' ');
   check(/Duplikovat položku/.test(dlg) && /Do jakého oddělení vložit kopii\?/.test(dlg) && /Originál zůstane v oddělení Brus/.test(dlg), `okno Duplikovat: ${dlg.slice(0, 300)}`);
-  check(JSON.stringify(await page.$$eval('#dlg[open] .sh-dupopt', ls => ls.map(l => l.textContent.replace(/\s+/g, ' ').trim()))) === JSON.stringify(['Brusteď tady', 'Montáž', 'Nezařazeno']), `volby oddělení: ${JSON.stringify(await page.$$eval('#dlg[open] .sh-dupopt', ls => ls.map(l => l.textContent)))}`);
+  check(JSON.stringify(await page.$$eval('#dlg[open] .sh-dupopt', ls => ls.map(l => l.textContent.replace(/\s+/g, ' ').trim()))) === JSON.stringify(['Brusteď tady', 'Montáž', 'K prověření', 'Nezařazeno']), `volby oddělení: ${JSON.stringify(await page.$$eval('#dlg[open] .sh-dupopt', ls => ls.map(l => l.textContent)))}`);
   check(await page.$eval('#dlg[open] input[name="dept"]:checked', i => i.value) === 'sdmont', 'předvybrané je jiné oddělení než teď');
   await page.screenshot({ path: path.join(shots, '01-duplikovat.png') });
   await page.click('#dlgOk');
@@ -194,16 +194,18 @@ const tsv = keys => [HEAD, ...keys.map(k => { const r = ROW[k]; return [r[0], r[
     a = performance.now(); ui.sh.q = 'díl 1'; shFilter(); document.body.offsetHeight; ui.sh.q = ''; shFilter(); document.body.offsetHeight; const filter = performance.now() - a;
     a = performance.now(); window.dispatchEvent(new Event('resize')); document.body.offsetHeight; const resize = performance.now() - a;
     const tall = [...document.querySelectorAll('#shView textarea.sh-note')].filter(t => t.value).every(t => t.scrollHeight <= t.clientHeight + 2);
-    return { render, filter, resize, rows: document.querySelectorAll('#shView tbody tr[data-shrow]').length, tall };
+    // od 2.78 je sestava s poddíly ze dvou oddělení v obou (řádků je víc než položek)
+    return { render, filter, resize, rows: document.querySelectorAll('#shView tbody tr[data-shrow]').length, items: new Set([...document.querySelectorAll('#shView tbody tr[data-shid]')].map(r => r.dataset.shid)).size, tall };
   });
   console.log(`velký seznam: ${perf.rows} řádků, vykreslení ${Math.round(perf.render)} ms, hledání tam a zpět ${Math.round(perf.filter)} ms, změna velikosti okna ${Math.round(perf.resize)} ms`);
-  check(perf.rows === 400 + 134 * 3 && perf.render < 5000 && perf.filter < 4000 && perf.resize < 1000, `velký seznam je pomalý: ${JSON.stringify(perf)}`);
+  check(perf.items === 400 && perf.rows >= 400 + 134 * 3 && perf.render < 5000 && perf.filter < 4000 && perf.resize < 1000, `velký seznam je pomalý: ${JSON.stringify(perf)}`);
   check(perf.tall, 'poznámky jsou celé vidět (výška podle textu)');
   // hledání u velkého seznamu s prodlevou: po dopsání se vyfiltruje
   await page.fill('#shQ', 'díl 399');
-  await page.waitForFunction(() => [...document.querySelectorAll('#shView tbody tr[data-shid]')].filter(r => !r.hidden).length === 1, null, { timeout: 5000 });
+  const shown = n => new Set([...document.querySelectorAll('#shView tbody tr[data-shid]')].filter(r => !r.hidden).map(r => r.dataset.shid)).size === n;
+  await page.waitForFunction(shown, 1, { timeout: 5000 });
   await page.fill('#shQ', '');
-  await page.waitForFunction(() => [...document.querySelectorAll('#shView tbody tr[data-shid]')].filter(r => !r.hidden).length === 400, null, { timeout: 5000 });
+  await page.waitForFunction(shown, 400, { timeout: 5000 });
   await page.evaluate(() => { S.shortage.lists = S.shortage.lists.filter(l => l.id !== 'shperf'); S.shortage = cleanShortage(S.shortage); ui.sh.open = null; renderShortage(); });
 
   // ---------- telefon ----------

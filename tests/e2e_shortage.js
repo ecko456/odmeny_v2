@@ -148,8 +148,9 @@ const ORDERED = [...ITEMS.filter(x => x.top), ...ITEMS.filter(x => !x.top)];
 
   // Prázdný modul.
   await page.click('#nav [data-view="shortage"]');
-  await page.waitForSelector('#view-shortage.on #shView .empty');
-  check(/Zatím žádný seznam/.test(await page.textContent('#shView')) && /urgentů A–S/.test(await page.textContent('#shView')) && /Ctrl\+V/.test(await page.textContent('#shView')), 'prázdný stav s popisem sloupců a vložení');
+  // od 2.78 karta průvodce nahráním (Spustit nahrávání shortage), tři kroky nahoře schované
+  await page.waitForSelector('#view-shortage.on #shView .sh-wizintro');
+  check(/Zatím žádný seznam/.test(await page.textContent('#shView')) && /urgentů A–S/.test(await page.textContent('#shView')) && /Ctrl\+V/.test(await page.textContent('#shView')) && await page.isVisible('[data-shwiz="start"]') && !(await page.isVisible('.sh-steps')), 'prázdný stav s popisem sloupců a vložení');
   await page.screenshot({ path: path.join(shots, '01-prazdny.png') });
 
   // Sešit Excelu vyrobí SheetJS v prohlížeči: titulek, hlavička, 25 položek a druhý list.
@@ -622,7 +623,10 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   await saved(page);
   const heads = () => page.$$eval('#shView tr.sh-depthead', r => r.filter(x => !x.hidden).map(x => x.textContent.replace(/\s+/g, ' ').trim()));
   const secs = await page.evaluate(() => shSections(S.shortage, S.shortage.lists[0].items).map(x => [x.name, x.items.map(i => i.ean)]));
-  check(JSON.stringify((await heads()).map(h => h.split(' ·')[0])) === JSON.stringify(['Brus', 'Montáž a elox', 'Nezařazeno']), `nadpisy bloků: ${await heads()}`);
+  // 2.78: položka se záznamem u nás a operací mimo oddělení je v bloku K prověření (za odděleními, před Nezařazeno)
+  check(JSON.stringify((await heads()).map(h => h.split(' ·')[0])) === JSON.stringify(['Brus', 'Montáž a elox', 'K prověření', 'Nezařazeno']), `nadpisy bloků: ${await heads()}`);
+  check(await page.evaluate(() => { const b = shSections(S.shortage, S.shortage.lists[0].items).find(x => x.id === '?'); const m = shDeptMap(S.shortage);
+    return !!b && b.items.length > 0 && b.items.every(i => i.rec && !shWpa(i.rec.state) && !shAutoDept(S.shortage, i, m)) && S.shortage.lists[0].items.filter(i => i.rec && !shWpa(i.rec.state) && !shAutoDept(S.shortage, i, m) && !i.dept).length === b.items.length; }), 'K prověření: přesně položky se záznamem u nás bez operace z oddělení');
   const brusEans = ITEMS.filter((x, i) => i % 5 === 0).map(x => x.ean);
   check(secs[0][1].length === brusEans.length && secs[0][1].every(e => brusEans.includes(e)) && secs[0][1].slice(0, 2).join() === [ITEMS[20], ITEMS[5]].map(x => x.ean).join(), `Brus podle operace, TOP první: ${JSON.stringify(secs[0])}`);
   const domOrder = await page.$$eval('#shView tbody tr[data-shid]', r => r.map(x => x.dataset.shid));
@@ -633,11 +637,11 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
   await page.waitForFunction(id => S.shortage.lists[0].items.find(i => i.id === id).dept !== '', id8);
   check(await page.evaluate(([id, b]) => { const i = S.shortage.lists[0].items.find(x => x.id === id); return i.dept === b && shDeptOf(S.shortage, i) === b; }, [id8, brus])
     && /ručně/.test(await page.textContent(`#shView tr[data-shid="${id8}"]`)), 'výběrem do Brusu, štítek „ručně“');
-  // ruční přesun přetažením: nezařazená položka (CNC frézování) na nadpis Nezařazeno = na konec bloku Montáž a elox nad ním
+  // ruční přesun přetažením: nezařazená položka (CNC frézování) na nadpis za Montáží (od 2.78 K prověření) = na konec bloku Montáž a elox nad ním
   const id13 = await idOf(ITEMS[13].ean);
   // od 2.65 je v řádku i výběr stavu (řádky jsou vyšší): nadpis i položka se musí vejít do okna
   await page.setViewportSize({ width: 1440, height: 1500 });
-  const headNz = page.locator('#shView tr.sh-depthead[data-shdepthead="-"]');
+  const headNz = page.locator('#shView tr.sh-depthead[data-shdepthead="?"]');
   await headNz.evaluate(el => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 160));
   await page.locator(`#shView tr[data-shid="${id13}"]`).scrollIntoViewIfNeeded();
   const from = await page.locator(`#shView tr[data-shid="${id13}"] td.name`).boundingBox();
@@ -682,7 +686,8 @@ d=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sy
       check(first.includes(`Chybějící díly · ${sec.name}`) && first.includes(`${sec.name} · strana 1 / ${idx.length}`) && new RegExp(`Seznam z .* · ${sec.eans.length} polož`).test(first), `${sec.name}: záhlaví první strany ${first.slice(0, 220)}`);
       idx.slice(1).forEach((i, n) => check(info9[i].text.replace(/\s+/g, ' ').includes(`${sec.name} · pokračování`) && info9[i].text.replace(/\s+/g, ' ').includes(`${sec.name} · strana ${n + 2} / ${idx.length}`), `${sec.name}: další strana s pokračováním`));
       check(sec.eans.every(e => txt.includes(e)), `${sec.name}: všechny díly na jeho stranách`);
-      check(secs9.filter(o => o !== sec).every(o => o.eans.every(e => !txt.includes(e))), `${sec.name}: žádný díl jiného oddělení`);
+      // sestava rozdělená podle poddílů (2.78) je v obou odděleních
+      check(secs9.filter(o => o !== sec).every(o => o.eans.every(e => sec.eans.includes(e) || !txt.includes(e))), `${sec.name}: žádný díl jiného oddělení`);
     });
     check(!info9.some(p => /Oddělení: /.test(p.text)), 'po odděleních bez řádku filtru oddělení');
     check(info9.length >= secs9.length, `stran ${info9.length}, oddělení ${secs9.length}`);
@@ -728,7 +733,8 @@ for i,p in enumerate(d): p.get_pixmap(matrix=pymupdf.Matrix(1.4,1.4)).save(sys.a
   check(await page.evaluate(() => JSON.stringify(S.shortage.lists[0].items[0].subs.map(s => [s.ean, s.code]))) === JSON.stringify([['8591111119999', '1.2.4']]), 'poddíl nového seznamu');
   check(await page.locator('#shView .sh-lists .chip').count() === 2 && await page.locator('#shView tbody tr[data-shid]').count() === 1, 'dva seznamy, ukázaný je nejnovější');
   await page.click('#shView .sh-lists .chip:nth-child(2)');
-  await page.waitForFunction(() => document.querySelectorAll('#shView tbody tr[data-shid]').length === 24 && document.querySelectorAll('#shView tbody tr.sh-sub').length === 4);
+  // od 2.78 je sestava s poddíly ze dvou oddělení v obou: počítají se různé položky a poddíly
+  await page.waitForFunction(() => new Set([...document.querySelectorAll('#shView tbody tr[data-shid]')].map(r => r.dataset.shid)).size === 24 && new Set([...document.querySelectorAll('#shView tbody tr.sh-sub')].map(r => r.dataset.shsub)).size === 4);
   check(true, 'přepnutí na starší seznam');
   await page.screenshot({ path: path.join(shots, '03-dva-seznamy.png'), fullPage: true });
   await saved(page);

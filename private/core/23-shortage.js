@@ -12,7 +12,8 @@ const SH_MAX_LISTS=30,SH_MAX_ITEMS=1000,SH_MAX_SUBS=500,SH_MAX_CANDS=100,SH_MAX_
 const SH_MAX_NOTE=2000;
 // Záznamy evidence pohybu uložené i pro zatím nepřiřazené kódy (QR varianty, pozdější plán).
 // Samostatná aplikace jich drží 20 000, v šifrovaném sdíleném stavu V2 méně, ať se ukládání nenafukuje.
-const SH_MAX_RECORDS=3000;
+const SH_MAX_RECORDS=3000;   // záznamy kódů, které v seznamu nejsou (kódy položek, poddílů a variant se drží vždy, 2.78)
+const SH_REC_HIST=3;          // poslední záznamy u dílu: nejnovější + 2 předchozí (2.78)
 /* ---------- Množství zakázky a odesláno na WPA (2.71) ----------
    Výrobní plán dá u položky a poddílu množství zakázky (oqty). Z evidence pohybu se sečtou
    všechny záznamy „Odesláno na WPA“ s počtem kusů (list.sent: kód → [[čas, ks], …], stejný
@@ -97,6 +98,18 @@ function shQrChoices(values){
     if(code&&!out.some(x=>x.code===code))out.push({link,code,op:shCleanLine(v.op,300),rec:shRecClean(v.rec,shCleanLine)});
   });
   return out;
+}
+/** Kódy, které k seznamu patří: položky, poddíly, varianty QR a alternativní objednávky (2.78). */
+function shOwnCodes(list){
+  const s=new Set();
+  ((list&&list.items)||[]).forEach(it=>{[it,...(it.subs||[]),...(it.qrChoices||[]),...(it.planAlts||[]),...(it.cands||[])].forEach(x=>{if(x&&x.code)s.add(x.code);});});
+  return s;
+}
+/** Uložené záznamy seznamu: kódy seznamu vždy, ostatní kódy nejnovější do limitu foreign. Vrací {records, dropped}. */
+function shRecordsKeep(list,records,foreign){
+  const own=shOwnCodes(list),seen=new Set(),mine=[],other=[];
+  (records||[]).slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).forEach(r=>{if(!r||!r.code||seen.has(r.code))return;seen.add(r.code);(own.has(r.code)?mine:other).push(r);});
+  return {records:[...mine,...other.slice(0,Math.max(0,foreign))],dropped:Math.max(0,other.length-Math.max(0,foreign))};
 }
 function shRecordMap(list){
   const out=new Map();
@@ -239,8 +252,29 @@ function shCode(link){
 function shRecClean(r,line){
   if(!r||typeof r!=="object")return null;
   const n=v=>Number.isFinite(+v)?Math.max(0,+v):0;
-  return {ts:n(r.ts),when:line(r.when,40),qty:line(r.qty,40),state:line(r.state,400),op:line(r.op,200),n:Math.min(99999,Math.round(n(r.n))),at:n(r.at),by:line(r.by,60)};
+  // 2.78: předchozí záznamy dílu (nejvýš 2, novější první), jen když jsou
+  const prev=(Array.isArray(r.prev)?r.prev:[]).filter(x=>x&&typeof x==="object").slice(0,SH_REC_HIST-1).map(x=>({ts:n(x.ts),when:line(x.when,40),qty:line(x.qty,40),state:line(x.state,400),op:line(x.op,200)}));
+  return {ts:n(r.ts),when:line(r.when,40),qty:line(r.qty,40),state:line(r.state,400),op:line(r.op,200),n:Math.min(99999,Math.round(n(r.n))),at:n(r.at),by:line(r.by,60),...(prev.length?{prev}:{})};
 }
+/* Historie záznamů dílu (2.78): záznam {…, prev: [starší]} a další záznam (třeba z dalšího vložení evidence)
+   se sloučí do posledních SH_REC_HIST záznamů. Stejný záznam (čas, stav, kusy, operace) se nezdvojí;
+   nejnovější je hlavní záznam (s at, by a n toho vložení, ze kterého je). */
+const shRecKey=x=>[x.ts||0,x.when||"",x.state||"",x.qty||"",x.op||""].join("|");
+const shRecCore=x=>({ts:x.ts||0,when:x.when||"",qty:x.qty||"",state:x.state||"",op:x.op||""});
+function shRecMerge(old,neu){
+  if(!old)return neu||null;
+  if(!neu)return old;
+  const seen=new Set(),all=[];
+  // novější vložení má při stejném čase přednost (jeho at, by, n)
+  [neu,old,...(neu.prev||[]),...(old.prev||[])].forEach(x=>{const k=shRecKey(x);if(!seen.has(k)){seen.add(k);all.push(x);}});
+  const ord=all.map((x,i)=>({x,i})).sort((a,b)=>(b.x.ts||0)-(a.x.ts||0)||a.i-b.i).map(a=>a.x);
+  const head=ord[0],prev=ord.slice(1,SH_REC_HIST).map(shRecCore);
+  const base=head===neu||head===old?head:{...shRecCore(head),n:neu.n||0,at:neu.at||0,by:neu.by||""};
+  const {prev:_p,...main}=base;
+  return {...main,...(prev.length?{prev}:{})};
+}
+/** Záznamy dílu k zobrazení: nejnovější první, nejvýš SH_REC_HIST. */
+function shRecList(r){return r?[shRecCore(r),...(r.prev||[])].slice(0,SH_REC_HIST):[];}
 /** Datum a čas ze sloupce B („22.10.2026 9:15“, „22. 10. 26 9:15:30“, „2026-10-22 09:15“, pořadové číslo dne Excelu) → ms místního času, jinak 0. */
 function shParseWhen(v){
   const s=String(v==null?"":v).trim();
@@ -285,8 +319,10 @@ function shRecBuild(rows,cols){
     if(!code){bad++;return;}
     count++;
     cnt.set(code,(cnt.get(code)||0)+1);
+    // 2.78: ke kódu se drží nejnovější SH_REC_HIST záznamy (hlavní + prev)
+    const one={ts,when:ts?shWhenText(ts):when.slice(0,40),qty:qty.slice(0,40),state:state.slice(0,400),op:op.slice(0,200)};
     const prev=recs.get(code);
-    if(!prev||ts>=prev.ts)recs.set(code,{ts,when:ts?shWhenText(ts):when.slice(0,40),qty:qty.slice(0,40),state:state.slice(0,400),op:op.slice(0,200)});
+    recs.set(code,prev?shRecMerge(prev,one):one);
     // 2.71: každé „Odesláno na WPA“ s počtem kusů se počítá do odeslaného množství
     const q=shWpa(state)?shQtyNum(qty):null;
     if(q!=null){if(!sent.has(code))sent.set(code,new Map());sent.get(code).set((ts||0)+"|"+q,[ts||0,q]);}
@@ -303,26 +339,33 @@ function shApplyRecs(list,recs,meta,sent){
   list.items.forEach(it=>[it,...(it.subs||[]),...(it.qrChoices||[])].forEach(i=>{if(i.code){if(!by.has(i.code))by.set(i.code,[]);by.get(i.code).push(i);}}));
   const saved=shRecordMap(list);
   const out={matched:0,updated:0,same:0,older:0,added:0,wpa:0,missing:[],cached:0,truncated:0,sent:0,sentCodes:0};
+  let hist=0;   // 2.78: záznamy, které přibyly jen do historie dílu (out.hist, jen když jsou)
+  const fresh=new Set();   // kódy s novým nebo změněným uloženým záznamem
   const stamp=r=>({...r,at:(meta&&meta.at)||Date.now(),by:String((meta&&meta.by)||"").slice(0,60)});
+  const eq=(a,b)=>JSON.stringify(a||null)===JSON.stringify(b||null);
   recs.forEach((r,code)=>{
     const previous=saved.get(code);
-    if(!previous||!(previous.ts&&r.ts&&r.ts<previous.ts)){
-      saved.set(code,{...stamp(r),code});out.cached++;
-    }
+    // 2.78: záznamy se slučují (poslední tři), starší vložení doplní jen historii
+    const m=shRecMerge(previous?(({code:_c,...x})=>x)(previous):null,stamp(r));
+    if(!eq(m,previous&&(({code:_c,...x})=>x)(previous))){saved.set(code,{...m,code});fresh.add(code);}
     const items=by.get(code);
     if(!items){out.missing.push(code);return;}
     out.matched++;
     items.forEach(i=>{
-      const p=i.rec;
-      if(p&&p.ts===r.ts&&p.qty===r.qty&&p.state===r.state&&p.when===r.when&&(p.op||"")===(r.op||"")&&(p.n||0)===(r.n||0)){out.same++;return;}
-      if(p&&p.ts&&r.ts&&r.ts<p.ts){out.older++;return;}
-      i.rec=stamp(r);
+      const p=i.rec,nx=shRecMerge(p,stamp(r));
+      const sameHead=p&&p.ts===nx.ts&&p.qty===nx.qty&&p.state===nx.state&&p.when===nx.when&&(p.op||"")===(nx.op||"");
+      if(sameHead&&(p.n||0)===(nx.n||0)&&eq(p.prev,nx.prev)){out.same++;return;}
+      i.rec=nx;
+      if(p&&p.ts&&r.ts&&r.ts<p.ts){out.older++;hist++;return;}   // starší záznam: jen do historie
+      if(sameHead&&(p.n||0)===(nx.n||0)){hist++;return;}
       out.updated++;
     });
   });
-  const entries=[...saved.entries()].sort((a,b)=>(b[1].ts||0)-(a[1].ts||0));
-  out.truncated=Math.max(0,entries.length-SH_MAX_RECORDS);
-  list.records=entries.slice(0,SH_MAX_RECORDS).map(([code,r])=>({...r,code}));
+  const kept=shRecordsKeep(list,[...saved.entries()].map(([code,r])=>({...r,code})),SH_MAX_RECORDS);
+  out.truncated=kept.dropped;
+  out.cached=kept.records.filter(r=>fresh.has(r.code)).length;   // jen opravdu uložené (2.78: nad limit se nepočítají)
+  if(hist)out.hist=hist;
+  list.records=kept.records;
   // 2.71: záznamy „Odesláno na WPA“ (stejný čas a počet kusů z dalšího nahrání se nezapočte znovu)
   if(sent&&sent.size){
     const box=list.sent&&typeof list.sent==="object"?list.sent:{};
@@ -378,20 +421,61 @@ function shAutoDept(sh,it,map){
   for(const x of it.subs||[]){const d=map.get(shOpKey(x.op));if(d)return d;}
   return "";
 }
-/** Oddělení položky: id, nebo "" = nezařazená. */
+/* K prověření (2.78): položka má u nás záznam v evidenci, poslední stav není Odesláno / Expedováno na WPA
+   a žádná její operace nepatří do nastavených oddělení. Bez ručního přesunu je v bloku K prověření
+   (za odděleními, před Nezařazeno), ručně jde přesunout kamkoli i do něj (item.dept = „?“). */
+const SH_CHECK_DEPT="?",SH_CHECK_NAME="K prověření";
+function shCheckHit(it){
+  if(it.rec)return !shWpa(it.rec.state);
+  return (it.subs||[]).some(x=>x.rec&&!shWpa(x.rec.state));
+}
+/** Oddělení podle operace, jinak K prověření („?“), jinak "" (nezařazená). Bez oddělení vždy "". */
+function shAutoFull(sh,it,map){
+  if(!((sh&&sh.depts)||[]).length)return "";
+  return shAutoDept(sh,it,map)||(shCheckHit(it)?SH_CHECK_DEPT:"");
+}
+/** Oddělení položky: id, „?“ = K prověření, nebo "" = nezařazená. */
 function shDeptOf(sh,it,map){
   const ids=new Set(((sh&&sh.depts)||[]).map(d=>d.id));
   if(it.dept==="-")return "";
+  if(it.dept===SH_CHECK_DEPT)return ids.size?SH_CHECK_DEPT:"";
   if(it.dept&&ids.has(it.dept))return it.dept;
-  return shAutoDept(sh,it,map);
+  return shAutoFull(sh,it,map);
 }
-/** Bloky seznamu podle oddělení (v pořadí oddělení, nezařazené na konci); bez oddělení jeden blok. */
+/* Sestava rozdělená podle poddílů (2.78): když poddíly sestavy patří do víc oddělení (a sestava nemá ruční
+   oddělení), ukáže se sestava v každém z nich. Domovské oddělení je jako dřív (operace sestavy, jinak první
+   poddíl s oddělením). V bloku oddělení je poddíl „tady“, když jeho operace patří do toho oddělení, poddíl
+   bez oddělení patří k domovskému; ostatní poddíly jsou „na jiném oddělení“ (bez QR, dokud se nezobrazí plně). */
+function shSplitDepts(sh,it,map){
+  map=map||shDeptMap(sh);
+  const home=shDeptOf(sh,it,map);
+  if(it.dept||!(it.subs||[]).length||!((sh&&sh.depts)||[]).length)return [home];
+  const out=[home];
+  it.subs.forEach(x=>{const d=map.get(shOpKey(x.op));if(d&&!out.includes(d))out.push(d);});
+  return out;
+}
+/** Oddělení poddílu podle jeho operace ("" = žádné). */
+function shSubDept(sh,x,map){return (map||shDeptMap(sh)).get(shOpKey(x&&x.op))||"";}
+/** Poddíl x sestavy it patří do bloku dept (u nerozdělené sestavy vždy). */
+function shSubHere(sh,it,x,dept,map){
+  map=map||shDeptMap(sh);
+  const ds=shSplitDepts(sh,it,map);
+  if(ds.length<2)return true;
+  const d=shSubDept(sh,x,map);
+  return d?d===dept:dept===ds[0];
+}
+/** Pohled na sestavu v dalším oddělení: kopie jen pro zobrazení a tisk (data zůstávají v originálu). */
+function shSplitView(it,dept){return {...it,splitDept:dept,splitOf:it.id};}
+/** Název oddělení podle id („?“ K prověření, "" / „-“ Nezařazeno). */
+function shDeptName(sh,id){return id===SH_CHECK_DEPT?SH_CHECK_NAME:!id||id==="-"?"Nezařazeno":(((sh&&sh.depts)||[]).find(d=>d.id===id)||{}).name||"Nezařazeno";}
+/** Bloky seznamu podle oddělení (v pořadí oddělení, K prověření a nezařazené na konci); bez oddělení jeden blok. */
 function shSections(sh,items){
   const depts=(sh&&sh.depts)||[],map=shDeptMap(sh);
   if(!depts.length)return [{id:"",name:"",items:items.slice()}];
-  const by=new Map(depts.map(d=>[d.id,[]]));by.set("",[]);
-  items.forEach(i=>by.get(shDeptOf(sh,i,map)).push(i));
-  return depts.map(d=>({id:d.id,name:d.name,items:by.get(d.id)})).concat([{id:"",name:"Nezařazeno",items:by.get("")}]).filter(x=>x.items.length);
+  const by=new Map(depts.map(d=>[d.id,[]]));by.set(SH_CHECK_DEPT,[]);by.set("",[]);
+  // rozdělená sestava (2.78): originál v domovském oddělení, pohled na ni v dalších
+  items.forEach(i=>{const ds=shSplitDepts(sh,i,map);by.get(ds[0]).push(i);ds.slice(1).forEach(d=>by.get(d).push(shSplitView(i,d)));});
+  return depts.map(d=>({id:d.id,name:d.name,items:by.get(d.id)})).concat([{id:SH_CHECK_DEPT,name:SH_CHECK_NAME,items:by.get(SH_CHECK_DEPT)},{id:"",name:"Nezařazeno",items:by.get("")}]).filter(x=>x.items.length);
 }
 /** Bloky k zobrazení a tisku (2.76): oddělení jako shSections, hotové položky (stav Hotovo) až
     v posledním bloku „Hotovo“ za všemi odděleními. Bez oddělení jeden blok, hotové jsou na jeho konci. */
@@ -407,9 +491,9 @@ function shDrop(sh,list,id,dept,before){
   const it=list&&list.items.find(i=>i.id===id);
   if(!it)return false;
   const ids=new Set(((sh&&sh.depts)||[]).map(d=>d.id));
-  if(dept&&!ids.has(dept))return false;
+  if(dept&&!ids.has(dept)&&!(dept===SH_CHECK_DEPT&&ids.size))return false;
   const was=JSON.stringify([it.dept||"",list.items.map(i=>i.id)]);
-  const auto=shAutoDept(sh,it);
+  const auto=shAutoFull(sh,it);
   it.dept=dept===auto?"":(dept||"-");
   const rest=list.items.filter(i=>i!==it),map=shDeptMap(sh);
   let at=before?rest.findIndex(i=>i.id===before):-1;
@@ -494,7 +578,7 @@ function cleanShortage(o){
   const num=v=>Number.isFinite(+v)?Math.max(0,+v):0;
   const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
   // poddíl z výrobního plánu (2.29): EAN a odkaz poddílu, kód do QR, operace, poznámka, poslední záznam
-  const sub=s=>({id:"",ean:line(s.ean,60),link:shLink(s.link),code:"code" in s?shCodeClean(s.code):shCode(s.link),op:line(s.op,300),name:line(s.name,200),order:line(s.order,80),index:line(s.index,40),qty:line(s.qty,40),manual:s.manual===true,sourceKey:line(s.sourceKey,160),planningNote:line(s.planningNote,SH_MAX_NOTE),note:line(s.note,SH_MAX_NOTE),rec:shRecClean(s.rec,line),byRec:s.byRec===true,pdfHide:s.pdfHide===true,...shStClean(s,line),...(shQtyNum(s.oqty)!=null?{oqty:shQtyNum(s.oqty)}:{}),_id:s.id});
+  const sub=s=>({id:"",ean:line(s.ean,60),link:shLink(s.link),code:"code" in s?shCodeClean(s.code):shCode(s.link),op:line(s.op,300),name:line(s.name,200),order:line(s.order,80),index:line(s.index,40),qty:line(s.qty,40),manual:s.manual===true,sourceKey:line(s.sourceKey,160),planningNote:line(s.planningNote,SH_MAX_NOTE),note:line(s.note,SH_MAX_NOTE),rec:shRecClean(s.rec,line),byRec:s.byRec===true,pdfHide:s.pdfHide===true,...(s.full===true?{full:true}:{}),...shStClean(s,line),...(shQtyNum(s.oqty)!=null?{oqty:shQtyNum(s.oqty)}:{}),_id:s.id});
   // Staré čekající poddíly se přes shAllSubs převedou mezi běžné poddíly.
   const meta=m=>m&&typeof m==="object"?{file:line(m.file,160),at:num(m.at),by:line(m.by,60),rows:Math.round(num(m.rows))}:null;
   const lists=(Array.isArray(o.lists)?o.lists:[]).filter(l=>l&&typeof l==="object"&&Array.isArray(l.items)).map(l=>({
@@ -502,7 +586,7 @@ function cleanShortage(o){
     plan:l.plan&&typeof l.plan==="object"?{file:line(l.plan.file,160),at:num(l.plan.at),by:line(l.plan.by,60)}:null,
     // evidence pohybu (2.61, 3. krok): odkud jsou poslední záznamy
     moves:meta(l.moves),
-    records:(Array.isArray(l.records)?l.records:[]).slice(0,SH_MAX_RECORDS).filter(r=>r&&shCodeClean(r.code)).map(r=>({...shRecClean(r,line),code:shCodeClean(r.code)})),
+    records:(Array.isArray(l.records)?l.records:[]).slice(0,SH_MAX_RECORDS+SH_MAX_ITEMS*4).filter(r=>r&&typeof r==="object"&&shCodeClean(r.code)).map(r=>({...shRecClean(r,line),code:shCodeClean(r.code)})),
     // odesláno na WPA (2.71): všechny záznamy s počtem kusů
     sent:shSentClean(l.sent),
     // zabalený den (2.73): seznam jen ke čtení v historii; out = odbourané položky toho dne
@@ -514,12 +598,14 @@ function cleanShortage(o){
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,top2:i.top2===true&&i.top!==true,op:line(i.op,300),link:shLink(i.link),
       qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,...shPinClean(i.pin,line),...(i.dup===true?{dup:true}:{}),
-      dept:i.dept==="-"||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),...(shQtyNum(i.oqty)!=null?{oqty:shQtyNum(i.oqty)}:{}),
+      dept:i.dept==="-"||i.dept===SH_CHECK_DEPT||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),...(shQtyNum(i.oqty)!=null?{oqty:shQtyNum(i.oqty)}:{}),
       since:shIsoDay(i.since),days:Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+i.days||1))),again:shIsoDay(i.again),   // dny na shortage (2.73), dopočítá shLinkDays
       subs:shAllSubs(i).map(sub).filter(s=>s.ean||s.code).slice(0,SH_MAX_SUBS),
       cands:[],_id:i.id})).filter(i=>i.ean||i.name)).slice(0,SH_MAX_ITEMS),
   }));
   lists.forEach(l=>{
+    // 2.78: záznamy kódů seznamu zůstanou vždy, cizí kódy jen nejnovější; zabalený den cizí kódy nepotřebuje
+    l.records=shRecordsKeep(l,l.records,l.packed?0:SH_MAX_RECORDS).records;
     // id položek i poddílů jsou jedinečné v celém seznamu
     const ids=new Set(),give=(x,p)=>{let v=typeof x._id==="string"&&SAFE_ID.test(x._id)&&!ids.has(x._id)?x._id:uid(p);while(ids.has(v))v=uid(p);ids.add(v);x.id=v;delete x._id;};
     l.items.forEach(i=>give(i,"si"));
@@ -534,7 +620,7 @@ function cleanShortage(o){
     return {id,name:line(d.name,60)||"Oddělení",ops};
   }).slice(0,SH_MAX_DEPTS);
   const dIds=new Set(depts.map(d=>d.id));
-  lists.forEach(l=>l.items.forEach(i=>{if(i.dept&&i.dept!=="-"&&!dIds.has(i.dept))i.dept="";}));   // smazané oddělení: zase podle operace
+  lists.forEach(l=>l.items.forEach(i=>{if(i.dept&&i.dept!=="-"&&i.dept!==SH_CHECK_DEPT&&!dIds.has(i.dept))i.dept="";}));   // smazané oddělení: zase podle operace
   // nejnovější první; dny na shortage a odbourané položky (2.73); nad SH_MAX_LISTS se nejstarší
   // seznam přesune do historie (souhrn dne a odbourané položky)
   lists.sort((a,b)=>b.at-a.at);
@@ -795,7 +881,7 @@ function shPlanRow(plan,a,e,h,m,op,link,qty){
   plan.rows.get(k).push(row);
 }
 /** Stav posledního záznamu „Odesláno na WPA“: takový poddíl se podle záznamu nepřidá. */
-function shWpa(state){return /odeslano na wpa/.test(shOpNorm(state));}
+function shWpa(state){return /(odeslano|expedovano) na wpa/.test(shOpNorm(state));}   // 2.78: i „Expedováno na WPA“
 /**
  * Poddíly z plánu k položkám seznamu. U položky se poddíly nahradí podle plánu; poddíl, který
  * v plánu zůstal, si nechá id, poznámku i poslední záznam. Víc operací téhož poddílu se spojí.
@@ -903,6 +989,17 @@ function shItemCopy(i){
   c.subs=(c.subs||[]).map(s=>({...s,id:""}));
   return c;
 }
+/**
+ * Připnutá položka, která je i v nových urgentech (2.78): převezme ruční poznámku (bez staré poznámky od
+ * plánování, nová z urgentů zůstane za ní) a poddíly i s poznámkami, když je nová položka zatím nemá
+ * (výrobní plán je pak doplní a poznámky u stejných poddílů nechá).
+ */
+function shPinNote(p,hit){
+  let manual=p.note||"";
+  if(p.planningNote)manual=manual.replace(p.planningNote,"").replace(/^\s*·\s*|\s*·\s*$/g,"").trim();
+  if(manual){const base=hit.note||hit.planningNote||"";hit.note=(base.includes(manual)?base:[manual,base].filter(Boolean).join(" · ")).slice(0,SH_MAX_NOTE);}
+  if(!(hit.subs||[]).length&&(p.subs||[]).length)hit.subs=shItemCopy(p).subs;
+}
 /** Nové položky seznamu s připnutými z předchozího seznamu → {items, carried, kept}. */
 function shCarryPins(prev,items){
   const pins=((prev&&prev.items)||[]).filter(i=>i.pin);
@@ -912,7 +1009,7 @@ function shCarryPins(prev,items){
   const add=[];let kept=0;
   pins.forEach(p=>{
     const arr=have.get(shItemKey(p)),hit=arr&&arr.shift();
-    if(hit){hit.pin={...p.pin};kept++;}
+    if(hit){hit.pin={...p.pin};shPinNote(p,hit);kept++;}
     else add.push(shItemCopy(p));
   });
   return {items:shTopFirst([...items,...add]),carried:add.length,kept};
@@ -933,7 +1030,7 @@ function shDuplicate(sh,list,id,dept){
   const it=list.items[k],c=shItemCopy(it);
   delete c.pin;
   c.dup=true;
-  const auto=shAutoDept(sh,it);
+  const auto=shAutoFull(sh,it);   // i K prověření (2.78)
   c.dept=dept===""||dept==null?"":dept==="-"?(auto?"-":""):(dept===auto?"":dept);
   list.items.splice(k+1,0,c);
   return c;

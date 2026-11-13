@@ -34,6 +34,57 @@ než v `trading_desk`.
 
 ## Kde jsme skončili
 
+Stav k 13. 11. 2026 (verze 2.78):
+
+- Uživatel (Shortage): „1. Při importu výrobního plánu … AI, aby rozpoznala sloupce a nadefinovala je
+  v přednastavení … když to bude dělat nějaký kolega. 2. Pokud zabalím den … hezký grafický průvodce
+  ‚Spustit nahrávání shortage‘ (2.1 urgenty vložit / nahrát / ze schránky, 2.2 výrobní plán 7 měsíců zpět
+  + 8 dopředu, 2.3 evidence interní ze schránky; zkontroluj, zda se pojde víc než 3000 řádků). 3. … u dílů
+  aspoň 3 záznamy poslední. 4. … položky, které mají u nás záznam, ale nemají poslední status ‚Expedováno
+  na WPA‘ a operace neodpovídají žádné naší … do oddělení ‚K prověření‘.“ Během práce: „u připnutých
+  položek ať se zachovává poznámka“ a „sestava má více poddílů a každý má být na jiném oddělení …
+  duplicity sestav … poddíl, který na to oddělení nepatří … ‚Tento díl se zpracovává na jiném oddělení‘
+  … ‚plné zobrazení‘ a ukáže se QR“.
+  - Data (verze 56): záznam `rec.prev[≤ 2]` = `{ts, when, qty, state, op}` (jen když je, `SH_REC_HIST` 3),
+    položka `dept: '?'` (`SH_CHECK_DEPT`, ručně K prověření), poddíl `full: true` (jen když je),
+    `S.shortage.cols[kind].heads {pole: nadpis}` a `set {at, by}` (přednastavení, jen když jsou).
+  - Core 23-shortage: `shRecMerge` (sloučení, bez zdvojení, nejnovější hlavní s at/by/n), `shRecList`,
+    `shRecBuild` drží 3 ke kódu, `shApplyRecs` slučuje (starší = `older` + `hist`, jen když je), `shOwnCodes`,
+    `shRecordsKeep(list, records, foreign)` (kódy seznamu vždy, cizí nejnovější `SH_MAX_RECORDS`; zabalený
+    seznam cizí ne, i v `cleanShortage`), `out.cached` = opravdu uložené. `shWpa` zná Expedováno na WPA.
+    K prověření: `shCheckHit` (záznam položky, bez něj poddílů, poslední ne WPA), `shAutoFull` (oddělení
+    podle operace, jinak „?“, jen s odděleními), `shDeptOf`, `shDeptName`, `shSections` (oddělení,
+    K prověření, Nezařazeno), `shDrop` a `shDuplicate` s „?“. Rozdělení: `shSplitDepts` (domovské + oddělení
+    poddílů; ručně zařazená, bez poddílů nebo bez oddělení se nerozdělí), `shSubDept`, `shSubHere`,
+    `shSplitView` (pohled `{...it, splitDept, splitOf}` v `shSections`, data jen v originálu).
+    Připnutí: `shPinNote` v `shCarryPins` (ruční poznámka bez staré poznámky od plánování, poddíly když nové nejsou).
+  - Core 24-shortage-kroky: přednastavení `shHeadNorm`, `shColsLetters`, `shColsHeads`, `shColsPreset`
+    (`same` = stejné nadpisy na místech, `moved` = každý nadpis v řádku jednou jinde, jinak null; nadpisy
+    aspoň 2 a u povinných polí), `shColsClean` s `heads`/`set`, historie „· uloženo jako přednastavení“,
+    `shsf:` poddíl plně, rozbor sloupec Předchozí záznamy (poslední), názvy K prověření v historii.
+  - UI 26-shortage: `shColsFor` (kromě urgentů: přednastavení → bez AI a okna; jinak AI a okno s `.sh-prewarn`,
+    potvrzené sloupce uloží nadpisy; bez okna nadpisy jen když je soubor má a přednastavení ještě není;
+    bez nadpisů v souboru postaru), `shColsDialog` vrací `header`, `shColsNote` (přednastavení, posunuté).
+    Velká evidence: `shClipRecs` (TSV, `SH_MAX_REC_ROWS` 300 000), `shReadClipboard` velké HTML přeskočí,
+    `shSheetCols` (soubor evidence: jen potřebné sloupce), zpráva „přečteno N řádků“. `shRecPrevHtml`
+    (`ol.sh-recprev`), PDF `L.prev` / `recH`. K prověření ve výběru u položky, Duplikovat, nadpis
+    `tr.sh-chkhead`, panel Oddělení. Rozdělení: `rowHtml(i, j, secId)`, `shSubAwayHtml` (`tr.sh-subaway`,
+    `[data-shaway]`, `[data-shsubfull]`), plně `tr.sh-subfull` + `.sh-awaytag`, `.sh-splitnote`, výběr
+    „Podle poddílů: A + B“, `shDeptPick` podle `shSplitDepts`, PDF bloky jen vybraných oddělení a poddíl
+    jinde = nízký řádek „jiné oddělení“. `shPackList` hned `cleanShortage`. `shNewDayHtml` pryč.
+  - Nový díl `private/app/34-shortage-pruvodce.js`: `ui.sh.wiz {at, step 1–4, adv}`, `shWizDone`,
+    `shWizSync` (po dokončení kroku jednou dál), `shWizPlanRange` (7 zpět, 8 dopředu, konec měsíce),
+    `shWizIntroHtml` (`.sh-wizintro`, `.sh-newday` u zabaleného dne), `shWizHtml`, `shWizStepHtml`,
+    `shWizDrop` (`[data-shwzdrop]`: Ctrl+V a přetažení souboru, `bindShWizDrop`), `[data-shwiz]`,
+    `[data-shwzfile]`, `[data-shwzclip]` (klikne `#shClipboard`). `renderShortage` průvodce / úvod
+    a tři kroky nahoře `.sh-steps` schované. Ikony `I.upload`, `I.clipboard`.
+  - Testy: core „Shortage (2.78)“ (+ starší test 2.28 older = historie, rozbor sloupce), nový
+    `tests/e2e_shpruvodce.js` (průvodce, AI náhradní odpověď, přednastavení, posunutý a jiný plán, 25 000
+    řádků ze schránky, 3 záznamy v tabulce i PDF, K prověření, poznámka připnuté, rozdělená sestava
+    v tabulce i PDF po odděleních, telefon), `e2e_shortage` (úvod průvodce, blok K prověření, přetažení na
+    nadpis za Montáží), `e2e_shkroky` (stejná evidence podle přednastavení bez AI), `e2e_shpin` (volby
+    oddělení), `test_odmeny` (426 pro 55), `e2e_upgrade_prev` 2.77 → 2.78 (archiv `ac24fb4`). `ODM_VERSION` 2.78.
+
 Stav k 13. 11. 2026 (verze 2.77):
 
 - Uživatel: „modul spíše pro mobil pro ‚Rychlý scan‘ … doplnění dat pomocí mobilu a rychlého čtení
@@ -2528,7 +2579,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36, zabalení dne a dny na shortage 2.73, připnout a duplikovat 2.75)
+## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36, zabalení dne a dny na shortage 2.73, připnout a duplikovat 2.75, průvodce, přednastavení sloupců, 3 záznamy, K prověření a rozdělené sestavy 2.78)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -2940,7 +2991,8 @@ Uživatel chtěl, ať V2 **nepoškodí fungující ostrou verzi**. Proto od 30. 
 | 2.75.1 | `5099564` | Konce trestů – párování jmen po stupních (ID, přejmenovaný, prohozené, titul, část jména, překlep), ruční přiřazení v okně importu |
 | 2.75.2 | `e18cb06` | Konce trestů – chybějícím lidem přidělit řádek souboru, jméno z buňky s datem („Invalid Date“) už nevznikne |
 | 2.76 | `b054487` | Shortage – zelená buňka EANu = Hotovo, hotové položky vždy na konci seznamu (data verze 54) |
-| 2.77 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
+| 2.77 | `ac24fb4` | Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
+| 2.78 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
 
 Verze 2.1 přidala:
 
@@ -3053,7 +3105,7 @@ Zadání uživatele k 2.1 (jeho slovy, zkráceně):
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `55` (od 2.77):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `56` (od 2.78):
 
 - `DATA_VERSION` v `private/core.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -3409,6 +3461,7 @@ NO_PROXY=127.0.0.1 PW=/opt/node22/lib/node_modules/playwright S=$S node tests/e2
   - `e2e_shdny.js` (2.73): Shortage po dnech (zabalení, dny na shortage, odbourané, filtr, PDF, Historie, telefon);
   - `e2e_normy.js` (2.74): KPI Normy (sloupec dílu v okně načtení, zkušení, záznamy do 2 min, hledání, Excel, hranice, plnění, telefon);
   - `e2e_shpin.js` (2.75): Shortage Připnout a Duplikovat (tři dny, filtr, oddělení kopie, odebrání kopie, PDF, odepnutí, rychlost velkého seznamu, telefon);
+  - `e2e_shpruvodce.js` (2.78): Shortage průvodce nahráním, přednastavení sloupců plánu, velká evidence ze schránky, poslední 3 záznamy, K prověření, poznámka připnuté položky, sestava rozdělená do oddělení, PDF, telefon;
   - `e2e_scan.js` (2.77): Rychlý scan (falešná kamera s QR, pozice, dávka, množství, stejný kód v záběru, čtečka, potvrzení do Shortage, mobilní záznamy, Excel, Odesláno na WPA hned, kamera mimo modul, zabalený seznam, monitor);
   - `e2e_shhotovo.js` (2.76): Shortage zelená = Hotovo (vzorník, pořadí, blok Hotovo za odděleními, ruční stav, filtr, PDF i po odděleních, Doplnit chybějící, pravý panel, historie, telefon);
   - `e2e_soubeh.js` (2.62): dva lidé současně (sloučení, sankce obou, střet, průběžné načtení, rozepsané pole, otevřené okno, telefon);

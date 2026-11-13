@@ -2058,6 +2058,9 @@ table.sh-tab tr.sh-drop-before td { box-shadow: inset 0 3px 0 var(--acc); }
 table.sh-tab tr.sh-drop-after td { box-shadow: inset 0 -3px 0 var(--acc); }
 table.sh-tab td.sh-opc { min-width: 130px; }
 .sh-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 13px; }
+.sh-recprev { list-style: none; margin: 4px 0 0; padding: 4px 0 0 8px; border-left: 2px solid var(--line); display: grid; gap: 2px; font-size: 12px; color: var(--ink-2); }
+.sh-recprev li { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; }
+.sh-recprev .sh-recst { color: var(--ink-2); }
 .tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; white-space: normal; overflow-wrap: anywhere; max-width: 100%; text-align: left; border-radius: 8px; }
 table.sh-tab td.sh-notec { min-width: 150px; }
 .sh-note { display: block; box-sizing: border-box; width: 100%; min-width: 130px; min-height: 54px; padding: 6px 9px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; resize: none; }
@@ -3439,6 +3442,8 @@ table.sh-tab tr.sh-done td.name, table.sh-tab tr.sh-done td.sh-ord, table.sh-tab
 .sh-mdone { margin: 6px 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--good-soft) 70%, transparent); }
 table.sh-tab tr.sh-depthead.sh-donehead td { box-shadow: inset 3px 0 0 var(--good); }
 table.sh-tab tr.sh-depthead.sh-donehead b { color: var(--good); }
+table.sh-tab tr.sh-depthead.sh-chkhead td { box-shadow: inset 3px 0 0 var(--warn); }
+table.sh-tab tr.sh-depthead.sh-chkhead b { color: var(--warn); }
 
 /* ================================================================ Rychlý scan (2.77) */
 .sc-set .field input, .sc-set .field select { width: 100%; }
@@ -3466,3 +3471,64 @@ table.sh-tab tr.sh-depthead.sh-donehead b { color: var(--good); }
 .sc-quick .chip { display: grid; gap: 2px; justify-items: center; }
 .sc-quick .chip em { color: var(--ink-3); font: 500 10px/1 var(--body); font-style: normal; }
 .sc-done { margin: 0; }
+
+/* ---------- Shortage: průvodce nahráním (2.78) ---------- */
+.sh-steps[hidden] { display: none; }
+.sh-wiz { position: relative; overflow: hidden; padding: 22px 24px; border-radius: 20px; }
+.sh-wiz::before { content: ""; position: absolute; inset: -40% -10% auto auto; width: 520px; height: 520px; border-radius: 50%; background: radial-gradient(closest-side, var(--acc-soft), transparent 70%); pointer-events: none; }
+.sh-wiz > * { position: relative; }
+.sh-wizhero { display: grid; gap: 10px; max-width: 880px; }
+.sh-wizhero h2, .sh-wizhead h2 { margin: 0; font-size: 26px; letter-spacing: -.01em; }
+.sh-wizlede { margin: 0; color: var(--ink-2); max-width: 760px; }
+.sh-wizpre { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.sh-wizpre li { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
+.sh-wizpre li small { grid-column: 2; color: var(--ink-3); }
+.sh-wizpre .sh-wizn { grid-row: span 2; }
+.sh-wizn { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; border: 1px solid var(--line-2); color: var(--ink); background: var(--surface-3); }
+.sh-wizn .icon { width: 16px; height: 16px; }
+.sh-wizgo { justify-self: start; display: inline-flex; align-items: center; gap: 10px; padding: 14px 26px; font-size: 17px; border-radius: 14px; margin-top: 6px; }
+.sh-wizgo .icon { width: 20px; height: 20px; }
+.sh-wizalt { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.sh-wizhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
+.sh-wizhead .eyebrow { margin: 0 0 2px; }
+.sh-wizsteps { list-style: none; margin: 0 0 18px; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; counter-reset: none; }
+.sh-wizstep button { width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: center; text-align: left; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); font: inherit; cursor: pointer; transition: border-color .2s, background .2s, transform .2s; }
+.sh-wizstep button:disabled { cursor: default; opacity: .55; }
+.sh-wizstep button small { display: block; color: var(--ink-3); font-size: 12px; }
+.sh-wizstep.cur button { border-color: var(--acc-line, var(--acc)); background: var(--acc-soft); }
+.sh-wizstep.cur .sh-wizn { background: var(--acc); border-color: transparent; color: var(--acc-ink, #fff); }
+.sh-wizstep.done .sh-wizn { background: var(--good); border-color: transparent; color: #fff; }
+.sh-wizbody { display: grid; gap: 12px; max-width: 980px; }
+.sh-wizbody h3 { margin: 0; font-size: 19px; }
+.sh-wizbody > p { margin: 0; color: var(--ink-2); }
+.sh-wzdrop { display: grid; justify-items: center; gap: 6px; padding: 30px 18px; border: 2px dashed var(--line-2); border-radius: 16px; background: var(--surface-2); text-align: center; cursor: text; outline: none; transition: border-color .2s, background .2s; }
+.sh-wzdrop:hover, .sh-wzdrop:focus-visible, .sh-wzdrop:focus { border-color: var(--acc); background: var(--acc-soft); }
+.sh-wzdrop.over { border-color: var(--acc); background: var(--acc-soft); border-style: solid; }
+.sh-wzdrop b { font-size: 16px; }
+.sh-wzico { width: 46px; height: 46px; border-radius: 14px; display: grid; place-items: center; background: var(--surface-3); color: var(--acc); }
+.sh-wzico .icon { width: 24px; height: 24px; }
+.sh-wizacts { display: flex; flex-wrap: wrap; gap: 8px; }
+.sh-wiztip { display: grid; gap: 2px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--acc-line, var(--line)); background: var(--acc-soft); }
+.sh-wiztip span { color: var(--ink-2); font-size: 14px; }
+.sh-wizsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.sh-wizsum > div { padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); display: grid; }
+.sh-wizsum b { font-size: 26px; }
+.sh-wizsum small { color: var(--ink-3); }
+.sh-wizsum .warn { border-color: var(--warn); background: var(--warn-soft); }
+.sh-prewarn { margin-bottom: 8px; }
+@media (max-width: 760px) {
+  .sh-wiz { padding: 16px; }
+  .sh-wizhero h2, .sh-wizhead h2 { font-size: 21px; }
+  .sh-wizpre, .sh-wizsteps { grid-template-columns: minmax(0, 1fr); }
+  .sh-wizgo { justify-self: stretch; justify-content: center; }
+  .sh-wzdrop { padding: 22px 14px; }
+}
+@media (prefers-reduced-motion: reduce) { .sh-wizstep button, .sh-wzdrop { transition: none; } }
+
+/* ---------- Shortage: sestava rozdělená podle poddílů (2.78) ---------- */
+.sh-splitnote { margin-top: 4px; font-size: 12px; color: var(--ink-2); }
+table.sh-tab tr.sh-subaway td { color: var(--ink-3); }
+table.sh-tab tr.sh-subaway .sh-ean, table.sh-tab tr.sh-subaway .sh-ean a { color: var(--ink-2); }
+.sh-away { margin-top: 4px; font-size: 12.5px; color: var(--ink-2); }
+.sh-away b { color: var(--ink); }
+.sh-awaytag { background: var(--surface-3); color: var(--ink-2); }

@@ -360,7 +360,14 @@ print('ok')`;
   // ---------- AI návrh: jen nadpisy a typy buněk ----------
   let aiBody = null;
   await page.route('**/api.php?action=ai_shcols*', route => { aiBody = route.request().postDataJSON(); route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ cols: { code: 'B', when: 'C', qty: 'D', state: 'E', op: 'A' }, header: 1, sheet: '', note: 'Sloupec Ks může být i v gramech.' }) }); });
+  // 2.78: stejný soubor jako minule odpovídá přednastavení (nadpisy) a načte se bez AI i bez okna
   await page.evaluate(() => { ui.me.ai = true; S.shortage.lists[0] && (ui.sh.open = S.shortage.lists[1].id); renderShortage(); });
+  check(await page.evaluate(() => !!(S.shortage.cols.move && S.shortage.cols.move.heads && S.shortage.cols.move.heads.code)), `přednastavení evidence s nadpisy: ${JSON.stringify(await page.evaluate(() => S.shortage.cols.move))}`);
+  await page.setInputFiles('#shMoveFile', file('pohyb.xlsx'));
+  await page.waitForFunction(() => /evidence pohybu \(přednastavení/.test(document.querySelector('#shMsg').textContent));
+  check(!aiBody && !(await page.$('#dlg[open]')), 'soubor podle přednastavení: bez AI a bez okna');
+  // soubor, který přednastavení neodpovídá (nadpisy přednastavení smazané): navrhne AI
+  await page.evaluate(() => { delete S.shortage.cols.move.heads; delete S.shortage.cols.move.set; });
   await page.setInputFiles('#shMoveFile', file('pohyb.xlsx'));
   await dlgOpen(page, /návrh AI/);
   const dtext = await page.textContent('#dlg');
