@@ -28,7 +28,7 @@ dřív měl 290 kB a session se zahlcovala. Nic se nesmazalo, jen přesunulo do 
 | soubor | co tam je | kdy číst |
 |---|---|---|
 | `CLAUDE.md` (tento) | pravidla, poslední 3 zápisy, architektura, datový model, výpočty, testy v kostce | vždy (načte se sám) |
-| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.79) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
+| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.79.1) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
 | `docs/moduly.md` | podrobný popis modulů: data, funkce, UI (Matice, Přeformulování, Top 5, Kontroly, Protokoly, Servis, Shortage, KPI, Plán kapacit) | před prací na modulu |
 | `docs/testy.md` | všechny průchody v prohlížeči a co hlídají, testy na Apachi | před psaním nebo úpravou testu |
 | `README.md` | pro uživatele (novinky, instalace, zálohy) | při každé verzi doplnit „Co je nového“ |
@@ -60,6 +60,41 @@ Klony na serveru jsou `/root/trading_desk` a `/root/odmeny_v2`. Všechny repozit
 nepushne), celá tabulka je v `docs/historie.md`.
 
 ## Kde jsme skončili
+
+Stav k 14. 11. 2026 (verze 2.81):
+
+- Uživatel: „A pokud tam bude status "Je třeba vyprázdnit" Tak ať mi vyjede štítek skříňky s upozorněním, něco
+  ve stylu: kde bude dnešní datum a že má 7 pracovních dnů k nahlášení, kdo využívá skříňku, jinak bude obsah
+  zlikvidován" Uprav to podle toho, aby to bylo co nejkratší znění a legitimní.“ Pak: „ať se lépe nadefinuje tisk
+  štítku, ať nemusím nic nastavovat v tisku a vše je nastaveno již“ a „možná ti pomůže s nastavením tisku:
+  ^XA^PW800^LL280^LH0,0 ... ^PQ1^XZ“ (tj. Zebra 203 dpi, 800 × 280 bodů).
+  - **Výzva k vyklizení** (štítek 100 × 35 mm): černý pruh VÝZVA K VYKLIZENÍ · SKŘÍŇKA A 4, „Používáte tuto
+    skříňku? Nahlaste se u vedoucího nejpozději / **do 25. 11. 2026 (7 pracovních dnů).** / Poté bude skříňka
+    komisionálně otevřena a vyklizena. / Vyvěšeno 14. 11. 2026“. Místo „zlikvidován“ záměrně „komisionálně otevřena
+    a vyklizena“ (věci jsou cizí majetek; otevřít za svědků se zápisem, uschovat a teprve pak naložit dál).
+    Lhůta = konkrétní datum, 7 pracovních dnů bez víkendů a státních svátků (`lkWorkDaysAdd`, `calHoliday`).
+  - Core: `notice {at, until, by}` u skříňky (jen když je; `lkCleanNotice`), `lkSetNotice` (jen K vyklizení,
+    opakovaný tisk drží lhůtu), `lkNoticeLines` (texty), `lkState` vrací `notice`, `noticeLate`; přidělení, uvolnění
+    a import s jiným člověkem výzvu zruší; Excel „výzva do …“ / „lhůta výzvy uplynula …“; historie
+    „vyvěšena výzva k vyklizení, lhůta do …“ (`m` `lk:id:v`).
+  - App: po vyřazení nebo smazání člověka se skříňkou okno „Je třeba vyprázdnit skříňku …“ s Vytisknout výzvu
+    (Později = jen hláška); v řádku K vyklizení tlačítko Výzva, text „výzva vyvěšena …, lhůta do …“ a štítek
+    „lhůta uplynula, lze vyklidit“; v pruhu Je třeba vyprázdnit „Vytisknout výzvy (N)“.
+  - **Tisk bez nastavování**: (1) když na počítači běží **Zebra Browser Print**, štítky jdou rovnou do tiskárny
+    bez okna tisku jako ZPL `^XA^PW800^LL280^LH0,0^FO0,0^GFA…^FS^PQ1^XZ` (obsah je obrázek 800 × 280 bodů
+    nakreslený stejným `lkDrawLabel` přes `lkCanvasDoc` a písmo Plex z `pdfAsset` přes `FontFace`; `lkZplGfa`
+    s kompresí ZPL v core); hledá `http://127.0.0.1:9100/` a `https://localhost:9101/` (`default?type=printer`,
+    `write` s `{device, data}`), výsledek se pamatuje 30 / 5 min (`ui.zebra`); (2) jinak se okno tisku otevře rovnou
+    s PDF ve skrytém rámci (`#lkPrintFrame`), PDF má `PrintScaling None`, `PickTrayByPDFSize`, 1 kopii; (3) na
+    telefonu se PDF stáhne. Hromadný tisk: výstup Tisknout / Stáhnout PDF / Stáhnout ZPL pro Zebru a stav Zebry.
+    Skutečná tiskárna ani Browser Print tu nejsou: protokol Browser Print je podle jeho knihovny, ověřený jen
+    náhradní službou v testu. Kdyby Zebra nereagovala, aplikace přejde na okno tisku.
+  - CSP: `frame-src blob:` (jen PDF vyrobené stránkou) a `connect-src 'self' http://127.0.0.1:9100
+    https://localhost:9101` (jen místní Browser Print), hlídá `test_lock_page_headers`.
+  - Data verze 59, `ODM_VERSION` 2.81. Testy: core „Skříňky (2.81)“ (lhůta přes svátky, výzva, ZPL kódování
+    a dekódování), `test_odmeny` (426 pro 58, CSP), `e2e_skrinky` (nabídka po vyřazení, PDF výzvy, lhůta uplynula,
+    hromadně, tisk přes rámec s náhradou `print`, náhradní Browser Print na 9100 a dekódování ZPL, stažení ZPL,
+    telefon stáhne PDF), `e2e_upgrade_prev` 2.80 → 2.81 (archiv `f9883e0`, výzva nad převzatými daty).
 
 Stav k 14. 11. 2026 (verze 2.80):
 
@@ -135,34 +170,7 @@ Stav k 13. 11. 2026 (verze 2.79.2):
     PyMuPDF: nic mimo stranu ani přes sebe, objednávka, množství, kód a index celé); proti kódu před
     opravou selže (ověřeno). `ODM_VERSION` 2.79.2, data beze změny (57).
 
-Stav k 13. 11. 2026 (verze 2.79.1):
-
-- Uživatel: „u položek, kde bude ‚Tento díl se zpracovává na jiném oddělení: …‘ a nebude mít plné
-  zobrazení, tak v PDF reportech ať nejsou nakonec viditelné vůbec, zabírá to zbytečně místo.“
-  - `drawShortage`: `pdfOne(sec, it)` (před `title`) vrátí sestavu jen s poddíly, které do bloku
-    patří (`shSubHere`) nebo jsou `full`; používá ho nadpis oddělení (`k.need`), řádky i počet
-    poddílů v záhlaví po odděleních. Nízký řádek „jiné oddělení“ z 2.78 v PDF zrušený. Sestava,
-    které v bloku nezůstane žádný poddíl, se vytiskne jako obyčejný řádek s QR kódem.
-  - V aplikaci beze změny (řádek `tr.sh-subaway` s textem a Zobrazit plně zůstal).
-  - Testy: `e2e_shpruvodce` (PDF po odděleních bez cizího poddílu a s počtem 1 poddíl, po
-    Zobrazit plně cizí poddíl i v Brusu). `ODM_VERSION` 2.79.1, data beze změny (57).
-- Uživatel se ptal, jestli půjde využít `Graphify-Labs/graphify`, `emilkowalski/skills` nebo `affaan-m/ECC`.
-  Prošli jsme je, graphify vyzkoušen na našem kódu (offline, jen kód): volání mezi díly nespojí
-  (jeden globální rozsah bez importů), tak ne. Celé ECC ne (314 skillů, hooky, většina mimo nás).
-  Doporučení: 1. zeštíhlit CLAUDE.md, 2. zátěžový test obrazovek nejhoršími daty (postup break-ui
-  z emilkowalski/skills) na Shortage a Po termínu i v PDF, 3. kontrola klikání a tichých chyb
-  (click-path-audit, silent-failure-hunter z ECC) nad ukládáním, sloučením dvou lidí a importy,
-  4. kontrola animací jen na přání. Uživatel: „začni prvním bodem“.
-  - CLAUDE.md 290 kB → 38 kB: zápisy od 2.77 dozadu, celá tabulka verzí, původní text o ostré verzi
-    a zadání víc modulů v `docs/historie.md`, popisy modulů v `docs/moduly.md`, seznam e2e testů
-    v `docs/testy.md`, vše beze změny textu (skript ověřil, že každý původní řádek někde je).
-    Nové oddíly Kde co je (a jak zapisovat), Ostrá verze (co z ní platí), Moduly (rozcestník
-    modul → díly kódu), Testy v kostce. Opravené zastaralé cesty `private/app.js` a `private/core.js`.
-  - `deploy/install.sh` `--exclude '/docs/'` (Apache `.md` stejně nevydá), test
-    `test_notes_for_claude_stay_small` (CLAUDE.md pod 60 kB, nejvýš 3 zápisy, odkazy na docs).
-  - Čeká se, jestli uživatel chce body 2–4.
-
-Starší zápisy (2.79 a dál dozadu) jsou v `docs/historie.md`.
+Starší zápisy (2.79.1 a dál dozadu) jsou v `docs/historie.md`.
 
 ## Pravidla spolupráce
 
@@ -207,11 +215,11 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
 
 | verze | commit | obsah |
 |---|---|---|
-| 2.78 | `3afd2dd` | Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
 | 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
 | 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
 | 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
-| 2.80 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
+| 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
+| 2.81 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
 
 ## Pojmy
 
@@ -295,7 +303,7 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `58` (od 2.80):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `59` (od 2.81):
 
 - `DATA_VERSION` v `private/core/06-kontrola-dat.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -354,7 +362,7 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
   - `undo` (2.45): uložené změny za 3 dny pro Vrátit zpět, `log[].u`/`log[].un`;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
-  - `lockers` (2.80): Skříňky, `{list: [{id, row, no, key, name, gone, raw, note, at, by}]}` (viz `docs/moduly.md`);
+  - `lockers` (2.80): Skříňky, `{list: [{id, row, no, key, name, gone, raw, note, at, by, notice?{at, until, by}}]}` (výzva k vyklizení 2.81; viz `docs/moduly.md`);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -443,7 +451,8 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
 - Horní lišta:
   - hodiny = historie změn (`openLog`, odznak nových od posledního otevření);
   - stav ukládání.
-- **Přísná CSP**: žádné inline styly ani `on…=` handlery (hlídá to `test_odmeny.py`).
+- **Přísná CSP**: žádné inline styly ani `on…=` handlery (hlídá to `test_odmeny.py`). Výjimky 2.81 pro tisk
+  štítků: `frame-src blob:` (PDF z prohlížeče) a `connect-src` na místní Zebra Browser Print (127.0.0.1:9100, localhost:9101).
   Šířky se nastavují přes `data-w` a `setWidths`.
 - PDF pravidel:
   - `exportRulesPdf` a `drawRules` v `app.js`;
@@ -489,7 +498,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 33 testů: server, šifrovaný tok, kopie dat, oddělení od ostré verze, AI (náhradní API), šifrované soubory
-node tests/test_core.js                 # 133 testů: proti původní aplikaci + opravy + každá verze od 2.1
+node tests/test_core.js                 # 135 testů: proti původní aplikaci + opravy + každá verze od 2.1
 OUT=$S/e2e PW=/opt/node22/lib/node_modules/playwright bash tests/run_e2e.sh [testy…]   # průchody v prohlížeči souběžně
 ```
 

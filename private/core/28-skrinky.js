@@ -5,7 +5,7 @@
    Jména jsou psaná ručně, proto párování snese překlepy, chybějící háčky, prohozené pořadí,
    jen příjmení nebo příjmení s iniciálou. Páruje se jen v prohlížeči, jména nikam neodcházejí.
    ===================================================================== */
-const LK_MAX=3000,LK_TXT=120,LK_NOTE=300,LK_RANGE_MAX=500;
+const LK_MAX=3000,LK_TXT=120,LK_NOTE=300,LK_RANGE_MAX=500,LK_NOTICE_DAYS=7;
 const LK_STATES={free:"Volná",used:"Obsazená",unknown:"Nespárovaná",clear:"K vyklizení"};
 const LK_HOW={exact:"přesně",surname:"podle příjmení",initial:"příjmení a iniciála",fuzzy:"podobné",manual:"ručně",none:"nejisté"};
 function blankLockers(){return {list:[]};}
@@ -46,24 +46,60 @@ function cleanLockers(o,emps){
     const key=txt(x.key,200),e=key&&emps?emps[key]:null;
     const l={id,row,no,key,name:key?(e?lkName(e):txt(x.name,LK_TXT)):"",gone:key?"":txt(x.gone,LK_TXT),raw:txt(x.raw,LK_TXT),note:txt(x.note,LK_NOTE),
       at:Number.isFinite(+x.at)?+x.at:0,by:txt(x.by,80)};
+    const n=lkCleanNotice(x.notice);
+    if(n)l.notice=n;
     list.push(l);
   });
   return {list:list.sort(lkCmp)};
 }
+/* ---------- Výzva k vyklizení (2.81) ----------
+   Štítek na skříňku K vyklizení: vyvěšeno (datum) a lhůta 7 pracovních dnů (bez víkendů a svátků),
+   do které se má uživatel skříňky nahlásit. Výzva se uloží ke skříňce (notice {at, until, by}), opakovaný
+   tisk drží stejnou lhůtu; přidělením nebo uvolněním skříňky výzva zmizí. */
+function lkIso(v){return typeof v==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(v)?v:"";}
+function lkCleanNotice(n){
+  if(!n||typeof n!=="object")return null;
+  const at=lkIso(n.at),until=lkIso(n.until);
+  return at&&until&&until>=at?{at,until,by:String(n.by==null?"":n.by).replace(/\s+/g," ").trim().slice(0,80)}:null;
+}
+/** Datum o n pracovních dnů později (víkendy a státní svátky se nepočítají). */
+function lkWorkDaysAdd(iso,n){
+  let d=iso,left=n;
+  while(left>0){d=addDays(d,1);const w=new Date(utcOf(d)).getUTCDay();if(w!==0&&w!==6&&!calHoliday(d))left--;}
+  return d;
+}
+/** Vyvěsí výzvu (nebo vrátí tu, která už visí). Jen u skříňky K vyklizení. */
+function lkSetNotice(st,id,today,meta){
+  const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};
+  if(lkState(l,st.employees||{},today).st!=="clear")return {err:`Skříňka ${lkLabel(l)} není K vyklizení.`};
+  if(l.notice)return {l,n:l.notice,fresh:false};
+  l.notice={at:today,until:lkWorkDaysAdd(today,LK_NOTICE_DAYS),by:(meta&&meta.by)||""};
+  return {l,n:l.notice,fresh:true};
+}
+/** Texty štítku s výzvou (co nejkratší: kdo, do kdy, co bude potom). */
+function lkNoticeLines(l,n){
+  return {title:"VÝZVA K VYKLIZENÍ",label:"SKŘÍŇKA "+lkLabel(l),
+    ask:"Používáte tuto skříňku? Nahlaste se u vedoucího nejpozději",
+    until:"do "+dayText(n.until)+" ("+LK_NOTICE_DAYS+" pracovních dnů).",
+    then:"Poté bude skříňka komisionálně otevřena a vyklizena.",
+    at:"Vyvěšeno "+dayText(n.at)};
+}
+
 /** Stav skříňky: free, used (člověk v Lidech), unknown (jméno z importu bez člověka),
     clear = K vyklizení (vyřazený, není v Lidech, nebo „už u nás nepracuje“). */
 function lkState(l,emps,today){
   emps=emps||(S&&S.employees)||{};
   if(l.key){
     const e=emps[l.key];
-    if(!e)return {st:"clear",why:"už není v Lidech",e:null};
-    if(e.excluded)return {st:"clear",why:"vyřazený ze seznamu",e};
+    if(!e)return lkClearOut({st:"clear",why:"už není v Lidech",e:null},l,today);
+    if(e.excluded)return lkClearOut({st:"clear",why:"vyřazený ze seznamu",e},l,today);
     return {st:"used",e,endPast:e.end&&e.end<(today||todayIso())?e.end:""};
   }
-  if(l.gone)return {st:"clear",why:"už u nás nepracuje",e:null};
+  if(l.gone)return lkClearOut({st:"clear",why:"už u nás nepracuje",e:null},l,today);
   if(l.raw)return {st:"unknown",e:null};
   return {st:"free",e:null};
 }
+function lkClearOut(o,l,today){if(l.notice){o.notice=l.notice;o.noticeLate=(today||todayIso())>l.notice.until;}return o;}
 /** Souhrn: počty stavů, skříňky po lidech, lidé bez skříňky (nevyřazení), lidé s víc skříňkami. */
 function lkOverview(lk,emps,today){
   emps=emps||(S&&S.employees)||{};today=today||todayIso();
@@ -200,9 +236,10 @@ function lkApply(st,rows,opts,meta){
     let l=by.get(k);
     if(!l){if(L.length>=LK_MAX)return;l={id:lkNewId(),row,no,key:"",name:"",gone:"",raw:"",note:"",at:0,by:""};L.push(l);by.set(k,l);out.added++;}
     else out.updated++;
-    const e=r.key?(st.employees||{})[r.key]:null;
+    const e=r.key?(st.employees||{})[r.key]:null,was=l.key+"|"+l.gone;
     l.key=e?r.key:"";l.name=e?lkName(e):"";
     l.gone=e?"":String(r.gone||"").slice(0,LK_TXT);
+    if(was!==l.key+"|"+l.gone)delete l.notice;
     l.raw=String(r.raw||"").slice(0,LK_TXT);
     l.at=m.at;l.by=m.by;
     out[l.key?"used":l.gone?"gone":l.raw?"unknown":"free"]++;
@@ -218,7 +255,7 @@ function lkAssign(st,id,key,meta){
   if(!l)return {err:"Skříňka už v soupisu není."};
   if(key&&!e)return {err:"Člověk už v Lidech není."};
   const m=lkMeta(meta);
-  l.key=key||"";l.name=e?lkName(e):"";l.gone="";l.raw="";l.at=m.at;l.by=m.by;
+  l.key=key||"";l.name=e?lkName(e):"";l.gone="";l.raw="";l.at=m.at;l.by=m.by;delete l.notice;
   return {l};
 }
 function lkSetGone(st,id,name,meta){
@@ -230,7 +267,7 @@ function lkSetGone(st,id,name,meta){
 /** Uvolní skříňku (i po vyklizení): bez člověka, jména i textu z importu. */
 function lkFree(st,id,meta){
   const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};
-  const m=lkMeta(meta);l.key="";l.name="";l.gone="";l.raw="";l.at=m.at;l.by=m.by;
+  const m=lkMeta(meta);l.key="";l.name="";l.gone="";l.raw="";l.at=m.at;l.by=m.by;delete l.notice;
   return {l};
 }
 function lkSetNote(st,id,note){const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};l.note=String(note||"").replace(/\s+/g," ").trim().slice(0,LK_NOTE);return {l};}
@@ -261,13 +298,56 @@ function lkLabelSeq(list,opts){
   (list||[]).slice().sort(lkCmp).forEach(l=>{const t=lkLabel(l);if(lo)out.push({kind:"locker",text:t,id:l.id});if(ke)out.push({kind:"key",text:t,id:l.id});});
   return out;
 }
+/* ---------- ZPL pro Zebru (2.81) ----------
+   Tiskárna 203 dpi (8 bodů na mm): štítek 100 × 35 mm = 800 × 280 bodů. Obsah štítku je obrázek (^GFA),
+   takže čeština i písmo jsou stejné jako v PDF; velikost, počátek a počet kopií nese sám ZPL
+   (^PW800^LL280^LH0,0 … ^PQ1), v tisku se nic nenastavuje. */
+const LK_DOTS=8,LK_ZW=800,LK_ZH=280;
+/** Počet opakování v kompresi ZPL: G–Y = 1–19, g–z = 20–400 (násobky 20). */
+function lkZplCount(n){
+  let out="";
+  while(n>400){out+="z";n-=400;}
+  if(n>=20){out+="ghijklmnopqrstuvwxyz"[Math.floor(n/20)-1];n%=20;}
+  if(n>0)out+="GHIJKLMNOPQRSTUVWXY"[n-1];
+  return out;
+}
+/** Bitmapa (bity po řádcích, 1 = černá; bits[y*w+x]) → ^GFA s kompresí ZPL (opakování, „,“ zbytek nul,
+    „!“ zbytek jedniček, „:“ stejný řádek jako předchozí). */
+function lkZplGfa(bits,w,h){
+  const bpr=Math.ceil(w/8),total=bpr*h;
+  let data="",prev=null;
+  for(let y=0;y<h;y++){
+    let hex="";
+    for(let b=0;b<bpr;b++){
+      let v=0;
+      for(let i=0;i<8;i++){const x=b*8+i;if(x<w&&bits[y*w+x])v|=128>>i;}
+      hex+=(v<16?"0":"")+v.toString(16).toUpperCase();
+    }
+    if(hex===prev){data+=":";continue;}
+    prev=hex;
+    let row=hex,tail="";
+    const z=/0+$/.exec(row),f=/F+$/.exec(row);
+    if(z&&z[0].length>2){row=row.slice(0,z.index);tail=",";}
+    else if(f&&f[0].length>2){row=row.slice(0,f.index);tail="!";}
+    let enc="";
+    for(let i=0;i<row.length;){
+      let j=i;while(j<row.length&&row[j]===row[i])j++;
+      const n=j-i;enc+=(n>1?lkZplCount(n):"")+row[i];i=j;
+    }
+    data+=enc+tail;
+  }
+  return "^GFA,"+total+","+total+","+bpr+","+data;
+}
+/** Celý štítek: ^XA^PW800^LL280^LH0,0^FO0,0^GFA…^FS^PQ1^XZ. */
+function lkZplLabel(bits){return "^XA^PW"+LK_ZW+"^LL"+LK_ZH+"^LH0,0^FO0,0"+lkZplGfa(bits,LK_ZW,LK_ZH)+"^FS^PQ1^XZ";}
+
 /** Excel: soupis skříněk a lidé bez skříňky. */
 function lkSheets(lk,emps,today,positions){
   const ov=lkOverview(lk,emps,today),pos=positions||(S&&S.positions)||[],gr=e=>{const p=e?pos.find(g=>g.id===e.positionId):null;return p?p.name:"";};
   const who=x=>x.e?lkName(x.e):x.l.gone||x.l.name||x.l.raw||"";
   const rows=[["Skříňka","Řada","Číslo","Pracovník","ID","Skupina","Stav","Upozornění","Z importu","Poznámka"]];
   ov.rows.forEach(x=>{
-    rows.push([lkLabel(x.l),x.l.row,x.l.no,who(x),x.e?x.e.wid||"":"",gr(x.e),LK_STATES[x.st],x.st==="clear"?"Je třeba vyprázdnit ("+x.why+")":ov.multi.includes(x.l.key)?"má víc skříněk":"",x.l.raw||"",x.l.note||""]);
+    rows.push([lkLabel(x.l),x.l.row,x.l.no,who(x),x.e?x.e.wid||"":"",gr(x.e),LK_STATES[x.st],x.st==="clear"?"Je třeba vyprázdnit ("+x.why+")"+(x.notice?(x.noticeLate?", lhůta výzvy uplynula "+dayText(x.notice.until):", výzva do "+dayText(x.notice.until)):""):ov.multi.includes(x.l.key)?"má víc skříněk":"",x.l.raw||"",x.l.note||""]);
   });
   const w=[["Příjmení a jméno","ID","Skupina","Vedoucí"]];
   ov.without.forEach(e=>w.push([lkName(e),e.wid||"",gr(e),isLead(e)?"ano":""]));
@@ -287,6 +367,8 @@ function lkChanges(A,B,add){
       else if(l.gone)add("locker","Skříňka "+lab+": "+l.gone+" už u nás nepracuje, je třeba vyprázdnit",{m:mk,...(o.key?{key:o.key}:{})});
       else add("locker","Skříňka "+lab+" uvolněna"+(o.key||o.gone?" ("+(o.name||o.gone)+")":""),{m:mk,...(o.key?{key:o.key}:{})});
     }
+    const on=o.notice?o.notice.until:"",nn=l.notice?l.notice.until:"";
+    if(nn&&on!==nn)add("locker","Skříňka "+lab+": vyvěšena výzva k vyklizení, lhůta do "+dayText(nn),{m:"lk:"+l.id+":v",...(o.key?{key:o.key}:{})});
     if(o.note!==l.note)add("locker","Skříňka "+lab+": poznámka „"+(l.note||"—")+"“",{m:"lk:"+l.id+":t"});
   });
   a.filter(l=>!bm.has(l.id)).forEach(l=>add("locker","Skříňka "+lkLabel(l)+" smazána"+(l.key?" ("+(l.name||"člověk")+")":""),{m:"lk:"+l.id+":x"}));

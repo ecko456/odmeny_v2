@@ -81,7 +81,7 @@ class Client:
             return error.code, dict(error.headers), error.read()
 
     def api(self, method, action, body=None, headers=None, query=""):
-        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "58", "Sec-Fetch-Site": "same-origin", **(headers or {})})
+        status, _, raw = self.request(method, f"/api.php?action={action}{query}", body, {"X-Odmeny": "1", "X-Odmeny-Client": "59", "Sec-Fetch-Site": "same-origin", **(headers or {})})
         return status, json.loads(raw or b"{}")
 
     def setup(self):
@@ -109,6 +109,12 @@ class OdmenyHttpTests(unittest.TestCase):
         self.assertIn("script-src 'self'", csp)
         self.assertIn("frame-ancestors 'none'", csp)
         self.assertNotIn("unsafe-inline", csp)
+        # 2.81: rámec jen pro PDF vyrobené v prohlížeči (tisk štítků), žádná cizí stránka
+        self.assertIn("frame-src blob:;", csp)
+        self.assertNotIn("frame-src *", csp)
+        self.assertNotIn("frame-src http", csp)
+        # 2.81: spojení jen na vlastní server a místní Zebra Browser Print (tisk štítků)
+        self.assertIn("connect-src 'self' http://127.0.0.1:9100 https://localhost:9101;", csp)
         self.assertEqual(headers["X-Frame-Options"], "DENY")
         self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
         self.assertEqual(headers["Cache-Control"], "no-store")
@@ -506,6 +512,9 @@ class OdmenyVersion2Tests(unittest.TestCase):
         # Stránka verze 2.79.2 by zahodila soupis Skříněk z verze 2.80.
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "57"})
         self.assertEqual(status, 426)
+        # Stránka verze 2.80 by zahodila výzvy k vyklizení skříněk z verze 2.81.
+        status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0}, {"X-Odmeny-Client": "58"})
+        self.assertEqual(status, 426)
         status, result = self.client.api("POST", "data", {"blob": b64(40), "base_rev": 0})
         self.assertEqual(status, 200, result)
         # Čtení a přihlášení staré stránce nevadí, jen zápis.
@@ -518,7 +527,7 @@ class OdmenyVersion2Tests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(result["card_id"], first["id"])
         self.assertEqual(result["card_label"], "Test")
-        self.assertEqual(result["version"], "2.80")
+        self.assertEqual(result["version"], "2.81")
         status, result = self.client.api("GET", "prefs")
         self.assertEqual((status, result["blob"]), (200, None))
         mine = b64(80)

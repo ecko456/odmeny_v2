@@ -3627,3 +3627,10 @@ tr.lk-unknown td { background: color-mix(in srgb, var(--warn-soft) 45%, transpar
   .lk-range { grid-template-columns: 1fr; }
   .lk-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+/* Výzva k vyklizení (2.81) */
+.lk-notice { display: block; margin-top: 2px; color: var(--warn); font-size: 12.5px; font-weight: 500; }
+.lk-notice.late { color: var(--crit); }
+.lk-alertact { flex: none; }
+/* skrytý rámec pro tisk štítků (2.81): PDF se v něm načte a otevře se okno tisku */
+.lk-printframe { position: fixed; right: 0; bottom: 0; width: 1px; height: 1px; border: 0; opacity: 0; pointer-events: none; }
+.lk-out select { width: auto; min-width: 14rem; }

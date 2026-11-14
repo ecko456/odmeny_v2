@@ -416,6 +416,22 @@ Skříňka se pozná podle řady a čísla, v soupisu je jen jednou. Core `priva
   jestli byl rozbalený; značky přehybu nahoře a dole uprostřed). Tlačítko Štítky v řádku (`stitky-skrinky-A12.pdf`),
   Tisk štítků hromadně: všechny, zobrazené ve filtru, nebo jedna řada, a druhy štítků (`lkLabelSeq`). V tisku
   velikost papíru 100 × 35 mm a skutečná velikost (100 %).
+- **Výzva k vyklizení** (2.81): štítek 100 × 35 mm u skříňky K vyklizení: černý pruh VÝZVA K VYKLIZENÍ a SKŘÍŇKA
+  A 4, „Používáte tuto skříňku? Nahlaste se u vedoucího nejpozději / do 25. 11. 2026 (7 pracovních dnů). / Poté bude
+  skříňka komisionálně otevřena a vyklizena. / Vyvěšeno 14. 11. 2026“ (`lkNoticeLines`). Lhůta je 7 pracovních dnů
+  bez víkendů a státních svátků (`lkWorkDaysAdd`). Výzva se uloží ke skříňce (`notice {at, until, by}`,
+  `lkSetNotice`): opakovaný tisk drží stejnou lhůtu, přidělení, uvolnění (Vyprázdněno) nebo import s jiným
+  člověkem ji zruší. Řádek ukáže „výzva vyvěšena …, lhůta do …“, po lhůtě „lhůta uplynula, lze vyklidit“.
+  Tisk: tlačítko Výzva v řádku, Vytisknout výzvy (N) v pruhu, a okno po vyřazení nebo smazání člověka se skříňkou
+  (`lkAfterLeave`: Vytisknout výzvu / Později). Historie „vyvěšena výzva k vyklizení, lhůta do …“.
+- **Tisk bez nastavování** (2.81, `lkPdf`): (1) Zebra Browser Print na počítači (`lkZebra`: `GET default?type=printer`
+  na `http://127.0.0.1:9100/`, pak `https://localhost:9101/`; `lkZebraSend`: `POST write` s `{device, data}`
+  jako `text/plain`) → ZPL bez okna tisku; (2) jinak PDF ve skrytém rámci `#lkPrintFrame` a `print()` = okno tisku
+  hned (PDF má `PrintScaling None`, `PickTrayByPDFSize`, `NumCopies 1`); (3) telefon (`lkPrintDirect`) nebo
+  Stáhnout PDF → soubor. ZPL (`lkZplFor`): štítek se nakreslí `lkDrawLabel` přes `lkCanvasDoc` (stejné rozhraní jako
+  jsPDF, 8 bodů na mm, písmo Plex přes `FontFace`) do 800 × 280 bodů, práh na černobílou, `lkZplLabel` v core
+  (`^XA^PW800^LL280^LH0,0^FO0,0^GFA,28000,28000,100,…^FS^PQ1^XZ`, komprese ZPL v `lkZplGfa`). Hromadný tisk má
+  výstup Tisknout / Stáhnout PDF / Stáhnout ZPL pro Zebru a ukáže, jestli našel Browser Print.
 - **Historie** (kind `locker`, filtr Skříňky): přidání a smazání skříňky, přidělení, uvolnění, „už nepracuje“,
   poznámka. Přidělení / uvolnění / „už nepracuje“ mají každé vlastní `m` (`lk:id:k:p|f|g`), takže se při rychlém
   sledu v historii neslučují (vyprázdnění zůstane vidět); poznámky se slučují (`lk:id:t`).

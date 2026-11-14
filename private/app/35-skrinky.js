@@ -14,10 +14,18 @@ function lkWarnText(key) {
   const ls = lkOf(key);
   return ls.length ? ` Má ${ls.length === 1 ? 'skříňku' : 'skříňky'} ${lkLabels(ls)}: ve Skříňkách se ukáže jako K vyklizení (je třeba vyprázdnit).` : '';
 }
-/** Po vyřazení nebo smazání člověka: hláška, že je třeba vyprázdnit jeho skříňku. */
-function lkAfterLeave(key, name) {
+/** Po vyřazení nebo smazání člověka: je třeba vyprázdnit jeho skříňku, nabídne štítek s výzvou (2.81). */
+async function lkAfterLeave(key, name) {
   const ls = lkOf(key);
-  if (ls.length) toast(`Je třeba vyprázdnit ${ls.length === 1 ? 'skříňku' : 'skříňky'} ${lkLabels(ls)}${name ? ` (${name})` : ''}.`, true);
+  if (!ls.length) return;
+  const one = ls.length === 1, until = dayText(lkWorkDaysAdd(todayIso(), LK_NOTICE_DAYS));
+  const res = await dialog({
+    title: `Je třeba vyprázdnit ${one ? 'skříňku' : 'skříňky'} ${lkLabels(ls)}`, ok: 'Vytisknout výzvu', cancel: 'Později',
+    html: `<p>${name ? `<b>${esc(name)}</b> má` : 'Člověk měl'} ${one ? 'skříňku' : 'skříňky'} <b>${esc(lkLabels(ls))}</b>. Ve Skříňkách ${one ? 'je' : 'jsou'} teď K vyklizení.</p>
+      <p class="small">Štítek s výzvou (Zebra 100 × 35 mm): uživatel skříňky se má nahlásit u vedoucího do <b>${esc(until)}</b> (${LK_NOTICE_DAYS} pracovních dnů), jinak bude skříňka komisionálně otevřena a vyklizena.</p>`,
+  });
+  if (res.value === 'ok') lkNoticePrint(ls.map(l => l.id));
+  else toast(`Je třeba vyprázdnit ${one ? 'skříňku' : 'skříňky'} ${lkLabels(ls)}. Výzvu vytiskneš ve Skříňkách.`, true);
 }
 /** Řádek do detailu člověka v Lidech. */
 function lkPersonHtml(e) {
@@ -53,13 +61,13 @@ function lkRowHtml(x, ov, today) {
   const grp = x.e ? (S.positions.find(g => g.id === x.e.positionId) || {}).name : '';
   let who;
   if (x.st === 'used') who = `<button class="lk-who" type="button" data-lkperson="${esc(l.key)}">${esc(lkName(x.e))}</button>${grp || x.e.wid ? `<small class="muted">${esc([grp, x.e.wid ? `ID ${x.e.wid}` : ''].filter(Boolean).join(' · '))}</small>` : ''}`;
-  else if (x.st === 'clear') who = `${x.e ? `<button class="lk-who" type="button" data-lkperson="${esc(l.key)}">${esc(lkName(x.e))}</button>` : `<b>${esc(lkWho(x) || 'neznámý')}</b>`}<small class="lk-why">${esc(x.why)}</small>`;
+  else if (x.st === 'clear') who = `${x.e ? `<button class="lk-who" type="button" data-lkperson="${esc(l.key)}">${esc(lkName(x.e))}</button>` : `<b>${esc(lkWho(x) || 'neznámý')}</b>`}<small class="lk-why">${esc(x.why)}</small>${x.notice ? `<small class="lk-notice${x.noticeLate ? ' late' : ''}">${x.noticeLate ? `lhůta výzvy uplynula ${esc(dayText(x.notice.until))}, lze vyklidit` : `výzva vyvěšena ${esc(dayText(x.notice.at))}, lhůta do ${esc(dayText(x.notice.until))}`}</small>` : ''}`;
   else if (x.st === 'unknown') who = `<span class="lk-raw">„${esc(l.raw)}“</span><small class="muted">v Lidech nenalezeno, přiřaď</small>`;
   else who = '<span class="muted">—</span>';
   const tag = { used: '<span class="tag ok">Obsazená</span>', unknown: '<span class="tag warn">Nespárovaná</span>', clear: '<span class="tag crit">Je třeba vyprázdnit</span>', free: '<span class="tag">Volná</span>' }[x.st];
-  const extra = [x.endPast ? `<span class="tag warn" title="Konec trestu ${esc(dayText(x.endPast))}">konec trestu minul</span>` : '', multi ? '<span class="tag warn">má víc skříněk</span>' : ''].join('');
+  const extra = [x.noticeLate ? '<span class="tag crit">lhůta uplynula</span>' : x.notice ? '<span class="tag warn">výzva vyvěšena</span>' : '', x.endPast ? `<span class="tag warn" title="Konec trestu ${esc(dayText(x.endPast))}">konec trestu minul</span>` : '', multi ? '<span class="tag warn">má víc skříněk</span>' : ''].join('');
   const act = x.st === 'clear'
-    ? `<button class="btn small" type="button" data-lkfree="${id}" title="Skříňka je prázdná, zůstane volná">Vyprázdněno</button><button class="btn ghost small" type="button" data-lkassign="${id}">Přidělit</button>`
+    ? `<button class="btn ${x.notice ? 'ghost ' : 'sec '}small" type="button" data-lknotice="${id}" title="Štítek s výzvou k vyklizení (Zebra 100 × 35 mm)${x.notice ? ', stejná lhůta' : `, lhůta ${LK_NOTICE_DAYS} pracovních dnů`}">Výzva</button><button class="btn small" type="button" data-lkfree="${id}" title="Skříňka je prázdná, zůstane volná">Vyprázdněno</button><button class="btn ghost small" type="button" data-lkassign="${id}">Přidělit</button>`
     : x.st === 'free' ? `<button class="btn sec small" type="button" data-lkassign="${id}">Přidělit</button>`
       : `<button class="btn ghost small" type="button" data-lkassign="${id}">${x.st === 'unknown' ? 'Přiřadit' : 'Změnit'}</button><button class="btn ghost small" type="button" data-lkfree="${id}">Uvolnit</button>`;
   return `<tr class="lk-${x.st}" data-lkrow="${id}">
@@ -101,7 +109,7 @@ function renderLockers() {
       ${statTile('Obsazené skříňky', String(occ), ov.unknown ? `z toho ${ov.unknown} nespárováno` : 'spárováno s Lidmi', ov.unknown ? 'warn' : '')}
       ${statTile('K vyklizení', String(ov.clear), ov.clear ? 'je třeba vyprázdnit' : 'nic k vyklizení', ov.clear ? 'crit' : '')}
       ${statTile('Lidé bez skříňky', String(ov.without.length), ov.without.length ? 'v seznamu Lidí' : 'každý má skříňku')}</div>`;
-  const alert = clearRows.length ? `<div class="note e lk-alert"><div><b>Je třeba vyprázdnit ${clearRows.length} ${lkN(clearRows.length)}:</b> ${clearRows.slice(0, 8).map(x => `${esc(lkLabel(x.l))} <span class="muted">(${esc(lkWho(x) || 'neznámý')}, ${esc(x.why)})</span>`).join(', ')}${clearRows.length > 8 ? ' …' : ''}</div>${u.f !== 'clear' ? '<button class="btn small" type="button" data-lkf="clear">Ukázat</button>' : ''}</div>` : '';
+  const alert = clearRows.length ? `<div class="note e lk-alert"><div><b>Je třeba vyprázdnit ${clearRows.length} ${lkN(clearRows.length)}:</b> ${clearRows.slice(0, 8).map(x => `${esc(lkLabel(x.l))} <span class="muted">(${esc(lkWho(x) || 'neznámý')}, ${esc(x.why)})</span>`).join(', ')}${clearRows.length > 8 ? ' …' : ''}</div><div class="row gap wrap lk-alertact"><button class="btn small" type="button" data-lknoticeall title="Štítky s výzvou k vyklizení pro všechny skříňky K vyklizení (Zebra 100 × 35 mm)">Vytisknout výzvy (${clearRows.length})</button>${u.f !== 'clear' ? '<button class="btn ghost small" type="button" data-lkf="clear">Ukázat</button>' : ''}</div></div>` : '';
   const chips = `<div class="chips lk-chips" role="tablist" aria-label="Filtr skříněk">${LK_FILTERS.filter(([k]) => k === 'all' || k === 'free' || k === 'used' || k === 'clear' || k === 'without' || count[k]).map(([k, label]) => `<button type="button" class="chip${u.f === k ? ' on' : ''}" data-lkf="${k}" role="tab" aria-selected="${u.f === k}">${label} <em class="t5-count${k === 'clear' && count[k] ? ' late' : ''}">${count[k]}</em></button>`).join('')}</div>`;
   const tools = `<div class="toolbar lk-tools">${chips}<label class="lk-search"><span class="sr-only">Hledat skříňku nebo člověka</span><input type="search" id="lkQ" value="${esc(u.q)}" placeholder="Hledat skříňku nebo jméno" autocomplete="off"></label></div>`;
   let body;
@@ -378,6 +386,30 @@ function lkDrawLabel(doc, x) {
   doc.setTextColor(0, 0, 0);
   doc.setDrawColor(0, 0, 0);
   doc.setFillColor(0, 0, 0);
+  if (x.kind === 'notice') {
+    // výzva k vyklizení (2.81): černý pruh s nadpisem a označením, kdo a do kdy, co bude potom, kdy vyvěšeno
+    const t = x.lines, M = 3, CW = W - 2 * M;
+    doc.rect(M, 2.5, CW, 8, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('Plex', 'bold');
+    doc.setFontSize(lkFit(doc, t.title, CW * 0.52, 11.5));
+    doc.text(t.title, M + 2, 6.6, { baseline: 'middle', charSpace: 0.25 });
+    doc.setFontSize(lkFit(doc, t.label, CW * 0.42, 12.5));
+    doc.text(t.label, W - M - 2, 6.6, { align: 'right', baseline: 'middle' });
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('Plex', 'normal');
+    doc.setFontSize(lkFit(doc, t.ask, CW - 2, 9.2));
+    doc.text(t.ask, M + 1, 15.6);
+    doc.setFont('Plex', 'bold');
+    doc.setFontSize(lkFit(doc, t.until, CW - 2, 10.5));
+    doc.text(t.until, M + 1, 20.6);
+    doc.setFont('Plex', 'normal');
+    doc.setFontSize(lkFit(doc, t.then, CW - 2, 9.2));
+    doc.text(t.then, M + 1, 25.6);
+    doc.setFontSize(7.5);
+    doc.text(t.at, M + 1, 31.4);
+    return;
+  }
   if (x.kind === 'locker') {
     doc.setFont('Plex', 'normal');
     doc.setFontSize(8);
@@ -405,9 +437,118 @@ function lkDrawLabel(doc, x) {
   doc.line(hw, 0, hw, 3);
   doc.line(hw, H - 3, hw, H);
 }
-async function lkLabelsPdf(list, opts, name) {
-  const seq = lkLabelSeq(list, opts);
+async function lkLabelsPdf(list, opts, name, how) { return lkPdf(lkLabelSeq(list, opts), `stitky-skrinky-${name}`, `Štítky skříněk ${name}`, how); }
+/* Tisk bez nastavování (2.81): PDF má přesně velikost štítku, pokyn „skutečná velikost“ (PrintScaling None),
+   papír podle velikosti stránky a 1 kopii. Na počítači se okno tisku otevře rovnou (skrytý rámec s PDF,
+   CSP frame-src blob:), na telefonu nebo s volbou „jen stáhnout“ se PDF stáhne. */
+function lkPrintDirect() { return !(window.matchMedia && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches); }
+function lkPrintBlob(blob, file) {
+  const old = $('#lkPrintFrame');
+  if (old) { URL.revokeObjectURL(old.dataset.url || ''); old.remove(); }
+  const url = URL.createObjectURL(blob);
+  const fr = document.createElement('iframe');
+  fr.id = 'lkPrintFrame';
+  fr.className = 'lk-printframe';
+  fr.title = 'Tisk štítků';
+  fr.tabIndex = -1;
+  fr.setAttribute('aria-hidden', 'true');
+  fr.dataset.url = url;
+  fr.addEventListener('load', () => {
+    try { fr.contentWindow.focus(); fr.contentWindow.print(); }
+    catch (error) { downloadFile(file, blob, 'application/pdf'); toast('Tisk se nepodařilo otevřít, PDF se stáhlo.', true); }
+  }, { once: true });
+  fr.src = url;
+  document.body.append(fr);
+}
+/* ---------- ZPL a přímý tisk na Zebru (2.81) ----------
+   Štítek se nakreslí stejnými příkazy jako do PDF (lkDrawLabel) do bitmapy 800 × 280 bodů (203 dpi)
+   a zabalí do ZPL (^XA^PW800^LL280^LH0,0 … ^PQ1^XZ, lkZplLabel v core). Když na počítači běží Zebra
+   Browser Print, ZPL jde rovnou do tiskárny bez okna tisku; jinak se tiskne PDF přes okno tisku. */
+let lkFontsReady = null;
+function lkCanvasFonts() {
+  if (!lkFontsReady) {
+    lkFontsReady = (async () => {
+      const [r, b] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
+      const buf = x => Uint8Array.from(atob(x), c => c.charCodeAt(0)).buffer;
+      const faces = [new FontFace('LkPlex', buf(r), { weight: '400' }), new FontFace('LkPlex', buf(b), { weight: '600' })];
+      await Promise.all(faces.map(f => f.load()));
+      faces.forEach(f => document.fonts.add(f));
+    })().catch(error => { lkFontsReady = null; throw error; });
+  }
+  return lkFontsReady;
+}
+/** Stejné rozhraní jako jsPDF (jen to, co kreslí štítky), milimetry → body tiskárny. */
+function lkCanvasDoc(ctx) {
+  const K = LK_DOTS, PT = 25.4 / 72, st = { size: 10, bold: false, color: '#000', fill: '#000', stroke: '#000', lw: 0.2 };
+  const font = () => { ctx.font = `${st.bold ? 600 : 400} ${st.size * PT * K}px LkPlex`; };
+  const rgb = (r, g, b) => `rgb(${r},${g},${b})`;
+  return {
+    setTextColor(r, g, b) { st.color = rgb(r, g, b); },
+    setDrawColor(r, g, b) { st.stroke = rgb(r, g, b); },
+    setFillColor(r, g, b) { st.fill = rgb(r, g, b); },
+    setFont(name, style) { st.bold = style === 'bold'; },
+    setFontSize(pt) { st.size = pt; },
+    setLineWidth(mm) { st.lw = mm; },
+    getTextWidth(t) { font(); ctx.letterSpacing = '0px'; return ctx.measureText(t).width / K; },
+    text(t, x, y, o = {}) {
+      font();
+      ctx.fillStyle = st.color;
+      ctx.letterSpacing = `${(o.charSpace || 0) * K}px`;
+      ctx.textAlign = o.align === 'center' || o.align === 'right' ? o.align : 'left';
+      ctx.textBaseline = o.baseline === 'middle' ? 'middle' : 'alphabetic';
+      ctx.fillText(t, x * K, y * K);
+      ctx.letterSpacing = '0px';
+    },
+    rect(x, y, w, h) { ctx.fillStyle = st.fill; ctx.fillRect(x * K, y * K, w * K, h * K); },
+    line(x1, y1, x2, y2) { ctx.strokeStyle = st.stroke; ctx.lineWidth = st.lw * K; ctx.beginPath(); ctx.moveTo(x1 * K, y1 * K); ctx.lineTo(x2 * K, y2 * K); ctx.stroke(); },
+  };
+}
+async function lkZplFor(seq) {
+  await lkCanvasFonts();
+  const cv = document.createElement('canvas');
+  cv.width = LK_ZW;
+  cv.height = LK_ZH;
+  const ctx = cv.getContext('2d', { willReadFrequently: true }), doc = lkCanvasDoc(ctx);
+  return seq.map(x => {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, LK_ZW, LK_ZH);
+    lkDrawLabel(doc, x);
+    const px = ctx.getImageData(0, 0, LK_ZW, LK_ZH).data, bits = new Uint8Array(LK_ZW * LK_ZH);
+    for (let i = 0; i < bits.length; i += 1) bits[i] = px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2] < 384 ? 1 : 0;
+    return lkZplLabel(bits);
+  }).join('\n');
+}
+/** Zebra Browser Print (aplikace od Zebry na počítači): výchozí tiskárna, nebo null. Výsledek se chvíli pamatuje. */
+const LK_ZB_HOSTS = ['http://127.0.0.1:9100/', 'https://localhost:9101/'];
+async function lkZebra(force = false) {
+  const now = Date.now(), z = ui.zebra;
+  if (!force && z && now - z.at < (z.dev ? 30 : 5) * 60000) return z.dev ? z : null;
+  for (const host of LK_ZB_HOSTS) {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 2500);
+    try {
+      const r = await fetch(`${host}default?type=printer`, { signal: ctl.signal, cache: 'no-store' });
+      const dev = r.ok ? JSON.parse((await r.text()) || 'null') : null;
+      if (dev && dev.name) { ui.zebra = { at: now, host, dev }; return ui.zebra; }
+    } catch (error) { /* Browser Print tu neběží */ } finally { clearTimeout(tm); }
+  }
+  ui.zebra = { at: now, dev: null };
+  return null;
+}
+async function lkZebraSend(z, zpl) {
+  const r = await fetch(`${z.host}write`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ device: z.dev, data: zpl }) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+}
+async function lkPdf(seq, file, title, how) {
   if (!seq.length) { toast('Není co tisknout.', true); return; }
+  const n = `${seq.length} ${seq.length === 1 ? 'štítek' : seq.length <= 4 ? 'štítky' : 'štítků'} 100 × 35 mm`;
+  try {
+    if (how === 'zpl') { downloadFile(`${file}.zpl`, await lkZplFor(seq), 'text/plain'); toast(`ZPL pro Zebru: ${n}.`); return; }
+    const zb = how !== 'download' && lkPrintDirect() ? await lkZebra() : null;
+    if (zb) {
+      try { await lkZebraSend(zb, await lkZplFor(seq)); toast(`Odesláno na Zebru ${zb.dev.name}: ${n}.`); return; }
+      catch (error) { ui.zebra = null; toast(`Zebra Browser Print neodpověděl (${error.message}), otevírám okno tisku.`, true); }
+    }
+  } catch (error) { toast(`Štítky se nepodařilo připravit: ${error.message}`, true); return; }
   try {
     await pdfLib();
     const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
@@ -416,11 +557,28 @@ async function lkLabelsPdf(list, opts, name) {
     doc.addFont('Plex-Regular.ttf', 'Plex', 'normal');
     doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
     doc.addFont('Plex-SemiBold.ttf', 'Plex', 'bold');
-    doc.setProperties({ title: `Štítky skříněk ${name}`, creator: 'HALA 2' });
+    doc.setProperties({ title, creator: 'HALA 2' });
+    doc.viewerPreferences({ PrintScaling: 'None', PickTrayByPDFSize: true, NumCopies: 1 });
     seq.forEach((x, i) => { if (i) doc.addPage([LK_LBL.W, LK_LBL.H], 'landscape'); lkDrawLabel(doc, x); });
-    downloadFile(`stitky-skrinky-${name}.pdf`, doc.output('blob'), 'application/pdf');
-    toast(`Štítky: ${seq.length} ${seq.length === 1 ? 'štítek' : seq.length <= 4 ? 'štítky' : 'štítků'} (100 × 35 mm). V tisku nastav skutečnou velikost (100 %).`);
+    if (how !== 'download' && lkPrintDirect()) { lkPrintBlob(doc.output('blob'), `${file}.pdf`); toast(`Tisk: ${n}.`); }
+    else { downloadFile(`${file}.pdf`, doc.output('blob'), 'application/pdf'); toast(`PDF: ${n}, tiskne se ve skutečné velikosti.`); }
   } catch (error) { toast(`PDF štítků se nepovedlo: ${error.message}`, true); }
+}
+/** Výzvy k vyklizení (2.81): u skříňky bez výzvy se vyvěsí nová (dnes + 7 pracovních dnů, uloží se),
+    u vyvěšené se vytiskne znovu se stejnou lhůtou. Skříňky, které už nejsou K vyklizení, se přeskočí. */
+function lkNoticePrint(ids) {
+  const today = todayIso(), meta = { by: ui.me ? ui.me.label : '' }, seq = [];
+  let fresh = 0;
+  ids.forEach(id => {
+    const r = lkSetNotice(S, id, today, meta);
+    if (r.err) return;
+    if (r.fresh) fresh += 1;
+    seq.push({ kind: 'notice', id, lines: lkNoticeLines(r.l, r.n) });
+  });
+  if (!seq.length) { toast('Žádná z vybraných skříněk není K vyklizení.', true); return; }
+  if (fresh) { save(); renderAll(); }
+  const one = seq.length === 1 ? lkLabel(lkFind(S, seq[0].id)).replace(/\s+/g, '') : '';
+  lkPdf(seq, one ? `vyzva-skrinka-${one}` : `vyzvy-skrinky-${today}`, 'Výzva k vyklizení skříňky');
 }
 /** Štítky jedné skříňky (oba). */
 function lkLabelsOne(id) {
@@ -444,15 +602,26 @@ async function lkLabelsDialog() {
       </div>
       <div class="lk-lblpick"><label class="check"><input type="checkbox" name="locker" checked><span>Štítek na skříňku (označení, beze jména)</span></label>
         <label class="check"><input type="checkbox" name="key" checked><span>Štítek na záložní klíč (polovina s nápisem, druhou polovinou se klíč zalepí)</span></label></div>
-      <p class="small muted">Zebra 100 × 35 mm: každý štítek je jedna strana PDF, ke každé skříňce po dvojicích. V tisku nastav velikost papíru 100 × 35 mm a skutečnou velikost (100 %).</p>`,
-    onOpen: dlg => { const sel = $('select[name="row"]', dlg); if (sel) sel.addEventListener('change', () => { $('input[value="row"]', dlg).checked = true; }); },
+      <label class="field lk-out"><span>Výstup</span><select name="out"><option value="">Tisknout</option><option value="download">Stáhnout PDF</option><option value="zpl">Stáhnout ZPL pro Zebru</option></select></label>
+      <p class="small muted lk-printhint" id="lkZbState">Hledám Zebra Browser Print…</p>`,
+    onOpen: dlg => {
+      const sel = $('select[name="row"]', dlg);
+      if (sel) sel.addEventListener('change', () => { $('input[value="row"]', dlg).checked = true; });
+      lkZebra(true).then(z => {
+        const p = $('#lkZbState', dlg);
+        if (!p) return;
+        p.textContent = z ? `Tiskne se rovnou na Zebru ${z.dev.name} (Zebra Browser Print), bez okna tisku: ZPL 203 dpi, 800 × 280 bodů, 1 kopie.`
+          : lkPrintDirect() ? 'Okno tisku se otevře rovnou se štítky ve skutečné velikosti 100 × 35 mm (každý štítek je jedna strana). Stačí jednou vybrat Zebru a v jejím ovladači štítek 100 × 35 mm, prohlížeč si ji pamatuje. Úplně bez okna tisku tiskne aplikace Zebra Browser Print (od Zebry, nainstaluje se jednou do počítače).'
+            : 'Na telefonu se štítky stáhnou jako PDF ve skutečné velikosti 100 × 35 mm.';
+      });
+    },
     validate: form => (form.elements.namedItem('locker').checked || form.elements.namedItem('key').checked ? '' : 'Vyber aspoň jeden druh štítku.'),
   });
   if (res.value !== 'ok') return;
   const f = res.form.elements, which = f.namedItem('which').value;
   const row = which === 'row' ? f.namedItem('row').value : null;
   const list = which === 'shown' ? shown : row != null ? all.filter(l => l.row === row) : all;
-  lkLabelsPdf(list, { locker: f.namedItem('locker').checked, key: f.namedItem('key').checked }, which === 'row' ? `rada-${row || 'bez'}` : todayIso());
+  lkLabelsPdf(list, { locker: f.namedItem('locker').checked, key: f.namedItem('key').checked }, which === 'row' ? `rada-${row || 'bez'}` : todayIso(), f.namedItem('out').value);
 }
 
 function bindLockers() {
@@ -472,6 +641,8 @@ function bindLockers() {
     if (t.dataset.lkperson) { openPersonKey(t.dataset.lkperson); return; }
     if (t.dataset.lkassign) { lkAssignDialog(t.dataset.lkassign); return; }
     if (t.dataset.lklbl) { lkLabelsOne(t.dataset.lklbl); return; }
+    if (t.dataset.lknotice) { lkNoticePrint([t.dataset.lknotice]); return; }
+    if (t.matches('[data-lknoticeall]')) { lkNoticePrint(lkOverview(S.lockers, S.employees, todayIso()).rows.filter(x => x.st === 'clear').map(x => x.l.id)); return; }
     if (t.dataset.lkfree) {
       const l = lkFind(S, t.dataset.lkfree);
       if (!l) return;

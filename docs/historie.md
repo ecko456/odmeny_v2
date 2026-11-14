@@ -6,13 +6,40 @@ Text zápisů se nepřepisuje (jsou to zadání uživatele a rozhodnutí v době
 
 Obsah:
 
-- Zápisy „Kde jsme skončili“ (od 2.79 dozadu po 1. 10. 2026)
+- Zápisy „Kde jsme skončili“ (od 2.79.1 dozadu po 1. 10. 2026)
 - Verze a stav (celá tabulka verzí s commity, zadání 2.1)
 - Ostrá verze a verze 2 (původní text, platil do 7. 11. 2026)
 - Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, nezačato)
 - Původní úvod a Tři oddělené projekty
 
 ## Zápisy „Kde jsme skončili“
+
+Stav k 13. 11. 2026 (verze 2.79.1):
+
+- Uživatel: „u položek, kde bude ‚Tento díl se zpracovává na jiném oddělení: …‘ a nebude mít plné
+  zobrazení, tak v PDF reportech ať nejsou nakonec viditelné vůbec, zabírá to zbytečně místo.“
+  - `drawShortage`: `pdfOne(sec, it)` (před `title`) vrátí sestavu jen s poddíly, které do bloku
+    patří (`shSubHere`) nebo jsou `full`; používá ho nadpis oddělení (`k.need`), řádky i počet
+    poddílů v záhlaví po odděleních. Nízký řádek „jiné oddělení“ z 2.78 v PDF zrušený. Sestava,
+    které v bloku nezůstane žádný poddíl, se vytiskne jako obyčejný řádek s QR kódem.
+  - V aplikaci beze změny (řádek `tr.sh-subaway` s textem a Zobrazit plně zůstal).
+  - Testy: `e2e_shpruvodce` (PDF po odděleních bez cizího poddílu a s počtem 1 poddíl, po
+    Zobrazit plně cizí poddíl i v Brusu). `ODM_VERSION` 2.79.1, data beze změny (57).
+- Uživatel se ptal, jestli půjde využít `Graphify-Labs/graphify`, `emilkowalski/skills` nebo `affaan-m/ECC`.
+  Prošli jsme je, graphify vyzkoušen na našem kódu (offline, jen kód): volání mezi díly nespojí
+  (jeden globální rozsah bez importů), tak ne. Celé ECC ne (314 skillů, hooky, většina mimo nás).
+  Doporučení: 1. zeštíhlit CLAUDE.md, 2. zátěžový test obrazovek nejhoršími daty (postup break-ui
+  z emilkowalski/skills) na Shortage a Po termínu i v PDF, 3. kontrola klikání a tichých chyb
+  (click-path-audit, silent-failure-hunter z ECC) nad ukládáním, sloučením dvou lidí a importy,
+  4. kontrola animací jen na přání. Uživatel: „začni prvním bodem“.
+  - CLAUDE.md 290 kB → 38 kB: zápisy od 2.77 dozadu, celá tabulka verzí, původní text o ostré verzi
+    a zadání víc modulů v `docs/historie.md`, popisy modulů v `docs/moduly.md`, seznam e2e testů
+    v `docs/testy.md`, vše beze změny textu (skript ověřil, že každý původní řádek někde je).
+    Nové oddíly Kde co je (a jak zapisovat), Ostrá verze (co z ní platí), Moduly (rozcestník
+    modul → díly kódu), Testy v kostce. Opravené zastaralé cesty `private/app.js` a `private/core.js`.
+  - `deploy/install.sh` `--exclude '/docs/'` (Apache `.md` stejně nevydá), test
+    `test_notes_for_claude_stay_small` (CLAUDE.md pod 60 kB, nejvýš 3 zápisy, odkazy na docs).
+  - Čeká se, jestli uživatel chce body 2–4.
 
 Stav k 13. 11. 2026 (verze 2.79):
 
@@ -2643,7 +2670,8 @@ Stav k 1. 10. 2026:
 | 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
 | 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
 | 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
-| 2.80 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
+| 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
+| 2.81 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
 
 Verze 2.1 přidala:
 

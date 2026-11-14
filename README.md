@@ -62,6 +62,25 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.81
+
+- **Výzva k vyklizení skříňky**: u skříňky K vyklizení se vytiskne štítek (Zebra 100 × 35 mm):
+  „VÝZVA K VYKLIZENÍ · SKŘÍŇKA A 4 – Používáte tuto skříňku? Nahlaste se u vedoucího nejpozději
+  do 25. 11. 2026 (7 pracovních dnů). Poté bude skříňka komisionálně otevřena a vyklizena. Vyvěšeno 14. 11. 2026“.
+  - Lhůta je konkrétní datum: 7 pracovních dnů, víkendy a státní svátky se nepočítají.
+  - Místo „obsah bude zlikvidován“ je „komisionálně otevřena a vyklizena“: věci v skříňce jsou cizí majetek,
+    správně se skříňka otevře za svědků se zápisem, věci se uschovají a teprve potom se s nimi naloží dál.
+  - Po vyřazení nebo smazání člověka se skříňkou aplikace rovnou nabídne Vytisknout výzvu. Ve Skříňkách je
+    tlačítko Výzva u skříňky a Vytisknout výzvy pro všechny K vyklizení. Aplikace si datum výzvy pamatuje
+    (opakovaný tisk má stejnou lhůtu) a po lhůtě ukáže „lhůta uplynula, lze vyklidit“.
+- **Tisk štítků bez nastavování**:
+  - S aplikací **Zebra Browser Print** (od Zebry, nainstaluje se jednou do počítače) jdou štítky rovnou do
+    tiskárny, bez okna tisku: aplikace pošle ZPL `^XA^PW800^LL280^LH0,0 … ^PQ1^XZ` (203 dpi, 800 × 280 bodů,
+    1 kopie). Při prvním spojení se Browser Print zeptá, jestli stránce povolit tiskárny.
+  - Bez něj se okno tisku otevře hned (bez stahování) a PDF samo říká „skutečná velikost“ a papír podle velikosti
+    stránky. Jednou vyber Zebru a v jejím ovladači štítek 100 × 35 mm, prohlížeč si to pamatuje.
+  - V Tisku štítků jde zvolit i Stáhnout PDF nebo Stáhnout ZPL pro Zebru. Na telefonu se PDF stáhne.
+
 ## Co je nového ve verzi 2.80
 
 - **Nový modul Skříňky** (v menu pod Konci trestů): soupis skříněk spárovaný s Lidmi.
