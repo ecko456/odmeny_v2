@@ -378,3 +378,44 @@ s plánem, `cpPresence` = Ø lidí skupiny v práci za posledních 20 pracovníc
 (`dvGroupOf`). UI v `app.js` (sekce „PLÁN KAPACIT“): `renderCapPlan`, `bindCapPlan`, PDF
 `exportCapPlanPdf` (od 2.39.2 `cpPdfPage` + `cpChart` přes `pdfCtrPage`, A4 na výšku), Excel
 `exportCapPlanXlsx`; lidé jen s ID (`cpWho`, 2.39.1).
+
+## Skříňky (verze 2.80)
+
+Soupis skříněk spárovaný s Lidmi. Data `S.lockers = {list: []}`, položka `{id: "lk…", row (písmeno řady, velkými,
+nejvýš 6 znaků), no (číslo jako text, „012“ → „12“), key (člověk), name (snímek jména, zůstane i po smazání
+člověka), gone (jméno člověka, který u nás už nepracuje), raw (jméno, jak bylo napsané v importu), note, at, by}`.
+Skříňka se pozná podle řady a čísla, v soupisu je jen jednou. Core `private/core/28-skrinky.js`, obrazovka
+`private/app/35-skrinky.js`, CSS na konci `app.css` (Skříňky 2.80).
+
+- **Stavy** (`lkState`): `used` (člověk v Lidech, nevyřazený; `endPast` = konec trestu minul), `unknown` (jméno
+  z importu bez člověka, počítá se do obsazených, „z toho nespárováno“), `clear` = K vyklizení (vyřazený ze seznamu,
+  smazaný z Lidí, nebo `gone`), `free`. `lkOverview`: počty, řádky, `without` (nevyřazení bez skříňky), `multi`.
+- **Vložení z Excelu**: Ctrl+V kdekoli ve Skříňkách (mimo pole), nebo tlačítko Vložit z Excelu (okno s polem,
+  tabulka vložená do pole se hned zpracuje; funguje i na telefonu). `shClipRows` (HTML i text), `lkParse`
+  (A řada, B číslo, C jméno; nadpis, duplicita, řádek bez čísla). Okno: dlaždice, K rozhodnutí (nejisté, výběr:
+  nerozhodnuto = nechat jméno, Už u nás nepracuje → K vyklizení, Volná, Návrh, Ještě bez skříňky, Vyřazení,
+  Ostatní), Spárováno automaticky (sbalené, jde změnit), Nahradit celý soupis. Bez zaškrtnutí se přepíšou jen
+  skříňky se stejnou řadou a číslem (`lkApply`). Do historie jde jeden záznam (`store.note`).
+- **Párování** (`lkMatch`, jen v prohlížeči): slova bez diakritiky, titulů a interpunkce (`endTok`), příjmení
+  kdekoli v textu, zbytek proti jménu (jedno písmeno = iniciála), podobnost podle překlepů (`attDist`) i po
+  „fonetickém“ srovnání (y/i, w/v, q/k, zdvojená písmena). Jistě: přesně; jen příjmení a v Lidech jediné;
+  příjmení a iniciála jednoznačně; překlep se skóre ≥ 0,8, náskokem ≥ 0,12 a příjmením ≥ 0,8. Přesná shoda má
+  přednost před překlepem, člověk se jistě spáruje jen jednou (druhý řádek je nejistý s návrhem). Vyřazení jsou
+  mezi lidmi k párování (jejich skříňka je K vyklizení). Ruční výběr (`assign`) má přednost.
+- **Úpravy**: Přidělit / Změnit (`lkAssignDialog`: volná, Už u nás nepracuje, lidé; při přesunu člověka
+  zaškrtnuté „dosavadní skříňku uvolnit“), Uvolnit (u obsazené s potvrzením), Vyprázdněno (K vyklizení → volná),
+  poznámka v řádku, smazat, Přidat řadu (`lkAddRange`, od–do, nejvýš 500, existující přeskočí), Lidé bez skříňky
+  s Přidělit volnou (první volná předvybraná). Excel `skrinky-RRRR-MM-DD.xlsx` (`lkSheets`: Skříňky s upozorněním
+  „Je třeba vyprázdnit (důvod)“ / „má víc skříněk“ a sloupcem Z importu, Bez skříňky).
+- **Upozornění**: odznak K vyklizení v menu (`#navLockers`, červený), pruh Je třeba vyprázdnit, dlaždice na
+  domovské stránce (`homeTileMeta`), detail člověka v Lidech (`lkPersonHtml`), potvrzení vyřazení a smazání
+  člověka (`lkWarnText`), hláška po nich (`lkAfterLeave`), import Konců trestů hlásí skříňky vyřazených.
+- **Štítky** (Zebra 100 × 35 mm, `lkLabelsPdf`): PDF, kde je každá strana jeden štítek 100 × 35 mm. Ke každé
+  skříňce dvojice: štítek na skříňku (malé SKŘÍŇKA, velké označení, beze jména) a štítek na záložní klíč (jen levá
+  polovina: SKŘÍŇKA, označení, černý pruh ZÁLOŽNÍ KLÍČ; pravá polovina prázdná, tou se klíč zalepí a pozná se,
+  jestli byl rozbalený; značky přehybu nahoře a dole uprostřed). Tlačítko Štítky v řádku (`stitky-skrinky-A12.pdf`),
+  Tisk štítků hromadně: všechny, zobrazené ve filtru, nebo jedna řada, a druhy štítků (`lkLabelSeq`). V tisku
+  velikost papíru 100 × 35 mm a skutečná velikost (100 %).
+- **Historie** (kind `locker`, filtr Skříňky): přidání a smazání skříňky, přidělení, uvolnění, „už nepracuje“,
+  poznámka. Přidělení / uvolnění / „už nepracuje“ mají každé vlastní `m` (`lk:id:k:p|f|g`), takže se při rychlém
+  sledu v historii neslučují (vyprázdnění zůstane vidět); poznámky se slučují (`lk:id:t`).

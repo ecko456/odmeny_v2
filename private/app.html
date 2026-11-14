@@ -35,6 +35,7 @@
       <button type="button" data-view="scan"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><rect x="8" y="8" width="3" height="3" rx=".6"/><rect x="13" y="8" width="3" height="3" rx=".6"/><rect x="8" y="13" width="3" height="3" rx=".6"/><path d="M13 13h3v3"/></svg><span>Rychlý scan</span></button>
       <button type="button" data-view="dochazka"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4M8 13.5h2M14 13.5h2M8 17h2"/></svg><span>Docházka</span></button>
       <button type="button" data-view="konce"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/><path d="M10 15h7M14 12.5l3 2.5-3 2.5"/></svg><span>Konce trestů</span></button>
+      <button type="button" data-view="skrinky"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="3" width="15" height="18" rx="1.6"/><path d="M12 3v18M7.5 6.5h2M14.5 6.5h2M7.5 8.8h2M14.5 8.8h2M10 13v1.6M14 13v1.6"/></svg><span>Skříňky</span><em class="nav-badge" id="navLockers" hidden></em></button>
       <button type="button" data-view="audit"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h11"/><path d="M6 16.5v-5M10 16.5V8"/><circle cx="16.5" cy="10.5" r="4"/><path d="m19.4 13.4 2.6 2.6"/><path d="M14.8 10.6l1.2 1.2 2.2-2.4"/></svg><span>KPI</span><em class="nav-badge" id="navWa" hidden></em></button>
       <button type="button" data-view="top5"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17"/><path d="M6.5 16.5v-9M11 16.5v-6M15.5 16.5v-3.5M20 16.5v-1.5"/><path d="m6.5 4 4 3.5 4.5 3 4.5 2"/></svg><span>Top 5</span><em class="nav-badge" id="navTop5" hidden></em></button>
       <button type="button" data-view="nastaveni"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Nastavení</span></button>
@@ -230,6 +231,22 @@
         </div>
       </header>
       <div id="endView"></div>
+    </section>
+    <section class="view" id="view-skrinky" aria-labelledby="lkTitle">
+      <header class="page-head">
+        <div>
+          <p class="eyebrow">Šatna</p>
+          <h1 id="lkTitle">Skříňky</h1>
+          <p class="lede">Soupis skříněk spárovaný s Lidmi: kdo má a kdo nemá skříňku a čí skříňku je třeba vyprázdnit (vyřazený ze seznamu, smazaný z Lidí, nebo už u nás nepracuje). Soupis vložíš z Excelu: zkopíruj sloupce A (písmeno), B (číslo) a C (jméno a příjmení) a tady stiskni Ctrl+V.</p>
+        </div>
+        <div class="page-actions noprint">
+          <button class="btn" type="button" id="lkPasteBtn">Vložit z Excelu</button>
+          <button class="btn sec" type="button" id="lkRangeBtn">Přidat řadu</button>
+          <button class="btn sec" type="button" id="lkLabelsBtn">Tisk štítků</button>
+          <button class="btn ghost" type="button" id="lkXlsx">Excel</button>
+        </div>
+      </header>
+      <div id="lkView"></div>
     </section>
 
     <section class="view" id="view-vyroba" aria-labelledby="prodTitle">

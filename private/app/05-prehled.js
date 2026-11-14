@@ -74,8 +74,9 @@ async function handleExcludeClick(event) {
   const button = event.target.closest('[data-exclude],[data-include]');
   if (!button) return false;
   if (button.dataset.exclude) {
-    if (!(await confirmBox('Vyřadit ze seznamu?', `${nameOf(button.dataset.exclude)} se přestane hodnotit. Data zůstanou a vrátit ho jde v části Lidé.`, 'Vyřadit'))) return true;
+    if (!(await confirmBox('Vyřadit ze seznamu?', `${nameOf(button.dataset.exclude)} se přestane hodnotit. Data zůstanou a vrátit ho jde v části Lidé.${lkWarnText(button.dataset.exclude)}`, 'Vyřadit'))) return true;
     setExcluded(button.dataset.exclude, true);
+    lkAfterLeave(button.dataset.exclude, nameOf(button.dataset.exclude));
   } else {
     setExcluded(button.dataset.include, false);
   }

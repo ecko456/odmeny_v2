@@ -240,6 +240,7 @@ function bindEvents() {
   bindQuick();
   bindScan();
   bindEnds();
+  bindLockers();
   window.addEventListener('beforeunload', event => {
     if (store.dirty || store.saving) { event.preventDefault(); event.returnValue = ''; }
   });

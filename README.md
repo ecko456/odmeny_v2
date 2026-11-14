@@ -62,6 +62,27 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.80
+
+- **Nový modul Skříňky** (v menu pod Konci trestů): soupis skříněk spárovaný s Lidmi.
+  - Nahoře **Volné skříňky**, **Obsazené skříňky** (kolik z nich zatím bez spárovaného člověka), **K vyklizení**
+    a **Lidé bez skříňky**.
+  - Skříňka člověka, který je **vyřazený ze seznamu**, smazaný z Lidí, nebo u kterého vybereš „už u nás
+    nepracuje“, je **K vyklizení** a svítí u ní **Je třeba vyprázdnit** (i v menu jako červené číslo). Po vyprázdnění
+    stačí kliknout na Vyprázdněno a skříňka je volná. Při vyřazení nebo smazání člověka aplikace hned připomene
+    jeho skříňku.
+  - **Vložení z Excelu**: označ sloupce A (písmeno), B (číslo) a C (jméno a příjmení), zkopíruj a ve Skříňkách
+    stiskni Ctrl+V (nebo tlačítko Vložit z Excelu, i na telefonu). Ručně psaná jména se spárují i s překlepy, bez
+    háčků, s prohozeným pořadím, jen s příjmením nebo s iniciálou. Co není jisté, ukáže okno K rozhodnutí: vybereš
+    člověka (nahoře návrhy, pak lidé ještě bez skříňky), nebo „Už u nás nepracuje“. Jména se párují jen
+    v prohlížeči, nikam neodcházejí.
+  - Přidělit, změnit (i přesun na jinou skříňku), uvolnit, poznámka, přidání řady skříněk, lidé bez skříňky
+    s Přidělit volnou, export do Excelu.
+  - **Štítky pro Zebru 100 × 35 mm**: u každé skříňky tlačítko Štítky, nahoře Tisk štítků (všechny, jen zobrazené,
+    nebo jedna řada). Ke každé skříňce dva štítky: na skříňku (jen označení, beze jména) a na **záložní klíč**
+    (označení a ZÁLOŽNÍ KLÍČ jen na polovině štítku, druhou polovinou se klíč zalepí, takže je poznat, jestli byl
+    rozbalený). V tisku nastav velikost papíru 100 × 35 mm a skutečnou velikost (100 %).
+
 ## Co je nového ve verzi 2.79.2
 
 - Kontrola vzhledu s nejhoršími daty (dlouhé názvy dílů, čísla objednávek bez mezer, dlouhé QR kódy,

@@ -1,5 +1,5 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.78 → 2.79):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.79.2 → 2.80):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení, rozpracovaný seznam Shortage
 //      s poznámkami, záznamem, stavem, poddílem a čekajícím poddílem s jinou operací) a uloží je;
@@ -15,13 +15,14 @@
 //      den bez nich, (2.76) dá připnuté položce dalšího dne stav Hotovo (jde na konec) a zelené barvě
 //      ve vzorníku Hotovo, (2.77) v Rychlém scanu načte kód čtečkou s množstvím a dávku potvrdí a (2.78)
 //      vloží starší záznamy evidence (poslední 3 u dílu, přednastavení sloupců) a díl jde do K prověření a (2.79)
-//      v modulu Po termínu vloží tabulku se skluzem (seřadí se, oddělení ze Shortage);
+//      v modulu Po termínu vloží tabulku se skluzem (seřadí se, oddělení ze Shortage) a (2.80) ve Skříňkách vloží
+//      soupis s ručně psanými jmény lidí z převzatých dat (spárují se, vyřazený = K vyklizení);
 //      po novém přihlášení je vše uložené a ostatní data stejná.
 //   Shortage se kontroluje zvlášť: nic původního nesmí chybět ani se změnit, jen hotová TOP položka
 //   z předchozího dne je na konci seznamu (od 2.76). Výkony nahrané ve staré verzi data
 //   pro normy nemají, záložka Normy je ohlásí (2.74).
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive 3afd2dd | tar -x -C $S/v278 && sudo bash $S/v278/deploy/install.sh
+//   git archive fb58f73 | tar -x -C $S/v2792 && sudo bash $S/v2792/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
@@ -29,15 +30,15 @@ const fs = require('fs');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.78$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.79$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.79\\.2$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.80$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). Hodnota null = část,
    která se při převodu mění schválně a kontroluje se zvlášť (Shortage 2.70); úkoly a Vrátit zpět mění krok 5. */
-const ADDED = { 'shortage.lists': null, 'shortage.cols': null, 'shortage.colors': null, 'shortage.scans': null, 'workAudit.normPct': null, late: '({ lists: [], hist: [], scans: [] })', tasks: null, undo: null };
-/* Verze dat se mění (2.79: modul Po termínu, verze dat 57): stará stránka dostane 426. */
+const ADDED = { 'shortage.lists': null, 'shortage.cols': null, 'shortage.colors': null, 'shortage.scans': null, 'workAudit.normPct': null, late: null, lockers: '({ list: [] })', tasks: null, undo: null };
+/* Verze dat se mění (2.80: modul Skříňky, verze dat 58): stará stránka dostane 426. */
 const SAME_DATA = false;
 const shRecListT = r => (r ? [r.state, ...(r.prev || []).map(x => x.state)] : []);   // stavy posledních záznamů dílu (2.78)
 
@@ -315,6 +316,18 @@ const STATE = added => `(() => {
   check(await page.evaluate(() => S.late.lists[0].items.map(i => i.delay).join() === '12,5' && shDeptOf(S.late, S.late.lists[0].items[1]) === 'sdupg01' && S.shortage.lists.length === 3),
     'Po termínu nad převzatými daty: seřazeno podle skluzu, oddělení Brus ze Shortage, Shortage beze změny');
   await page.screenshot({ path: path.join(shots, '02-nova-potermin.png'), fullPage: true });
+  // 2.80: Skříňky nad převzatými lidmi: ručně psaná jména (bez háčků, iniciála, jen příjmení), vyřazený = K vyklizení
+  await page.evaluate(() => { S.employees['gregor|gustav'].excluded = true; save(); showView('skrinky'); });
+  await page.waitForSelector('#view-skrinky.on #lkView .lk-empty');
+  await page.evaluate(t => { const dt = new DataTransfer(); dt.setData('text/plain', t); document.body.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); },
+    'A\t1\tAles Adamek\nA\t2\tBednář B.\nA\t3\tFiala\nA\t4\tGregor Gustav\nA\t5\t');
+  await page.waitForSelector('#dlg[open] .lk-sum');
+  check(await page.evaluate(() => document.querySelector('#dlg .lk-sum').textContent.replace(/\s+/g, '').includes('Spárováno4')), 'Skříňky nad převzatými daty: 4 spárováno');
+  await page.click('#dlgOk');
+  await page.waitForFunction(() => S.lockers.list.length === 5);
+  await saved(page);
+  check(await page.evaluate(() => { const o = lkOverview(S.lockers, S.employees, todayIso()); return o.used === 3 && o.clear === 1 && o.free === 1 && document.querySelector('#navLockers').textContent === '1'; }), 'Skříňky nad převzatými daty: obsazené 3, K vyklizení 1 (vyřazený), volná 1');
+  await page.screenshot({ path: path.join(shots, '02-nova-skrinky.png'), fullPage: true });
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const again = await ctx3.newPage();
@@ -350,6 +363,9 @@ const STATE = added => `(() => {
   const fnew = fnext.items.find(i => i.ean === '8590000000059');
   const flate = final.added.late || { lists: [] };
   check(flate.lists.length === 1 && flate.lists[0].items.map(i => i.delay).join() === '12,5' && !('depts' in flate) && !('cols' in flate), `Po termínu (2.79) po novém přihlášení: ${JSON.stringify(flate).slice(0, 300)}`);
+  const flk = (final.added.lockers || { list: [] }).list.map(l => `${l.row}${l.no}:${l.key}`).join(',');
+  check(flk === 'A1:adámek|aleš,A2:bednář|boris,A3:fiala|filip,A4:gregor|gustav,A5:', `Skříňky (2.80) po novém přihlášení: ${flk}`);
+  if (final.st.employees['gregor|gustav']) delete final.st.employees['gregor|gustav'].excluded;
   check(JSON.stringify(shRecListT(fpin.rec)) === JSON.stringify(['Kontrola kvality', 'Broušení', 'Řezání']) && fnew.rec && fnew.rec.state === 'Kontrola' && final.added['shortage.cols'].move && final.added['shortage.cols'].move.heads && final.added['shortage.cols'].move.heads.state === 'Stav',
     `2.78 po novém přihlášení: poslední 3 záznamy ${JSON.stringify(fpin.rec)}, přednastavení evidence ${JSON.stringify(final.added['shortage.cols'].move)}`);
   check(fsc.length === 1 && fsc[0].code === '1.1.1' && fsc[0].qty === 3 && fsc[0].pos === 'Kontrola kvality' && fsc[0].hit && fsc[0].name === 'Hřídel velká' && fpin.rec && fpin.rec.state === 'Kontrola kvality' && fpin.rec.qty === '3',

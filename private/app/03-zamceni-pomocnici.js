@@ -119,6 +119,7 @@ function renderAll() {
   if (ui.view === 'rychla') renderQuick();
   if (ui.view === 'scan') renderScan();
   if (ui.view === 'konce') renderEnds();
+  if (ui.view === 'skrinky') renderLockers(); else renderLkBadge();
   if (ui.view === 'ukoly') renderTasks(); else renderTaskBadge();
   renderTaskAlert();
   renderSaveState();
@@ -145,6 +146,7 @@ function showView(name) {
   if (name === 'rychla') renderQuick();
   if (name === 'scan') renderScan(); else scStop();   // kamera se mimo Rychlý scan vypne
   if (name === 'konce') renderEnds();
+  if (name === 'skrinky') renderLockers();
   if (name === 'ukoly') renderTasks();
   closeFab();
   $$('#nav [data-view]').forEach(button => button.setAttribute('aria-current', String(button.dataset.view === (name === 'vyroba' ? 'audit' : name))));

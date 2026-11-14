@@ -15,7 +15,7 @@ function mergeIdArr(x){
 }
 const MERGE_TOP={employees:"Lidé",positions:"Skupiny a pravidla",sanctions:"Sankce",sanReasons:"Důvody sankcí",periods:"Docházka",production:"Evidence práce",prodMap:"Spárování evidence práce",
   adjust:"Ruční úpravy",kafe:"Kafe",issued:"Výdej",marks:"Body prémie",capReport:"Směny a kapacita",settings:"Nastavení",eff:"Top 5",audit:"Kontroly",logbooks:"Protokoly",
-  workAudit:"KPI",service:"Servis",shortage:"Shortage",late:"Po termínu",capPlan:"Plán kapacit",tasks:"Úkoly",attEdits:"Úpravy docházky",attLocks:"Zámky docházky",calNotes:"Kalendář",agenda:"Časová osa",leadSkills:"Dovednosti vedoucích",
+  workAudit:"KPI",service:"Servis",shortage:"Shortage",late:"Po termínu",lockers:"Skříňky",capPlan:"Plán kapacit",tasks:"Úkoly",attEdits:"Úpravy docházky",attLocks:"Zámky docházky",calNotes:"Kalendář",agenda:"Časová osa",leadSkills:"Dovednosti vedoucích",
   normCutDone:"Srážky za neproduktivitu",demo:"Ukázková data"};
 const MERGE_FIELD={note:"poznámka",rate:"hodnocení",positionId:"skupina",shift:"směna",sick:"nemoc od",end:"konec trestu",wid:"ID v evidenci práce",excluded:"vyřazen",
   first:"jméno",last:"příjmení",lead:"vedoucí oddělení",title:"název",name:"název",due:"termín",owner:"zodpovědná osoba",state:"stav",desc:"popis",qty:"množství",pct:"procento",

@@ -155,8 +155,9 @@ function legacyCard(e) {
 function bindPersonDelete(e) {
   $('#pDel').onclick = async () => {
     const count = S.sanctions.filter(s => s.key === e.key).length;
-    if (!(await confirmBox('Smazat člověka?', `${e.last} ${e.first} zmizí ze seznamu i se zařazením a úrovní.${count ? ` Smaže se i ${count} sankcí.` : ''} Docházka v nahraných souborech zůstane.`, 'Smazat', true))) return;
+    if (!(await confirmBox('Smazat člověka?', `${e.last} ${e.first} zmizí ze seznamu i se zařazením a úrovní.${count ? ` Smaže se i ${count} sankcí.` : ''} Docházka v nahraných souborech zůstane.${lkWarnText(e.key)}`, 'Smazat', true))) return;
     delete S.employees[e.key];
+    lkAfterLeave(e.key, `${e.last} ${e.first}`);
     S.sanctions = S.sanctions.filter(s => s.key !== e.key);
     Object.values(S.adjust).forEach(b => { delete b[e.key]; });
     Object.values(S.issued || {}).forEach(b => { delete b[e.key]; });
@@ -237,6 +238,7 @@ function renderPersonDetail() {
         </div>
       </div>
       ${e.excluded ? '<div class="note w"><b>Vyřazen ze seznamu.</b> Nehodnotí se a není v přehledu, výrobě ani v nabídce sankcí. Zařazení a historie zůstávají.</div>' : ''}
+      ${lkPersonHtml(e)}
       <div class="form-grid">
         <label class="field"><span>Skupina</span><select id="pPos">${posOptions(e.positionId, '— bez skupiny —')}</select></label>
         <label class="field"><span>Směna</span><select id="pShift"><option value="">— bez směny —</option>${SHIFTS.map(([k, label]) => `<option value="${k}"${shiftOf(e) === k ? ' selected' : ''}>${esc(label)}</option>`).join('')}</select></label>

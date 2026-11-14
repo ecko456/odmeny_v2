@@ -6,13 +6,51 @@ Text zápisů se nepřepisuje (jsou to zadání uživatele a rozhodnutí v době
 
 Obsah:
 
-- Zápisy „Kde jsme skončili“ (od 2.78 dozadu po 1. 10. 2026)
+- Zápisy „Kde jsme skončili“ (od 2.79 dozadu po 1. 10. 2026)
 - Verze a stav (celá tabulka verzí s commity, zadání 2.1)
 - Ostrá verze a verze 2 (původní text, platil do 7. 11. 2026)
 - Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, nezačato)
 - Původní úvod a Tři oddělené projekty
 
 ## Zápisy „Kde jsme skončili“
+
+Stav k 13. 11. 2026 (verze 2.79):
+
+- Uživatel: „převzít modul shortage a udělat druhý modul s podobnými funkcemi ‚Po termínu‘ … nahrál
+  místo shortage položky po termínu, spárovalo by to s výrobním plánem následně evidencí a měl bych
+  stejný list jako je v shortage, ale … tříděné namísto TOP shortage podle skluzu, ten je ve sloupci F
+  … čím větší skluz, tím je to horší. Zase AI může pomoci rozpoznat sloupce podle prvního řádku
+  a přidělit v návrhu ke kontrole co je co“.
+  - **Jeden kód, dva moduly**: pohled `potermin` ukazuje stejnou sekci `#view-shortage` (showView
+    přepne sekci a `shSwitch`). `shKey()` = `late` | `shortage` podle `ui.view`, `shLate()`, `shc()`
+    vrací `S.late` nebo `S.shortage`, **`shPut(x)`** uloží vyčištěné do otevřeného modulu (všechna
+    dřívější `S.shortage = cleanShortage(…)` v 26-shortage). `ui.sh` je pro každý modul zvlášť
+    (`ui.shStates`), výrobní plán v paměti okna (`ui.sh.plan`) společný. `SH_TXT` / `shT()` texty
+    (název, PDF, soubor, záhlaví, krok 1, dny), `shHeadDraw` záhlaví a lede, `.sh-late` na sekci.
+    Rychlý scan a pravý panel jsou jen pro Shortage.
+  - Data (verze 57): `S.late = {lists, hist, scans: []}` (stejný tvar seznamů jako Shortage, položka
+    `delay` = skluz, číslo). `depts`, `cols` a `colors` jsou na `S.late` **nevypisované přístupy**
+    do `S.shortage` (`shLateLink(st)`, getter i setter), neukládají se (sharedState je nevidí);
+    sloupce tabulky po termínu jsou proto v `S.shortage.cols.late`. `cleanLate(o, sh)` čistí se
+    společnými odděleními (ruční oddělení položky zůstane) a řadí `shLateOrder`; `sanitizeState`
+    `out.late = cleanLate(…, out.shortage)` + `shLateLink(out)`.
+  - Core: `SH_COLS.late` (A–E, delay F), `SH_COL_NAMES/NEED/WORDS.late`, `shBuild(rows, cols, colors,
+    kind)` (late: skluz, bez TOP a barev, `warn.noDelay`), `shDelayNum`, `shLateOrder` (skluz sestupně,
+    bez skluzu na konci otevřených, Hotovo na konci, stabilní), `shDelayTiers` (crit = čtvrtina,
+    warn = polovina otevřených se skluzem), `lateChanges` (historie kind `late`, „Po termínu:“, m `pt…`,
+    bez oddělení a sloupců), `LOG_KINDS` + `late`, `MERGE_TOP.late`, `blank().late`.
+  - UI 26-shortage: import seznamu `shLK()` (`late` / `list`) v `shImportFile`, `shPaste` (v Po termínu
+    bez seznamu nebo s nadpisem Skluz = seznam, ne záznamy), `shColsFor` (`listKind`: okno vždy, bez
+    přednastavení), poznámka o skluzu v okně, `SH_LATE_NONE`; `renderShortage` pořadí podle skluzu
+    (srovná i po změně stavu), dlaždice Největší skluz, `shDelayTag`, řádky `sh-latecrit/sh-latewarn`,
+    bez TOP tlačítek, sloupec Množství, nápověda, oddělení jen ke čtení `.sh-deptsro`
+    + `[data-shtoshortage]`; šipky na úchytu jen hláška; PDF (`late`, `lab`, `lateCrit`: SKLUZ N
+    jako TOP / TOP 2, záhlaví HALA 2 · PO TERMÍNU, název Položky po termínu, soubor `po-terminu-…`).
+    34-průvodce: `SH_WIZ_STEPS_ALL`, `shWizSteps()`, texty. Menu `#nav [data-view="potermin"]`,
+    `HOME_TILES`, `homeTileMeta`, historie filtr a ikona `late`. Okno sloupců `dialog.dlg.wide:has(.sh-coldlg)` 900 px.
+  - Server `lib/ai.php`: `ODM_AI_SH_FIELDS.late` (order, name, ean, index, qty, delay, op, note), prompt.
+  - Testy: core „Po termínu (2.79)“, nový `tests/e2e_potermin.js`, `test_odmeny` (late, 426 pro 56),
+    `e2e_mobil` (18 položek menu), `e2e_upgrade_prev` 2.78 → 2.79 (archiv `3afd2dd`). `ODM_VERSION` 2.79.
 
 Stav k 13. 11. 2026 (verze 2.78):
 
@@ -2604,7 +2642,8 @@ Stav k 1. 10. 2026:
 | 2.78 | `3afd2dd` | Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
 | 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
 | 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
-| 2.79.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
+| 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
+| 2.80 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
 
 Verze 2.1 přidala:
 

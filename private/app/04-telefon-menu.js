@@ -136,7 +136,7 @@ function liveSlot(h) { return h >= 6 && h < 14 ? 'am' : h >= 14 && h < 22 ? 'pm'
 function planText(pl) { return [pl.ks ? `${nf(pl.ks, 0)} ks` : '', pl.h ? `${nf(pl.h, 1)} h` : ''].filter(Boolean).join(' · '); }
 function navIcon(view) { const b = $(`#nav [data-view="${view}"]`); return b ? $('svg', b).outerHTML : ''; }
 function navBadge(view) { const b = $(`#nav [data-view="${view}"] .nav-badge`); return b && !b.hidden ? b.textContent : ''; }
-const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['potermin', 'Po termínu'], ['scan', 'Rychlý scan'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['audit', 'KPI'], ['nastaveni', 'Nastavení']];
+const HOME_TILES = [['prehled', 'Přehled'], ['lide', 'Lidé'], ['sankce', 'Sankce'], ['kontroly', 'Kontroly'], ['rychla', 'Rychlá kontrola'], ['ukoly', 'Úkoly'], ['protokoly', 'Protokoly'], ['servis', 'Servis'], ['shortage', 'Shortage'], ['potermin', 'Po termínu'], ['scan', 'Rychlý scan'], ['top5', 'Top 5'], ['matice', 'Matice'], ['plankap', 'Plán kapacit'], ['dochazka', 'Docházka'], ['konce', 'Konce trestů'], ['skrinky', 'Skříňky'], ['audit', 'KPI'], ['nastaveni', 'Nastavení']];
 
 function homeTileMeta(view, sd) {
   const p = curPeriod();
@@ -151,6 +151,7 @@ function homeTileMeta(view, sd) {
     case 'plankap': { const a = capPlanAll(); return !a.setN ? 'potřeba lidí' : a.tot.hire ? `doplnit ${a.tot.hire}` : a.tot.trainN ? `doškolit ${a.tot.trainN}` : 'v pořádku'; }
     case 'dochazka': return p ? 'nahráno' : 'nahrát export';
     case 'konce': { const o = endsOverview(todayIso(), 3); return o.thisMonth ? `tento měsíc ${o.thisMonth}` : o.next3 ? `do 3 měsíců ${o.next3}` : 'odchody po měsících'; }
+    case 'skrinky': { const o = lkOverview(S.lockers, S.employees, todayIso()); return o.clear ? `K vyklizení ${o.clear}` : o.total ? `volné ${o.free} z ${o.total}` : 'vložit soupis'; }
     case 'vyroba': return prodPeriod() ? 'evidence práce' : 'nahrát evidenci';
     case 'protokoly': {
       const books = S.logbooks || [];

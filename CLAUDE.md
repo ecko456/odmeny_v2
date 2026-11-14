@@ -9,7 +9,7 @@ Začalo to jako hodnocení operátorů ve výrobě. Každý měsíc dostane člo
 - od verze 2.1 i **navýšení platu v %**.
 
 Dnes je to aplikace s názvem HALA 2 (v exportech `EXPORT_NAME`) s víc moduly: Odměny (Přehled,
-Lidé, Matice dovedností, Sankce, Docházka), KPI, Plán kapacit, Konce trestů, Úkoly, Kontroly,
+Lidé, Matice dovedností, Sankce, Docházka), KPI, Plán kapacit, Konce trestů, Skříňky, Úkoly, Kontroly,
 Rychlá kontrola, Top 5, Protokoly, Servis, Shortage, Po termínu a Rychlý scan.
 
 **Běží jen verze 2 na `/odmeny_v2/`.** Ostrou verzi `/odmeny/` uživatel 7. 11. 2026 zrušil
@@ -28,7 +28,7 @@ dřív měl 290 kB a session se zahlcovala. Nic se nesmazalo, jen přesunulo do 
 | soubor | co tam je | kdy číst |
 |---|---|---|
 | `CLAUDE.md` (tento) | pravidla, poslední 3 zápisy, architektura, datový model, výpočty, testy v kostce | vždy (načte se sám) |
-| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.78) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
+| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.79) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
 | `docs/moduly.md` | podrobný popis modulů: data, funkce, UI (Matice, Přeformulování, Top 5, Kontroly, Protokoly, Servis, Shortage, KPI, Plán kapacit) | před prací na modulu |
 | `docs/testy.md` | všechny průchody v prohlížeči a co hlídají, testy na Apachi | před psaním nebo úpravou testu |
 | `README.md` | pro uživatele (novinky, instalace, zálohy) | při každé verzi doplnit „Co je nového“ |
@@ -60,6 +60,43 @@ Klony na serveru jsou `/root/trading_desk` a `/root/odmeny_v2`. Všechny repozit
 nepushne), celá tabulka je v `docs/historie.md`.
 
 ## Kde jsme skončili
+
+Stav k 14. 11. 2026 (verze 2.80):
+
+- Uživatel: „Ještě přidej modul "Skříňky" kde bude soupis skříněk spárováno s lidmi. Abych měl přehled kdo má
+  a kdo nemá skříňku, případně kdo již není v seznamu nebo je vyřazený a stále mu evidujeme skříňku, abych mi u toho
+  vyskočilo upozornění "Je třeba vyprázdnit". Dále prvotně budu potřebovat mít možnost vložil data pomocí ctrl + v
+  z excelu, s tím že sloupec A je písmenkové označení, B číselní označení a C jméno a příjmení. Zde budu potřebovat
+  zapojit AI, protože je to psané ručně a mohou tam být překlepy atd.. … U těch kde to nebude možné nebo nejisté, tak
+  mi nabídne možnost přiřadit pracovníka, který ještě nebyl spárovaný nebo vyberu pracovník u nás již nepracuje.
+  A nahoře bude přehled "Volné skříňky" "Obsazené skříňky" "K vyklizení"“. Během práce doplnil: „ať je možné u každé
+  skříňky tisk štítku, vždy aby tam byly dva štítky jeden na skříňku s označením skříňky a beze jména a druhý štítek
+  to samé jen tam bude ještě nápis "Záložní klíč" a bude to jen na polovině štítku, aby se klíč zalepil dovnitř …
+  štítky tisknu pomocí zebry 100 × 35 mm … Případně ať je možnost hromadného tisku všech štítků.“
+  - **Párování bez AI**: jména lidí nesmí k třetí straně (pravidlo z 2.48), páruje se jen v prohlížeči. AI jako
+    doplněk pro nejisté řádky je otázka na uživatele (poslalo by jména Anthropicu, chce výslovný souhlas).
+  - Core `28-skrinky.js`: `S.lockers = {list: [{id, row, no, key, name (snímek), gone, raw, note, at, by}]}`,
+    `cleanLockers` (skříňka řada + číslo jednou, nejvýš 3000), `lkState` (free / used / unknown = jméno z importu bez
+    člověka / clear = K vyklizení: vyřazený, smazaný z Lidí, „už u nás nepracuje“), `lkOverview` (počty, lidé bez
+    skříňky, víc skříněk), `lkParse` (nadpis, duplicita, bez čísla), `lkMatch` (`endTok`, Levenshtein `attDist`,
+    y/i, w/v, zdvojená písmena; jistě: přesně, jen příjmení jediné v Lidech, příjmení a iniciála, jasný překlep;
+    přesná shoda má přednost; člověk jen jednou; návrhy s ≥ 0,6), `lkApply` (přepíše stejné řada + číslo, `replace`
+    smaže ostatní), `lkAssign`, `lkSetGone`, `lkFree`, `lkSetNote`, `lkDelete`, `lkAddRange` (nejvýš 500),
+    `lkSheets` (Excel), `lkLabelSeq` (štítky po dvojicích), `lkChanges` (kind `locker`, přidělení / uvolnění /
+    „už nepracuje“ mají vlastní značku `m`, aby se v historii neslučovaly).
+  - App `35-skrinky.js`: menu `skrinky` s odznakem K vyklizení (`#navLockers`), dlaždice Volné / Obsazené
+    (z toho nespárováno) / K vyklizení / Lidé bez skříňky, pruh Je třeba vyprázdnit, filtry, hledání, tabulka
+    (Přidělit, Změnit s přesunem, Uvolnit, Vyprázdněno, Štítky, poznámka, smazat), Ctrl+V kdekoli ve Skříňkách
+    (`shClipRows`) i tlačítko Vložit z Excelu (pole pro vložení, telefon), okno K rozhodnutí (Návrh, Ještě bez
+    skříňky, Vyřazení, Ostatní, Už u nás nepracuje, Volná, nerozhodnuto), Spárováno automaticky (jde změnit),
+    Nahradit celý soupis, Přidat řadu, Excel, štítky PDF 100 × 35 mm (jedna strana = štítek; štítek na skříňku
+    jen označení, štítek klíče jen levá polovina s černým pruhem ZÁLOŽNÍ KLÍČ a značkami přehybu), hromadně
+    všechny / filtr / řada a druhy štítků. Lidé: řádek se skříňkou v detailu, potvrzení vyřazení a smazání
+    zmíní skříňku, hláška Je třeba vyprázdnit; import Konců trestů hlásí skříňky vyřazených.
+  - Data verze 58 (`DATA_VERSION`, `CLIENT_VERSION`, `ODM_MIN_CLIENT`), `ODM_VERSION` 2.80, `blank().lockers`,
+    `LOG_KINDS` + `locker`, `MERGE_TOP.lockers`, historie filtr a ikona.
+  - Testy: core „Skříňky (2.80)“, `test_odmeny` (426 pro 57), nový `tests/e2e_skrinky.js`, `e2e_mobil` (19 položek
+    menu), `e2e_upgrade_prev` 2.79.2 → 2.80 (archiv `fb58f73`, vložení soupisu nad převzatými lidmi).
 
 Stav k 13. 11. 2026 (verze 2.79.2):
 
@@ -125,45 +162,7 @@ Stav k 13. 11. 2026 (verze 2.79.1):
     `test_notes_for_claude_stay_small` (CLAUDE.md pod 60 kB, nejvýš 3 zápisy, odkazy na docs).
   - Čeká se, jestli uživatel chce body 2–4.
 
-Stav k 13. 11. 2026 (verze 2.79):
-
-- Uživatel: „převzít modul shortage a udělat druhý modul s podobnými funkcemi ‚Po termínu‘ … nahrál
-  místo shortage položky po termínu, spárovalo by to s výrobním plánem následně evidencí a měl bych
-  stejný list jako je v shortage, ale … tříděné namísto TOP shortage podle skluzu, ten je ve sloupci F
-  … čím větší skluz, tím je to horší. Zase AI může pomoci rozpoznat sloupce podle prvního řádku
-  a přidělit v návrhu ke kontrole co je co“.
-  - **Jeden kód, dva moduly**: pohled `potermin` ukazuje stejnou sekci `#view-shortage` (showView
-    přepne sekci a `shSwitch`). `shKey()` = `late` | `shortage` podle `ui.view`, `shLate()`, `shc()`
-    vrací `S.late` nebo `S.shortage`, **`shPut(x)`** uloží vyčištěné do otevřeného modulu (všechna
-    dřívější `S.shortage = cleanShortage(…)` v 26-shortage). `ui.sh` je pro každý modul zvlášť
-    (`ui.shStates`), výrobní plán v paměti okna (`ui.sh.plan`) společný. `SH_TXT` / `shT()` texty
-    (název, PDF, soubor, záhlaví, krok 1, dny), `shHeadDraw` záhlaví a lede, `.sh-late` na sekci.
-    Rychlý scan a pravý panel jsou jen pro Shortage.
-  - Data (verze 57): `S.late = {lists, hist, scans: []}` (stejný tvar seznamů jako Shortage, položka
-    `delay` = skluz, číslo). `depts`, `cols` a `colors` jsou na `S.late` **nevypisované přístupy**
-    do `S.shortage` (`shLateLink(st)`, getter i setter), neukládají se (sharedState je nevidí);
-    sloupce tabulky po termínu jsou proto v `S.shortage.cols.late`. `cleanLate(o, sh)` čistí se
-    společnými odděleními (ruční oddělení položky zůstane) a řadí `shLateOrder`; `sanitizeState`
-    `out.late = cleanLate(…, out.shortage)` + `shLateLink(out)`.
-  - Core: `SH_COLS.late` (A–E, delay F), `SH_COL_NAMES/NEED/WORDS.late`, `shBuild(rows, cols, colors,
-    kind)` (late: skluz, bez TOP a barev, `warn.noDelay`), `shDelayNum`, `shLateOrder` (skluz sestupně,
-    bez skluzu na konci otevřených, Hotovo na konci, stabilní), `shDelayTiers` (crit = čtvrtina,
-    warn = polovina otevřených se skluzem), `lateChanges` (historie kind `late`, „Po termínu:“, m `pt…`,
-    bez oddělení a sloupců), `LOG_KINDS` + `late`, `MERGE_TOP.late`, `blank().late`.
-  - UI 26-shortage: import seznamu `shLK()` (`late` / `list`) v `shImportFile`, `shPaste` (v Po termínu
-    bez seznamu nebo s nadpisem Skluz = seznam, ne záznamy), `shColsFor` (`listKind`: okno vždy, bez
-    přednastavení), poznámka o skluzu v okně, `SH_LATE_NONE`; `renderShortage` pořadí podle skluzu
-    (srovná i po změně stavu), dlaždice Největší skluz, `shDelayTag`, řádky `sh-latecrit/sh-latewarn`,
-    bez TOP tlačítek, sloupec Množství, nápověda, oddělení jen ke čtení `.sh-deptsro`
-    + `[data-shtoshortage]`; šipky na úchytu jen hláška; PDF (`late`, `lab`, `lateCrit`: SKLUZ N
-    jako TOP / TOP 2, záhlaví HALA 2 · PO TERMÍNU, název Položky po termínu, soubor `po-terminu-…`).
-    34-průvodce: `SH_WIZ_STEPS_ALL`, `shWizSteps()`, texty. Menu `#nav [data-view="potermin"]`,
-    `HOME_TILES`, `homeTileMeta`, historie filtr a ikona `late`. Okno sloupců `dialog.dlg.wide:has(.sh-coldlg)` 900 px.
-  - Server `lib/ai.php`: `ODM_AI_SH_FIELDS.late` (order, name, ean, index, qty, delay, op, note), prompt.
-  - Testy: core „Po termínu (2.79)“, nový `tests/e2e_potermin.js`, `test_odmeny` (late, 426 pro 56),
-    `e2e_mobil` (18 položek menu), `e2e_upgrade_prev` 2.78 → 2.79 (archiv `3afd2dd`). `ODM_VERSION` 2.79.
-
-Starší zápisy (2.78 a dál dozadu) jsou v `docs/historie.md`.
+Starší zápisy (2.79 a dál dozadu) jsou v `docs/historie.md`.
 
 ## Pravidla spolupráce
 
@@ -208,11 +207,11 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
 
 | verze | commit | obsah |
 |---|---|---|
-| 2.77 | `ac24fb4` | Rychlý scan – QR kódy z mobilu do interní evidence Shortage (pozice, hromadné načítání, množství), mobilní záznamy a Excel (data verze 55) |
 | 2.78 | `3afd2dd` | Shortage – průvodce nahráním, přednastavení sloupců plánu (AI jen u jiného souboru), všechny řádky velké evidence, poslední 3 záznamy u dílu, K prověření, sestava rozdělená do oddělení podle poddílů, poznámka připnuté položky (data verze 56) |
 | 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
 | 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
-| 2.79.2 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
+| 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
+| 2.80 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
 
 ## Pojmy
 
@@ -296,7 +295,7 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `57` (od 2.79):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `58` (od 2.80):
 
 - `DATA_VERSION` v `private/core/06-kontrola-dat.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -343,7 +342,7 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
   - `issued{period: {key: {at, tabaky, kafe, pos, lvl, pct, tier, raise}}}` (snímek při výdeji);
   - `marks{period: {key: {bodId: důvod}}}`: body prémie, které vedoucí označil jako nesplněné;
   - `capReport{groups[], thr, hidden[], note, s1am, detail?}`: report Směny a kapacita (`detail` 2.25: `all` | `none`, výchozí se neukládá);
-  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook|workaudit|service|shortage|capplan|task`);
+  - `log[]` (nejvýš 2000 záznamů; kinds `person|level|sanction|adjust|issue|import|position|settings|data|eff|audit|logbook|workaudit|service|shortage|late|capplan|task|locker`);
   - `logbooks[]` (2.16): Protokoly (viz níže);
   - `service` (2.21, 2.22): Servis, evidence zařízení, odeslání a vzory (viz níže);
   - `shortage` (2.27): Shortage, nahrané seznamy chybějících dílů (viz níže);
@@ -355,6 +354,7 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
   - `undo` (2.45): uložené změny za 3 dny pro Vrátit zpět, `log[].u`/`log[].un`;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
+  - `lockers` (2.80): Skříňky, `{list: [{id, row, no, key, name, gone, raw, note, at, by}]}` (viz `docs/moduly.md`);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -437,7 +437,7 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
 ## UI (`private/app.html`, `private/app/*.js`, `private/app.css`)
 
 - Pohledy (`data-view`): `prehled`, `lide`, `matice`, `profil`, `sankce`, `dochazka`,
-  `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `potermin` (2.79, sekce `#view-shortage`), `scan` (2.77), `audit`, `nastaveni`
+  `konce` (2.43), `ukoly` (2.46), `vyroba`, `top5`, `kontroly`, `rychla` (2.39), `protokoly`, `servis` (2.21), `shortage` (2.27), `potermin` (2.79, sekce `#view-shortage`), `scan` (2.77), `skrinky` (2.80), `audit`, `nastaveni`
   (`showView('pozice')` otevře Matici, záložku Skupiny a pravidla).
 - Nad pohledy: `#demoBanner` a `#wageAlert` (srážky ze mzdy ke zpracování).
 - Horní lišta:
@@ -478,6 +478,7 @@ globální rozsah. **Nový díl** = nový soubor s číslem na správném míst�
 | Servis | `servis` | `service` | 22 | 25 |
 | Shortage, Po termínu (stejný kód, 2.79) | `shortage`, `potermin` | `shortage`, `late` | 23, 24 | 26, 34 |
 | Rychlý scan | `scan` | `shortage.scans` | 27 | 33 |
+| Skříňky (štítky Zebra) | `skrinky` | `lockers` | 28 | 35 |
 | Historie změn, Vrátit zpět, sloučení dvou lidí | — | `log`, `undo` | 07, 08, 09 | 02, 14 |
 
 ## Testy a lokální běh
@@ -488,14 +489,14 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 33 testů: server, šifrovaný tok, kopie dat, oddělení od ostré verze, AI (náhradní API), šifrované soubory
-node tests/test_core.js                 # 132 testů: proti původní aplikaci + opravy + každá verze od 2.1
+node tests/test_core.js                 # 133 testů: proti původní aplikaci + opravy + každá verze od 2.1
 OUT=$S/e2e PW=/opt/node22/lib/node_modules/playwright bash tests/run_e2e.sh [testy…]   # průchody v prohlížeči souběžně
 ```
 
 - `run_e2e.sh` (od 2.63): každý test má vlastní adresář, data a PHP server (port 8500 + pořadí),
   `JOBS` = počet najednou, souhrn `$OUT/summary.txt`, výstupy `$OUT/<test>/out.log`, snímky
   `$OUT/<test>/oshots-*` (**prohlédni si je**). Bez `e2e_upgrade*` a `e2e_vedle` (ty běží na Apachi).
-  Celá sada (45 testů) trvá kolem 8 minut.
+  Celá sada (46 testů) trvá kolem 9 minut.
 - Playwright: `require('/opt/node22/lib/node_modules/playwright')`, Chromium
   `/opt/pw-browsers/chromium`. Příkaz `playwright install` nespouštěj.
 - **Test aktualizace z předchozí verze** (`tests/e2e_upgrade_prev.js`, lokální Apache v kontejneru):

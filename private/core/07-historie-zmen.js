@@ -311,6 +311,7 @@ function describeChanges(a,b,meta){
   svChanges(a.service,b.service,add);
   shChanges(a.shortage,b.shortage,add);
   lateChanges(a,b,add);
+  lkChanges(a.lockers,b.lockers,add);
   cpChanges(a.capPlan,b.capPlan,add,b);
   tkChanges(a.tasks,b.tasks,add);
   attEditChanges(a,b,add);

@@ -116,7 +116,9 @@ async function endImport(file) {
   store.note = { kind: 'person', keep: true, text: `Nahrány konce trestů a směnnost (${file.name}): konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}, zpět po nemoci ${out.back}${out.added ? `, nově přidáno ${out.added}` : ''}${out.excluded ? `, vyřazeno ze seznamu ${out.excluded}` : ''}` };
   save();
   renderAll();
-  toast(`Zapsáno: konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}${out.back ? `, zpět po nemoci ${out.back}` : ''}${out.added ? `, nově ${out.added}` : ''}${out.excluded ? `, vyřazeno ${out.excluded}` : ''}.`);
+  // Skříňky (2.80): vyřazení, kteří mají skříňku, ať je vidět, že ji je třeba vyprázdnit
+  const lkx = exclude.flatMap(k => lkOf(k));
+  toast(`Zapsáno: konec trestu ${out.ends}, směna ${out.shifts}, nemoc ${out.sick}${out.back ? `, zpět po nemoci ${out.back}` : ''}${out.added ? `, nově ${out.added}` : ''}${out.excluded ? `, vyřazeno ${out.excluded}` : ''}.${lkx.length ? ` Je třeba vyprázdnit ${lkx.length === 1 ? 'skříňku' : 'skříňky'} ${lkLabels(lkx)}.` : ''}`, !!lkx.length);
   showView('konce');
 }
 
