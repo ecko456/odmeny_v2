@@ -311,8 +311,83 @@ function evidence() {
   await page.waitForFunction(id => !('full' in S.shortage.lists[0].items.find(i => i.id === id).subs.find(x => x.code === '9.0.52')), asmId);
   await saved(page);
 
+  // ---------- 2.84: sestava skrytá v PDF jen v jednom oddělení (Lakovna), v Brusu zůstane ----------
+  const hideIn = d => page.locator(`#shView tr[data-shid="${asmId}"][data-shdeptrow="${d}"] [data-shpdfhide]`);
+  const offRows = () => page.evaluate(id => [...document.querySelectorAll(`#shView tr[data-shid="${id}"], #shView tr[data-shparent="${id}"]`)].map(r => `${r.dataset.shdeptrow}:${r.classList.contains('sh-pdfoff') ? 1 : 0}`).join(','), asmId);
+  const asmNow = () => page.evaluate(id => { const i = S.shortage.lists[0].items.find(x => x.id === id); return JSON.stringify([i.pdfHide, i.pdfHideIn || null]); }, asmId);
+  check(await hideIn('dlak').getAttribute('data-shhidein') === 'dlak' && /jen v oddělení Lakovna/.test(await hideIn('dlak').getAttribute('title')) && await hideIn('dbrus').getAttribute('data-shhidein') === 'dbrus', 'rozdělená sestava: oko skryje jen v oddělení bloku');
+  await hideIn('dlak').click();
+  await page.waitForFunction(id => JSON.stringify(S.shortage.lists[0].items.find(i => i.id === id).pdfHideIn) === '["dlak"]', asmId);
+  check(await offRows() === 'dbrus:0,dbrus:0,dbrus:0,dlak:1,dlak:1,dlak:1', `skrytá jen v Lakovně, v Brusu ne: ${await offRows()}`);
+  check(await hideIn('dlak').getAttribute('aria-pressed') === 'true' && await hideIn('dbrus').getAttribute('aria-pressed') === 'false' && await asmNow() === '[false,["dlak"]]', `tlačítka a data po skrytí v Lakovně: ${await asmNow()}`);
+  check(/Sestava i v oddělení: Lakovna \(v PDF skrytá\)/.test(await page.textContent(`#shView tr[data-shid="${asmId}"][data-shdeptrow="dbrus"]`)) && /1 sestava skrytá v PDF jen v některém oddělení/.test(await page.textContent('#shView')), 'v Brusu poznámka „Lakovna (v PDF skrytá)“, počet nahoře');
+  await saved(page);
+  const log84a = await page.evaluate(() => S.log.filter(x => x.kind === 'shortage' && /PDF/.test(x.text)).map(x => x.text));
+  check(log84a.some(x => /^Shortage: položka 8590000008005 .* skryta v PDF jen v oddělení Lakovna \(seznam /.test(x)), `historie: skryta jen v Lakovně ${JSON.stringify(log84a.slice(-3))}`);
+  await page.screenshot({ path: path.join(shots, '08b-skryta-jen-v-oddeleni.png'), fullPage: true });
+  const [dl4] = await Promise.all([page.waitForEvent('download'), page.click('[data-shpdfdept]')]);
+  const pdf4 = path.join(S, 'shpruvodce-skryta-v-oddeleni.pdf');
+  await dl4.saveAs(pdf4);
+  const pg4 = pdfPages(pdf4);
+  if (pg4) check(/8590000008005/.test(pg4.brus) && /9\.0\.51/.test(pg4.brus) && !/8590000008005|9\.0\.52/.test(pg4.lak), `PDF po odděleních: sestava v Brusu ano, v Lakovně ne: Brus ${pg4.brus.slice(0, 300)} | Lakovna ${pg4.lak.slice(0, 300)}`);
+  const [dl5] = await Promise.all([page.waitForEvent('download'), page.click('[data-shpdf]')]);
+  const pdf5 = path.join(S, 'shpruvodce-skryta-v-oddeleni-cele.pdf');
+  await dl5.saveAs(pdf5);
+  const pt5 = spawnSync('python3', ['-c', 'import sys\nfrom pypdf import PdfReader\nprint("\\n".join(p.extract_text() for p in PdfReader(sys.argv[1]).pages))', pdf5], { encoding: 'utf8' });
+  if (pt5.status === 0) check((pt5.stdout.match(/8590000008005/g) || []).length === 1 && /9\.0\.51/.test(pt5.stdout) && !/9\.0\.52/.test(pt5.stdout), `celé PDF: sestava jednou (v Brusu), poddíl Lakovny ne: ${(pt5.stdout.match(/8590000008005/g) || []).length}×`);
+  // znovu tisknout v Lakovně
+  await hideIn('dlak').click();
+  await page.waitForFunction(id => !('pdfHideIn' in S.shortage.lists[0].items.find(i => i.id === id)), asmId);
+  check(await offRows() === 'dbrus:0,dbrus:0,dbrus:0,dlak:0,dlak:0,dlak:0', `znovu v Lakovně: ${await offRows()}`);
+  await saved(page);
+  // skrytá všude (data ze 2.83): oko v Lakovně ji tam zase ukáže, v Brusu zůstane skrytá
+  await page.evaluate(id => { S.shortage.lists[0].items.find(i => i.id === id).pdfHide = true; save(); renderShortage(); }, asmId);
+  await page.waitForFunction(() => document.querySelectorAll('#shView tr.sh-pdfoff').length === 6);
+  await saved(page);
+  await hideIn('dlak').click();
+  await page.waitForFunction(id => JSON.stringify(S.shortage.lists[0].items.find(i => i.id === id).pdfHideIn) === '["dbrus"]', asmId);
+  check(await offRows() === 'dbrus:1,dbrus:1,dbrus:1,dlak:0,dlak:0,dlak:0' && await asmNow() === '[false,["dbrus"]]', `skrytá všude, odkrytá v Lakovně: ${await offRows()} ${await asmNow()}`);
+  await saved(page);   // každé kliknutí zvlášť uložené, ať je v historii každé zvlášť
+  await hideIn('dbrus').click();
+  await page.waitForFunction(id => { const i = S.shortage.lists[0].items.find(x => x.id === id); return !i.pdfHide && !('pdfHideIn' in i); }, asmId);
+  await saved(page);
+  const log84 = await page.evaluate(() => S.log.filter(x => x.kind === 'shortage' && /PDF/.test(x.text)).map(x => x.text));
+  // skrýt a zase tisknout v témže oddělení do 10 minut = jeden záznam s posledním stavem
+  check(['skryta v PDF (seznam', 'znovu v PDF v oddělení Lakovna (jinde dál skrytá', 'znovu v PDF v oddělení Brus (seznam'].every(t => log84.some(x => x.includes(t))) && !log84.some(x => /jen v oddělení Lakovna/.test(x)), `historie skrytí v oddělení: ${JSON.stringify(log84.slice(-6))}`);
+
+  // ---------- 2.84: ruční oddělení poddílu (dřív šlo měnit jen u vrcholné sestavy) ----------
+  const sub52 = await page.evaluate(id => S.shortage.lists[0].items.find(i => i.id === id).subs.find(x => x.code === '9.0.52').id, asmId);
+  const subSel = d => `#shView tr[data-shsub="${sub52}"][data-shdeptrow="${d}"] select[data-shsubdept]`;
+  check(await page.locator(subSel('dbrus')).count() === 1 && await page.locator(subSel('dlak')).count() === 1 && /Podle operace: Lakovna/.test(await page.locator(`${subSel('dlak')} option[value=""]`).textContent()), 'výběr oddělení u poddílu (i v řádku „na jiném oddělení“)');
+  await page.selectOption(subSel('dbrus'), 'dbrus');
+  await page.waitForFunction(([id, sid]) => S.shortage.lists[0].items.find(i => i.id === id).subs.find(x => x.id === sid).dept === 'dbrus', [asmId, sub52]);
+  check(await offRows() === 'dbrus:0,dbrus:0,dbrus:0' && await page.locator(`#shView tr[data-shsub="${sub52}"] .sh-code`).count() === 1 && /ručně/.test(await page.textContent(`#shView tr[data-shsub="${sub52}"] .sh-opc`)), `poddíl Lakovny ručně do Brusu: sestava jen v Brusu, poddíl s QR: ${await offRows()}`);
+  await saved(page);
+  const log84b = await page.evaluate(() => S.log.filter(x => x.kind === 'shortage').map(x => x.text));
+  check(log84b.some(x => /^Shortage: poddíl 8590000009052 u položky 8590000008005 .* ručně přesunut: Brus \(seznam /.test(x)), `historie: poddíl ručně do Brusu ${JSON.stringify(log84b.slice(-2))}`);
+  await page.screenshot({ path: path.join(shots, '08c-oddeleni-poddilu.png'), fullPage: true });
+  const [dl6] = await Promise.all([page.waitForEvent('download'), page.click('[data-shpdfdept]')]);
+  const pdf6 = path.join(S, 'shpruvodce-oddeleni-poddilu.pdf');
+  await dl6.saveAs(pdf6);
+  const pg6 = pdfPages(pdf6);
+  if (pg6) check(/9\.0\.51/.test(pg6.brus) && /9\.0\.52/.test(pg6.brus) && !/8590000008005/.test(pg6.lak), `PDF: poddíl ručně v Brusu, v Lakovně sestava není: ${pg6.brus.slice(0, 300)}`);
+  // zase podle operace: sestava znovu v Brusu i v Lakovně
+  await page.selectOption(subSel('dbrus'), '');
+  await page.waitForFunction(([id, sid]) => !('dept' in S.shortage.lists[0].items.find(i => i.id === id).subs.find(x => x.id === sid)), [asmId, sub52]);
+  check(await offRows() === 'dbrus:0,dbrus:0,dbrus:0,dlak:0,dlak:0,dlak:0', `poddíl zase podle operace: ${await offRows()}`);
+  await saved(page);
+
   // ---------- telefon ----------
   await page.setViewportSize({ width: 390, height: 844 });
+  // 2.84: poslední záznamy a stav odeslání v rámečku i na telefonu (řádek s nejvíc záznamy otevřeného seznamu)
+  const recRow = await page.evaluate(() => { const rs = [...document.querySelectorAll('#shView tr')].filter(r => r.querySelector('.sh-recs')); rs.sort((a, b) => b.querySelectorAll('.sh-recprev li').length - a.querySelectorAll('.sh-recprev li').length); const r = rs[0]; if (!r) return null; r.dataset.e2erec = '1'; return r.dataset.shid || r.dataset.shsub; });
+  check(!!recRow, 'telefon: řádek s posledními záznamy');
+  if (recRow) {
+    await page.locator('#shView tr[data-e2erec] .sh-recs').scrollIntoViewIfNeeded();
+    const recBox = await page.evaluate(() => { const r = document.querySelector('#shView tr[data-e2erec]'), b = r.querySelector('.sh-recs').getBoundingClientRect(), s = document.querySelector('#shView .sh-sent'); return { rows: r.querySelectorAll('.sh-recs .sh-rec, .sh-recs .sh-recprev li').length, w: Math.round(b.width), sent: s ? [s.dataset.shsent, s.querySelector('.sh-sentmain').textContent, Math.round(s.getBoundingClientRect().width)] : null, over: document.documentElement.scrollWidth - document.documentElement.clientWidth }; });
+    check(recBox.rows >= 1 && recBox.w > 200 && recBox.over <= 1 && (!recBox.sent || recBox.sent[2] > 200), `telefon: záznamy a stav odeslání v rámečku přes šířku ${JSON.stringify(recBox)}`);
+  }
+  await page.screenshot({ path: path.join(shots, '07b-telefon-zaznamy.png') });
   await page.evaluate(() => { ui.sh.wiz = { at: Date.now() - 60000, step: 2, adv: { 1: true } }; renderShortage(); });
   await page.waitForSelector('#shView .sh-wizsteps');
   await page.waitForTimeout(200);

@@ -1,5 +1,5 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.82 → 2.83):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.83 → 2.84):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení, rozpracovaný seznam Shortage
 //      s poznámkami, záznamem, stavem, poddílem a čekajícím poddílem s jinou operací) a uloží je;
@@ -18,13 +18,14 @@
 //      v modulu Po termínu vloží tabulku se skluzem (seřadí se, oddělení ze Shortage) a (2.80) ve Skříňkách vloží
 //      soupis s ručně psanými jmény lidí z převzatých dat (spárují se, vyřazený = K vyklizení) a (2.81) vyvěsí
 //      výzvu k vyklizení (lhůta 7 pracovních dnů) a (2.82) přidá do skříňky druhého člověka a označí skříňku
-//      bez záložního klíče a (2.83) zapíše skříňce číslo klíče (poslední čísla sériového čísla);
+//      bez záložního klíče a (2.83) zapíše skříňce číslo klíče (poslední čísla sériového čísla) a (2.84) v Shortage
+//      skryje položku v PDF jen v oddělení Brus a poddílu připnuté položky dá ručně oddělení Brus;
 //      po novém přihlášení je vše uložené a ostatní data stejná.
 //   Shortage se kontroluje zvlášť: nic původního nesmí chybět ani se změnit, jen hotová TOP položka
 //   z předchozího dne je na konci seznamu (od 2.76). Výkony nahrané ve staré verzi data
 //   pro normy nemají, záložka Normy je ohlásí (2.74).
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive 144d404 | tar -x -C $S/v282 && sudo bash $S/v282/deploy/install.sh
+//   git archive cb6a8af | tar -x -C $S/v283 && sudo bash $S/v283/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
@@ -32,15 +33,15 @@ const fs = require('fs');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.82$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.83$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.83$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.84$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). Hodnota null = část,
    která se při převodu mění schválně a kontroluje se zvlášť (Shortage 2.70); úkoly a Vrátit zpět mění krok 5. */
 const ADDED = { 'shortage.lists': null, 'shortage.cols': null, 'shortage.colors': null, 'shortage.scans': null, 'workAudit.normPct': null, late: null, lockers: null, tasks: null, undo: null };
-/* Verze dat se mění (2.83: čísla klíčů skříněk, verze dat 61): stará stránka dostane 426. */
+/* Verze dat se mění (2.84: Shortage – skrytí v PDF jen v oddělení, ruční oddělení poddílu, verze dat 62): stará stránka dostane 426. */
 const SAME_DATA = false;
 const shRecListT = r => (r ? [r.state, ...(r.prev || []).map(x => x.state)] : []);   // stavy posledních záznamů dílu (2.78)
 
@@ -345,6 +346,10 @@ const STATE = added => `(() => {
   const ser = await page.evaluate(() => { const l = S.lockers.list.find(x => x.row === 'A' && x.no === '1'); const r = lkSetSerial(S, l.id, '0 4 2'); save(); renderAll(); return r.err || r.l.serial; });
   await saved(page);
   check(ser === '042', `číslo klíče nad převzatými daty: ${ser}`);
+  // 2.84: skrytí v PDF jen v oddělení a ruční oddělení poddílu nad převzatými daty Shortage
+  const sh84 = await page.evaluate(() => { const l = S.shortage.lists[0], i = l.items.find(x => x.ean === '8590000000059'), p = l.items.find(x => x.pin); shSetHideIn(i, 'sdupg01', true, shSplitDepts(S.shortage, i)); p.subs[0].dept = 'sdupg01'; save(); renderAll(); return [i.pdfHideIn, p.subs[0].dept]; });
+  await saved(page);
+  check(JSON.stringify(sh84) === '[["sdupg01"],"sdupg01"]', `Shortage 2.84 nad převzatými daty: ${JSON.stringify(sh84)}`);
   await page.screenshot({ path: path.join(shots, '02-nova-skrinky.png'), fullPage: true });
   await page.screenshot({ path: path.join(shots, '02-nova-rychla.png'), fullPage: true });
   const ctx3 = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -385,6 +390,7 @@ const STATE = added => `(() => {
   check(flk === 'A1:adámek|aleš,A2:bednář|boris,A3:fiala|filip,A4:gregor|gustav,A5:', `Skříňky (2.80) po novém přihlášení: ${flk}`);
   const fl = n => (final.added.lockers || { list: [] }).list.find(l => l.row === 'A' && l.no === n) || {};
   check(fl('1').serial === '042' && !fl('2').serial, `číslo klíče (2.83) po novém přihlášení: ${fl('1').serial}`);
+  check(JSON.stringify(fnew.pdfHideIn) === '["sdupg01"]' && !fnew.pdfHide && fpin.subs[0].dept === 'sdupg01' && !('dept' in fpin.subs[1]), `Shortage 2.84 po novém přihlášení: ${JSON.stringify([fnew.pdfHideIn, fpin.subs.map(x => x.dept)])}`);
   check(JSON.stringify(fl('3').more) === JSON.stringify([{ key: 'adámek|aleš', name: 'Adámek Aleš' }]) && fl('5').nokey === true && !fl('4').nokey, `sdílená skříňka a bez klíče (2.82) po novém přihlášení: ${JSON.stringify([fl('3').more, fl('5').nokey])}`);
   const fa4 = fl('4').notice;
   check(fa4 && fa4.until === noticeUntil && fa4.by === 'Vedoucí dílny', `výzva k vyklizení (2.81) po novém přihlášení: ${JSON.stringify(fa4)}`);

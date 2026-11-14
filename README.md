@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.84
+
+- **Shortage – skrytí v jednom oddělení**: sestava, která je kvůli poddílu i v jiném oddělení (třeba vrcholná
+  sestava v Broušení, poddíl v Lepení), se okem v Lepení skryje v PDF **jen v Lepení**. V Broušení se dál tiskne
+  (u ní je poznámka „Lepení (v PDF skrytá)“). Oko v Broušení skryje zase jen tam.
+- **Oddělení u poddílu**: u poddílu jde teď vybrat oddělení stejně jako u sestavy (pod operací poddílu). Volba
+  „Se sestavou“ dá poddíl k sestavě, „Podle operace“ vrátí automatické zařazení.
+- **Přehlednější záznamy**: poslední 3 záznamy dílu jsou v rámečku, každý na vlastním řádku (stav, kusy, pod tím
+  kdy) a oddělené linkou, nejnovější nahoře. Stav **U nás / Odesláno na WPA** je ve vlastním barevném rámečku
+  (u nás oranžový, odesláno vše zelený). Stejně v PDF (černobíle, „U nás“ v silném rámečku).
+
 ## Co je nového ve verzi 2.83
 
 - **Skříňky → Klíče** (hlavně pro telefon): ke skříňce se zapíšou poslední 3 čísla ze sériového čísla klíče,

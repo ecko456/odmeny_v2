@@ -921,17 +921,29 @@ function shModeBar(c) {
 }
 /** Poddíl sestavy, který se zpracovává na jiném oddělení (2.78): bez QR kódu, poznámky a kolonek, s tlačítkem Zobrazit plně. */
 function shSubAwayHtml(i, x, j, k, away, o) {
-  return `<tr class="sh-sub sh-subaway${o.tierCls ? ` ${o.tierCls}` : ''}${x.pdfHide || i.pdfHide ? ' sh-pdfoff' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shtier="${o.tierKey}" data-shdays="${i.days || 1}"${i.pin ? ' data-shpinned="1"' : ''} data-shdeptrow="${esc(o.dIn || '-')}" data-shop="${esc(shOpKey(x.op))}" data-shaway="1" data-shrow="${esc([o.self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : '', away].join(' ').toLowerCase())}">
+  return `<tr class="sh-sub sh-subaway${o.tierCls ? ` ${o.tierCls}` : ''}${x.pdfHide || o.hid ? ' sh-pdfoff' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shtier="${o.tierKey}" data-shdays="${i.days || 1}"${i.pin ? ' data-shpinned="1"' : ''} data-shdeptrow="${esc(o.dIn || '-')}" data-shop="${esc(shOpKey(x.op))}" data-shaway="1" data-shrow="${esc([o.self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : '', away].join(' ').toLowerCase())}">
       <td class="sh-gripc"></td>
       <td class="num muted" data-label="#">${j + 1}.${k + 1}</td>
       <td class="sh-ord sh-subord" data-label="Číslo objednávky"><span class="sh-subarrow" aria-hidden="true"></span>${esc(x.order || i.order || '—')}</td>
       <td class="name" data-label="Poddíl"><span class="tag sh-subtag">PODDÍL</span>${x.name ? `<div>${esc(x.name)}</div>` : ''}<div class="sh-ean">${o.eanHtml(x)}</div></td>
       <td data-label="Index">${esc(x.index || i.index || '—')}</td>
       <td class="num sh-qty" data-label="Urgentní množství">${esc(x.qty || '—')}</td>
-      <td class="sh-opc" data-label="Oddělení / Probíhající operace">${esc(x.op || '—')}<div class="sh-away">Tento díl se zpracovává na jiném oddělení: <b>${esc(away)}</b></div></td>
+      <td class="sh-opc" data-label="Oddělení / Probíhající operace">${esc(x.op || '—')}<div class="sh-away">Tento díl se zpracovává na jiném oddělení: <b>${esc(away)}</b></div>${o.deptSel || ''}</td>
       <td data-label="QR kód"><span class="small muted">jiné oddělení</span><div class="sh-fullc"><button class="btn sec small sh-fullbtn" type="button" data-shsubfull="${esc(x.id)}" aria-pressed="false" title="Ukázat a tisknout poddíl celý i tady: QR kód, záznam, kolonky">Zobrazit plně</button></div></td>
       <td class="sh-notec" data-label="Poznámka"></td>
       <td class="sh-actc"></td></tr>`;
+}
+/** Oddělení poddílu (2.84): podle operace, ručně jiné oddělení, nebo se sestavou (v jejím oddělení). */
+function shSubDeptSel(c, i, x, dmap) {
+  const depts = c.depts || [];
+  if (!depts.length) return '';
+  const auto = i.dept ? '' : shSubDept(c, x, dmap);   // ručně zařazená sestava má poddíly u sebe
+  const cur = x.dept === '-' || depts.some(d => d.id === x.dept) ? x.dept : '';
+  const lab = x.ean || x.code || '';
+  return `<label class="sh-deptpick"><span class="sr-only">Oddělení poddílu ${esc(lab)}</span><select data-shsubdept="${esc(x.id)}">
+        <option value=""${cur ? '' : ' selected'}>${auto ? `Podle operace: ${esc(shDeptName(c, auto))}` : 'Se sestavou'}</option>
+        ${depts.map(d => `<option value="${esc(d.id)}"${cur === d.id ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}
+        ${auto || cur === '-' ? `<option value="-"${cur === '-' ? ' selected' : ''}>Se sestavou</option>` : ''}</select>${cur ? '<span class="tag sh-manual">ručně</span>' : ''}</label>`;
 }
 /** Skluz položky Po termínu (2.79): štítek, nejhorší čtvrtina červeně, druhá oranžově. */
 function shDelayTag(i, t) {
@@ -943,15 +955,20 @@ function shDelayTag(i, t) {
 function shRecPrevHtml(r) {
   const prev = (r && r.prev) || [];
   if (!prev.length) return '';
-  const q = v => (v ? (/^[\d\s.,]+$/.test(v) ? `${v} ks` : v) : '');
-  return `<ol class="sh-recprev" aria-label="Předchozí záznamy">${prev.map(x => `<li><span class="sh-recst">${esc(x.state || '—')}</span>${x.qty ? ` <b>${esc(q(x.qty))}</b>` : ''} <span class="muted">${esc(x.when || '')}</span></li>`).join('')}</ol>`;
+  return `<ol class="sh-recprev" aria-label="Předchozí záznamy">${prev.map(x => `<li><span class="sh-recst">${esc(x.state || '—')}</span>${x.qty ? ` <b class="sh-recq">${esc(shRecQty(x.qty))}</b>` : ''} <span class="sh-recw">${esc(x.when || '')}</span></li>`).join('')}</ol>`;
+}
+const shRecQty = v => (v ? (/^[\d\s.,]+$/.test(v) ? `${v} ks` : v) : '');
+/** Poslední 3 záznamy dílu v rámečku (2.84): každý záznam zvlášť (stav a kusy, pod tím kdy), oddělené linkou, nejnovější nahoře. */
+function shRecsHtml(r) {
+  if (!r) return '';
+  return `<div class="sh-recs"><div class="sh-rec">${r.state ? `<span class="tag sh-state">${esc(r.state)}</span>` : ''}${r.qty ? ` <b class="sh-recq">${esc(shRecQty(r.qty))}</b>` : ''} <span class="sh-recw">${esc(r.when || '')}</span></div>${shRecPrevHtml(r)}</div>`;
 }
 /** Zabalený seznam jen ke čtení: položky, dny na shortage, co se ten den odbouralo. */
 function shPackedHtml(l) {
   const n = l.items.length, hasPrev = !!shPrevList(l);
   const rows = l.items.map((i, j) => {
     const subs = (i.subs || []).length;
-    const rec = i.rec ? `<div class="sh-rec">${i.rec.state ? `<span class="tag sh-state">${esc(i.rec.state)}</span>` : ''}<span class="muted">${esc(i.rec.when || '')}</span></div>${shRecPrevHtml(i.rec)}` : '';
+    const rec = shRecsHtml(i.rec);
     return `<tr class="${i.top ? 'sh-top' : i.top2 ? 'sh-top2' : ''}" data-shpk="${esc(i.id)}">
       <td class="num muted" data-label="#">${j + 1}</td>
       <td class="sh-ord" data-label="Číslo objednávky">${esc(i.order || '—')}</td>
@@ -1067,6 +1084,7 @@ function renderShortage() {
   const dName = id => shDeptName(c, id);   // i K prověření (2.78)
   const subsN = l.items.reduce((a, i) => a + (i.subs || []).length, 0);
   const hidN = l.items.reduce((a, i) => a + (i.pdfHide ? 1 + (i.subs || []).length : (i.subs || []).filter(x => x.pdfHide).length), 0);
+  const hidInN = l.items.filter(i => !i.pdfHide && (i.pdfHideIn || []).length).length;   // skrytá jen v některém oddělení (2.84)
   // proti předchozímu dni (2.73)
   const hasPrev = !!shPrevList(l);
   const oldN = l.items.filter(i => (i.days || 1) >= 2).length, againN = l.items.filter(i => (i.days || 1) <= 1 && i.again).length, outN = (l.out || []).filter(o => !o.manual).length;
@@ -1082,14 +1100,14 @@ function renderShortage() {
   if (l.packed) { box.innerHTML = `${tiles}${shModeBar(c)}${ui.sh.mode === 'rozbor' ? shRozborHtml(l) : shPackedHtml(l)}${shListsHtml(c, l)}`; return; }
   const altRecs = shRecordMap(l);   // poslední záznamy k alternativním objednávkám (2.72)
   // 2.71: odesláno na WPA proti množství zakázky z výrobního plánu
+  // 2.84: v rámečku – hlavní údaj (U nás 7 ks, Odesláno na WPA vše …) velký, pod ním podrobnost; barva podle stavu
   const sentHtml = x => {
     const st = shSentOf(l, x);
     if (!st) return '';
-    const t = shSentText(st);
-    const cls = st.st === 'here' ? 'tag warn' : st.st === 'done' ? 'tag ok' : 'small muted';
-    return `<div class="sh-sent" data-shsent="${st.st}"><span class="${cls}">${esc(st.st === 'here' ? `U nás ${nf(st.left, 3)} ks` : st.st === 'done' ? 'Odesláno na WPA vše' : t)}</span>${st.st === 'info' || st.st === 'open' ? '' : `<span class="small muted">${esc(st.st === 'here' ? `odesláno na WPA ${nf(st.sent, 3)} z ${nf(st.order, 3)} ks` : `${nf(st.sent, 3)} z ${nf(st.order, 3)} ks`)}</span>`}</div>`;
+    const p = shSentParts(st);
+    return `<div class="sh-sent sh-sent-${st.st}" data-shsent="${st.st}" title="${esc(shSentText(st))}"><b class="sh-sentmain">${esc(p.main)}</b>${p.sub ? `<span class="sh-sentsub">${esc(p.sub)}</span>` : ''}</div>`;
   };
-  const recHtml = x => (x.rec ? `<div class="sh-rec">${x.rec.state ? `<span class="tag sh-state">${esc(x.rec.state)}</span>` : ''}${x.rec.qty ? `<b>${esc(/^[\d\s.,]+$/.test(x.rec.qty) ? `${x.rec.qty} ks` : x.rec.qty)}</b>` : ''}<span class="muted">${esc(x.rec.when)}</span></div>${shRecPrevHtml(x.rec)}` : '');
+  const recHtml = x => shRecsHtml(x.rec);
   const eanHtml = x => `EAN ${x.link ? `<a href="${esc(x.link)}" target="_blank" rel="noopener noreferrer" draggable="false">${esc(x.ean || 'odkaz')}</a>` : esc(x.ean || '—')}`;
   const rowHtml = (i, j, secId = '') => {
     const rec = recHtml(i);
@@ -1097,23 +1115,25 @@ function renderShortage() {
     // 2.78: sestava s poddíly z víc oddělení je v každém z nich; poddíl jiného oddělení bez QR (dokud ho nezobrazíš plně)
     const ds = secId === 'unlinked' || secId === SH_DONE_SEC ? [dIn] : shSplitDepts(c, i, dmap);
     const split = ds.length > 1;
-    const awayOf = x => (split && !shSubHere(c, i, x, dIn, dmap) ? dName(shSubDept(c, x, dmap)) : '');
+    const awayOf = x => (split && !shSubHere(c, i, x, dIn, dmap) ? dName(shSubDeptIn(c, i, x, dmap)) : '');
+    // 2.84: rozdělená sestava jde skrýt v PDF jen v tomto oddělení (pdfHideIn), v ostatních zůstane
+    const hid = shHidIn(i, dIn);
     // 2.76: Hotovo (zelená ve vzorníku nebo ručně) = na konci seznamu, bez barvy TOP a TOP 2
     const done = i.st === 'done', tierCls = done ? 'sh-done' : late ? (i.delay >= dTiers.crit ? 'sh-latecrit' : i.delay >= dTiers.warn ? 'sh-latewarn' : '') : i.top ? 'sh-top' : i.top2 ? 'sh-top2' : '', tierKey = done ? 'done' : i.top ? 'top' : i.top2 ? 'top2' : '';
     const self = [i.order, i.name, i.ean, i.index, i.op, i.code, i.note, i.rec ? i.rec.state : '', i.top ? 'top shortage' : '', i.top2 ? 'top 2' : '', done ? 'hotovo' : '', i.pin ? 'připnuto' : '', i.dup ? 'kopie' : '', depts.length ? dName(dIn) : ''].join(' ');
     // poddíly z výrobního plánu pod sestavou (2.29): při hledání se ukážou se sestavou
-    const subs = (i.subs || []).map((x, k) => { const away = awayOf(x); if (away && !x.full) return shSubAwayHtml(i, x, j, k, away, { tierCls, tierKey, dIn, self, eanHtml }); return `<tr class="sh-sub${tierCls ? ` ${tierCls}` : ''}${x.pdfHide || i.pdfHide ? ' sh-pdfoff' : ''}${away ? ' sh-subaway sh-subfull' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shtier="${tierKey}" data-shdays="${i.days || 1}"${i.pin ? ' data-shpinned="1"' : ''} data-shdeptrow="${esc(dIn || '-')}" data-shop="${esc(shOpKey(x.op))}" data-shrow="${esc([self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : ''].join(' ').toLowerCase())}">
+    const subs = (i.subs || []).map((x, k) => { const away = awayOf(x); if (away && !x.full) return shSubAwayHtml(i, x, j, k, away, { tierCls, tierKey, dIn, self, eanHtml, hid, deptSel: shSubDeptSel(c, i, x, dmap) }); return `<tr class="sh-sub${tierCls ? ` ${tierCls}` : ''}${x.pdfHide || hid ? ' sh-pdfoff' : ''}${away ? ' sh-subaway sh-subfull' : ''}" data-shsub="${esc(x.id)}" data-shparent="${esc(i.id)}" data-shtier="${tierKey}" data-shdays="${i.days || 1}"${i.pin ? ' data-shpinned="1"' : ''} data-shdeptrow="${esc(dIn || '-')}" data-shop="${esc(shOpKey(x.op))}" data-shrow="${esc([self, 'poddíl', x.ean, x.code, x.op, x.note, x.rec ? x.rec.state : ''].join(' ').toLowerCase())}">
       <td class="sh-gripc"></td>
       <td class="num muted" data-label="#">${j + 1}.${k + 1}</td>
       <td class="sh-ord sh-subord" data-label="Číslo objednávky"><span class="sh-subarrow" aria-hidden="true"></span>${esc(x.order || i.order || '—')}</td>
       <td class="name" data-label="Poddíl"><span class="tag sh-subtag">PODDÍL</span>${x.byRec ? ' <span class="tag sh-rectag" title="Operace není Hala 2, poddíl přidal poslední záznam">podle záznamu</span>' : ''}${away ? ` <span class="tag sh-awaytag" title="Poddíl se zpracovává na jiném oddělení">${esc(away)}</span>` : ''}${x.name ? `<div>${esc(x.name)}</div>` : ''}<div class="sh-ean">${eanHtml(x)}</div></td>
       <td data-label="Index">${esc(x.index || i.index || '—')}</td>
       <td class="num sh-qty" data-label="Urgentní množství">${esc(x.qty || '—')}</td>
-      <td class="sh-opc" data-label="Oddělení / Probíhající operace">${esc(x.op || '—')}${recHtml(x)}${sentHtml(x)}</td>
+      <td class="sh-opc" data-label="Oddělení / Probíhající operace">${esc(x.op || '—')}${recHtml(x)}${sentHtml(x)}${shSubDeptSel(c, i, x, dmap)}</td>
       <td data-label="QR kód">${x.code ? `<span class="tag ok sh-code">${esc(x.code)}</span>` : '<span class="tag warn">bez kódu</span>'}${away ? `<div class="sh-fullc"><button class="btn sec small sh-fullbtn on" type="button" data-shsubfull="${esc(x.id)}" aria-pressed="true" title="Poddíl se zpracovává na jiném oddělení (${esc(away)}). Klikni a bude tady zase bez QR kódu.">Bez QR</button></div>` : ''}</td>
       <td class="sh-notec" data-label="Poznámka">${shStSel(x, `poddílu ${x.ean || x.code}`)}<textarea class="sh-note" data-shnote="${esc(x.id)}" rows="2" maxlength="${SH_MAX_NOTE}" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k poddílu ${esc(x.ean || x.code)}">${esc(x.note || '')}</textarea></td>
       <td class="sh-actc"><div class="sh-acts">${shHideBtn(x)}${shEditBtn(x)}<button class="icon-btn small" type="button" data-shdelsub="${esc(x.id)}" title="Odebrat poddíl" aria-label="Odebrat poddíl ${esc(x.ean || x.code)}">${SH_IC('x')}</button></div></td></tr>`; }).join('');
-    const splitNote = split ? `<div class="sh-splitnote" title="Poddíly sestavy patří do více oddělení, sestava je v každém z nich">Sestava i v oddělení: ${esc(ds.filter(d => d !== dIn).map(dName).join(', '))}</div>` : '';
+    const splitNote = split ? `<div class="sh-splitnote" title="Poddíly sestavy patří do více oddělení, sestava je v každém z nich">Sestava i v oddělení: ${esc(ds.filter(d => d !== dIn).map(d => `${dName(d)}${!i.pdfHide && shHidIn(i, d) ? ' (v PDF skrytá)' : ''}`).join(', '))}</div>` : '';
     // sestava s poddíly je jen orientační: bez QR kódu (2.29.1), dokud ji uživatel nezobrazí plně (2.31); poznámka jde dopsat vždy (2.70)
     const asm = !!subs && !i.full;
     const fullBtn = subs ? `<button class="btn sec small sh-fullbtn${i.full ? ' on' : ''}" type="button" data-shfull="${esc(i.id)}" aria-pressed="${!!i.full}" title="${i.full ? 'Sestava se ukazuje i tiskne celá (QR kód, poslední záznam, kolonky). Klikni a bude zase jen orientační.' : 'Ukázat a tisknout sestavu celou: QR kód, poslední záznam, kolonky na psaní a poznámku'}">${i.full ? 'Jen orientačně' : 'Zobrazit plně'}</button>` : '';
@@ -1128,7 +1148,7 @@ function renderShortage() {
         ${depts.map(d => `<option value="${esc(d.id)}"${i.dept === d.id ? ' selected' : ''}>${esc(d.name)}</option>`).join('')}
         <option value="${SH_CHECK_DEPT}"${i.dept === SH_CHECK_DEPT ? ' selected' : ''}>${SH_CHECK_NAME}</option>
         <option value="-"${i.dept === '-' ? ' selected' : ''}>Nezařazeno</option></select>${i.dept ? '<span class="tag sh-manual">ručně</span>' : ''}</label>` : '';
-    return `<tr class="${tierCls}${subs ? ' sh-hassub' : ''}${i.full ? ' sh-full' : ''}${i.pdfHide ? ' sh-pdfoff' : ''}${i.pin ? ' sh-pinned' : ''}" data-shid="${esc(i.id)}" data-shtier="${tierKey}" data-shdays="${i.days || 1}"${i.pin ? ' data-shpinned="1"' : ''} data-shdeptrow="${esc(dIn || '-')}" data-shop="${esc(shOpKey(i.op))}" data-shsubops="${esc((i.subs || []).map(x => shOpKey(x.op)).join('|'))}" data-shrow="${esc([self, ...(i.subs || []).flatMap(x => [x.ean, x.code])].join(' ').toLowerCase())}">
+    return `<tr class="${tierCls}${subs ? ' sh-hassub' : ''}${i.full ? ' sh-full' : ''}${hid ? ' sh-pdfoff' : ''}${i.pin ? ' sh-pinned' : ''}" data-shid="${esc(i.id)}" data-shtier="${tierKey}" data-shdays="${i.days || 1}"${i.pin ? ' data-shpinned="1"' : ''} data-shdeptrow="${esc(dIn || '-')}" data-shop="${esc(shOpKey(i.op))}" data-shsubops="${esc((i.subs || []).map(x => shOpKey(x.op)).join('|'))}" data-shrow="${esc([self, ...(i.subs || []).flatMap(x => [x.ean, x.code])].join(' ').toLowerCase())}">
       <td class="sh-gripc"><button type="button" class="sh-grip" data-shgrip="${esc(i.id)}" title="Přesunout: přetáhni myší, nebo šipkami nahoru a dolů" aria-label="Přesunout položku ${esc(i.ean || i.name)}">${SH_GRIP}</button></td>
       <td class="num muted" data-label="#">${j + 1}</td>
       <td class="sh-ord" data-label="Číslo objednávky">${esc(i.order || '—')}</td>
@@ -1138,7 +1158,7 @@ function renderShortage() {
       <td class="sh-opc" data-label="Oddělení / Probíhající operace">${esc(i.op || '—')}${rec}${sentHtml(i)}${deptSel}</td>
       <td data-label="QR kód">${qr}${fullBtn ? `<div class="sh-fullc">${fullBtn}</div>` : ''}</td>
       <td class="sh-notec" data-label="Poznámka">${shStSel(i, `položky ${i.ean || i.name}`)}<textarea class="sh-note" data-shnote="${esc(i.id)}" rows="2" maxlength="${SH_MAX_NOTE}" placeholder="Dopsat poznámku" autocomplete="off" aria-label="Poznámka k položce ${esc(i.ean || i.name)}">${esc(i.note || '')}</textarea></td>
-      <td class="sh-actc"><div class="sh-acts"><span class="sh-tiers">${topBtn}</span>${shPinBtn(i)}${shDupBtn(i)}${shHideBtn(i)}${shEditBtn(i)}<button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${SH_IC('x')}</button></div></td></tr>${subs}`;
+      <td class="sh-actc"><div class="sh-acts"><span class="sh-tiers">${topBtn}</span>${shPinBtn(i)}${shDupBtn(i)}${shHideBtn(i, { off: hid, dept: split ? dIn || '-' : '', name: dName(dIn) })}${shEditBtn(i)}<button class="icon-btn small" type="button" data-shdelitem="${esc(i.id)}" title="Odebrat položku" aria-label="Odebrat položku ${esc(i.ean || i.name)}">${SH_IC('x')}</button></div></td></tr>${subs}`;
   };
   // bloky podle oddělení (2.32), čísla v pořadí zobrazení
   let num = 0;
@@ -1181,7 +1201,7 @@ function renderShortage() {
   if (ui.sh.mode === 'rozbor') { box.innerHTML = `${tiles}${mode}${shRozborHtml(l)}${older}`; return; }
   box.innerHTML = `${tiles}${mode}${deptPanel}<article class="card sh-card">
       <div class="card-head"><div><h2>Seznam z ${esc(shWhen(l))}</h2>
-        <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${doneN ? ` · hotovo ${doneN}` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}${hidN ? ` · <b>${hidN} skryt${hidN === 1 ? 'á' : hidN <= 4 ? 'é' : 'ých'} v PDF</b>` : ''}</p></div>
+        <p class="small muted">${n} ${shItemsN(n)}${subsN ? ` · ${subsN} ${shSubsN(subsN)}` : ''}${top ? ` · ${top} TOP` : ''}${doneN ? ` · hotovo ${doneN}` : ''}${l.file ? ` · ${esc(l.file)}` : ''}${l.sheet ? ` · list ${esc(l.sheet)}` : ''}${l.by ? ` · nahrál ${esc(l.by)}` : ''}${hidN ? ` · <b>${hidN} skryt${hidN === 1 ? 'á' : hidN <= 4 ? 'é' : 'ých'} v PDF</b>` : ''}${hidInN ? ` · <b>${hidInN} ${hidInN === 1 ? 'sestava skrytá' : hidInN <= 4 ? 'sestavy skryté' : 'sestav skrytých'} v PDF jen v některém oddělení</b>` : ''}</p></div>
         <div class="row gap wrap sv-actions"><label class="sh-search"><span class="sr-only">Hledat v seznamu</span><input type="search" id="shQ" value="${esc(ui.sh.q)}" placeholder="Hledat objednávku, díl, EAN, operaci" autocomplete="off"></label>
           <button class="btn sec small" type="button" data-shmanual title="Zadat položku ručně: EAN, číslo objednávky, odkaz…">Přidat položku</button>
           <button class="btn sec small" type="button" data-shnotes>Doplnit poznámky z Excelu</button><input type="file" id="shNotesFile" accept=".xlsx,.xls,.xlsm,.ods" hidden>
@@ -1366,9 +1386,11 @@ function shStSel(x, what) {
   return `<label class="sh-stpick"><span class="sr-only">Stav ${esc(what)}</span><select class="sh-stsel${x.st ? ` st-${x.st}` : ''}" data-shst="${esc(x.id)}" title="${x.st ? esc(`${shStName(x.st)}${x.stBy ? ` · ${x.stBy}` : ''}${x.stAt ? ` · ${tsText(x.stAt)}` : ''}`) : 'Zadat stav'}">
     <option value=""${x.st ? '' : ' selected'}>Bez stavu</option>${SH_ST.map(([k, l]) => `<option value="${k}"${x.st === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
 }
-function shHideBtn(x) {
-  const off = x.pdfHide === true;
-  return `<button class="icon-btn small sh-hidebtn${off ? ' on' : ''}" type="button" data-shpdfhide="${esc(x.id)}" aria-pressed="${off}" title="${off ? 'Skryto v PDF: klikni a znovu se vytiskne' : 'Skrýt v PDF'}" aria-label="${off ? 'Zobrazit v PDF' : 'Skrýt v PDF'} ${esc(x.ean || x.name || x.code || '')}">${off ? SH_EYE_OFF : SH_EYE}</button>`;
+/* o.off = skrytá v tomto bloku; o.dept = oddělení bloku u rozdělené sestavy (2.84): skryje se jen tady. */
+function shHideBtn(x, o = {}) {
+  const off = o.off != null ? !!o.off : x.pdfHide === true, d = o.dept || '';
+  const title = d ? (off ? `Skryto v PDF v oddělení ${o.name}: klikni a tady se znovu vytiskne` : `Skrýt v PDF jen v oddělení ${o.name} (v ostatních odděleních se dál vytiskne)`) : off ? 'Skryto v PDF: klikni a znovu se vytiskne' : 'Skrýt v PDF';
+  return `<button class="icon-btn small sh-hidebtn${off ? ' on' : ''}" type="button" data-shpdfhide="${esc(x.id)}"${d ? ` data-shhidein="${esc(d)}"` : ''} aria-pressed="${off}" title="${esc(title)}" aria-label="${off ? 'Zobrazit v PDF' : 'Skrýt v PDF'}${d ? ` v oddělení ${esc(o.name)}` : ''} ${esc(x.ean || x.name || x.code || '')}">${off ? SH_EYE_OFF : SH_EYE}</button>`;
 }
 const SH_GRIP = SH_IC('grip');
 /* Připnout (2.75): položka přejde do každého dalšího nahraného seznamu, dokud se neodepne. */
@@ -1815,7 +1837,18 @@ function bindShortage() {
       const l = shList();
       const hit = l && shEntry(l, hide.dataset.shpdfhide);
       if (!hit) return;
-      hit.entry.pdfHide = !hit.entry.pdfHide;
+      const e = hit.entry, wasOff = hide.getAttribute('aria-pressed') === 'true';
+      // rozdělená sestava (2.84): skrýt nebo zase tisknout jen v oddělení bloku, ostatní oddělení zůstanou
+      if (!hit.sub && hide.dataset.shhidein) {
+        const c = shc(), d = hide.dataset.shhidein, nm = shDeptName(c, d);
+        if (!shSetHideIn(e, d, !wasOff, shSplitDepts(c, e))) return;
+        save(); renderShortage();
+        toast(wasOff ? `Sestava se v oddělení ${nm} znovu vytiskne v PDF.` : `Sestava se v oddělení ${nm} nevytiskne v PDF, v ostatních odděleních ano.`);
+        return;
+      }
+      if (hit.sub) e.pdfHide = !e.pdfHide;
+      else if (wasOff) { e.pdfHide = false; delete e.pdfHideIn; }   // skrytá (i jen v oddělení) → znovu všude
+      else e.pdfHide = true;
       save(); renderShortage();
       toast(hit.entry.pdfHide ? (hit.sub ? 'Poddíl se nevytiskne v PDF.' : (hit.entry.subs || []).length ? 'Sestava i její poddíly se nevytisknou v PDF.' : 'Položka se nevytiskne v PDF.') : 'Znovu se vytiskne v PDF.');
       return;
@@ -1919,6 +1952,19 @@ function bindShortage() {
       }
       return;
     }
+    if (t.matches('[data-shsubdept]')) {
+      const l = shList();
+      const hit = l && shEntry(l, t.dataset.shsubdept);
+      if (!hit || !hit.sub) return;
+      const x = hit.entry, it = hit.item, v = t.value;
+      const auto = it.dept ? '' : shSubDept(c, x);   // podle operace ("" = se sestavou)
+      // stejné jako podle operace = bez ručního zařazení
+      if (v === '' || v === auto || (v === '-' && !auto)) delete x.dept; else x.dept = v;
+      save(); renderShortage();
+      const d = shSubDeptIn(c, it, x);
+      toast(`Poddíl ${x.ean || x.code} je ${d ? `v oddělení ${shDeptName(c, d)}` : `se sestavou v oddělení ${shDeptName(c, shDeptOf(c, it))}`}${x.dept ? ' (ručně)' : ''}.`);
+      return;
+    }
     if (t.matches('[data-shdept]')) {
       const l = shList();
       const it = l && l.items.find(i => i.id === t.dataset.shdept);
@@ -2003,9 +2049,8 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
   widths.reduce((x, w, i) => { xs[i] = x; return x + w; }, k.M);
   const ROW = 20, QR = 14, HEAD = 9.5;
   // skryté v PDF (2.29.1): položka i s poddíly, nebo jen poddíl
-  const items = shAgePick(shDeptPick(shPdfItems(l, ops), dsel), asel);   // + priorita a dny na shortage (2.73)
-  const sh = shc();
-  const secs = shBlocks(sh, items).filter(sec => !dsel || sec.id === SH_DONE_SEC || dsel.has(sec.id || '-'));   // hotové v posledním bloku (2.76), v PDF po odděleních na vlastní straně; rozdělená sestava (2.78) jen ve vybraných
+  const { items, secs } = shPdfShown(l, ops, dsel, asel);   // + priorita a dny na shortage (2.73), skrytí jen v oddělení (2.84)
+  const sh = shc();   // hotové v posledním bloku (2.76), v PDF po odděleních na vlastní straně; rozdělená sestava (2.78) jen ve vybraných
   const byDept = split && (sh.depts || []).length > 0;
   // Po termínu (2.79): štítek SKLUZ N místo TOP, nejhorší čtvrtina jako TOP (černý štítek a pruh), druhá jako TOP 2
   const late = shLate(), dT = late ? shDelayTiers(l.items) : null;
@@ -2089,7 +2134,12 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
   // parent = sestava, když jde o poddíl z výrobního plánu (2.29); sestava s poddíly je jen
   // orientační řádek bez QR kódu, kolonek na psaní a poznámek (2.29.1)
   // výška bloku posledního záznamu: stav · ks, kdy a předchozí záznamy (2.78)
-  const recH = (it, L) => (it.rec ? 1.4 + L.rec.length * k.LH(7.8, 1.2) + 0.3 + k.LH(6.8, 1.2) + (L.prev && L.prev.length ? 0.8 + L.prev.length * k.LH(6.8, 1.2) : 0) : 0);
+  // 2.84: každý ze 3 záznamů zvlášť (stav · ks, pod tím kdy), oddělené čárkovanou linkou; nejnovější tučně
+  const RS = r => (r.first ? [7.8, 6.8] : [7.2, 6.4]);
+  const recRowH = r => 0.6 + r.head.length * k.LH(RS(r)[0], 1.2) + (r.when.length ? 0.2 + k.LH(RS(r)[1], 1.2) : 0) + 0.6;
+  const recH = (it, L) => (L.recs && L.recs.length ? 1 + L.recs.reduce((a, r) => a + recRowH(r), 0) : 0);
+  // stav odeslání v rámečku: hlavní údaj tučně, pod ním podrobnost
+  const sentH = L => (L.sent ? 1.2 + 1.2 + L.sent.main.length * k.LH(8, 1.2) + L.sent.sub.length * k.LH(6.8, 1.2) + 1.0 : 0);
   const lay = (it, parent) => {
     const noteTxt = [it.st ? `Stav: ${shStName(it.st)}` : '', it.note || ''].filter(Boolean).join(' · ');
     const src = parent ? {...parent,...Object.fromEntries(['order','index'].filter(key=>it[key]).map(key=>[key,it[key]]))} : it;
@@ -2114,18 +2164,17 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
       index: clip(src.index || '—', widths[4] - 3.6, 8.8, 8),
       qty: parent && !it.qty ? [] : clip(it.qty || '—', widths[5] - 3.6, 12, 2, true),
       op: clip(it.op || '—', widths[6] - 3.6, 8.4, 8),
-      rec: it.rec ? clip([it.rec.state, recQty(it.rec)].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, 7.8, 16, true) : [],
-      // 2.78: dva předchozí záznamy dílu, menším písmem pod posledním
-      prev: it.rec ? (it.rec.prev || []).flatMap(r => clip([r.when, r.state, recQty(r)].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, 6.8, 3)) : [],
-      // 2.71: odesláno na WPA proti množství zakázky, díl u nás
-      sent: (st => (st ? clip(shSentText(st), widths[6] - 3.6, 7.4, 4, st.st === 'here') : []))(shSentOf(l, it)),
+      // 2.78: poslední záznam a dva předchozí; 2.84 každý zvlášť: stav · ks, pod tím kdy
+      recs: it.rec ? [it.rec, ...(it.rec.prev || [])].map((r, i) => ({ first: !i, head: clip([r.state, recQty(r)].filter(Boolean).join(' · ') || '—', widths[6] - 3.6, i ? 7.2 : 7.8, i ? 3 : 16, !i), when: r.when ? clip(r.when, widths[6] - 3.6, i ? 6.4 : 6.8, 1) : [] })) : [],
+      // 2.71: odesláno na WPA proti množství zakázky, díl u nás; 2.84 v rámečku
+      sent: (st => (st ? (p => ({ here: st.st === 'here', main: clip(p.main, widths[6] - 5.6, 8, 3, true), sub: p.sub ? clip(p.sub, widths[6] - 5.6, 6.8, 3) : [] }))(shSentParts(st)) : null))(shSentOf(l, it)),
       note: noteTxt ? clip(noteTxt, widths[9] - 3.6, 8, 32) : [], age, code: qrCap(it.code),
     };
     L.h = Math.max(ROW,
       L.code.lines.length > 1 ? 1 + QR + 0.7 + L.code.lines.length * k.LH(L.code.size, 1.15) + 1 : 0,
       PAD + L.order.length * k.LH(9, 1.25) + PAD,
       1.6 + ((parent || it.top || it.top2 || it.st === 'done' || lab(it)) ? 4.6 : 0) + (!parent && it.top2 && it.st !== 'done' ? 3.4 : 0) + L.name.length * k.LH(8.8, 1.22) + 0.6 + (it.ean ? k.LH(7.8, 1.2) : 0) + ageH + PAD,
-      PAD + L.op.length * k.LH(8.4, 1.25) + recH(it, L) + (L.sent.length ? 1.2 + L.sent.length * k.LH(7.4, 1.2) : 0) + PAD,
+      PAD + L.op.length * k.LH(8.4, 1.25) + recH(it, L) + sentH(L) + PAD,
       PAD + L.index.length * k.LH(8.8, 1.25) + PAD,
       L.note.length ? PAD + L.note.length * k.LH(8, 1.22) + 1.5 + 4.5 : 0);
     return L;
@@ -2193,21 +2242,29 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
     L.qty.forEach((line, i) => k.text(line, xs[6] - 1.8, top + 1.6 + i * k.LH(12, 1.15), L.asm ? 11 : 12, { bold: true, align: 'right', color: C.ink }));
     // operace nahoře, pod ní celý poslední záznam (stav · ks) a kdy
     L.op.forEach((line, i) => k.text(line, xs[6] + 1.8, top + PAD + i * k.LH(8.4, 1.25), 8.4, { color: it.op ? C.ink : C.ink3 }));
-    if (it.rec && !L.asm) {
-      const ry = top + PAD + L.op.length * k.LH(8.4, 1.25) + 1;
-      doc.setDrawColor(...C.line); doc.setLineWidth(0.2); doc.line(xs[6] + 1.8, ry - 0.5, xs[7] - 1.8, ry - 0.5);
-      L.rec.forEach((line, i) => k.text(line, xs[6] + 1.8, ry + 0.4 + i * k.LH(7.8, 1.2), 7.8, { bold: true, color: C.ink }));
-      k.text(it.rec.when || '', xs[6] + 1.8, ry + 0.4 + L.rec.length * k.LH(7.8, 1.2) + 0.3, 6.8, { color: C.ink2 });
-      if (L.prev && L.prev.length) {
-        const py = ry + 0.4 + L.rec.length * k.LH(7.8, 1.2) + 0.3 + k.LH(6.8, 1.2) + 0.8;
-        doc.setDrawColor(...C.line); doc.setLineWidth(0.1); doc.line(xs[6] + 1.8, py - 0.6, xs[6] + 12, py - 0.6);
-        L.prev.forEach((line, i) => k.text(line, xs[6] + 1.8, py + i * k.LH(6.8, 1.2), 6.8, { color: C.ink3 }));
-      }
+    if (L.recs && L.recs.length && !L.asm) {
+      let ry = top + PAD + L.op.length * k.LH(8.4, 1.25) + 1;
+      doc.setDrawColor(...C.line2); doc.setLineWidth(0.25); doc.line(xs[6] + 1.8, ry - 0.5, xs[7] - 1.8, ry - 0.5);
+      L.recs.forEach((r, i) => {
+        if (i) k.hline(ry - 0.1, C.line, 0.2, xs[6] + 1.8, xs[7] - 1.8, [0.7, 0.6]);   // oddělení záznamů
+        const [hs, ws] = RS(r);
+        let y = ry + 0.6;
+        r.head.forEach((line, j) => k.text(line, xs[6] + 1.8, y + j * k.LH(hs, 1.2), hs, { bold: r.first, color: r.first ? C.ink : C.ink2 }));
+        y += r.head.length * k.LH(hs, 1.2);
+        if (r.when.length) k.text(r.when[0], xs[6] + 1.8, y + 0.2, ws, { color: r.first ? C.ink2 : C.ink3 });
+        ry += recRowH(r);
+      });
     }
-    if (L.sent && L.sent.length && !L.asm) {
-      const sy = top + PAD + L.op.length * k.LH(8.4, 1.25) + recH(it, L) + 1.2;
-      const here = (shSentOf(l, it) || {}).st === 'here';
-      L.sent.forEach((line, i) => k.text(line, xs[6] + 1.8, sy + i * k.LH(7.4, 1.2), 7.4, { bold: here, color: here ? C.ink : C.ink2 }));
+    if (L.sent && !L.asm) {
+      // rámeček: díl u nás silný rámeček a šedé pozadí, ostatní tenký
+      const sy = top + PAD + L.op.length * k.LH(8.4, 1.25) + recH(it, L) + 1.2, bh = sentH(L) - 1.2, bx = xs[6] + 1.2, bw = widths[6] - 2.4;
+      if (L.sent.here) k.box(C.top, bx, sy, bw, bh, 0.8);
+      doc.setDrawColor(...(L.sent.here ? C.ink : C.line2)); doc.setLineWidth(L.sent.here ? 0.6 : 0.25);
+      doc.roundedRect(bx, sy, bw, bh, 0.8, 0.8, 'S');
+      let y = sy + 1.2;
+      L.sent.main.forEach((line, i) => k.text(line, bx + 1, y + i * k.LH(8, 1.2), 8, { bold: true, color: C.ink }));
+      y += L.sent.main.length * k.LH(8, 1.2);
+      L.sent.sub.forEach((line, i) => k.text(line, bx + 1, y + i * k.LH(6.8, 1.2), 6.8, { color: C.ink2 }));
     }
     // kolonky na psaní: stav k 10:00 a k 13:00, poznámky (dopsaná poznámka nahoře, pod ní linka); sestava s poddíly je nemá
     if (L.asm) {
@@ -2261,6 +2318,14 @@ function drawShortage(doc, l, ops = null, dsel = null, split = false, asel = nul
 }
 /** Položky do PDF bez skrytých; poddíly jen viditelné; s filtrem jen vybrané operace (2.31). */
 function shPdfItems(l, ops = null) { return shOpPick(l.items.filter(i => !i.pdfHide).map(i => ({ ...i, subs: (i.subs || []).filter(x => !x.pdfHide) })), ops); }
+/** Co se vytiskne: položky a bloky po filtrech, bez skrytých; rozdělená sestava skrytá jen v některém oddělení (2.84)
+    chybí jen v jeho bloku. items = položky, které jsou aspoň v jednom bloku. */
+function shPdfShown(l, ops = null, dsel = null, asel = null) {
+  const all = shAgePick(shDeptPick(shPdfItems(l, ops), dsel), asel);
+  const secs = shPdfBlocks(shc(), all).filter(sec => !dsel || sec.id === SH_DONE_SEC || dsel.has(sec.id || '-'));   // hotové v posledním bloku (2.76), rozdělená sestava (2.78) jen ve vybraných
+  const ids = new Set(secs.flatMap(sec => sec.items.map(i => i.splitOf || i.id)));
+  return { items: all.filter(i => ids.has(i.id)), secs };
+}
 async function exportShortagePdf(id, button = null, split = false) {
   const l = shc().lists.find(x => x.id === id);
   if (!l || !l.items.length) return;
@@ -2268,7 +2333,7 @@ async function exportShortagePdf(id, button = null, split = false) {
   const ops = l.packed ? null : shOpSel(l);
   const dsel = l.packed ? null : shDeptSel(l);
   const asel = shAgeSel(l);
-  if (!shAgePick(shDeptPick(shPdfItems(l, ops), dsel), asel).length) { toast(ops || dsel || asel ? 'Vybraný filtr nemá žádnou položku do PDF.' : 'Všechny položky jsou skryté v PDF.', true); return; }
+  if (!shPdfShown(l, ops, dsel, asel).secs.length) { toast(ops || dsel || asel ? 'Vybraný filtr nemá žádnou položku do PDF.' : 'Všechny položky jsou skryté v PDF.', true); return; }
   await withPdf(button, doc => {
     doc.setProperties({ title: `Shortage · chybějící díly ${shWhen(l)}`, subject: l.file || 'Shortage', creator: EXPORT_NAME });
     drawShortage(doc, l, ops, dsel, split, asel);

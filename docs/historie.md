@@ -6,13 +6,36 @@ Text zápisů se nepřepisuje (jsou to zadání uživatele a rozhodnutí v době
 
 Obsah:
 
-- Zápisy „Kde jsme skončili“ (od 2.81 dozadu po 1. 10. 2026)
+- Zápisy „Kde jsme skončili“ (od 2.81.1 dozadu po 1. 10. 2026)
 - Verze a stav (celá tabulka verzí s commity, zadání 2.1)
 - Ostrá verze a verze 2 (původní text, platil do 7. 11. 2026)
 - Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, nezačato)
 - Původní úvod a Tři oddělené projekty
 
 ## Zápisy „Kde jsme skončili“
+
+Stav k 14. 11. 2026 (verze 2.81.1):
+
+- Uživatel: „Tisk z webu mi neprojde a stáhne se mi PDF a na štítku nevidím skoro nic, špatné rozložení“.
+  - Příčina: tisk 2.81 dával PDF do skrytého rámce a volal `print()` v něm; prohlížeč s „PDF stahovat místo
+    otevírání“ (Chrome / Edge, firemní nastavení) PDF jen stáhne a vytištěné PDF z jiného programu jde na papír
+    podle ovladače (zmenšené, posunuté).
+  - Oprava: tisk přes okno tisku už **bez PDF**: štítky se vykreslí `lkRender` (stejné `lkDrawLabel` přes
+    `lkCanvasDoc`) do černobílých PNG 800 × 280 bodů (8 bodů na mm = Zebra 203 dpi), vloží se do `#lkPrintArea`
+    (`.lk-plabel` po jedné stránce) a `lkPrintImages` přidá na dobu tisku `@page { size: 100mm 35mm; margin: 0 }`
+    (`CSSStyleSheet` v `document.adoptedStyleSheets`, CSP inline styly nepovoluje), `body.lk-printing` a zavolá
+    `window.print()`; `afterprint` uklidí (`lkPrintCleanup`). Chrome zaokrouhlí stránku na 377 × 132 px
+    (99,75 × 34,92 mm), `.lk-plabel` má přesně tuto velikost, aby nevznikaly prázdné štítky.
+  - Pořadí `lkOutput`: Zebra Browser Print (jen počítač) → okno tisku s obrázky (i telefon); `download` = PDF
+    s textem (`lkPdfDownload`), `zpl` = soubor ZPL. Hromadný tisk má volbu **Zkušební štítek** (kind `test`:
+    rámeček 1 mm od okraje, čárky po 10 mm, kříž, „ZKUŠEBNÍ ŠTÍTEK 100 × 35 mm“), tlačítko Tisknout.
+  - CSP: `frame-src blob:` z 2.81 zrušené (rámec už není), `connect-src` na Browser Print zůstává.
+  - Testy: `e2e_skrinky` zachytí tiskovou stránku `page.pdf({preferCSSPageSize})` (strany 100 × 35 mm ± 0,3,
+    obrázky 800 × 280, nic na okraji 1 mm, pravá polovina klíče prázdná, úklid po `afterprint`, žádný rámec), text
+    štítků a výzev ve staženém PDF; `test_odmeny` (CSP bez `frame-src`); `e2e_upgrade_prev` 2.81 → 2.81.1
+    (archiv `aee56c0`, `SAME_DATA`, stará stránka se po aktualizaci zavře: synchronizace dvou oken dávala 409).
+    `ODM_VERSION` 2.81.1, data beze změny (59).
+  - Neověřeno na skutečné Zebře: jestli ovladač vezme velikost stránky z prohlížeče. Ke kontrole je zkušební štítek.
 
 Stav k 14. 11. 2026 (verze 2.81):
 
@@ -2783,7 +2806,8 @@ Stav k 1. 10. 2026:
 | 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
 | 2.81.1 | `aa91632` | tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
 | 2.82 | `144d404` | Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
-| 2.83 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – podnabídka Klíče pro telefon (poslední čísla sériového čísla klíče ke skříňce, procházení skříněk bez záložního klíče, najít skříňku podle klíče, Záložní klíč nalezen) (data verze 61) |
+| 2.83 | `cb6a8af` | Skříňky – podnabídka Klíče pro telefon (poslední čísla sériového čísla klíče ke skříňce, procházení skříněk bez záložního klíče, najít skříňku podle klíče, Záložní klíč nalezen) (data verze 61) |
+| 2.84 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – rozdělená sestava skrytá v PDF jen v jednom oddělení, ruční oddělení u poddílu, poslední 3 záznamy a stav U nás / Odesláno na WPA v rámečku (aplikace i PDF) (data verze 62) |
 
 Verze 2.1 přidala:
 

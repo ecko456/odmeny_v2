@@ -203,13 +203,14 @@ print('ok')`;
   check(/Odesláno na WPA: 2 nové záznamy s počtem kusů · díl u nás 2 · odesláno vše 1\./.test((await page.textContent('#shMsg')).replace(/\s+/g, ' ')), `hláška o odeslání: ${(await page.textContent('#shMsg')).replace(/\s+/g, ' ')}`);
   await page.locator('#shView [data-shsent="here"]').first().scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(shots, '03a-u-nas.png') });
-  // PDF: stav pod posledním záznamem
+  // PDF: stav pod posledním záznamem (2.84 v rámečku)
   const [pdl] = await Promise.all([page.waitForEvent('download'), page.click('#shView [data-shpdf]')]);
   const pf = path.join(S, 'shkroky-wpa.pdf');
   await pdl.saveAs(pf);
   const pt = spawnSync('python3', ['-c', 'import sys\ntry:\n import pypdf\n print(" ".join((p.extract_text() or "") for p in pypdf.PdfReader(sys.argv[1]).pages))\nexcept ImportError:\n print("BEZ-PYPDF")', pf], { encoding: 'utf8' });
   const ptext = (pt.stdout || '').replace(/\s+/g, ' ');
-  if (!/BEZ-PYPDF/.test(ptext)) check(/U nás 7 ks · odesláno na WPA 3 z 10 ks/.test(ptext) && /Odesláno na WPA vše \(2 z 2 ks\)/.test(ptext) && /Zakázka 4 ks · na WPA zatím nic/.test(ptext) && !/Zakázka 6 ks/.test(ptext), `PDF se stavem odeslání (orientační řádek sestavy bez stavu): ${pt.stderr || ptext.slice(0, 400)}`);
+  if (!/BEZ-PYPDF/.test(ptext)) check(/U nás 7 ks odesláno na WPA 3 z 10 ks/.test(ptext) && /Odesláno na WPA vše 2 z 2 ks/.test(ptext) && /Na WPA zatím nic zakázka 4 ks/.test(ptext) && !/zakázka 6 ks/i.test(ptext),   // 2.84: v rámečku hlavní údaj a pod ním podrobnost
+    `PDF se stavem odeslání (orientační řádek sestavy bez stavu): ${pt.stderr || ptext.slice(0, 400)}`);
   spawnSync('python3', ['-c', 'import pymupdf,sys\nd=pymupdf.open(sys.argv[1]); d[0].get_pixmap(matrix=pymupdf.Matrix(2,2)).save(sys.argv[2])', pf, path.join(shots, '03c-pdf-wpa.png')]);
   // 2.71.1: poslední záznam „Odesláno na WPA“, kusy do zakázky chybí = zbytek je u nás (ne „odesláno částečně“)
   await page.setInputFiles('#shMoveFile', file('pohyb2.xlsx'));

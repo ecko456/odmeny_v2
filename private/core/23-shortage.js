@@ -66,6 +66,15 @@ function shSentText(s){
   if(s.st==="here")return "U nás "+k(s.left)+" · odesláno na WPA "+nf(s.sent,3)+" z "+k(s.order);
   return "Zakázka "+k(s.order)+" · na WPA zatím nic";
 }
+/** Stav odeslání do rámečku (2.84): hlavní údaj (velký) a podrobnost pod ním. */
+function shSentParts(s){
+  if(!s)return null;
+  const k=v=>nf(v,3)+" ks";
+  if(s.st==="info")return {main:"Odesláno na WPA "+k(s.sent),sub:""};
+  if(s.st==="done")return {main:"Odesláno na WPA vše",sub:s.sent>s.order?k(s.sent)+", zakázka "+k(s.order):nf(s.sent,3)+" z "+k(s.order)};
+  if(s.st==="here")return {main:"U nás "+k(s.left),sub:"odesláno na WPA "+nf(s.sent,3)+" z "+k(s.order)};
+  return {main:"Na WPA zatím nic",sub:"zakázka "+k(s.order)};
+}
 /** Uložené záznamy „Odesláno na WPA“ seznamu: čištění, bez duplicit, nejnovější do SH_MAX_SENT. */
 function shSentClean(o){
   const all=[];
@@ -418,7 +427,9 @@ function shAutoDept(sh,it,map){
   map=map||shDeptMap(sh);
   const own=map.get(shOpKey(it.op));
   if(own)return own;
-  for(const x of it.subs||[]){const d=map.get(shOpKey(x.op));if(d)return d;}
+  // poddíl s ručním oddělením (2.84) podle něj, poddíl ručně „se sestavou“ se přeskočí
+  const ids=new Set(((sh&&sh.depts)||[]).map(d=>d.id));
+  for(const x of it.subs||[]){const d=x.dept==="-"?"":x.dept&&ids.has(x.dept)?x.dept:map.get(shOpKey(x.op));if(d)return d;}
   return "";
 }
 /* K prověření (2.78): položka má u nás záznam v evidenci, poslední stav není Odesláno / Expedováno na WPA
@@ -449,19 +460,28 @@ function shDeptOf(sh,it,map){
 function shSplitDepts(sh,it,map){
   map=map||shDeptMap(sh);
   const home=shDeptOf(sh,it,map);
-  if(it.dept||!(it.subs||[]).length||!((sh&&sh.depts)||[]).length)return [home];
+  if(!(it.subs||[]).length||!((sh&&sh.depts)||[]).length)return [home];
   const out=[home];
-  it.subs.forEach(x=>{const d=map.get(shOpKey(x.op));if(d&&!out.includes(d))out.push(d);});
+  it.subs.forEach(x=>{const d=shSubDeptIn(sh,it,x,map);if(d&&!out.includes(d))out.push(d);});
   return out;
 }
 /** Oddělení poddílu podle jeho operace ("" = žádné). */
 function shSubDept(sh,x,map){return (map||shDeptMap(sh)).get(shOpKey(x&&x.op))||"";}
+/* Ruční oddělení poddílu (2.84): x.dept = id oddělení, „-“ = se sestavou (v jejím domovském oddělení), jen když je.
+   Ručně zařazená sestava se dál nerozdělí podle operací: její poddíly jsou s ní, jen poddíl s ručním oddělením jde
+   do svého. Vrací oddělení poddílu x sestavy it ("" = se sestavou). */
+function shSubDeptIn(sh,it,x,map){
+  if(!x||x.dept==="-")return "";
+  if(x.dept&&((sh&&sh.depts)||[]).some(d=>d.id===x.dept))return x.dept;
+  if(it&&it.dept)return "";
+  return shSubDept(sh,x,map);
+}
 /** Poddíl x sestavy it patří do bloku dept (u nerozdělené sestavy vždy). */
 function shSubHere(sh,it,x,dept,map){
   map=map||shDeptMap(sh);
   const ds=shSplitDepts(sh,it,map);
   if(ds.length<2)return true;
-  const d=shSubDept(sh,x,map);
+  const d=shSubDeptIn(sh,it,x,map);
   return d?d===dept:dept===ds[0];
 }
 /** Pohled na sestavu v dalším oddělení: kopie jen pro zobrazení a tisk (data zůstávají v originálu). */
@@ -484,6 +504,34 @@ function shBlocks(sh,items){
   if(!((sh&&sh.depts)||[]).length)return shSections(sh,items);
   const done=items.filter(i=>i.st==="done");
   return shSections(sh,items.filter(i=>i.st!=="done")).concat(done.length?[{id:SH_DONE_SEC,name:"Hotovo",items:done}]:[]);
+}
+/* Skrytí v PDF jen v některých odděleních (2.84): rozdělená sestava (2.78) jde skrýt jen v bloku jednoho oddělení
+   (třeba v Lepení, kam patří jen poddíl), v ostatních se dál tiskne. pdfHideIn = id oddělení („?“ K prověření,
+   „-“ Nezařazeno), jen když nějaké je; pdfHide dál skrývá všude. */
+const SH_MAX_HIDEIN=40;
+function shHideInClean(v){
+  const out=[...new Set((Array.isArray(v)?v:[]).filter(d=>d==="-"||d===SH_CHECK_DEPT||(typeof d==="string"&&SAFE_ID.test(d))))].slice(0,SH_MAX_HIDEIN);
+  return out.length?{pdfHideIn:out}:{};
+}
+/** Je položka skrytá v PDF v oddělení dept ("" = Nezařazeno)? */
+function shHidIn(it,dept){return !!it&&(it.pdfHide===true||(it.pdfHideIn||[]).includes(dept||"-"));}
+/** Oddělení bloku, ve kterém položka je (pohled rozdělené sestavy = její oddělení, Hotovo = domovské). */
+function shHidDept(sh,it,secId,map){return secId===SH_DONE_SEC?shDeptOf(sh,it,map):it.splitDept!=null?it.splitDept:secId;}
+/** Bloky do PDF (shBlocks) bez položek skrytých v oddělení bloku. */
+function shPdfBlocks(sh,items){
+  const map=shDeptMap(sh);
+  return shBlocks(sh,items).map(sec=>({...sec,items:sec.items.filter(it=>!shHidIn(it,shHidDept(sh,it,sec.id,map)))})).filter(sec=>sec.items.length);
+}
+/** Skrýt (on) nebo zase tisknout položku v PDF jen v oddělení dept. Položka skrytá všude (pdfHide) se rozepíše
+    na oddělení ds, kde je, a to jedno se odkryje. Vrací true, když se něco změnilo. */
+function shSetHideIn(it,dept,on,ds){
+  const d=dept||"-";
+  if(!it||shHidIn(it,d)===!!on)return false;
+  const set=new Set(it.pdfHide===true?(ds||[]).map(x=>x||"-"):(it.pdfHideIn||[]));
+  if(on)set.add(d);else set.delete(d);
+  it.pdfHide=false;
+  if(set.size)it.pdfHideIn=[...set];else delete it.pdfHideIn;
+  return true;
 }
 /** Ruční přesun (2.32): položka do oddělení dept ("" = nezařazená) před položku before, bez ní na konec
     oddělení. Pořadí TOP / TOP 2 / ostatní zůstane (shTopFirst). Vrací true, když se něco změnilo. */
@@ -578,7 +626,7 @@ function cleanShortage(o){
   const num=v=>Number.isFinite(+v)?Math.max(0,+v):0;
   const seen=new Set(),uniq=(v,p)=>{let x=typeof v==="string"&&SAFE_ID.test(v)?v:uid(p);while(seen.has(x))x=uid(p);seen.add(x);return x;};
   // poddíl z výrobního plánu (2.29): EAN a odkaz poddílu, kód do QR, operace, poznámka, poslední záznam
-  const sub=s=>({id:"",ean:line(s.ean,60),link:shLink(s.link),code:"code" in s?shCodeClean(s.code):shCode(s.link),op:line(s.op,300),name:line(s.name,200),order:line(s.order,80),index:line(s.index,40),qty:line(s.qty,40),manual:s.manual===true,sourceKey:line(s.sourceKey,160),planningNote:line(s.planningNote,SH_MAX_NOTE),note:line(s.note,SH_MAX_NOTE),rec:shRecClean(s.rec,line),byRec:s.byRec===true,pdfHide:s.pdfHide===true,...(s.full===true?{full:true}:{}),...shStClean(s,line),...(shQtyNum(s.oqty)!=null?{oqty:shQtyNum(s.oqty)}:{}),_id:s.id});
+  const sub=s=>({id:"",ean:line(s.ean,60),link:shLink(s.link),code:"code" in s?shCodeClean(s.code):shCode(s.link),op:line(s.op,300),name:line(s.name,200),order:line(s.order,80),index:line(s.index,40),qty:line(s.qty,40),manual:s.manual===true,sourceKey:line(s.sourceKey,160),planningNote:line(s.planningNote,SH_MAX_NOTE),note:line(s.note,SH_MAX_NOTE),rec:shRecClean(s.rec,line),byRec:s.byRec===true,pdfHide:s.pdfHide===true,...(s.full===true?{full:true}:{}),...(s.dept==="-"||(typeof s.dept==="string"&&SAFE_ID.test(s.dept))?{dept:s.dept}:{}),...shStClean(s,line),...(shQtyNum(s.oqty)!=null?{oqty:shQtyNum(s.oqty)}:{}),_id:s.id});
   // Staré čekající poddíly se přes shAllSubs převedou mezi běžné poddíly.
   const meta=m=>m&&typeof m==="object"?{file:line(m.file,160),at:num(m.at),by:line(m.by,60),rows:Math.round(num(m.rows))}:null;
   const lists=(Array.isArray(o.lists)?o.lists:[]).filter(l=>l&&typeof l==="object"&&Array.isArray(l.items)).map(l=>({
@@ -597,7 +645,7 @@ function cleanShortage(o){
     // seznam ze 2.27 nemá top, op ani code: kód se dopočítá z odkazu; seznam ze 2.27.1 nemá id, note ani rec; ze 2.28 nemá subs
     items:shTopFirst(l.items.filter(i=>i&&typeof i==="object").map(i=>({id:"",order:line(i.order,80),name:line(i.name,200),ean:line(i.ean,60),
       index:line(i.index,40),qty:line(i.qty,40),top:i.top===true,top2:i.top2===true&&i.top!==true,op:line(i.op,300),link:shLink(i.link),
-      qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,full:i.full===true,...shPinClean(i.pin,line),...(i.dup===true?{dup:true}:{}),
+      qrKey:line(i.qrKey,240),qrChoices:i.qrKey===shPlanKey(i.ean,i.index,i.order)?shQrChoices(i.qrChoices):[],qrConflict:i.qrConflict===true,planMismatch:i.planMismatch===true,...(shWasClean(i.was)?{was:shWasClean(i.was)}:{}),planAlts:i.planMismatch===true||shWasClean(i.was)?shAltsClean(i.planAlts):[],planningNote:line(i.planningNote,SH_MAX_NOTE),code:"code" in i?shCodeClean(i.code):shCode(i.link),note:line(i.note,SH_MAX_NOTE),rec:shRecClean(i.rec,line),pdfHide:i.pdfHide===true,...shHideInClean(i.pdfHideIn),full:i.full===true,...shPinClean(i.pin,line),...(i.dup===true?{dup:true}:{}),
       dept:i.dept==="-"||i.dept===SH_CHECK_DEPT||(typeof i.dept==="string"&&SAFE_ID.test(i.dept))?i.dept:"",...shStClean(i,line),...(line(i.pop,300)?{pop:line(i.pop,300)}:{}),...(shQtyNum(i.oqty)!=null?{oqty:shQtyNum(i.oqty)}:{}),
       since:shIsoDay(i.since),days:Math.min(SH_MAX_DAYS,Math.max(1,Math.round(+i.days||1))),again:shIsoDay(i.again),   // dny na shortage (2.73), dopočítá shLinkDays
       ...(shDelayNum(i.delay)!=null?{delay:shDelayNum(i.delay)}:{}),   // skluz Po termínu (2.79)
@@ -1086,6 +1134,7 @@ function shDuplicate(sh,list,id,dept){
   if(k<0)return null;
   const it=list.items[k],c=shItemCopy(it);
   delete c.pin;
+  delete c.pdfHideIn;   // kopie jde do jiného oddělení: skrytí po odděleních (2.84) se nepřenáší
   c.dup=true;
   const auto=shAutoFull(sh,it);   // i K prověření (2.78)
   c.dept=dept===""||dept==null?"":dept==="-"?(auto?"-":""):(dept===auto?"":dept);

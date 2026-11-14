@@ -311,11 +311,27 @@ function shChanges(A,B,add){
     });
     l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.full!==!!i.full)add("shortage","Shortage: sestava "+label(i)+(i.full?" zobrazena plně (QR kód, záznam, kolonky)":" zase jen orientačně")+" (seznam "+shWhen(l)+")",{m:"shf:"+l.id+":"+i.id});});
     // poddíl na jiném oddělení zobrazený plně (2.78)
+    // ruční oddělení poddílu (2.84)
+    ns.forEach((x,id)=>{const p=os.get(id);if(p&&(p.s.dept||"")!==(x.s.dept||""))add("shortage","Shortage: poddíl "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+(x.s.dept==="-"?" ručně dán k sestavě":x.s.dept?" ručně přesunut: "+dName(x.s.dept):" zase v oddělení podle operace")+" (seznam "+shWhen(l)+")",{m:"shsd:"+l.id+":"+id});});
     ns.forEach((x,id)=>{const p=os.get(id);if(p&&!!p.s.full!==!!x.s.full)add("shortage","Shortage: poddíl "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+(x.s.full?" zobrazen plně i na jiném oddělení (QR kód)":" na jiném oddělení zase bez QR kódu")+" (seznam "+shWhen(l)+")",{m:"shsf:"+l.id+":"+id});});
     // skrytí v PDF (2.29.1)
     l.items.forEach(i=>{const p=oi.get(i.id);if(p&&(p.st||"")!==(i.st||""))add("shortage","",{m:"shst:"+l.id+":"+i.id,p:"Shortage: položka "+label(i)+" – stav: ",v0:shStName(p.st)||"bez stavu",v1:shStName(i.st)||"bez stavu"});});
     ns.forEach((x,id)=>{const p=os.get(id);if(p&&(p.s.st||"")!==(x.s.st||""))add("shortage","",{m:"shst:"+l.id+":"+id,p:"Shortage: poddíl "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+" – stav: ",v0:shStName(p.s.st)||"bez stavu",v1:shStName(x.s.st)||"bez stavu"});});
-    l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.pdfHide!==!!i.pdfHide)add("shortage","Shortage: položka "+label(i)+(i.pdfHide?" skryta v PDF":" znovu v PDF")+" (seznam "+shWhen(l)+")",{m:"shh:"+l.id+":"+i.id});});
+    // skrytí v PDF jen v oddělení (2.84): skrytá všude a teď odkrytá jen v jednom oddělení (pdfHideIn = zbytek);
+    // skrýt a zase tisknout v témže oddělení má stejný klíč m, do 10 minut zůstane jen poslední stav
+    const hidSplit=(p,i)=>p.pdfHide&&!i.pdfHide&&(i.pdfHideIn||[]).length>0;
+    l.items.forEach(i=>{const p=oi.get(i.id);if(p&&!!p.pdfHide!==!!i.pdfHide&&!hidSplit(p,i))add("shortage","Shortage: položka "+label(i)+(i.pdfHide?" skryta v PDF":" znovu v PDF")+" (seznam "+shWhen(l)+")",{m:"shh:"+l.id+":"+i.id});});
+    l.items.forEach(i=>{
+      const p=oi.get(i.id);
+      if(!p||i.pdfHide)return;
+      const b=new Set(i.pdfHideIn||[]);
+      let on=[],off=[];
+      if(hidSplit(p,i))off=shSplitDepts(B,i).map(d=>d||"-").filter(d=>!b.has(d));
+      else if(!p.pdfHide){const a=new Set(p.pdfHideIn||[]);on=[...b].filter(d=>!a.has(d));off=[...a].filter(d=>!b.has(d));}
+      const where=ds=>ds.map(d=>d==="-"?"Nezařazeno":shDeptName(B,d)).join(", ");
+      if(on.length)add("shortage","Shortage: položka "+label(i)+" skryta v PDF jen v oddělení "+where(on)+" (seznam "+shWhen(l)+")",{m:"shhd:"+l.id+":"+i.id+":"+on.join("|")});
+      if(off.length)add("shortage","Shortage: položka "+label(i)+" znovu v PDF v oddělení "+where(off)+(b.size?" (jinde dál skrytá":" (")+(b.size?", seznam ":"seznam ")+shWhen(l)+")",{m:"shhd:"+l.id+":"+i.id+":"+off.join("|")});
+    });
     ns.forEach((x,id)=>{const p=os.get(id);if(p&&!!p.s.pdfHide!==!!x.s.pdfHide)add("shortage","Shortage: poddíl "+(x.s.ean||x.s.code)+" u položky "+label(x.i)+(x.s.pdfHide?" skryt v PDF":" znovu v PDF")+" (seznam "+shWhen(l)+")",{m:"shh:"+l.id+":"+id});});
     const recN=l.items.filter(i=>oi.has(i.id)&&JSON.stringify(oi.get(i.id).rec||null)!==JSON.stringify(i.rec||null)).length
       +[...ns.entries()].filter(([id,x])=>os.has(id)&&JSON.stringify(os.get(id).s.rec||null)!==JSON.stringify(x.s.rec||null)).length;

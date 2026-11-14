@@ -28,7 +28,7 @@ dřív měl 290 kB a session se zahlcovala. Nic se nesmazalo, jen přesunulo do 
 | soubor | co tam je | kdy číst |
 |---|---|---|
 | `CLAUDE.md` (tento) | pravidla, poslední 3 zápisy, architektura, datový model, výpočty, testy v kostce | vždy (načte se sám) |
-| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.81) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
+| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.81.1) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
 | `docs/moduly.md` | podrobný popis modulů: data, funkce, UI (Matice, Přeformulování, Top 5, Kontroly, Protokoly, Servis, Shortage, KPI, Plán kapacit) | před prací na modulu |
 | `docs/testy.md` | všechny průchody v prohlížeči a co hlídají, testy na Apachi | před psaním nebo úpravou testu |
 | `README.md` | pro uživatele (novinky, instalace, zálohy) | při každé verzi doplnit „Co je nového“ |
@@ -60,6 +60,38 @@ Klony na serveru jsou `/root/trading_desk` a `/root/odmeny_v2`. Všechny repozit
 nepushne), celá tabulka je v `docs/historie.md`.
 
 ## Kde jsme skončili
+
+Stav k 14. 11. 2026 (verze 2.84):
+
+- Uživatel (Shortage, tři věci během jedné práce):
+  1. „Pokud je vrcholná sestava třeba v oddělení broušení a poddíl na lepení a na lepení tuto sestavu nepotřebuji
+     zobrazovat, tak skrytím dojde ke skrytí v oddělení broušení ne jen v lepení.“
+  2. „Plus u poddílů nejde měnit oddělení, jen u vrcholné sestavy.“
+  3. „Dále ty poslední 3 záznamy, nejsou moc přehledné, chtělo by to mít třeba oddělené čárkou nebo nečím, aby to
+     nesplývalo. A ten status kolik je u nás a odesláno dát klidně do rámečku. AŤ JE TO PŘEHLEDNÉ A JASNÉ NA PRVNÍ
+     POHLED“
+  - **Skrytí v PDF po odděleních**: položka `pdfHideIn: [id oddělení | „?“ | „-“]` (jen když je; `shHideInClean`),
+    `pdfHide` dál skrývá všude. U rozdělené sestavy (2.78) má oko `data-shhidein` = oddělení bloku a `shSetHideIn`
+    skryje / odkryje jen tam; skrytá všude se při odkrytí v jednom oddělení rozepíše na ostatní. `shHidIn(it, dept)`,
+    `shHidDept` (Hotovo = domovské oddělení), `shPdfBlocks` (bloky do PDF bez skrytých v oddělení bloku),
+    `shPdfShown` v aplikaci (PDF i hláška „nic k tisku“). V druhém oddělení poznámka „Lakovna (v PDF skrytá)“, nahoře
+    počet „sestava skrytá v PDF jen v některém oddělení“. Duplikát skrytí po odděleních nepřenese. Historie „skryta
+    v PDF jen v oddělení X“ / „znovu v PDF v oddělení X (jinde dál skrytá …)“ (`m` `shhd:list:item:dept`).
+  - **Oddělení poddílu ručně**: poddíl `dept` (id oddělení, „-“ = se sestavou; jen když je), výběr
+    `[data-shsubdept]` v řádku poddílu i v řádku „na jiném oddělení“ (`shSubDeptSel`). `shSubDeptIn(sh, it, x)`:
+    ruční oddělení, jinak u ručně zařazené sestavy se sestavou, jinak podle operace. `shSplitDepts`, `shSubHere`
+    a `shAutoDept` (domovské oddělení podle prvního poddílu) ho berou v úvahu; ručně zařazená sestava se rozdělí jen
+    kvůli poddílu s ručním oddělením. Historie „poddíl … ručně přesunut: X“ / „ručně dán k sestavě“ / „zase
+    v oddělení podle operace“ (`m` `shsd:`).
+  - **Záznamy a stav odeslání**: `shRecsHtml` = rámeček `.sh-recs`, každý ze 3 záznamů na vlastním řádku (stav,
+    kusy vpravo, pod tím kdy), mezi nimi čárkovaná linka, nejnovější nahoře se štítkem stavu; stejné v zabaleném
+    seznamu. Stav odeslání `.sh-sent sh-sent-<st>` v rámečku (`shSentParts`: hlavní údaj + podrobnost; u nás
+    oranžový, vše odesláno zelený, jinak neutrální). PDF: záznamy oddělené čárkovanou linkou (`recs`, `recRowH`),
+    stav odeslání v rámečku (u nás silný rámeček a šedé pozadí, `sentH`).
+  - Data verze 62, `ODM_VERSION` 2.84. Testy: core „Shortage (2.84)“ (138), `test_odmeny` (426 pro 61),
+    `e2e_shpruvodce` (skrýt jen v Lakovně, PDF po odděleních i celé, skrytá všude a odkrytá v jednom, historie;
+    poddíl ručně do Brusu a zpět, PDF; telefon se záznamy), `e2e_shkroky` (text stavu v PDF), `e2e_upgrade_prev`
+    2.83 → 2.84 (archiv `cb6a8af`).
 
 Stav k 14. 11. 2026 (verze 2.83):
 
@@ -109,30 +141,7 @@ Stav k 14. 11. 2026 (verze 2.82):
   - Vložení z Excelu dál dává do skříňky jednoho člověka (čárka v jménu je často „Příjmení, Jméno“); další lidi
     jde přidat ručně.
 
-Stav k 14. 11. 2026 (verze 2.81.1):
-
-- Uživatel: „Tisk z webu mi neprojde a stáhne se mi PDF a na štítku nevidím skoro nic, špatné rozložení“.
-  - Příčina: tisk 2.81 dával PDF do skrytého rámce a volal `print()` v něm; prohlížeč s „PDF stahovat místo
-    otevírání“ (Chrome / Edge, firemní nastavení) PDF jen stáhne a vytištěné PDF z jiného programu jde na papír
-    podle ovladače (zmenšené, posunuté).
-  - Oprava: tisk přes okno tisku už **bez PDF**: štítky se vykreslí `lkRender` (stejné `lkDrawLabel` přes
-    `lkCanvasDoc`) do černobílých PNG 800 × 280 bodů (8 bodů na mm = Zebra 203 dpi), vloží se do `#lkPrintArea`
-    (`.lk-plabel` po jedné stránce) a `lkPrintImages` přidá na dobu tisku `@page { size: 100mm 35mm; margin: 0 }`
-    (`CSSStyleSheet` v `document.adoptedStyleSheets`, CSP inline styly nepovoluje), `body.lk-printing` a zavolá
-    `window.print()`; `afterprint` uklidí (`lkPrintCleanup`). Chrome zaokrouhlí stránku na 377 × 132 px
-    (99,75 × 34,92 mm), `.lk-plabel` má přesně tuto velikost, aby nevznikaly prázdné štítky.
-  - Pořadí `lkOutput`: Zebra Browser Print (jen počítač) → okno tisku s obrázky (i telefon); `download` = PDF
-    s textem (`lkPdfDownload`), `zpl` = soubor ZPL. Hromadný tisk má volbu **Zkušební štítek** (kind `test`:
-    rámeček 1 mm od okraje, čárky po 10 mm, kříž, „ZKUŠEBNÍ ŠTÍTEK 100 × 35 mm“), tlačítko Tisknout.
-  - CSP: `frame-src blob:` z 2.81 zrušené (rámec už není), `connect-src` na Browser Print zůstává.
-  - Testy: `e2e_skrinky` zachytí tiskovou stránku `page.pdf({preferCSSPageSize})` (strany 100 × 35 mm ± 0,3,
-    obrázky 800 × 280, nic na okraji 1 mm, pravá polovina klíče prázdná, úklid po `afterprint`, žádný rámec), text
-    štítků a výzev ve staženém PDF; `test_odmeny` (CSP bez `frame-src`); `e2e_upgrade_prev` 2.81 → 2.81.1
-    (archiv `aee56c0`, `SAME_DATA`, stará stránka se po aktualizaci zavře: synchronizace dvou oken dávala 409).
-    `ODM_VERSION` 2.81.1, data beze změny (59).
-  - Neověřeno na skutečné Zebře: jestli ovladač vezme velikost stránky z prohlížeče. Ke kontrole je zkušební štítek.
-
-Starší zápisy (2.81 a dál dozadu) jsou v `docs/historie.md`.
+Starší zápisy (2.81.1 a dál dozadu) jsou v `docs/historie.md`.
 
 ## Pravidla spolupráce
 
@@ -177,11 +186,11 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
 
 | verze | commit | obsah |
 |---|---|---|
-| 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
 | 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
 | 2.81.1 | `aa91632` | tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
 | 2.82 | `144d404` | Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
-| 2.83 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – podnabídka Klíče pro telefon (poslední čísla sériového čísla klíče ke skříňce, procházení skříněk bez záložního klíče, najít skříňku podle klíče, Záložní klíč nalezen) (data verze 61) |
+| 2.83 | `cb6a8af` | Skříňky – podnabídka Klíče pro telefon (poslední čísla sériového čísla klíče ke skříňce, procházení skříněk bez záložního klíče, najít skříňku podle klíče, Záložní klíč nalezen) (data verze 61) |
+| 2.84 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Shortage – rozdělená sestava skrytá v PDF jen v jednom oddělení, ruční oddělení u poddílu, poslední 3 záznamy a stav U nás / Odesláno na WPA v rámečku (aplikace i PDF) (data verze 62) |
 
 ## Pojmy
 
@@ -265,7 +274,7 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `61` (od 2.83):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `62` (od 2.84):
 
 - `DATA_VERSION` v `private/core/06-kontrola-dat.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -461,7 +470,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 33 testů: server, šifrovaný tok, kopie dat, oddělení od ostré verze, AI (náhradní API), šifrované soubory
-node tests/test_core.js                 # 137 testů: proti původní aplikaci + opravy + každá verze od 2.1
+node tests/test_core.js                 # 138 testů: proti původní aplikaci + opravy + každá verze od 2.1
 OUT=$S/e2e PW=/opt/node22/lib/node_modules/playwright bash tests/run_e2e.sh [testy…]   # průchody v prohlížeči souběžně
 ```
 

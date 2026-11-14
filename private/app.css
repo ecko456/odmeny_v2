@@ -2057,10 +2057,15 @@ table.sh-tab tr.sh-dragging td { opacity: .45; background: var(--acc-soft); }
 table.sh-tab tr.sh-drop-before td { box-shadow: inset 0 3px 0 var(--acc); }
 table.sh-tab tr.sh-drop-after td { box-shadow: inset 0 -3px 0 var(--acc); }
 table.sh-tab td.sh-opc { min-width: 130px; }
-.sh-rec { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 6px; font-size: 13px; }
-.sh-recprev { list-style: none; margin: 4px 0 0; padding: 4px 0 0 8px; border-left: 2px solid var(--line); display: grid; gap: 2px; font-size: 12px; color: var(--ink-2); }
-.sh-recprev li { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; }
-.sh-recprev .sh-recst { color: var(--ink-2); }
+/* poslední 3 záznamy (2.84): rámeček, každý záznam na vlastním řádku (stav, kusy vpravo, pod tím kdy), mezi nimi linka */
+.sh-recs { margin-top: 6px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); overflow: hidden; }
+.sh-recs .sh-rec, .sh-recs .sh-recprev li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 0; padding: 5px 8px; }
+.sh-recs .sh-rec { font-size: 13px; }
+.sh-recs .sh-recprev { list-style: none; margin: 0; padding: 0; font-size: 12px; color: var(--ink-2); }
+.sh-recs .sh-recprev li { border-top: 1px dashed var(--line-2); }
+.sh-recs .sh-recst { font-weight: 600; color: var(--ink-2); }
+.sh-recs .sh-recq { margin-left: auto; white-space: nowrap; }
+.sh-recs .sh-recw { flex-basis: 100%; font-size: 11.5px; color: var(--ink-3); }
 .tag.sh-state { background: var(--surface-3); color: var(--ink); font-weight: 700; white-space: normal; overflow-wrap: anywhere; max-width: 100%; text-align: left; border-radius: 8px; }
 table.sh-tab td.sh-notec { min-width: 150px; }
 .sh-note { display: block; box-sizing: border-box; width: 100%; min-width: 130px; min-height: 54px; padding: 6px 9px; font-size: 13.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; resize: none; }
@@ -3315,8 +3320,14 @@ table.sh-tab tr.sh-depthead td { white-space: normal; }
 .sh-coldlg > h4 { margin: 14px 0 6px; }
 
 /* Shortage: odesláno na WPA proti množství zakázky, díl u nás (2.71) */
-.sh-sent { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 6px; margin-top: 6px; }
-.sh-sent .tag { white-space: normal; }
+/* 2.84: v rámečku – hlavní údaj velký, pod ním podrobnost; barva rámečku podle stavu (u nás oranžová, vše odesláno zelená) */
+.sh-sent { display: grid; gap: 1px; margin-top: 6px; padding: 5px 8px; border: 1px solid var(--line-2); border-left-width: 4px; border-radius: 8px; background: var(--surface); }
+.sh-sentmain { font-size: 13px; font-weight: 700; color: var(--ink); }
+.sh-sentsub { font-size: 12px; color: var(--ink-2); }
+.sh-sent-here { border-color: var(--warn); background: var(--warn-soft); }
+.sh-sent-here .sh-sentmain { font-size: 14.5px; }
+.sh-sent-done { border-color: var(--good); background: var(--good-soft); }
+.sh-sent-open .sh-sentmain, .sh-sent-info .sh-sentmain { font-weight: 600; color: var(--ink-2); }
 .sh-rzsent { margin-top: 4px; }
 
 /* Časová osa se posouvá a panel je bez posuvníku (2.72.1): posouvá se kolečkem, prstem i šipkami */

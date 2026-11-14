@@ -200,7 +200,7 @@ všech položek, `.sv-item.dup`), `svSaveDraft` (kontroly: datum, identifikace, 
 přesune nahoru pod sebe), PDF `drawServiceProtocol` (A4 na výšku)
 a `exportServicePdf` (`servis-protokol-2026-001.pdf`).
 
-## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36, zabalení dne a dny na shortage 2.73, připnout a duplikovat 2.75, průvodce, přednastavení sloupců, 3 záznamy, K prověření a rozdělené sestavy 2.78)
+## Shortage (verze 2.27, tři kroky a rozbor 2.61, sloupce a Ctrl+V 2.27.1, úpravy položek 2.28, poddíly 2.29, Skrýt v PDF 2.29.1, ruční TOP, plná sestava a filtr operací 2.31, TOP 2 a oddělení 2.32, PDF po odděleních 2.34, doplnit chybějící 2.36, zabalení dne a dny na shortage 2.73, připnout a duplikovat 2.75, průvodce, přednastavení sloupců, 3 záznamy, K prověření a rozdělené sestavy 2.78, skrytí v PDF po odděleních, oddělení poddílu a rámečky záznamů 2.84)
 
 Sloupce (2.27.1): A číslo objednávky, B název dílu, C EAN s vloženým odkazem, D index,
 E urgentní množství, F se nečte, G „TOP“ (`/^top\b/i`), H probíhající operace.
@@ -270,6 +270,17 @@ Položky jdou přes `shPdfItems(l)` (bez skrytých, číslování bez mezer; vš
 Soubor `shortage-YYYY-MM-DD-HHMM.pdf` (`exportShortagePdf`). Po odděleních (2.34, `split`):
 každé oddělení od nové strany s vlastním záhlavím, čísly položek od 1 a stranami v zápatí
 za oddělení, soubor `…-po-oddelenich.pdf`.
+
+**2.84.** Skrytí v PDF po odděleních: položka `pdfHideIn` (id oddělení, „?“ K prověření, „-“ Nezařazeno; jen když
+je), `pdfHide` dál skrývá všude. Oko u rozdělené sestavy (`shHideBtn(i, {off, dept, name})`, `data-shhidein`)
+skryje / odkryje jen v oddělení bloku (`shSetHideIn`; skrytá všude se rozepíše na ostatní oddělení). `shHidIn`,
+`shHidDept` (Hotovo podle domovského oddělení), `shPdfBlocks` = `shBlocks` bez položek skrytých v oddělení bloku;
+v aplikaci `shPdfShown(l, ops, dsel, asel)` → `{items, secs}` pro `drawShortage` i kontrolu „nic k tisku“.
+Oddělení poddílu ručně: poddíl `dept` (id oddělení, „-“ = se sestavou), výběr `[data-shsubdept]` (`shSubDeptSel`,
+i v řádku „na jiném oddělení“), `shSubDeptIn(sh, it, x)` (ruční, jinak u ručně zařazené sestavy se sestavou, jinak
+podle operace) používají `shSplitDepts`, `shSubHere` a `shAutoDept`. Záznamy: `shRecsHtml` (rámeček `.sh-recs`,
+každý záznam na řádku, čárkovaná linka mezi nimi), stav odeslání `.sh-sent.sh-sent-<st>` s `shSentParts`
+(hlavní údaj, podrobnost); PDF záznamy po řádcích s čárkovanou linkou (`recs`, `recRowH`) a stav v rámečku (`sentH`).
 
 ## Audit (verze 2.17, 2.18, kapacity a zaškolení 2.30, stránky podle vzoru 2.31, hranice zaškolení 2.33, docházka a výkony 2.37)
 
