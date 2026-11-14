@@ -449,6 +449,16 @@ Skříňka se pozná podle řady a čísla, v soupisu je jen jednou. Core `priva
   Historie: „přidán další člověk X“ (`lk:id:a:klíč`), „odebrán X“ (`lk:id:r:klíč`).
 - **Není záložní klíč** (2.82): `nokey: true` (jen když je), přepínač v řádku (`aria-pressed`), štítek „bez záložního
   klíče“, filtr; `lkLabelSeq` štítek klíče vynechá, Excel sloupec Záložní klíč, historie (`lk:id:z`).
+- **Klíče** (2.83, podnabídka pro telefon, přepínač Soupis / Klíče, `ui.lk.mode`): `serial` u skříňky = poslední
+  čísla sériového čísla klíče (`lkSerialNorm`: písmena a číslice, nejvýš 6 posledních; jen když je). Zapsat číslo
+  klíče: Procházet **Bez záložního klíče** (výchozí, když nějaké jsou) / **Všechny** (`ui.lk.walk`); `lkKStart`
+  předvyplní první skříňku bez čísla v procházení, po Uložit (`lkKeySave`) další (`lkNextNoSerial`), kurzor do čísel,
+  Enter = další pole / Uložit; skříňka se píše jako „a12“ (`lkByLabel`), `lkKInfo` ukáže lidi, číslo, bez
+  záložního klíče a nejednoznačné číslo; stejné číslo jinde varuje (`lkKSerHint`, `lkSetSerial().dup`). Najít
+  skříňku podle klíče (`lkBySerial`: stejné, nebo končí na zadaná čísla): u skříňky bez záložního klíče **Záložní
+  klíč nalezen** (zruší `nokey`), jinak **Štítek klíče** (jen štítek klíče), V soupisu. Soupis: „klíč …123“ pod
+  označením, štítek „stejné číslo klíče jako …“, hledání podle čísla, Excel sloupec Číslo klíče, historie
+  (`lk:id:s`). Rozepsaný formulář přežije překreslení (`lkKeysKeep`).
 - **Historie** (kind `locker`, filtr Skříňky): přidání a smazání skříňky, přidělení, uvolnění, „už nepracuje“,
   poznámka. Přidělení / uvolnění / „už nepracuje“ mají každé vlastní `m` (`lk:id:k:p|f|g`), takže se při rychlém
   sledu v historii neslučují (vyprázdnění zůstane vidět); poznámky se slučují (`lk:id:t`).

@@ -6,13 +6,48 @@ Text zápisů se nepřepisuje (jsou to zadání uživatele a rozhodnutí v době
 
 Obsah:
 
-- Zápisy „Kde jsme skončili“ (od 2.80 dozadu po 1. 10. 2026)
+- Zápisy „Kde jsme skončili“ (od 2.81 dozadu po 1. 10. 2026)
 - Verze a stav (celá tabulka verzí s commity, zadání 2.1)
 - Ostrá verze a verze 2 (původní text, platil do 7. 11. 2026)
 - Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, nezačato)
 - Původní úvod a Tři oddělené projekty
 
 ## Zápisy „Kde jsme skončili“
+
+Stav k 14. 11. 2026 (verze 2.81):
+
+- Uživatel: „A pokud tam bude status "Je třeba vyprázdnit" Tak ať mi vyjede štítek skříňky s upozorněním, něco
+  ve stylu: kde bude dnešní datum a že má 7 pracovních dnů k nahlášení, kdo využívá skříňku, jinak bude obsah
+  zlikvidován" Uprav to podle toho, aby to bylo co nejkratší znění a legitimní.“ Pak: „ať se lépe nadefinuje tisk
+  štítku, ať nemusím nic nastavovat v tisku a vše je nastaveno již“ a „možná ti pomůže s nastavením tisku:
+  ^XA^PW800^LL280^LH0,0 ... ^PQ1^XZ“ (tj. Zebra 203 dpi, 800 × 280 bodů).
+  - **Výzva k vyklizení** (štítek 100 × 35 mm): černý pruh VÝZVA K VYKLIZENÍ · SKŘÍŇKA A 4, „Používáte tuto
+    skříňku? Nahlaste se u vedoucího nejpozději / **do 25. 11. 2026 (7 pracovních dnů).** / Poté bude skříňka
+    komisionálně otevřena a vyklizena. / Vyvěšeno 14. 11. 2026“. Místo „zlikvidován“ záměrně „komisionálně otevřena
+    a vyklizena“ (věci jsou cizí majetek; otevřít za svědků se zápisem, uschovat a teprve pak naložit dál).
+    Lhůta = konkrétní datum, 7 pracovních dnů bez víkendů a státních svátků (`lkWorkDaysAdd`, `calHoliday`).
+  - Core: `notice {at, until, by}` u skříňky (jen když je; `lkCleanNotice`), `lkSetNotice` (jen K vyklizení,
+    opakovaný tisk drží lhůtu), `lkNoticeLines` (texty), `lkState` vrací `notice`, `noticeLate`; přidělení, uvolnění
+    a import s jiným člověkem výzvu zruší; Excel „výzva do …“ / „lhůta výzvy uplynula …“; historie
+    „vyvěšena výzva k vyklizení, lhůta do …“ (`m` `lk:id:v`).
+  - App: po vyřazení nebo smazání člověka se skříňkou okno „Je třeba vyprázdnit skříňku …“ s Vytisknout výzvu
+    (Později = jen hláška); v řádku K vyklizení tlačítko Výzva, text „výzva vyvěšena …, lhůta do …“ a štítek
+    „lhůta uplynula, lze vyklidit“; v pruhu Je třeba vyprázdnit „Vytisknout výzvy (N)“.
+  - **Tisk bez nastavování**: (1) když na počítači běží **Zebra Browser Print**, štítky jdou rovnou do tiskárny
+    bez okna tisku jako ZPL `^XA^PW800^LL280^LH0,0^FO0,0^GFA…^FS^PQ1^XZ` (obsah je obrázek 800 × 280 bodů
+    nakreslený stejným `lkDrawLabel` přes `lkCanvasDoc` a písmo Plex z `pdfAsset` přes `FontFace`; `lkZplGfa`
+    s kompresí ZPL v core); hledá `http://127.0.0.1:9100/` a `https://localhost:9101/` (`default?type=printer`,
+    `write` s `{device, data}`), výsledek se pamatuje 30 / 5 min (`ui.zebra`); (2) jinak se okno tisku otevře rovnou
+    s PDF ve skrytém rámci (`#lkPrintFrame`), PDF má `PrintScaling None`, `PickTrayByPDFSize`, 1 kopii; (3) na
+    telefonu se PDF stáhne. Hromadný tisk: výstup Tisknout / Stáhnout PDF / Stáhnout ZPL pro Zebru a stav Zebry.
+    Skutečná tiskárna ani Browser Print tu nejsou: protokol Browser Print je podle jeho knihovny, ověřený jen
+    náhradní službou v testu. Kdyby Zebra nereagovala, aplikace přejde na okno tisku.
+  - CSP: `frame-src blob:` (jen PDF vyrobené stránkou) a `connect-src 'self' http://127.0.0.1:9100
+    https://localhost:9101` (jen místní Browser Print), hlídá `test_lock_page_headers`.
+  - Data verze 59, `ODM_VERSION` 2.81. Testy: core „Skříňky (2.81)“ (lhůta přes svátky, výzva, ZPL kódování
+    a dekódování), `test_odmeny` (426 pro 58, CSP), `e2e_skrinky` (nabídka po vyřazení, PDF výzvy, lhůta uplynula,
+    hromadně, tisk přes rámec s náhradou `print`, náhradní Browser Print na 9100 a dekódování ZPL, stažení ZPL,
+    telefon stáhne PDF), `e2e_upgrade_prev` 2.80 → 2.81 (archiv `f9883e0`, výzva nad převzatými daty).
 
 Stav k 14. 11. 2026 (verze 2.80):
 
@@ -2747,7 +2782,8 @@ Stav k 1. 10. 2026:
 | 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
 | 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
 | 2.81.1 | `aa91632` | tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
-| 2.82 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
+| 2.82 | `144d404` | Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
+| 2.83 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – podnabídka Klíče pro telefon (poslední čísla sériového čísla klíče ke skříňce, procházení skříněk bez záložního klíče, najít skříňku podle klíče, Záložní klíč nalezen) (data verze 61) |
 
 Verze 2.1 přidala:
 

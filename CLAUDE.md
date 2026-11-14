@@ -28,7 +28,7 @@ dřív měl 290 kB a session se zahlcovala. Nic se nesmazalo, jen přesunulo do 
 | soubor | co tam je | kdy číst |
 |---|---|---|
 | `CLAUDE.md` (tento) | pravidla, poslední 3 zápisy, architektura, datový model, výpočty, testy v kostce | vždy (načte se sám) |
-| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.80) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
+| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.81) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
 | `docs/moduly.md` | podrobný popis modulů: data, funkce, UI (Matice, Přeformulování, Top 5, Kontroly, Protokoly, Servis, Shortage, KPI, Plán kapacit) | před prací na modulu |
 | `docs/testy.md` | všechny průchody v prohlížeči a co hlídají, testy na Apachi | před psaním nebo úpravou testu |
 | `README.md` | pro uživatele (novinky, instalace, zálohy) | při každé verzi doplnit „Co je nového“ |
@@ -60,6 +60,29 @@ Klony na serveru jsou `/root/trading_desk` a `/root/odmeny_v2`. Všechny repozit
 nepushne), celá tabulka je v `docs/historie.md`.
 
 ## Kde jsme skončili
+
+Stav k 14. 11. 2026 (verze 2.83):
+
+- Uživatel: „ještě mi udělej sub menu ve skříňkách pro telefon, že vyberu skříňku a napíšu poslední 3 čísla
+  sériového čísla. Abych pak měl lepší přiřazení klíčů, které jsou bez označení a mají jen seriové číslo.“ Během
+  práce: „A mě to postupně vede po skříňkách, které nemají záložní klíč.“
+  - Core: `serial` u skříňky (jen když je; `lkSerialNorm`: písmena a číslice, nejvýš 6 posledních), `lkSetSerial`
+    (vrátí i skříňky se stejným číslem), `lkBySerial` (stejné, nebo končící na zadaná čísla: 0123 i 123),
+    `lkByLabel` („a12“, „A-12“, „12“ jen když je jednoznačné), `lkOverview` `serial`, `serialDup`; Excel sloupec
+    Číslo klíče a „stejné číslo klíče jako …“; historie „číslo klíče …123“ / „smazáno“ (`m` `lk:id:s`).
+  - App: přepínač **Soupis / Klíče** nahoře ve Skříňkách (`ui.lk.mode`, počet skříněk s číslem). Klíče:
+    - Zapsat číslo klíče: **Procházet Bez záložního klíče / Všechny** (`ui.lk.walk`; výchozí bez záložního
+      klíče, když nějaké jsou), po otevření a po uložení předvyplní další skříňku bez čísla v procházení
+      (`lkKStart`, `lkNextNoSerial`), kurzor do čísel, Enter = další pole / Uložit, info o skříňce (`lkKInfo`:
+      lidé, číslo, bez záložního klíče, nejednoznačné číslo), varování stejného čísla už při psaní (`lkKSerHint`),
+      Naposledy zapsané; rozepsaný formulář přežije překreslení (`lkKeysKeep` / `lkKeysRestore`).
+    - Najít skříňku podle klíče (`lkKFind`): skříňky a lidé; u skříňky bez záložního klíče **Záložní klíč nalezen**
+      (zruší Není záložní klíč), jinak **Štítek klíče** (tiskne jen štítek klíče), V soupisu.
+    - Soupis: „klíč …123“ pod označením skříňky, štítek „stejné číslo klíče jako …“, hledání i podle čísla klíče.
+  - Data verze 61, `ODM_VERSION` 2.83. Testy: core „Skříňky (2.83)“, `test_odmeny` (426 pro 60), `e2e_skrinky`
+    (Klíče na telefonu: procházení bez záložního klíče, Všechny, Enter, stejné číslo, překreslení, najít, Záložní
+    klíč nalezen a štítek klíče, V soupisu, hledání; `rowOf` hledá označení v `td.lk-lab b`), `e2e_upgrade_prev`
+    2.82 → 2.83 (archiv `144d404`).
 
 Stav k 14. 11. 2026 (verze 2.82):
 
@@ -109,42 +132,7 @@ Stav k 14. 11. 2026 (verze 2.81.1):
     `ODM_VERSION` 2.81.1, data beze změny (59).
   - Neověřeno na skutečné Zebře: jestli ovladač vezme velikost stránky z prohlížeče. Ke kontrole je zkušební štítek.
 
-Stav k 14. 11. 2026 (verze 2.81):
-
-- Uživatel: „A pokud tam bude status "Je třeba vyprázdnit" Tak ať mi vyjede štítek skříňky s upozorněním, něco
-  ve stylu: kde bude dnešní datum a že má 7 pracovních dnů k nahlášení, kdo využívá skříňku, jinak bude obsah
-  zlikvidován" Uprav to podle toho, aby to bylo co nejkratší znění a legitimní.“ Pak: „ať se lépe nadefinuje tisk
-  štítku, ať nemusím nic nastavovat v tisku a vše je nastaveno již“ a „možná ti pomůže s nastavením tisku:
-  ^XA^PW800^LL280^LH0,0 ... ^PQ1^XZ“ (tj. Zebra 203 dpi, 800 × 280 bodů).
-  - **Výzva k vyklizení** (štítek 100 × 35 mm): černý pruh VÝZVA K VYKLIZENÍ · SKŘÍŇKA A 4, „Používáte tuto
-    skříňku? Nahlaste se u vedoucího nejpozději / **do 25. 11. 2026 (7 pracovních dnů).** / Poté bude skříňka
-    komisionálně otevřena a vyklizena. / Vyvěšeno 14. 11. 2026“. Místo „zlikvidován“ záměrně „komisionálně otevřena
-    a vyklizena“ (věci jsou cizí majetek; otevřít za svědků se zápisem, uschovat a teprve pak naložit dál).
-    Lhůta = konkrétní datum, 7 pracovních dnů bez víkendů a státních svátků (`lkWorkDaysAdd`, `calHoliday`).
-  - Core: `notice {at, until, by}` u skříňky (jen když je; `lkCleanNotice`), `lkSetNotice` (jen K vyklizení,
-    opakovaný tisk drží lhůtu), `lkNoticeLines` (texty), `lkState` vrací `notice`, `noticeLate`; přidělení, uvolnění
-    a import s jiným člověkem výzvu zruší; Excel „výzva do …“ / „lhůta výzvy uplynula …“; historie
-    „vyvěšena výzva k vyklizení, lhůta do …“ (`m` `lk:id:v`).
-  - App: po vyřazení nebo smazání člověka se skříňkou okno „Je třeba vyprázdnit skříňku …“ s Vytisknout výzvu
-    (Později = jen hláška); v řádku K vyklizení tlačítko Výzva, text „výzva vyvěšena …, lhůta do …“ a štítek
-    „lhůta uplynula, lze vyklidit“; v pruhu Je třeba vyprázdnit „Vytisknout výzvy (N)“.
-  - **Tisk bez nastavování**: (1) když na počítači běží **Zebra Browser Print**, štítky jdou rovnou do tiskárny
-    bez okna tisku jako ZPL `^XA^PW800^LL280^LH0,0^FO0,0^GFA…^FS^PQ1^XZ` (obsah je obrázek 800 × 280 bodů
-    nakreslený stejným `lkDrawLabel` přes `lkCanvasDoc` a písmo Plex z `pdfAsset` přes `FontFace`; `lkZplGfa`
-    s kompresí ZPL v core); hledá `http://127.0.0.1:9100/` a `https://localhost:9101/` (`default?type=printer`,
-    `write` s `{device, data}`), výsledek se pamatuje 30 / 5 min (`ui.zebra`); (2) jinak se okno tisku otevře rovnou
-    s PDF ve skrytém rámci (`#lkPrintFrame`), PDF má `PrintScaling None`, `PickTrayByPDFSize`, 1 kopii; (3) na
-    telefonu se PDF stáhne. Hromadný tisk: výstup Tisknout / Stáhnout PDF / Stáhnout ZPL pro Zebru a stav Zebry.
-    Skutečná tiskárna ani Browser Print tu nejsou: protokol Browser Print je podle jeho knihovny, ověřený jen
-    náhradní službou v testu. Kdyby Zebra nereagovala, aplikace přejde na okno tisku.
-  - CSP: `frame-src blob:` (jen PDF vyrobené stránkou) a `connect-src 'self' http://127.0.0.1:9100
-    https://localhost:9101` (jen místní Browser Print), hlídá `test_lock_page_headers`.
-  - Data verze 59, `ODM_VERSION` 2.81. Testy: core „Skříňky (2.81)“ (lhůta přes svátky, výzva, ZPL kódování
-    a dekódování), `test_odmeny` (426 pro 58, CSP), `e2e_skrinky` (nabídka po vyřazení, PDF výzvy, lhůta uplynula,
-    hromadně, tisk přes rámec s náhradou `print`, náhradní Browser Print na 9100 a dekódování ZPL, stažení ZPL,
-    telefon stáhne PDF), `e2e_upgrade_prev` 2.80 → 2.81 (archiv `f9883e0`, výzva nad převzatými daty).
-
-Starší zápisy (2.80 a dál dozadu) jsou v `docs/historie.md`.
+Starší zápisy (2.81 a dál dozadu) jsou v `docs/historie.md`.
 
 ## Pravidla spolupráce
 
@@ -189,11 +177,11 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
 
 | verze | commit | obsah |
 |---|---|---|
-| 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
 | 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
 | 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
 | 2.81.1 | `aa91632` | tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
-| 2.82 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
+| 2.82 | `144d404` | Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
+| 2.83 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – podnabídka Klíče pro telefon (poslední čísla sériového čísla klíče ke skříňce, procházení skříněk bez záložního klíče, najít skříňku podle klíče, Záložní klíč nalezen) (data verze 61) |
 
 ## Pojmy
 
@@ -277,7 +265,7 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `60` (od 2.82):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `61` (od 2.83):
 
 - `DATA_VERSION` v `private/core/06-kontrola-dat.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -336,7 +324,7 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
   - `undo` (2.45): uložené změny za 3 dny pro Vrátit zpět, `log[].u`/`log[].un`;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
-  - `lockers` (2.80): Skříňky, `{list: [{id, row, no, key, name, gone, raw, note, at, by, notice?{at, until, by}, more?[{key, name}], nokey?}]}` (výzva k vyklizení 2.81, další lidé a bez záložního klíče 2.82; viz `docs/moduly.md`);
+  - `lockers` (2.80): Skříňky, `{list: [{id, row, no, key, name, gone, raw, note, at, by, notice?{at, until, by}, more?[{key, name}], nokey?, serial?}]}` (výzva k vyklizení 2.81, další lidé a bez záložního klíče 2.82, číslo klíče 2.83; viz `docs/moduly.md`);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -473,7 +461,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 33 testů: server, šifrovaný tok, kopie dat, oddělení od ostré verze, AI (náhradní API), šifrované soubory
-node tests/test_core.js                 # 136 testů: proti původní aplikaci + opravy + každá verze od 2.1
+node tests/test_core.js                 # 137 testů: proti původní aplikaci + opravy + každá verze od 2.1
 OUT=$S/e2e PW=/opt/node22/lib/node_modules/playwright bash tests/run_e2e.sh [testy…]   # průchody v prohlížeči souběžně
 ```
 

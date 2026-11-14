@@ -62,6 +62,19 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.83
+
+- **Skříňky → Klíče** (hlavně pro telefon): ke skříňce se zapíšou poslední 3 čísla ze sériového čísla klíče,
+  aby šly neoznačené klíče přiřadit.
+  - **Zapsat číslo klíče**: aplikace vede postupně po skříňkách **bez záložního klíče** (nebo po všech, volba
+    Procházet). Skříňka je předvyplněná, stačí napsat čísla a dát Uložit (Enter), hned nabídne další. Skříňku jde
+    napsat i ručně, třeba „a12“.
+  - **Najít skříňku podle klíče**: napiš čísla z neoznačeného klíče a uvidíš, ke které skříňce (a komu) patří.
+    U skříňky bez záložního klíče je **Záložní klíč nalezen** (zruší Není záložní klíč), pak jde vytisknout štítek
+    klíče.
+  - Když má víc skříněk stejné číslo, aplikace na to upozorní (u posledních 3 čísel se to stát může).
+  - V soupisu je číslo klíče vidět u skříňky („klíč …123“), jde podle něj hledat a je v Excelu.
+
 ## Co je nového ve verzi 2.82
 
 - **Není záložní klíč**: u každé skříňky je tlačítko Není záložní klíč (zapnuté svítí oranžově). Skříňka

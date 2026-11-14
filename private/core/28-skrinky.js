@@ -31,6 +31,31 @@ function lkName(e){return e?[e.last,e.first].filter(Boolean).join(" "):"";}
 /** Lidé ve skříňce (2.82): hlavní (key) a další (more [{key, name}], sdílená skříňka). */
 function lkKeys(l){return l?[l.key,...((l.more||[]).map(m=>m.key))].filter(Boolean):[];}
 function lkHas(l,key){return !!key&&lkKeys(l).includes(key);}
+/** Číslo klíče (2.83): poslední znaky sériového čísla klíče, jen písmena a číslice, nejvýš 6 (zbytek zleva pryč). */
+function lkSerialNorm(v){return String(v==null?"":v).normalize("NFC").toUpperCase().replace(/[^0-9A-Z]/g,"").slice(-6);}
+/** Skříňka podle zápisu „A 12“, „a12“, „A-12“, „12“ (bez písmene jen když je to číslo jednoznačné). */
+function lkByLabel(lk,text){
+  const list=((lk||(S&&S.lockers)||{}).list)||[];
+  const t=String(text==null?"":text).toUpperCase().replace(/[\s\-_.\/]+/g,"");
+  const m=/^([A-Z]*)(\d+[A-Z]?)$/.exec(t);
+  if(!m)return null;
+  const no=lkNoNorm(m[2]);
+  const hit=list.filter(l=>l.no===no&&(m[1]?l.row===m[1]:true));
+  return m[1]?hit[0]||null:hit.length===1?hit[0]:list.find(l=>!l.row&&l.no===no)||null;
+}
+/** Skříňky s číslem klíče: stejné, nebo končící na zadaná čísla (z 1234 stačí napsat 234). */
+function lkBySerial(lk,q,skipId){
+  q=lkSerialNorm(q);
+  if(!q)return [];
+  return (((lk||(S&&S.lockers)||{}).list)||[]).filter(l=>l.serial&&l.id!==skipId&&(l.serial===q||l.serial.endsWith(q)||q.endsWith(l.serial)));
+}
+/** Zapíše číslo klíče (prázdné smaže); vrátí i skříňky se stejným číslem. */
+function lkSetSerial(st,id,serial){
+  const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};
+  const v=lkSerialNorm(serial);
+  if(v)l.serial=v;else delete l.serial;
+  return {l,dup:v?lkBySerial(st.lockers,v,id).filter(x=>x.serial===v):[]};
+}
 function lkNameIn(l,k){return k===l.key?l.name:((l.more||[]).find(x=>x.key===k)||{}).name||"";}
 /** Čištění soupisu: platné id, skříňka podle řady a čísla jen jednou, texty omezené; jméno
     (snímek) se obnoví podle Lidí, ať je vidět i po smazání člověka. */
@@ -58,6 +83,8 @@ function cleanLockers(o,emps){
       at:Number.isFinite(+x.at)?+x.at:0,by:txt(x.by,80)};
     if(more.length)l.more=more;
     if(x.nokey===true)l.nokey=true;   // 2.82: skříňka nemá záložní klíč (štítek klíče se netiskne)
+    const ser=lkSerialNorm(x.serial);
+    if(ser)l.serial=ser;              // 2.83: poslední čísla sériového čísla klíče
     const n=lkCleanNotice(x.notice);
     if(n)l.notice=n;
     list.push(l);
@@ -119,19 +146,21 @@ function lkClearOut(o,l,today){if(l.notice){o.notice=l.notice;o.noticeLate=(toda
 function lkOverview(lk,emps,today){
   emps=emps||(S&&S.employees)||{};today=today||todayIso();
   const list=((lk||(S&&S.lockers)||{}).list)||[];
-  const out={total:list.length,free:0,used:0,unknown:0,clear:0,leave:0,nokey:0,shared:0,rows:[],byKey:new Map(),without:[],multi:[]};
+  const out={total:list.length,free:0,used:0,unknown:0,clear:0,leave:0,nokey:0,shared:0,serial:0,serialDup:new Map(),rows:[],byKey:new Map(),without:[],multi:[]};
   list.forEach(l=>{
     const s=lkState(l,emps,today);
     out[s.st]++;
     if(s.leaving&&s.leaving.length)out.leave++;
     if(l.nokey)out.nokey++;
     if(lkKeys(l).length>1)out.shared++;
+    if(l.serial){out.serial++;out.serialDup.set(l.serial,[...(out.serialDup.get(l.serial)||[]),l]);}
     out.rows.push({l,...s});
     lkKeys(l).forEach(k=>{if(!out.byKey.has(k))out.byKey.set(k,[]);out.byKey.get(k).push(l);});
   });
   out.without=Object.values(emps).filter(e=>e&&e.key&&!e.excluded&&!out.byKey.has(e.key))
     .sort((a,b)=>lkName(a).localeCompare(lkName(b),"cs"));
   out.multi=[...out.byKey.entries()].filter(([,v])=>v.length>1).map(([k])=>k);
+  [...out.serialDup.keys()].forEach(k=>{if(out.serialDup.get(k).length<2)out.serialDup.delete(k);});
   return out;
 }
 /** Skříňky člověka (pro detail v Lidech a upozornění při vyřazení). */
@@ -395,9 +424,10 @@ function lkSheets(lk,emps,today,positions){
   const ids=x=>x.people?x.people.map(p=>p.e&&p.e.wid).filter(Boolean).join("; "):"";
   const warn=x=>x.st==="clear"?"Je třeba vyprázdnit ("+x.why+")"+(x.notice?(x.noticeLate?", lhůta výzvy uplynula "+dayText(x.notice.until):", výzva do "+dayText(x.notice.until)):"")
     :[...(x.leaving||[]).map(p=>"odebrat "+p.name+" ("+p.why+")"),...(x.people||[]).filter(p=>ov.multi.includes(p.key)).map(p=>p.name+" má víc skříněk")].join("; ");
-  const rows=[["Skříňka","Řada","Číslo","Pracovník","ID","Skupina","Stav","Upozornění","Záložní klíč","Z importu","Poznámka"]];
+  const rows=[["Skříňka","Řada","Číslo","Pracovník","ID","Skupina","Stav","Upozornění","Záložní klíč","Číslo klíče","Z importu","Poznámka"]];
   ov.rows.forEach(x=>{
-    rows.push([lkLabel(x.l),x.l.row,x.l.no,who(x),ids(x),gr(x.e),LK_STATES[x.st],warn(x),x.l.nokey?"není":"ano",x.l.raw||"",x.l.note||""]);
+    const dup=x.l.serial&&ov.serialDup.has(x.l.serial)?ov.serialDup.get(x.l.serial).filter(o=>o!==x.l).map(lkLabel):[];
+    rows.push([lkLabel(x.l),x.l.row,x.l.no,who(x),ids(x),gr(x.e),LK_STATES[x.st],[warn(x),dup.length?"stejné číslo klíče jako "+dup.join(", "):""].filter(Boolean).join("; "),x.l.nokey?"není":"ano",x.l.serial||"",x.l.raw||"",x.l.note||""]);
   });
   const w=[["Příjmení a jméno","ID","Skupina","Vedoucí"]];
   ov.without.forEach(e=>w.push([lkName(e),e.wid||"",gr(e),isLead(e)?"ano":""]));
@@ -426,6 +456,7 @@ function lkChanges(A,B,add){
       }
     }
     if(!!o.nokey!==!!l.nokey)add("locker","Skříňka "+lab+": "+(l.nokey?"není záložní klíč":"záložní klíč je"),{m:"lk:"+l.id+":z"});
+    if((o.serial||"")!==(l.serial||""))add("locker","Skříňka "+lab+": "+(l.serial?"číslo klíče …"+l.serial:"číslo klíče smazáno"),{m:"lk:"+l.id+":s"});
     const on=o.notice?o.notice.until:"",nn=l.notice?l.notice.until:"";
     if(nn&&on!==nn)add("locker","Skříňka "+lab+": vyvěšena výzva k vyklizení, lhůta do "+dayText(nn),{m:"lk:"+l.id+":v",...(o.key?{key:o.key}:{})});
     if(o.note!==l.note)add("locker","Skříňka "+lab+": poznámka „"+(l.note||"—")+"“",{m:"lk:"+l.id+":t"});

@@ -80,7 +80,7 @@ function lkWho(x) {
 }
 function lkMatchQ(x, q) {
   if (!q) return true;
-  return norm([lkLabel(x.l), lkWho(x), x.l.raw, x.l.note, ...(x.people || []).map(p => p.e && p.e.wid)].filter(Boolean).join(' ')).includes(q);
+  return norm([lkLabel(x.l), lkWho(x), x.l.raw, x.l.note, x.l.serial, ...(x.people || []).map(p => p.e && p.e.wid)].filter(Boolean).join(' ')).includes(q);
 }
 /** Řádek ve filtru (obrazovka i hromadný tisk). */
 function lkInFilter(x, f, ov) {
@@ -102,13 +102,14 @@ function lkRowHtml(x, ov, today) {
   else if (x.st === 'unknown') who = `<span class="lk-raw">„${esc(l.raw)}“</span><small class="muted">v Lidech nenalezeno, přiřaď</small>`;
   else who = '<span class="muted">—</span>';
   const tag = { used: '<span class="tag ok">Obsazená</span>', unknown: '<span class="tag warn">Nespárovaná</span>', clear: '<span class="tag crit">Je třeba vyprázdnit</span>', free: '<span class="tag">Volná</span>' }[x.st];
-  const extra = [x.leaving && x.leaving.length ? `<span class="tag crit">odebrat ${esc(x.leaving.map(p => p.name).join(', '))}</span>` : '', many ? `<span class="tag">sdílená · ${ppl.length}</span>` : '', l.nokey ? '<span class="tag">bez záložního klíče</span>' : '', x.noticeLate ? '<span class="tag crit">lhůta uplynula</span>' : x.notice ? '<span class="tag warn">výzva vyvěšena</span>' : '', x.endPast ? `<span class="tag warn" title="Konec trestu ${esc(dayText(x.endPast))}">konec trestu minul</span>` : '', multi ? '<span class="tag warn">má víc skříněk</span>' : ''].join('');
+  const sdup = l.serial && ov.serialDup.has(l.serial) ? ov.serialDup.get(l.serial).filter(o => o !== l).map(lkLabel) : [];
+  const extra = [sdup.length ? `<span class="tag warn">stejné číslo klíče jako ${esc(sdup.join(', '))}</span>` : '', x.leaving && x.leaving.length ? `<span class="tag crit">odebrat ${esc(x.leaving.map(p => p.name).join(', '))}</span>` : '', many ? `<span class="tag">sdílená · ${ppl.length}</span>` : '', l.nokey ? '<span class="tag">bez záložního klíče</span>' : '', x.noticeLate ? '<span class="tag crit">lhůta uplynula</span>' : x.notice ? '<span class="tag warn">výzva vyvěšena</span>' : '', x.endPast ? `<span class="tag warn" title="Konec trestu ${esc(dayText(x.endPast))}">konec trestu minul</span>` : '', multi ? '<span class="tag warn">má víc skříněk</span>' : ''].join('');
   const act = x.st === 'clear'
     ? `<button class="btn ${x.notice ? 'ghost ' : 'sec '}small" type="button" data-lknotice="${id}" title="Štítek s výzvou k vyklizení (Zebra 100 × 35 mm)${x.notice ? ', stejná lhůta' : `, lhůta ${LK_NOTICE_DAYS} pracovních dnů`}">Výzva</button><button class="btn small" type="button" data-lkfree="${id}" title="Skříňka je prázdná, zůstane volná">Vyprázdněno</button><button class="btn ghost small" type="button" data-lkassign="${id}">Přidělit</button>`
     : x.st === 'free' ? `<button class="btn sec small" type="button" data-lkassign="${id}">Přidělit</button>`
       : `<button class="btn ghost small" type="button" data-lkassign="${id}">${x.st === 'unknown' ? 'Přiřadit' : 'Změnit'}</button><button class="btn ghost small" type="button" data-lkfree="${id}">Uvolnit</button>`;
   return `<tr class="lk-${x.st}" data-lkrow="${id}">
-    <td class="lk-lab" data-label="Skříňka"><b>${esc(lkLabel(l))}</b></td>
+    <td class="lk-lab" data-label="Skříňka"><b>${esc(lkLabel(l))}</b>${l.serial ? `<small class="lk-ser" title="Poslední čísla sériového čísla klíče">klíč …${esc(l.serial)}</small>` : ''}</td>
     <td class="name lk-whocell" data-label="Pracovník">${who}</td>
     <td class="wrap" data-label="Stav"><span class="lk-tags">${tag}${extra}</span></td>
     <td class="lk-notecell" data-label="Poznámka"><input type="text" data-lknote="${id}" value="${esc(l.note || '')}" maxlength="${LK_NOTE}" placeholder="poznámka" aria-label="Poznámka ke skříňce ${esc(lkLabel(l))}"></td>
@@ -136,6 +137,15 @@ function renderLockers() {
       '<div class="row gap wrap"><button class="btn" type="button" data-lkpaste>Vložit z Excelu</button><button class="btn sec" type="button" data-lkrange>Přidat řadu skříněk</button></div>')}</div>`;
     return;
   }
+  // podnabídka Klíče (2.83): hlavně na telefon, zápis čísel klíčů a hledání skříňky podle klíče
+  const mode = u.mode === 'keys' ? 'keys' : 'list';
+  const modeTabs = `<div class="chips lk-mode" role="tablist" aria-label="Skříňky"><button type="button" class="chip${mode === 'list' ? ' on' : ''}" data-lkmode="list" role="tab" aria-selected="${mode === 'list'}">Soupis</button><button type="button" class="chip${mode === 'keys' ? ' on' : ''}" data-lkmode="keys" role="tab" aria-selected="${mode === 'keys'}">Klíče <em class="t5-count">${ov.serial}/${ov.total}</em></button></div>`;
+  if (mode === 'keys') {
+    const keep = lkKeysKeep();
+    box.innerHTML = modeTabs + lkKeysHtml(ov);
+    lkKeysRestore(keep);
+    return;
+  }
   const q = norm(u.q.trim());
   const occ = ov.used + ov.unknown;
   const count = { all: ov.total, free: ov.free, used: occ, unknown: ov.unknown, clear: ov.clear, leave: ov.leave, nokey: ov.nokey, multi: ov.rows.filter(x => lkInFilter(x, 'multi', ov)).length, without: ov.without.length };
@@ -159,8 +169,133 @@ function renderLockers() {
       ${rows.length > shown.length ? `<p class="lk-more"><button class="btn ghost" type="button" data-lkmore>Ukázat dalších ${Math.min(LK_PAGE, rows.length - shown.length)} (zbývá ${rows.length - shown.length})</button></p>` : ''}`
       : `<div class="card"><p class="muted">${q ? 'Nic neodpovídá hledání.' : 'V tomhle filtru nic není.'}</p></div>`;
   }
-  box.innerHTML = `${tiles}${alert}${leaveNote}${tools}${body}
+  box.innerHTML = `${modeTabs}${tiles}${alert}${leaveNote}${tools}${body}
     <p class="tiny muted lk-foot">Vložit nebo doplnit soupis: v Excelu zkopíruj sloupce A (písmeno), B (číslo) a C (jméno) a tady stiskni Ctrl+V. Skříňky se stejným písmenem a číslem se přepíšou, ostatní zůstanou.</p>`;
+}
+
+/* ---------- Klíče (2.83): poslední čísla sériového čísla klíče ke skříňce ----------
+   Na telefonu: napsat skříňku a čísla, Uložit; formulář pak nabídne další skříňku bez čísla. Druhá karta
+   najde skříňku podle čísel z neoznačeného klíče. */
+function lkKWalk() {
+  const u = lkUi();
+  if (u.walk !== 'nokey' && u.walk !== 'all') u.walk = lkList().some(l => l.nokey) ? 'nokey' : 'all';
+  if (u.walk === 'nokey' && !lkList().some(l => l.nokey)) u.walk = 'all';
+  return u.walk;
+}
+function lkKeysHtml(ov) {
+  const missing = ov.total - ov.serial, rec = (lkUi().recent || []).map(r => lkFind(S, r.id)).filter(Boolean), walk = lkKWalk();
+  const nk = lkList().filter(l => l.nokey), nkLeft = nk.filter(l => !l.serial).length;
+  return `<div class="lk-keys">
+    <div class="card lk-kcard">
+      <h3>Zapsat číslo klíče</h3>
+      ${nk.length ? `<div class="chips lk-kwalk" role="radiogroup" aria-label="Procházet skříňky"><button type="button" class="chip${walk === 'nokey' ? ' on' : ''}" data-lkkwalk="nokey" role="radio" aria-checked="${walk === 'nokey'}">Bez záložního klíče <em class="t5-count">${nkLeft}</em></button><button type="button" class="chip${walk === 'all' ? ' on' : ''}" data-lkkwalk="all" role="radio" aria-checked="${walk === 'all'}">Všechny <em class="t5-count">${missing}</em></button></div>` : ''}
+      <p class="small muted" id="lkKLeft">${lkKLeftText(ov)}</p>
+      <label class="field"><span>Skříňka</span><input id="lkKLock" list="lkKList" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="např. A 12" enterkeyhint="next"></label>
+      <datalist id="lkKList">${lkList().map(l => `<option value="${esc(lkLabel(l))}">`).join('')}</datalist>
+      <p class="small lk-kinfo" id="lkKInfo" aria-live="polite"></p>
+      <label class="field"><span>Poslední 3 čísla klíče</span><input id="lkKSer" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="123" enterkeyhint="done"></label>
+      <div class="row gap wrap lk-kbtns"><button class="btn" type="button" data-lkksave>Uložit</button><button class="btn sec" type="button" data-lkknext>${missing ? 'Další bez čísla' : 'Další skříňka'}</button></div>
+      <p class="small lk-kmsg" id="lkKMsg" aria-live="polite"></p>
+    </div>
+    <div class="card lk-kcard">
+      <h3>Najít skříňku podle klíče</h3>
+      <label class="field"><span>Čísla z klíče</span><input id="lkKFind" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="123"></label>
+      <div id="lkKFound" aria-live="polite"><p class="small muted">Napiš poslední čísla ze sériového čísla neoznačeného klíče.</p></div>
+    </div>
+    <div class="card lk-kcard lk-krecent" id="lkKRecent"${rec.length ? '' : ' hidden'}><h3>Naposledy zapsané</h3><ul>${rec.map(l => `<li><b>${esc(lkLabel(l))}</b> · klíč …${esc(l.serial || '—')}<span class="muted"> · ${esc(lkKWho(l))}</span></li>`).join('')}</ul></div>
+    ${ov.serialDup.size ? `<div class="note w lk-kdup">Stejné číslo klíče má víc skříněk: ${[...ov.serialDup.entries()].slice(0, 10).map(([k, ls]) => `…${esc(k)}: ${esc(ls.map(lkLabel).join(', '))}`).join('; ')}. U posledních 3 čísel se to stát může, zkontroluj klíče.</div>` : ''}
+  </div>`;
+}
+function lkKLeftText(ov) {
+  const missing = ov.total - ov.serial;
+  if (lkKWalk() === 'nokey') {
+    const nk = lkList().filter(l => l.nokey), left = nk.filter(l => !l.serial).length;
+    return `Postupně po skříňkách bez záložního klíče: ${left ? `bez čísla zbývá ${left} z ${nk.length}` : 'všechny už mají číslo klíče'}. Na zámku nebo klíči přečti poslední 3 čísla sériového čísla.`;
+  }
+  return `Napiš skříňku (třeba „a12“) a poslední 3 čísla ze sériového čísla klíče. ${missing ? `Bez čísla zbývá ${missing} z ${ov.total}.` : 'Všechny skříňky mají číslo klíče.'}`;
+}
+/** Předvyplní první skříňku bez čísla v procházení a kurzor dá do čísel (vstup do Klíčů, změna procházení). */
+function lkKStart() {
+  const lockIn = $('#lkKLock');
+  if (!lockIn) return;
+  const nx = lkNextNoSerial(null);
+  lockIn.value = nx ? lkLabel(nx) : '';
+  lkKInfo();
+  $('#lkKMsg').className = 'small lk-kmsg';
+  $('#lkKMsg').textContent = nx ? '' : lkKWalk() === 'nokey' ? 'Všechny skříňky bez záložního klíče mají číslo klíče.' : 'Všechny skříňky mají číslo klíče.';
+  (nx ? $('#lkKSer') : lockIn).focus();
+}
+function lkKWho(l) { const x = lkState(l, S.employees, todayIso()); return x.people ? x.people.map(p => p.name).join(', ') : x.st === 'free' ? 'volná' : lkWho({ l, ...x }) || 'volná'; }
+function lkKInfo() {
+  const inp = $('#lkKLock'), info = $('#lkKInfo');
+  if (!inp || !info) return null;
+  const v = inp.value.trim(), l = v ? lkByLabel(S.lockers, v) : null;
+  info.className = `small lk-kinfo${v && !l ? ' err' : ''}`;
+  info.textContent = !v ? '' : l ? `${lkLabel(l)} · ${lkKWho(l)} · ${l.serial ? `klíč …${l.serial} (uložením se přepíše)` : 'klíč zatím bez čísla'}${l.nokey ? ' · bez záložního klíče' : ''}`
+    : /^\d+[a-z]?$/i.test(v.replace(/\s+/g, '')) && lkList().filter(x => x.no === lkNoNorm(v)).length > 1 ? `Číslo ${v} je ve víc řadách, napiš i písmeno (třeba A ${v}).` : `Skříňka „${v}“ v soupisu není.`;
+  return l;
+}
+function lkKSerHint() {
+  const l = lkByLabel(S.lockers, ($('#lkKLock') || {}).value || ''), v = lkSerialNorm(($('#lkKSer') || {}).value || ''), msg = $('#lkKMsg');
+  if (!msg) return;
+  const dup = v ? lkBySerial(S.lockers, v, l && l.id).filter(o => o.serial === v) : [];
+  msg.className = `small lk-kmsg${dup.length ? ' warn' : ''}`;
+  msg.textContent = dup.length ? `Stejné číslo má ${dup.map(lkLabel).join(', ')}.` : '';
+}
+function lkNextNoSerial(after, any) {
+  // procházení „bez záložního klíče“ vede jen po skříňkách s Není záložní klíč
+  const L = lkKWalk() === 'nokey' ? lkList().filter(x => x.nokey) : lkList(), i = after ? L.findIndex(x => x.id === after.id) : -1, ok = x => any || !x.serial;
+  return L.slice(i + 1).find(ok) || L.slice(0, Math.max(0, i)).find(ok) || null;
+}
+function lkKeySave() {
+  const lockIn = $('#lkKLock'), serIn = $('#lkKSer'), msg = $('#lkKMsg');
+  const l = lkByLabel(S.lockers, lockIn.value);
+  if (!l) { msg.className = 'small lk-kmsg err'; msg.textContent = 'Napiš skříňku, která je v soupisu (třeba A 12).'; lockIn.focus(); return; }
+  const v = lkSerialNorm(serIn.value);
+  if (!v) { msg.className = 'small lk-kmsg err'; msg.textContent = 'Napiš čísla z klíče.'; serIn.focus(); return; }
+  const r = lkSetSerial(S, l.id, v);
+  if (r.err) { toast(r.err, true); return; }
+  save();
+  const u = lkUi();
+  u.recent = [{ id: l.id }, ...(u.recent || []).filter(x => x.id !== l.id)].slice(0, 10);
+  // další skříňka bez čísla, kurzor rovnou do čísel
+  const nx = lkNextNoSerial(l);
+  lockIn.value = nx ? lkLabel(nx) : '';
+  serIn.value = '';
+  lkKInfo();
+  const ov = lkOverview(S.lockers, S.employees, todayIso());
+  $('#lkKLeft').textContent = lkKLeftText(ov);
+  const rec = $('#lkKRecent');
+  rec.hidden = false;
+  rec.innerHTML = `<h3>Naposledy zapsané</h3><ul>${u.recent.map(x => lkFind(S, x.id)).filter(Boolean).map(x => `<li><b>${esc(lkLabel(x))}</b> · klíč …${esc(x.serial || '—')}<span class="muted"> · ${esc(lkKWho(x))}</span></li>`).join('')}</ul>`;
+  const mode = $('#lkView [data-lkmode="keys"] .t5-count');
+  if (mode) mode.textContent = `${ov.serial}/${ov.total}`;
+  msg.className = `small lk-kmsg ${r.dup.length ? 'warn' : 'ok'}`;
+  msg.textContent = `Uloženo: ${lkLabel(l)} · klíč …${v}.${r.dup.length ? ` Pozor, stejné číslo má i ${r.dup.map(lkLabel).join(', ')}.` : ''}${nx ? ` Další: ${lkLabel(nx)}.` : lkKWalk() === 'nokey' ? ' Všechny skříňky bez záložního klíče mají číslo klíče.' : ' Všechny skříňky mají číslo klíče.'}`;
+  const wc = $$('#lkView [data-lkkwalk] .t5-count');
+  if (wc.length === 2) { wc[0].textContent = String(lkList().filter(x => x.nokey && !x.serial).length); wc[1].textContent = String(ov.total - ov.serial); }
+  (nx ? serIn : lockIn).focus();
+}
+function lkKFind() {
+  const inp = $('#lkKFind'), box = $('#lkKFound');
+  if (!inp || !box) return;
+  const q = lkSerialNorm(inp.value);
+  if (!q) { box.innerHTML = '<p class="small muted">Napiš poslední čísla ze sériového čísla neoznačeného klíče.</p>'; return; }
+  const hits = lkBySerial(S.lockers, q);
+  box.innerHTML = hits.length ? `<ul class="lk-kfound">${hits.map(l => `<li><b>${esc(lkLabel(l))}</b> · klíč …${esc(l.serial)}<span class="muted"> · ${esc(lkKWho(l))}</span>${l.nokey ? ' <span class="tag">bez záložního klíče</span>' : ''}
+      <span class="lk-kfacts">${l.nokey ? `<button class="btn sec small" type="button" data-lkkhave="${esc(l.id)}" title="Tenhle klíč je záložní klíč skříňky: zruší Není záložní klíč">Záložní klíč nalezen</button>` : `<button class="btn ghost small" type="button" data-lkkprint="${esc(l.id)}" title="Štítek na záložní klíč (Zebra 100 × 35 mm)">Štítek klíče</button>`}<button class="btn ghost small" type="button" data-lkkopen="${esc(l.id)}">V soupisu</button></span></li>`).join('')}</ul>`
+    : `<p class="small lk-kmsg err">Klíč s čísly …${esc(q)} u žádné skříňky není.</p>`;
+}
+/** Při překreslení (synchronizace) se rozepsaný formulář nesmí ztratit. */
+function lkKeysKeep() {
+  const a = document.activeElement;
+  return { lock: ($('#lkKLock') || {}).value || '', ser: ($('#lkKSer') || {}).value || '', find: ($('#lkKFind') || {}).value || '', focus: a && /^lkK/.test(a.id) ? a.id : '' };
+}
+function lkKeysRestore(k) {
+  if (!$('#lkKLock')) return;
+  $('#lkKLock').value = k.lock; $('#lkKSer').value = k.ser; $('#lkKFind').value = k.find;
+  lkKInfo(); lkKFind();
+  if (k.focus && $(`#${k.focus}`)) $(`#${k.focus}`).focus();
 }
 
 /* ---------- vložení soupisu z Excelu ---------- */
@@ -751,6 +886,35 @@ function bindLockers() {
     if (!t || !S) return;
     const u = lkUi(), meta = { by: ui.me ? ui.me.label : '' };
     if (t.dataset.lkf != null) { u.f = t.dataset.lkf; u.n = LK_PAGE; renderLockers(); return; }
+    if (t.dataset.lkmode) { u.mode = t.dataset.lkmode; renderLockers(); if (u.mode === 'keys') lkKStart(); return; }
+    if (t.matches('[data-lkksave]')) { lkKeySave(); return; }
+    if (t.matches('[data-lkknext]')) {
+      const cur = lkByLabel(S.lockers, $('#lkKLock').value), nx = lkNextNoSerial(cur) || lkNextNoSerial(cur, true);
+      $('#lkKLock').value = nx ? lkLabel(nx) : '';
+      lkKInfo();
+      $('#lkKSer').value = '';
+      $('#lkKMsg').textContent = '';
+      $('#lkKSer').focus();
+      return;
+    }
+    if (t.dataset.lkkwalk) {
+      u.walk = t.dataset.lkkwalk;
+      $$('#lkView [data-lkkwalk]').forEach(b => { b.classList.toggle('on', b === t); b.setAttribute('aria-checked', String(b === t)); });
+      $('#lkKLeft').textContent = lkKLeftText(lkOverview(S.lockers, S.employees, todayIso()));
+      lkKStart();
+      return;
+    }
+    if (t.dataset.lkkhave) {
+      const l = lkFind(S, t.dataset.lkkhave);
+      if (!l) return;
+      lkSetNoKey(S, l.id, false);
+      save();
+      lkKFind();
+      toast(`Skříňka ${lkLabel(l)}: záložní klíč nalezen. Vytiskni na něj štítek (Štítek klíče).`);
+      return;
+    }
+    if (t.dataset.lkkprint) { const l = lkFind(S, t.dataset.lkkprint); if (l) lkOutput(lkLabelSeq([l], { locker: false }), `stitek-klice-${lkLabel(l).replace(/\s+/g, '')}`, 'Štítek klíče'); return; }
+    if (t.dataset.lkkopen) { const l = lkFind(S, t.dataset.lkkopen); if (l) { u.mode = 'list'; u.f = 'all'; u.q = lkLabel(l); renderLockers(); } return; }
     if (t.matches('[data-lkmore]')) { u.n += LK_PAGE; renderLockers(); return; }
     if (t.matches('[data-lkpaste]')) { lkPasteBox(); return; }
     if (t.matches('[data-lkrange]')) { lkRangeDialog(); return; }
@@ -801,7 +965,11 @@ function bindLockers() {
     if (t.dataset.lkgive) lkGiveDialog(t.dataset.lkgive);
   });
   view.addEventListener('input', event => {
-    if (event.target.id !== 'lkQ') return;
+    const id = event.target.id;
+    if (id === 'lkKLock') { lkKInfo(); lkKSerHint(); return; }
+    if (id === 'lkKSer') { lkKSerHint(); return; }
+    if (id === 'lkKFind') { lkKFind(); return; }
+    if (id !== 'lkQ') return;
     clearTimeout(ui.lkQT);
     ui.lkQT = setTimeout(() => {
       const pos = event.target.selectionStart;
@@ -821,7 +989,13 @@ function bindLockers() {
     lkSetNote(S, l.id, note);
     save();
   });
-  view.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.dataset && event.target.dataset.lknote != null) event.target.blur(); });
+  view.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    const t = event.target;
+    if (t.dataset && t.dataset.lknote != null) t.blur();
+    else if (t.id === 'lkKLock') { event.preventDefault(); $('#lkKSer').focus(); }
+    else if (t.id === 'lkKSer') { event.preventDefault(); lkKeySave(); }
+  });
   // odkazy na Skříňky odjinud (detail člověka v Lidech)
   document.addEventListener('click', event => {
     const b = event.target.closest('[data-golk],[data-lkgive]');

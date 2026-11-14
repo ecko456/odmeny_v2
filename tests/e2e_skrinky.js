@@ -29,7 +29,8 @@ const dlgClosed = page => page.waitForFunction(() => !document.querySelector('#d
 // okno se zavře o chvíli dřív, než doběhne kód po něm (událost close přijde až v další úloze)
 const until = (page, fn) => page.waitForFunction(fn, null, { timeout: 20000 });
 const tiles = page => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#lkView .lk-stats .stat')].map(s => [s.querySelector('.k').textContent.trim(), s.querySelector('.v').textContent.trim()])));
-const rowOf = (page, label) => page.locator(`#lkView tr[data-lkrow]`).filter({ has: page.locator('td.lk-lab', { hasText: new RegExp(`^${label}$`) }) });
+// označení skříňky je v <b> (pod ním může být číslo klíče, 2.83)
+const rowOf = (page, label) => page.locator(`#lkView tr[data-lkrow]`).filter({ has: page.locator('td.lk-lab b', { hasText: new RegExp(`^${label}$`) }) });
 
 const PDF = String.raw`
 import sys, json, fitz
@@ -401,7 +402,7 @@ function readPdf(file, name) {
     const x = JSON.parse(xr.stdout);
     const a7 = (x['Skříňky'] || []).find(r => r[0] === 'A 7') || [];
     check(Object.keys(x).join(',') === 'Skříňky,Bez skříňky' && x['Skříňky'].length === 18, `Excel listy: ${Object.keys(x)} ${x['Skříňky'] && x['Skříňky'].length}`);
-    check(a7[3] === 'Kovaříková Zdeňka' && a7[6] === 'K vyklizení' && a7[7] === 'Je třeba vyprázdnit (vyřazený ze seznamu)' && a7[8] === 'ano' && a7[9] === 'Kovarikova', `Excel A 7: ${JSON.stringify(a7)}`);
+    check(a7[3] === 'Kovaříková Zdeňka' && a7[6] === 'K vyklizení' && a7[7] === 'Je třeba vyprázdnit (vyřazený ze seznamu)' && a7[8] === 'ano' && a7[9] === '' && a7[10] === 'Kovarikova', `Excel A 7: ${JSON.stringify(a7)}`);
     check((x['Bez skříňky'] || []).map(r => r[0]).join(',') === 'Příjmení a jméno,Dvořák Pavel', `Excel bez skříňky: ${JSON.stringify(x['Bez skříňky'])}`);
   }
 
@@ -581,6 +582,78 @@ function readPdf(file, name) {
   await printedPdf(page, 6, fp);
   const pp = readPdf(fp, 'stitky-telefon');
   check(pp.length === 2 && pp.every(p => isLabel(p) && p.border === 0), `telefon: tisk štítků ${JSON.stringify(pp.map(p => [p.w, p.h]))}`);
+
+  // ---------- 2.83: podnabídka Klíče na telefonu (poslední čísla sériového čísla klíče) ----------
+  // A 2 je „Není záložní klíč“ (2.82): procházení začne skříňkami bez záložního klíče
+  await page.evaluate(() => { lkUi().q = ''; lkUi().f = 'all'; renderLockers(); });
+  await page.click('#lkView [data-lkmode="keys"]');
+  await page.waitForSelector('#lkKLock');
+  check(await page.getAttribute('#lkView [data-lkkwalk="nokey"]', 'aria-checked') === 'true' && /Postupně po skříňkách bez záložního klíče: bez čísla zbývá 1 z 1/.test(await page.textContent('#lkKLeft')), `Klíče: procházení bez záložního klíče ${await page.textContent('#lkKLeft')}`);
+  check(await page.inputValue('#lkKLock') === 'A 2' && await page.evaluate(() => document.activeElement.id) === 'lkKSer' && /bez záložního klíče/.test(await page.textContent('#lkKInfo')), `Klíče: předvyplněná A 2, kurzor v číslech ${await page.textContent('#lkKInfo')}`);
+  await page.screenshot({ path: path.join(shots, '09a-telefon-klice.png'), fullPage: true });
+  await page.fill('#lkKSer', '456');
+  await page.press('#lkKSer', 'Enter');
+  await page.waitForFunction(() => /^Uloženo: A 2 · klíč …456\. Všechny skříňky bez záložního klíče mají číslo klíče\./.test(document.querySelector('#lkKMsg').textContent));
+  check(await page.inputValue('#lkKLock') === '' && await page.evaluate(() => document.activeElement.id) === 'lkKLock', 'konec procházení: prázdná skříňka, kurzor ve skříňce');
+  // všechny skříňky bez čísla
+  await page.click('#lkView [data-lkkwalk="all"]');
+  check(await page.inputValue('#lkKLock') === 'A 1' && await page.evaluate(() => document.activeElement.id) === 'lkKSer', 'Všechny: první bez čísla A 1');
+  await page.fill('#lkKLock', '1');
+  check(/Číslo 1 je ve víc řadách/.test(await page.textContent('#lkKInfo')), `Klíče: nejednoznačné číslo ${await page.textContent('#lkKInfo')}`);
+  await page.fill('#lkKLock', 'a1');
+  check(/^A 1 · Dvořák Pavel · klíč zatím bez čísla/.test(await page.textContent('#lkKInfo')), `Klíče: info ${await page.textContent('#lkKInfo')}`);
+  await page.press('#lkKLock', 'Enter');
+  check(await page.evaluate(() => document.activeElement.id) === 'lkKSer', 'Enter ve skříňce → čísla');
+  await page.fill('#lkKSer', '456');
+  check(/Stejné číslo má A 2/.test(await page.textContent('#lkKMsg')), 'Klíče: varování stejné číslo už při psaní');
+  await page.fill('#lkKSer', '123');
+  await page.press('#lkKSer', 'Enter');
+  await page.waitForFunction(() => /^Uloženo: A 1 · klíč …123\. Další: A 3\./.test(document.querySelector('#lkKMsg').textContent));
+  check(await page.inputValue('#lkKLock') === 'A 3' && await page.evaluate(() => document.activeElement.id) === 'lkKSer', 'po uložení další skříňka bez čísla (A 2 už číslo má), kurzor v číslech');
+  await page.fill('#lkKSer', '0123');
+  await page.click('#lkView [data-lkksave]');
+  await page.waitForFunction(() => /^Uloženo: A 3 · klíč …0123\. Další: A 4\./.test(document.querySelector('#lkKMsg').textContent));
+  await page.fill('#lkKLock', 'C 1');
+  await page.fill('#lkKSer', '123');
+  await page.click('#lkView [data-lkksave]');
+  await page.waitForFunction(() => /^Uloženo: C 1 · klíč …123\. Pozor, stejné číslo má i A 1\./.test(document.querySelector('#lkKMsg').textContent));
+  await saved(page);
+  check(await page.evaluate(() => ['A 1', 'A 2', 'A 3', 'C 1'].map(n => S.lockers.list.find(l => lkLabel(l) === n).serial).join()) === '123,456,0123,123', 'čísla klíčů uložená');
+  check(await page.locator('#lkKRecent li').count() === 4 && /C 1 · klíč …123/.test(await page.textContent('#lkKRecent li')), 'naposledy zapsané');
+  // rozepsaný formulář přežije překreslení (synchronizace)
+  await page.fill('#lkKLock', 'B 1');
+  await page.fill('#lkKSer', '77');
+  await page.evaluate(() => renderLockers());
+  check(await page.inputValue('#lkKLock') === 'B 1' && await page.inputValue('#lkKSer') === '77' && await page.evaluate(() => document.activeElement.id) === 'lkKSer', 'formulář po překreslení zůstane');
+  await page.fill('#lkKSer', '');
+  // najít skříňku podle klíče
+  await page.fill('#lkKFind', '23');
+  check(await page.evaluate(() => [...document.querySelectorAll('#lkKFound li > b')].map(b => b.textContent).join()) === 'A 1,A 3,C 1', `najít podle klíče: ${await page.textContent('#lkKFound')}`);
+  await page.fill('#lkKFind', '999');
+  check(/u žádné skříňky není/.test(await page.textContent('#lkKFound')), 'neznámý klíč');
+  // nalezený záložní klíč skříňky bez záložního klíče: zrušit „Není záložní klíč“ a vytisknout štítek klíče
+  await page.fill('#lkKFind', '456');
+  check(await page.locator('#lkKFound [data-lkkhave]').count() === 1, 'A 2 bez záložního klíče: Záložní klíč nalezen');
+  await page.screenshot({ path: path.join(shots, '09-telefon-klice.png'), fullPage: true });
+  await page.click('#lkKFound [data-lkkhave]');
+  await until(page, () => !S.lockers.list.find(l => lkLabel(l) === 'A 2').nokey);
+  await saved(page);
+  check(await page.locator('#lkKFound [data-lkkprint]').count() === 1, 'po nalezení: Štítek klíče');
+  await page.click('#lkKFound [data-lkkprint]');
+  const fkk = path.join(shots, 'stitek-klice-a2.pdf');
+  await printedPdf(page, 7, fkk);
+  const pkk = readPdf(fkk, 'stitek-klice');
+  check(pkk.length === 1 && isLabel(pkk[0]) && pkk[0].right === 0 && pkk[0].ink > 2000, `štítek klíče A 2: jen štítek klíče ${JSON.stringify(pkk.map(p => [p.w, p.right]))}`);
+  await page.click('#lkKFound [data-lkkopen]');
+  await page.waitForSelector('#lkView table.lk-tab');
+  check(await page.evaluate(() => [...document.querySelectorAll('#lkView tr[data-lkrow] td.lk-lab')].map(x => x.textContent.trim()).join('|')) === 'A 2klíč …456', 'V soupisu: skříňka s číslem klíče');
+  await page.evaluate(() => { lkUi().q = ''; renderLockers(); });
+  check(/stejné číslo klíče jako C 1/.test(await rowOf(page, 'A 1').locator('.lk-tags').textContent()), 'soupis: stejné číslo klíče');
+  await page.fill('#lkQ', '456');
+  await page.waitForFunction(() => document.querySelectorAll('#lkView tr[data-lkrow]').length === 1);
+  await page.fill('#lkQ', '');
+  const log83 = await page.evaluate(() => S.log.filter(x => x.kind === 'locker').map(x => x.text));
+  check(['Skříňka A 1: číslo klíče …123', 'Skříňka C 1: číslo klíče …123', 'Skříňka A 2: záložní klíč je'].every(t => log83.includes(t)), `historie čísel klíčů: ${JSON.stringify(log83.slice(-6))}`);
   await ctx.close();
   await browser.close();
   if (problems.length) {
