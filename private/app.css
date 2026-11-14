@@ -3631,6 +3631,17 @@ tr.lk-unknown td { background: color-mix(in srgb, var(--warn-soft) 45%, transpar
 .lk-notice { display: block; margin-top: 2px; color: var(--warn); font-size: 12.5px; font-weight: 500; }
 .lk-notice.late { color: var(--crit); }
 .lk-alertact { flex: none; }
-/* skrytý rámec pro tisk štítků (2.81): PDF se v něm načte a otevře se okno tisku */
-.lk-printframe { position: fixed; right: 0; bottom: 0; width: 1px; height: 1px; border: 0; opacity: 0; pointer-events: none; }
+/* Tisk štítků skříněk (2.81): tiskne se jen #lkPrintArea, každý štítek je jedna stránka 100 × 35 mm
+   (velikost stránky a nulové okraje přidá skript jen na dobu tisku) */
+.lk-printarea { display: none; }
+@media print {
+  body.lk-printing > *:not(#lkPrintArea) { display: none !important; }
+  body.lk-printing { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  body.lk-printing #lkPrintArea { display: block !important; margin: 0; padding: 0; }
+  /* Chrome zaokrouhlí stránku 100 × 35 mm dolů na celé body (377 × 132 px = 99,75 × 34,92 mm): štítek má
+     přesně velikost stránky, aby nic nepřetékalo na další (prázdný) štítek */
+  body.lk-printing .lk-plabel { width: 377px; height: 132px; margin: 0; padding: 0; overflow: hidden; break-inside: avoid; break-after: page; }
+  body.lk-printing .lk-plabel:last-child { break-after: auto; }
+  body.lk-printing .lk-plabel img { display: block; width: 377px; height: 132px; image-rendering: pixelated; }
+}
 .lk-out select { width: auto; min-width: 14rem; }

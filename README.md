@@ -62,6 +62,17 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.81.1
+
+- **Oprava tisku štítků**: tisk už nepoužívá PDF, takže se nic nestahuje a nezáleží na tom, čím se v počítači
+  otevírají PDF. Štítky se pošlou do okna tisku jako obrázky na stránce přesně 100 × 35 mm bez okrajů. Velikost
+  papíru, okraje ani měřítko se v okně tisku nenastavují, stačí vybrat Zebru (prohlížeč si ji příště pamatuje).
+- **Zkušební štítek** (Tisk štítků → Zkušební štítek): rámeček 1 mm od okraje, čárky po 10 mm a kříž uprostřed.
+  Když je rámeček celý a rovně, tisk sedí. Když chybí kus nebo je štítek zmenšený, je potřeba jednou nastavit
+  v ovladači Zebry (Předvolby tisku) velikost štítku 100 × 35 mm.
+- PDF ke stažení (Tisk štítků → Stáhnout PDF) a ZPL pro Zebru zůstávají. Úplně bez okna tisku tiskne aplikace
+  Zebra Browser Print.
+
 ## Co je nového ve verzi 2.81
 
 - **Výzva k vyklizení skříňky**: u skříňky K vyklizení se vytiskne štítek (Zebra 100 × 35 mm):
@@ -77,9 +88,8 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   - S aplikací **Zebra Browser Print** (od Zebry, nainstaluje se jednou do počítače) jdou štítky rovnou do
     tiskárny, bez okna tisku: aplikace pošle ZPL `^XA^PW800^LL280^LH0,0 … ^PQ1^XZ` (203 dpi, 800 × 280 bodů,
     1 kopie). Při prvním spojení se Browser Print zeptá, jestli stránce povolit tiskárny.
-  - Bez něj se okno tisku otevře hned (bez stahování) a PDF samo říká „skutečná velikost“ a papír podle velikosti
-    stránky. Jednou vyber Zebru a v jejím ovladači štítek 100 × 35 mm, prohlížeč si to pamatuje.
-  - V Tisku štítků jde zvolit i Stáhnout PDF nebo Stáhnout ZPL pro Zebru. Na telefonu se PDF stáhne.
+  - Bez něj se okno tisku otevře hned (bez stahování). (2.81.1: místo PDF obrázky na stránce 100 × 35 mm.)
+  - V Tisku štítků jde zvolit i Stáhnout PDF nebo Stáhnout ZPL pro Zebru.
 
 ## Co je nového ve verzi 2.80
 

@@ -10,6 +10,8 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const http = require('http');
+// tisková stránka: Chrome zaokrouhlí 100 × 35 mm na celé body (99,75 × 34,92 mm)
+const isLabel = p => Math.abs(p.w - 100) <= 0.3 && Math.abs(p.h - 35) <= 0.2;
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1:8490/';
 const shots = path.join(S, 'oshots-skrinky');
@@ -41,7 +43,9 @@ for p in d:
     mm = pw / 100.0; edge = int(mm); mid = range(int(48.5 * mm), int(51.5 * mm) + 1)
     border = sum(1 for y in range(ph) for x in range(pw) if (y < edge or y >= ph - edge or x < edge or x >= pw - edge) and x not in mid and ink(x, y))
     right = sum(1 for y in range(ph) for x in range(int(51.5 * mm), pw) if ink(x, y))
-    out.append({'w': round(W / 72 * 25.4, 1), 'h': round(H / 72 * 25.4, 1), 'text': ' | '.join(t for _, t, _ in spans), 'flat': ''.join(t for _, t, _ in spans).replace(' ', ''), 'border': border, 'right': right,
+    total = sum(1 for i in range(pw * ph) if px[i] < 128)
+    frame = sum(1 for y in range(int(5 * mm), int(30 * mm)) for x in range(int(0.7 * mm), int(1.6 * mm) + 1) if ink(x, y))
+    out.append({'w': round(W / 72 * 25.4, 1), 'h': round(H / 72 * 25.4, 1), 'text': ' | '.join(t for _, t, _ in spans), 'flat': ''.join(t for _, t, _ in spans).replace(' ', ''), 'border': border, 'right': right, 'ink': total, 'frame': frame,
                 'maxX': round(max([b[2] for b, _, _ in spans] or [0]) / 72 * 25.4, 1), 'minX': round(min([b[0] for b, _, _ in spans] or [0]) / 72 * 25.4, 1),
                 'maxY': round(max([b[3] for b, _, _ in spans] or [0]) / 72 * 25.4, 1), 'big': round(max([z for _, _, z in spans] or [0]))})
     if len(out) <= 2: p.get_pixmap(dpi=200).save(sys.argv[2] + f'-{len(out)}.png')
@@ -52,19 +56,17 @@ const XL = String.raw`
 import sys, json
 from openpyxl import load_workbook
 wb = load_workbook(sys.argv[1]); print(json.dumps({ws.title: [[c if c is not None else '' for c in r] for r in ws.iter_rows(values_only=True)] for ws in wb.worksheets}))`;
-/** Počká na n-tý tisk a uloží PDF, které bylo v rámci pro tisk. */
+/** Počká na n-tý tisk a uloží tiskovou stránku jako PDF (page.pdf zpracuje stránku stejně jako tisk:
+    @page 100 × 35 mm bez okrajů, jen obrázky štítků), pak pošle afterprint a zkontroluje úklid. */
 async function printedPdf(page, n, file) {
-  await page.waitForFunction(n => (window.__printed || 0) >= n, n, { timeout: 60000 });
-  const b64 = await page.evaluate(async () => {
-    const fr = document.querySelector('#lkPrintFrame');
-    if (!fr || fr.dataset.url !== window.__printUrl || !window.__pdfs[fr.dataset.url]) return '';
-    const buf = new Uint8Array(await window.__pdfs[fr.dataset.url].arrayBuffer());
-    let s = '';
-    for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
-    return btoa(s);
-  });
-  if (!b64) problems.push(`tisk ${n}: v rámci pro tisk není PDF`);
-  fs.writeFileSync(file, Buffer.from(b64, 'base64'));
+  await page.waitForFunction(n => (window.__printed || 0) >= n && document.body.classList.contains('lk-printing'), n, { timeout: 60000 });
+  const info = await page.evaluate(() => ({ imgs: [...document.querySelectorAll('#lkPrintArea img')].map(i => `${i.naturalWidth}x${i.naturalHeight}`),
+    page: document.adoptedStyleSheets.some(sh => [...sh.cssRules].some(r => /size: 100mm 35mm/.test(r.cssText) && /margin: 0/.test(r.cssText))), frames: document.querySelectorAll('iframe').length }));
+  fs.writeFileSync(file, await page.pdf({ preferCSSPageSize: true, printBackground: true }));
+  await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+  await page.waitForFunction(() => !document.querySelector('#lkPrintArea') && !document.body.classList.contains('lk-printing') && !document.adoptedStyleSheets.length);
+  if (!info.page || !info.imgs.length || info.imgs.some(x => x !== '800x280') || info.frames) problems.push(`tisk ${n}: ${JSON.stringify(info)}`);
+  return info;
 }
 /** Dekódování ^GFA s kompresí ZPL (stejné jako v test_core). */
 function zplDecode(gfa) {
@@ -206,10 +208,16 @@ function readPdf(file, name) {
   await page.screenshot({ path: path.join(shots, '04a-nabidka-vyzvy.png') });
   await page.click('#dlgOk');
   const fn = path.join(shots, 'vyzva-a4.pdf');
-  await printedPdf(page, 1, fn);
-  check(await page.evaluate(() => /^Tisk: 1 štítek 100 × 35 mm/.test(document.querySelector('#toast').textContent) && document.querySelector('#lkPrintFrame').getBoundingClientRect().width <= 1), 'výzva jde rovnou do okna tisku (skrytý rámec)');
-  const pn = readPdf(fn, 'vyzva');
-  check(pn.length && pn[0].vp, 'PDF: skutečná velikost, papír podle stránky, 1 kopie');
+  const ia = await printedPdf(page, 1, fn);
+  check(await page.evaluate(() => /^Tisk: 1 štítek 100 × 35 mm/.test(document.querySelector('#toast').textContent)) && ia.imgs.length === 1, 'výzva jde rovnou do okna tisku (obrázek štítku)');
+  const pa = readPdf(fn, 'vyzva-tisk');
+  check(pa.length === 1 && isLabel(pa[0]) && pa[0].border === 0 && pa[0].ink > 2000, `výzva v tisku: jedna stránka 100 × 35 mm, nic na okraji ${JSON.stringify(pa)}`);
+  // text výzvy ve staženém PDF (stejné kreslení)
+  const [dn] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.evaluate(() => lkNoticePrint([S.lockers.list.find(l => lkLabel(l) === 'A 4').id], 'download'))]);
+  const fnd = path.join(shots, 'vyzva-a4-stazena.pdf');
+  await dn.saveAs(fnd);
+  const pn = readPdf(fnd, 'vyzva');
+  check(dn.suggestedFilename() === 'vyzva-skrinka-A4.pdf' && pn.length && pn[0].vp, 'stažené PDF výzvy: skutečná velikost, papír podle stránky, 1 kopie');
   const flat = t => t.replace(/ /g, '');
   check(pn.length === 1 && pn[0].w === 100 && pn[0].h === 35 && pn[0].border === 0 && pn[0].maxX <= 98, `výzva: rozměr a okraje ${JSON.stringify(pn[0])}`);
   if (pn.length) check(pn[0].flat === flat(`VÝZVA K VYKLIZENÍSKŘÍŇKA A 4Používáte tuto skříňku? Nahlaste se u vedoucího nejpozdějido ${dl0.until} (7 pracovních dnů).Poté bude skříňka komisionálně otevřena a vyklizena.Vyvěšeno ${dl0.today}`) && !/Svoboda/.test(pn[0].text),
@@ -288,9 +296,13 @@ function readPdf(file, name) {
   await rowOf(page, 'A 1').locator('[data-lklbl]').click();
   const f1 = path.join(shots, 'stitky-a1.pdf');
   await printedPdf(page, 2, f1);
-  check(await page.locator('#lkPrintFrame').count() === 1, 'rámec pro tisk jen jeden (předchozí se odstraní)');
-  const p1 = readPdf(f1, 'stitek');
-  check(p1.length === 2 && p1.every(p => p.w === 100 && p.h === 35 && p.vp), `štítky A 1: ${JSON.stringify(p1.map(p => [p.w, p.h, p.vp]))}`);
+  const t1 = readPdf(f1, 'stitek-tisk');
+  check(t1.length === 2 && t1.every(p => isLabel(p) && p.border === 0 && p.ink > 2000) && t1[1].right === 0, `štítky A 1 v tisku: ${JSON.stringify(t1.map(p => [p.w, p.h, p.border, p.right]))}`);
+  const [dd1] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.evaluate(() => lkLabelsPdf([S.lockers.list.find(l => lkLabel(l) === 'A 1')], {}, 'A1', 'download'))]);
+  const f1d = path.join(shots, 'stitky-a1-stazene.pdf');
+  await dd1.saveAs(f1d);
+  const p1 = readPdf(f1d, 'stitek');
+  check(dd1.suggestedFilename() === 'stitky-skrinky-A1.pdf' && p1.length === 2 && p1.every(p => p.w === 100 && p.h === 35 && p.vp), `štítky A 1 (PDF): ${JSON.stringify(p1.map(p => [p.w, p.h, p.vp]))}`);
   if (p1.length === 2) {
     check(p1[0].flat === 'SKŘÍŇKAA1' && p1[0].big >= 50 && p1[0].right > 0, `štítek na skříňku (jen označení, beze jména): ${JSON.stringify(p1[0])}`);
     check(p1[1].flat === 'SKŘÍŇKAA1ZÁLOŽNÍKLÍČ' && p1[1].maxX <= 50 && p1[1].right === 0, `štítek na klíč jen na levé polovině: ${JSON.stringify(p1[1])}`);
@@ -311,12 +323,23 @@ function readPdf(file, name) {
   await page.click('#lkLabelsBtn');
   await dlgOpen(page, /Tisk štítků skříněk/);
   await page.waitForFunction(() => !/Hledám/.test(document.querySelector('#lkZbState').textContent));
-  check(/Okno tisku se otevře rovnou/.test(await page.textContent('#dlg .lk-printhint')), 'nápověda k tisku (bez Zebra Browser Print)');
+  check(/Otevře se okno tisku se štítky 100 × 35 mm bez okrajů/.test(await page.textContent('#dlg .lk-printhint')), 'nápověda k tisku (bez Zebra Browser Print)');
   await page.click('#dlgOk');
   const f3 = path.join(shots, 'stitky-vse.pdf');
-  await printedPdf(page, 3, f3);
+  const i3 = await printedPdf(page, 3, f3);
   const p3 = readPdf(f3, 'stitky-vse');
-  check(p3.length === 34 && p3[0].flat === 'SKŘÍŇKAA1' && p3[1].flat === 'SKŘÍŇKAA1ZÁLOŽNÍKLÍČ' && p3[33].flat === 'SKŘÍŇKAC5ZÁLOŽNÍKLÍČ' && p3.every(p => p.border === 0), `všechny štítky po dvojicích: ${p3.length} ${p3.slice(0, 2).map(p => p.flat)}`);
+  check(i3.imgs.length === 34 && p3.length === 34 && p3.every(p => isLabel(p) && p.border === 0 && p.ink > 2000) && p3.filter((p, i) => i % 2).every(p => p.right === 0), `všechny štítky po dvojicích, každý na své stránce: ${p3.length}`);
+  // zkušební štítek: rámeček 1 mm od okraje
+  await page.click('#lkLabelsBtn');
+  await dlgOpen(page, /Tisk štítků skříněk/);
+  await page.check('#dlg input[name="which"][value="test"]');
+  await page.uncheck('#dlg input[name="locker"]');
+  await page.uncheck('#dlg input[name="key"]');
+  await page.click('#dlgOk');
+  const ft = path.join(shots, 'zkusebni.pdf');
+  await printedPdf(page, 4, ft);
+  const pt = readPdf(ft, 'zkusebni');
+  check(pt.length === 1 && isLabel(pt[0]) && pt[0].frame > 50 && pt[0].border === 0, `zkušební štítek: ${JSON.stringify(pt)}`);
   await page.click('#lkLabelsBtn');
   await dlgOpen(page, /Tisk štítků skříněk/);
   await page.uncheck('#dlg input[name="locker"]');
@@ -427,8 +450,13 @@ function readPdf(file, name) {
   check(/Vytisknout výzvy \(3\)/.test(await page.textContent('#lkView [data-lknoticeall]')), 'tlačítko Vytisknout výzvy (3)');
   await page.click('#lkView [data-lknoticeall]');
   const fv = path.join(shots, 'vyzvy.pdf');
-  await printedPdf(page, 4, fv);
-  const pv = readPdf(fv, 'vyzvy');
+  await printedPdf(page, 5, fv);
+  const pvt = readPdf(fv, 'vyzvy-tisk');
+  check(pvt.length === 3 && pvt.every(p => isLabel(p) && p.border === 0 && p.ink > 2000), `výzvy v tisku: ${pvt.length}`);
+  const [dv] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.evaluate(() => lkNoticePrint(lkOverview(S.lockers, S.employees, todayIso()).rows.filter(x => x.st === 'clear').map(x => x.l.id), 'download'))]);
+  const fvd = path.join(shots, 'vyzvy-stazene.pdf');
+  await dv.saveAs(fvd);
+  const pv = readPdf(fvd, 'vyzvy');
   check(pv.length === 3 && /SKŘÍŇKAA4.*do13\.1\.2026/.test(pv[0].flat) && pv.slice(1).every(p => new RegExp(`do${flat(dl0.until).replace(/\./g, '\\.')}`).test(p.flat)) && /SKŘÍŇKAA5/.test(pv[1].flat) && /SKŘÍŇKAA7/.test(pv[2].flat) && pv.every(p => p.border === 0),
     `výzvy hromadně: ${JSON.stringify(pv.map(p => p.flat))}`);
   await until(page, () => S.lockers.list.filter(l => l.notice).length === 3);
@@ -476,13 +504,13 @@ function readPdf(file, name) {
   await until(page, () => S.lockers.list.length === 18);
   await saved(page);
   check(await page.evaluate(() => lkOf('dvorak|pavel').map(lkLabel).join(',')) === 'D 1' && await page.evaluate(() => S.lockers.list.length) === 18, 'telefon: D 1 a D 2 přidány, ostatní zůstaly');
-  // na telefonu se štítky stáhnou jako PDF (okno tisku z rámce tam nejde), také s pokyny pro tisk
+  // i na telefonu se tiskne přes okno tisku (obrázky štítků, Browser Print se tam nehledá)
   await page.evaluate(() => { lkUi().f = 'all'; renderLockers(); });
-  const [dp] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), rowOf(page, 'D 1').locator('[data-lklbl]').click()]);
+  await rowOf(page, 'D 1').locator('[data-lklbl]').click();
   const fp = path.join(shots, 'stitky-telefon.pdf');
-  await dp.saveAs(fp);
+  await printedPdf(page, 6, fp);
   const pp = readPdf(fp, 'stitky-telefon');
-  check(dp.suggestedFilename() === 'stitky-skrinky-D1.pdf' && pp.length === 2 && pp.every(p => p.vp && p.w === 100) && await page.evaluate(() => window.__printed) === 4, `telefon: štítky jako PDF ${dp.suggestedFilename()}`);
+  check(pp.length === 2 && pp.every(p => isLabel(p) && p.border === 0), `telefon: tisk štítků ${JSON.stringify(pp.map(p => [p.w, p.h]))}`);
   await ctx.close();
   await browser.close();
   if (problems.length) {

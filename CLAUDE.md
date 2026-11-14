@@ -28,7 +28,7 @@ dřív měl 290 kB a session se zahlcovala. Nic se nesmazalo, jen přesunulo do 
 | soubor | co tam je | kdy číst |
 |---|---|---|
 | `CLAUDE.md` (tento) | pravidla, poslední 3 zápisy, architektura, datový model, výpočty, testy v kostce | vždy (načte se sám) |
-| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.79.1) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
+| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.79.2) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
 | `docs/moduly.md` | podrobný popis modulů: data, funkce, UI (Matice, Přeformulování, Top 5, Kontroly, Protokoly, Servis, Shortage, KPI, Plán kapacit) | před prací na modulu |
 | `docs/testy.md` | všechny průchody v prohlížeči a co hlídají, testy na Apachi | před psaním nebo úpravou testu |
 | `README.md` | pro uživatele (novinky, instalace, zálohy) | při každé verzi doplnit „Co je nového“ |
@@ -60,6 +60,29 @@ Klony na serveru jsou `/root/trading_desk` a `/root/odmeny_v2`. Všechny repozit
 nepushne), celá tabulka je v `docs/historie.md`.
 
 ## Kde jsme skončili
+
+Stav k 14. 11. 2026 (verze 2.81.1):
+
+- Uživatel: „Tisk z webu mi neprojde a stáhne se mi PDF a na štítku nevidím skoro nic, špatné rozložení“.
+  - Příčina: tisk 2.81 dával PDF do skrytého rámce a volal `print()` v něm; prohlížeč s „PDF stahovat místo
+    otevírání“ (Chrome / Edge, firemní nastavení) PDF jen stáhne a vytištěné PDF z jiného programu jde na papír
+    podle ovladače (zmenšené, posunuté).
+  - Oprava: tisk přes okno tisku už **bez PDF**: štítky se vykreslí `lkRender` (stejné `lkDrawLabel` přes
+    `lkCanvasDoc`) do černobílých PNG 800 × 280 bodů (8 bodů na mm = Zebra 203 dpi), vloží se do `#lkPrintArea`
+    (`.lk-plabel` po jedné stránce) a `lkPrintImages` přidá na dobu tisku `@page { size: 100mm 35mm; margin: 0 }`
+    (`CSSStyleSheet` v `document.adoptedStyleSheets`, CSP inline styly nepovoluje), `body.lk-printing` a zavolá
+    `window.print()`; `afterprint` uklidí (`lkPrintCleanup`). Chrome zaokrouhlí stránku na 377 × 132 px
+    (99,75 × 34,92 mm), `.lk-plabel` má přesně tuto velikost, aby nevznikaly prázdné štítky.
+  - Pořadí `lkOutput`: Zebra Browser Print (jen počítač) → okno tisku s obrázky (i telefon); `download` = PDF
+    s textem (`lkPdfDownload`), `zpl` = soubor ZPL. Hromadný tisk má volbu **Zkušební štítek** (kind `test`:
+    rámeček 1 mm od okraje, čárky po 10 mm, kříž, „ZKUŠEBNÍ ŠTÍTEK 100 × 35 mm“), tlačítko Tisknout.
+  - CSP: `frame-src blob:` z 2.81 zrušené (rámec už není), `connect-src` na Browser Print zůstává.
+  - Testy: `e2e_skrinky` zachytí tiskovou stránku `page.pdf({preferCSSPageSize})` (strany 100 × 35 mm ± 0,3,
+    obrázky 800 × 280, nic na okraji 1 mm, pravá polovina klíče prázdná, úklid po `afterprint`, žádný rámec), text
+    štítků a výzev ve staženém PDF; `test_odmeny` (CSP bez `frame-src`); `e2e_upgrade_prev` 2.81 → 2.81.1
+    (archiv `aee56c0`, `SAME_DATA`, stará stránka se po aktualizaci zavře: synchronizace dvou oken dávala 409).
+    `ODM_VERSION` 2.81.1, data beze změny (59).
+  - Neověřeno na skutečné Zebře: jestli ovladač vezme velikost stránky z prohlížeče. Ke kontrole je zkušební štítek.
 
 Stav k 14. 11. 2026 (verze 2.81):
 
@@ -133,44 +156,7 @@ Stav k 14. 11. 2026 (verze 2.80):
   - Testy: core „Skříňky (2.80)“, `test_odmeny` (426 pro 57), nový `tests/e2e_skrinky.js`, `e2e_mobil` (19 položek
     menu), `e2e_upgrade_prev` 2.79.2 → 2.80 (archiv `fb58f73`, vložení soupisu nad převzatými lidmi).
 
-Stav k 13. 11. 2026 (verze 2.79.2):
-
-- Uživatel vybral z dalších skillů (mattpocock, ponytail, cloudflare security-audit, impeccable, anatomy,
-  diagram-design, graphify, superpowers, taste-skill, hallmark) jako přínosné: bezpečnostní audit Cloudflare
-  (zatím nespuštěn, víc agentů) a kontrolu UI (break-ui z emilkowalski/skills + kontrolní seznam auditu
-  z Impeccable). Spuštění detektoru Impeccable z npm zablokovalo oprávnění session, neobcházeno.
-  Uživatel: „muzes se pustit do kontroly UI“.
-  - Průzkum (skript jen v paměti session): Shortage 1000 položek a 1049 poddílů, Po termínu 300 položek,
-    Docházka a Lidé s dlouhými jmény, 1280 / 1440 / 1920 / 390 / 320 px, PDF; měřeno přetečení, oříznutý
-    text, dotykové plochy, kontrast (přibližně), fokus, popisky polí, NaN v textu, omezení pohybu, výkon.
-  - Opraveno (CSS na konci `app.css` „Kontrola UI nejhoršími daty (2.79.2)“):
-    - čip filtru s dlouhým názvem oddělení nebo operace na telefonu stránku posunul o 212–282 px
-      (`.chip` na telefonu `flex: none`) → `.chip { max-width: 100%; overflow-wrap: anywhere }`;
-    - tabulka Shortage / Po termínu na 1440 px měla 2370 px kvůli nezalomitelné objednávce a kódu
-      → `td.sh-ord` (min 11ch), `td.name`, `td.sh-opc`, index, `.sh-ean`, `.tag.sh-code` se zalomí,
-      `select` nejvýš šířka buňky; běžné hodnoty zůstanou na řádku;
-    - poznámka od plánování o 2000 znacích natáhla řádek přes obrazovku → `.sh-note` nejvýš 10 řádků,
-      zbytek se posouvá (`field-sizing` z 2.75 zůstává);
-    - Docházka: dlouhé jméno schovalo konec měsíce a součty, na telefonu 320 px přetečení 179 px →
-      `.att-table td.name` max 16rem a zalomení; 901–1400 px dny nejméně 17 px (`min-width: 0`),
-      na 1280 a 1366 px jsou vidět Hodiny i Víkend (dřív posun 122 px); 1024 px se dál posouvá v kartě.
-  - Opraveno v PDF (`drawShortage`): kód pod QR se zmenšoval jen na 4 pt a delší vyjel přes levý okraj
-    strany do sousedních sloupců → `qrCap` (zalomení, nejvýš 8 řádků, výška řádku podle něj); řádek sestavy
-    ořezával objednávku a název na 2 řádky, množství na 1 („1 000 000“ → „1…“), operaci na 2 → 6 / 4 / 2 / 4
-    a výška podle nich; index nejvýš 8 řádků a nově ve výšce běžného řádku (dřív ji nezapočítával).
-  - Bez nálezu: omezení pohybu, popisky polí, NaN / undefined v textu, fokus (`:focus-visible` v lock.css;
-    programové měření bylo nespolehlivé, klávesa Tab rámeček potvrdila), PDF Docházky. Falešné nálezy:
-    tlačítka „bez názvu“ ve sbaleném `<details>`, `.sr-only`.
-  - Neřešeno, k rozhodnutí uživatele: kontrast bílého textu na oranžové `--acc` #ff7a2e je 2,6 : 1
-    (tlačítka, menu, odznak úrovně 4, buňky Docházky ranní 3,6 : 1, číslo kroku 3,4 : 1; WCAG AA chce 4,5).
-    Návrh: tmavý text na oranžové (7,4 : 1), nebo tmavší oranžová (#c2470a, 5 : 1). Dále: vykreslení
-    Shortage s 2049 řádky 1,3 s (lineárně, ~400 řádků 0,4 s); prázdná 1. strana PDF, když se extrémně velký
-    první blok nevejde; dny kalendáře Docházky 22 px (výjimka WCAG za rozestupy); na 1024 px posun tabulky.
-  - Test: nový `tests/e2e_zatez.js` (90 položek, Po termínu 45, pět extrémních jmen, 5 velikostí, PDF přes
-    PyMuPDF: nic mimo stranu ani přes sebe, objednávka, množství, kód a index celé); proti kódu před
-    opravou selže (ověřeno). `ODM_VERSION` 2.79.2, data beze změny (57).
-
-Starší zápisy (2.79.1 a dál dozadu) jsou v `docs/historie.md`.
+Starší zápisy (2.79.2 a dál dozadu) jsou v `docs/historie.md`.
 
 ## Pravidla spolupráce
 
@@ -215,11 +201,11 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
 
 | verze | commit | obsah |
 |---|---|---|
-| 2.79 | `33650cf` | modul Po termínu (tabulka po termínu se skluzem ve sloupci F, AI návrh sloupců ke kontrole, seřazení podle skluzu, plán a evidence jako Shortage, společná oddělení) (data verze 57) |
 | 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
 | 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
 | 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
-| 2.81 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
+| 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
+| 2.81.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
 
 ## Pojmy
 
@@ -451,8 +437,9 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
 - Horní lišta:
   - hodiny = historie změn (`openLog`, odznak nových od posledního otevření);
   - stav ukládání.
-- **Přísná CSP**: žádné inline styly ani `on…=` handlery (hlídá to `test_odmeny.py`). Výjimky 2.81 pro tisk
-  štítků: `frame-src blob:` (PDF z prohlížeče) a `connect-src` na místní Zebra Browser Print (127.0.0.1:9100, localhost:9101).
+- **Přísná CSP**: žádné inline styly ani `on…=` handlery (hlídá to `test_odmeny.py`). Výjimka 2.81 pro tisk
+  štítků: `connect-src` na místní Zebra Browser Print (127.0.0.1:9100, localhost:9101); stránku 100 × 35 mm pro tisk
+  přidává skript přes `document.adoptedStyleSheets` (CSSOM, CSP to dovoluje).
   Šířky se nastavují přes `data-w` a `setWidths`.
 - PDF pravidel:
   - `exportRulesPdf` a `drawRules` v `app.js`;

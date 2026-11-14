@@ -410,6 +410,21 @@ function lkDrawLabel(doc, x) {
     doc.text(t.at, M + 1, 31.4);
     return;
   }
+  if (x.kind === 'test') {
+    // zkušební štítek: rámeček 1 mm od okraje, čárky po 10 mm, kříž uprostřed (pozná se zmenšení i posun)
+    doc.setLineWidth(0.3);
+    doc.line(1, 1, W - 1, 1); doc.line(W - 1, 1, W - 1, H - 1); doc.line(W - 1, H - 1, 1, H - 1); doc.line(1, H - 1, 1, 1);
+    for (let m = 10; m < W; m += 10) { doc.line(m, 1, m, 3); doc.line(m, H - 1, m, H - 3); }
+    doc.line(W / 2 - 3, H / 2, W / 2 + 3, H / 2); doc.line(W / 2, H / 2 - 3, W / 2, H / 2 + 3);
+    doc.setFont('Plex', 'bold');
+    doc.setFontSize(12);
+    doc.text('ZKUŠEBNÍ ŠTÍTEK 100 × 35 mm', W / 2, 9.5, { align: 'center', baseline: 'middle' });
+    doc.setFont('Plex', 'normal');
+    doc.setFontSize(7.5);
+    doc.text('Rámeček má být celý, 1 mm od okraje. Čárky po 10 mm.', W / 2, 26.5, { align: 'center', baseline: 'middle' });
+    doc.text(x.text || '', W / 2, 30.5, { align: 'center', baseline: 'middle' });
+    return;
+  }
   if (x.kind === 'locker') {
     doc.setFont('Plex', 'normal');
     doc.setFontSize(8);
@@ -437,33 +452,17 @@ function lkDrawLabel(doc, x) {
   doc.line(hw, 0, hw, 3);
   doc.line(hw, H - 3, hw, H);
 }
-async function lkLabelsPdf(list, opts, name, how) { return lkPdf(lkLabelSeq(list, opts), `stitky-skrinky-${name}`, `Štítky skříněk ${name}`, how); }
-/* Tisk bez nastavování (2.81): PDF má přesně velikost štítku, pokyn „skutečná velikost“ (PrintScaling None),
-   papír podle velikosti stránky a 1 kopii. Na počítači se okno tisku otevře rovnou (skrytý rámec s PDF,
-   CSP frame-src blob:), na telefonu nebo s volbou „jen stáhnout“ se PDF stáhne. */
-function lkPrintDirect() { return !(window.matchMedia && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches); }
-function lkPrintBlob(blob, file) {
-  const old = $('#lkPrintFrame');
-  if (old) { URL.revokeObjectURL(old.dataset.url || ''); old.remove(); }
-  const url = URL.createObjectURL(blob);
-  const fr = document.createElement('iframe');
-  fr.id = 'lkPrintFrame';
-  fr.className = 'lk-printframe';
-  fr.title = 'Tisk štítků';
-  fr.tabIndex = -1;
-  fr.setAttribute('aria-hidden', 'true');
-  fr.dataset.url = url;
-  fr.addEventListener('load', () => {
-    try { fr.contentWindow.focus(); fr.contentWindow.print(); }
-    catch (error) { downloadFile(file, blob, 'application/pdf'); toast('Tisk se nepodařilo otevřít, PDF se stáhlo.', true); }
-  }, { once: true });
-  fr.src = url;
-  document.body.append(fr);
-}
-/* ---------- ZPL a přímý tisk na Zebru (2.81) ----------
-   Štítek se nakreslí stejnými příkazy jako do PDF (lkDrawLabel) do bitmapy 800 × 280 bodů (203 dpi)
-   a zabalí do ZPL (^XA^PW800^LL280^LH0,0 … ^PQ1^XZ, lkZplLabel v core). Když na počítači běží Zebra
-   Browser Print, ZPL jde rovnou do tiskárny bez okna tisku; jinak se tiskne PDF přes okno tisku. */
+async function lkLabelsPdf(list, opts, name, how) { return lkOutput(lkLabelSeq(list, opts), `stitky-skrinky-${name}`, `Štítky skříněk ${name}`, how); }
+/* ---------- Tisk štítků (2.81) ----------
+   Štítek se nakreslí stejnými příkazy jako do PDF (lkDrawLabel) do černobílé bitmapy 8 bodů na mm
+   (Zebra 203 dpi: 800 × 280 bodů). Z ní je:
+   1. ZPL (^XA^PW800^LL280^LH0,0 … ^PQ1^XZ, lkZplLabel v core): s aplikací Zebra Browser Print jde rovnou
+      do tiskárny, bez okna tisku; nebo se stáhne;
+   2. tisk přes okno tisku: obrázky štítků ve stránce, která má @page 100 × 35 mm bez okrajů (Chrome pak
+      velikost papíru, okraje ani měřítko nenabízí, vybere se jen tiskárna). Nezávisí na prohlížeči PDF;
+      dřívější PDF ve skrytém rámci se v prohlížeči s „PDF stahovat“ jen stáhlo.
+   PDF (vektorové, s textem) zůstává jen ke stažení. */
+function lkDesktop() { return !(window.matchMedia && window.matchMedia('(max-width: 900px), (pointer: coarse)').matches); }
 let lkFontsReady = null;
 function lkCanvasFonts() {
   if (!lkFontsReady) {
@@ -477,9 +476,9 @@ function lkCanvasFonts() {
   }
   return lkFontsReady;
 }
-/** Stejné rozhraní jako jsPDF (jen to, co kreslí štítky), milimetry → body tiskárny. */
-function lkCanvasDoc(ctx) {
-  const K = LK_DOTS, PT = 25.4 / 72, st = { size: 10, bold: false, color: '#000', fill: '#000', stroke: '#000', lw: 0.2 };
+/** Stejné rozhraní jako jsPDF (jen to, co kreslí štítky), milimetry → body (K na mm). */
+function lkCanvasDoc(ctx, K = LK_DOTS) {
+  const PT = 25.4 / 72, st = { size: 10, bold: false, color: '#000', fill: '#000', stroke: '#000', lw: 0.2 };
   const font = () => { ctx.font = `${st.bold ? 600 : 400} ${st.size * PT * K}px LkPlex`; };
   const rgb = (r, g, b) => `rgb(${r},${g},${b})`;
   return {
@@ -500,23 +499,76 @@ function lkCanvasDoc(ctx) {
       ctx.letterSpacing = '0px';
     },
     rect(x, y, w, h) { ctx.fillStyle = st.fill; ctx.fillRect(x * K, y * K, w * K, h * K); },
-    line(x1, y1, x2, y2) { ctx.strokeStyle = st.stroke; ctx.lineWidth = st.lw * K; ctx.beginPath(); ctx.moveTo(x1 * K, y1 * K); ctx.lineTo(x2 * K, y2 * K); ctx.stroke(); },
+    line(x1, y1, x2, y2) { ctx.strokeStyle = st.stroke; ctx.lineWidth = Math.max(1, st.lw * K); ctx.beginPath(); ctx.moveTo(x1 * K, y1 * K); ctx.lineTo(x2 * K, y2 * K); ctx.stroke(); },
   };
 }
-async function lkZplFor(seq) {
+/** Štítky do černobílých bitmap (bits pro ZPL), nebo do PNG (obrázky pro tisk). */
+async function lkRender(seq, out) {
   await lkCanvasFonts();
   const cv = document.createElement('canvas');
   cv.width = LK_ZW;
   cv.height = LK_ZH;
-  const ctx = cv.getContext('2d', { willReadFrequently: true }), doc = lkCanvasDoc(ctx);
-  return seq.map(x => {
+  const ctx = cv.getContext('2d', { willReadFrequently: true }), doc = lkCanvasDoc(ctx), res = [];
+  for (const x of seq) {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, LK_ZW, LK_ZH);
     lkDrawLabel(doc, x);
-    const px = ctx.getImageData(0, 0, LK_ZW, LK_ZH).data, bits = new Uint8Array(LK_ZW * LK_ZH);
-    for (let i = 0; i < bits.length; i += 1) bits[i] = px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2] < 384 ? 1 : 0;
-    return lkZplLabel(bits);
-  }).join('\n');
+    const img = ctx.getImageData(0, 0, LK_ZW, LK_ZH), px = img.data, bits = new Uint8Array(LK_ZW * LK_ZH);
+    for (let i = 0; i < bits.length; i += 1) {
+      const b = px[i * 4] + px[i * 4 + 1] + px[i * 4 + 2] < 384 ? 1 : 0;
+      bits[i] = b;
+      if (out === 'png') { const v = b ? 0 : 255; px[i * 4] = v; px[i * 4 + 1] = v; px[i * 4 + 2] = v; px[i * 4 + 3] = 255; }
+    }
+    if (out === 'png') { ctx.putImageData(img, 0, 0); res.push(await new Promise(r => cv.toBlob(r, 'image/png'))); }
+    else res.push(bits);
+  }
+  return res;
+}
+async function lkZplFor(seq) { return (await lkRender(seq, 'bits')).map(lkZplLabel).join('\n'); }
+/** Tisk přes okno tisku: obrázky štítků, stránka 100 × 35 mm bez okrajů jen po dobu tisku (CSSStyleSheet,
+    CSP inline styly nepovoluje), po tisku se vše uklidí. */
+let lkPageSheet = null;
+function lkPrintCleanup() {
+  const a = $('#lkPrintArea');
+  if (a) { $$('img', a).forEach(i => URL.revokeObjectURL(i.src)); a.remove(); }
+  document.body.classList.remove('lk-printing');
+  if (lkPageSheet) document.adoptedStyleSheets = document.adoptedStyleSheets.filter(s => s !== lkPageSheet);
+}
+async function lkPrintImages(blobs) {
+  lkPrintCleanup();
+  const area = document.createElement('div');
+  area.id = 'lkPrintArea';
+  area.className = 'lk-printarea';
+  area.setAttribute('aria-hidden', 'true');
+  const imgs = blobs.map(b => {
+    const d = document.createElement('div'), i = new Image();
+    d.className = 'lk-plabel';
+    i.alt = '';
+    i.src = URL.createObjectURL(b);
+    d.append(i);
+    area.append(d);
+    return i;
+  });
+  document.body.append(area);
+  await Promise.all(imgs.map(i => i.decode().catch(() => {})));
+  if (!lkPageSheet) { lkPageSheet = new CSSStyleSheet(); lkPageSheet.replaceSync(`@page { size: ${LK_LBL.W}mm ${LK_LBL.H}mm; margin: 0; }`); }
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, lkPageSheet];
+  document.body.classList.add('lk-printing');
+  window.addEventListener('afterprint', lkPrintCleanup, { once: true });
+  window.print();
+}
+async function lkPdfDownload(seq, file, title) {
+  await pdfLib();
+  const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
+  const doc = new window.jspdf.jsPDF({ unit: 'mm', format: [LK_LBL.W, LK_LBL.H], orientation: 'landscape', compress: true });
+  doc.addFileToVFS('Plex-Regular.ttf', regular);
+  doc.addFont('Plex-Regular.ttf', 'Plex', 'normal');
+  doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
+  doc.addFont('Plex-SemiBold.ttf', 'Plex', 'bold');
+  doc.setProperties({ title, creator: 'HALA 2' });
+  doc.viewerPreferences({ PrintScaling: 'None', PickTrayByPDFSize: true, NumCopies: 1 });
+  seq.forEach((x, i) => { if (i) doc.addPage([LK_LBL.W, LK_LBL.H], 'landscape'); lkDrawLabel(doc, x); });
+  downloadFile(`${file}.pdf`, doc.output('blob'), 'application/pdf');
 }
 /** Zebra Browser Print (aplikace od Zebry na počítači): výchozí tiskárna, nebo null. Výsledek se chvíli pamatuje. */
 const LK_ZB_HOSTS = ['http://127.0.0.1:9100/', 'https://localhost:9101/'];
@@ -538,35 +590,25 @@ async function lkZebraSend(z, zpl) {
   const r = await fetch(`${z.host}write`, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' }, body: JSON.stringify({ device: z.dev, data: zpl }) });
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
 }
-async function lkPdf(seq, file, title, how) {
+/** Výstup štítků: how '' = tisk (Zebra Browser Print, jinak okno tisku), 'download' = PDF, 'zpl' = soubor ZPL. */
+async function lkOutput(seq, file, title, how = '') {
   if (!seq.length) { toast('Není co tisknout.', true); return; }
   const n = `${seq.length} ${seq.length === 1 ? 'štítek' : seq.length <= 4 ? 'štítky' : 'štítků'} 100 × 35 mm`;
   try {
     if (how === 'zpl') { downloadFile(`${file}.zpl`, await lkZplFor(seq), 'text/plain'); toast(`ZPL pro Zebru: ${n}.`); return; }
-    const zb = how !== 'download' && lkPrintDirect() ? await lkZebra() : null;
+    if (how === 'download') { await lkPdfDownload(seq, file, title); toast(`PDF: ${n}.`); return; }
+    const zb = lkDesktop() ? await lkZebra() : null;
     if (zb) {
       try { await lkZebraSend(zb, await lkZplFor(seq)); toast(`Odesláno na Zebru ${zb.dev.name}: ${n}.`); return; }
       catch (error) { ui.zebra = null; toast(`Zebra Browser Print neodpověděl (${error.message}), otevírám okno tisku.`, true); }
     }
-  } catch (error) { toast(`Štítky se nepodařilo připravit: ${error.message}`, true); return; }
-  try {
-    await pdfLib();
-    const [regular, semibold] = await Promise.all([pdfAsset('pdf-regular.ttf'), pdfAsset('pdf-semibold.ttf')]);
-    const doc = new window.jspdf.jsPDF({ unit: 'mm', format: [LK_LBL.W, LK_LBL.H], orientation: 'landscape', compress: true });
-    doc.addFileToVFS('Plex-Regular.ttf', regular);
-    doc.addFont('Plex-Regular.ttf', 'Plex', 'normal');
-    doc.addFileToVFS('Plex-SemiBold.ttf', semibold);
-    doc.addFont('Plex-SemiBold.ttf', 'Plex', 'bold');
-    doc.setProperties({ title, creator: 'HALA 2' });
-    doc.viewerPreferences({ PrintScaling: 'None', PickTrayByPDFSize: true, NumCopies: 1 });
-    seq.forEach((x, i) => { if (i) doc.addPage([LK_LBL.W, LK_LBL.H], 'landscape'); lkDrawLabel(doc, x); });
-    if (how !== 'download' && lkPrintDirect()) { lkPrintBlob(doc.output('blob'), `${file}.pdf`); toast(`Tisk: ${n}.`); }
-    else { downloadFile(`${file}.pdf`, doc.output('blob'), 'application/pdf'); toast(`PDF: ${n}, tiskne se ve skutečné velikosti.`); }
-  } catch (error) { toast(`PDF štítků se nepovedlo: ${error.message}`, true); }
+    toast(`Tisk: ${n}.`);
+    await lkPrintImages(await lkRender(seq, 'png'));
+  } catch (error) { toast(`Štítky se nepodařilo připravit: ${error.message}`, true); }
 }
 /** Výzvy k vyklizení (2.81): u skříňky bez výzvy se vyvěsí nová (dnes + 7 pracovních dnů, uloží se),
     u vyvěšené se vytiskne znovu se stejnou lhůtou. Skříňky, které už nejsou K vyklizení, se přeskočí. */
-function lkNoticePrint(ids) {
+function lkNoticePrint(ids, how = '') {
   const today = todayIso(), meta = { by: ui.me ? ui.me.label : '' }, seq = [];
   let fresh = 0;
   ids.forEach(id => {
@@ -578,7 +620,7 @@ function lkNoticePrint(ids) {
   if (!seq.length) { toast('Žádná z vybraných skříněk není K vyklizení.', true); return; }
   if (fresh) { save(); renderAll(); }
   const one = seq.length === 1 ? lkLabel(lkFind(S, seq[0].id)).replace(/\s+/g, '') : '';
-  lkPdf(seq, one ? `vyzva-skrinka-${one}` : `vyzvy-skrinky-${today}`, 'Výzva k vyklizení skříňky');
+  lkOutput(seq, one ? `vyzva-skrinka-${one}` : `vyzvy-skrinky-${today}`, 'Výzva k vyklizení skříňky', how);
 }
 /** Štítky jedné skříňky (oba). */
 function lkLabelsOne(id) {
@@ -594,11 +636,12 @@ async function lkLabelsDialog() {
   const rows = [...new Set(all.map(l => l.row))];
   const filtered = shown.length && shown.length < all.length;
   const res = await dialog({
-    title: 'Tisk štítků skříněk', ok: 'Vytvořit PDF',
+    title: 'Tisk štítků skříněk', ok: 'Tisknout',
     html: `<div class="lk-lblpick">
         <label class="check"><input type="radio" name="which" value="all" checked><span>Všechny skříňky (${all.length})</span></label>
         ${filtered ? `<label class="check"><input type="radio" name="which" value="shown"><span>Jen zobrazené ve filtru (${shown.length})</span></label>` : ''}
         ${rows.length > 1 ? `<label class="check lk-lblrow"><input type="radio" name="which" value="row"><span>Jen řada</span><select name="row" aria-label="Řada">${rows.map(r => `<option value="${esc(r)}">${esc(r || '(bez písmene)')} · ${all.filter(l => l.row === r).length}</option>`).join('')}</select></label>` : ''}
+        <label class="check"><input type="radio" name="which" value="test"><span>Zkušební štítek (kontrola velikosti a okrajů)</span></label>
       </div>
       <div class="lk-lblpick"><label class="check"><input type="checkbox" name="locker" checked><span>Štítek na skříňku (označení, beze jména)</span></label>
         <label class="check"><input type="checkbox" name="key" checked><span>Štítek na záložní klíč (polovina s nápisem, druhou polovinou se klíč zalepí)</span></label></div>
@@ -611,15 +654,15 @@ async function lkLabelsDialog() {
         const p = $('#lkZbState', dlg);
         if (!p) return;
         p.textContent = z ? `Tiskne se rovnou na Zebru ${z.dev.name} (Zebra Browser Print), bez okna tisku: ZPL 203 dpi, 800 × 280 bodů, 1 kopie.`
-          : lkPrintDirect() ? 'Okno tisku se otevře rovnou se štítky ve skutečné velikosti 100 × 35 mm (každý štítek je jedna strana). Stačí jednou vybrat Zebru a v jejím ovladači štítek 100 × 35 mm, prohlížeč si ji pamatuje. Úplně bez okna tisku tiskne aplikace Zebra Browser Print (od Zebry, nainstaluje se jednou do počítače).'
-            : 'Na telefonu se štítky stáhnou jako PDF ve skutečné velikosti 100 × 35 mm.';
+          : 'Otevře se okno tisku se štítky 100 × 35 mm bez okrajů (velikost papíru a měřítko jsou dané), stačí vybrat Zebru; prohlížeč si ji příště pamatuje. Úplně bez okna tisku tiskne aplikace Zebra Browser Print (od Zebry, nainstaluje se jednou do počítače).';
       });
     },
-    validate: form => (form.elements.namedItem('locker').checked || form.elements.namedItem('key').checked ? '' : 'Vyber aspoň jeden druh štítku.'),
+    validate: form => (form.elements.namedItem('which').value === 'test' || form.elements.namedItem('locker').checked || form.elements.namedItem('key').checked ? '' : 'Vyber aspoň jeden druh štítku.'),
   });
   if (res.value !== 'ok') return;
   const f = res.form.elements, which = f.namedItem('which').value;
   const row = which === 'row' ? f.namedItem('row').value : null;
+  if (which === 'test') { lkOutput([{ kind: 'test', text: `HALA 2 · ${dayText(todayIso())}` }], 'zkusebni-stitek', 'Zkušební štítek', f.namedItem('out').value); return; }
   const list = which === 'shown' ? shown : row != null ? all.filter(l => l.row === row) : all;
   lkLabelsPdf(list, { locker: f.namedItem('locker').checked, key: f.namedItem('key').checked }, which === 'row' ? `rada-${row || 'bez'}` : todayIso(), f.namedItem('out').value);
 }

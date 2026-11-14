@@ -6,13 +6,50 @@ Text zápisů se nepřepisuje (jsou to zadání uživatele a rozhodnutí v době
 
 Obsah:
 
-- Zápisy „Kde jsme skončili“ (od 2.79.1 dozadu po 1. 10. 2026)
+- Zápisy „Kde jsme skončili“ (od 2.79.2 dozadu po 1. 10. 2026)
 - Verze a stav (celá tabulka verzí s commity, zadání 2.1)
 - Ostrá verze a verze 2 (původní text, platil do 7. 11. 2026)
 - Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, nezačato)
 - Původní úvod a Tři oddělené projekty
 
 ## Zápisy „Kde jsme skončili“
+
+Stav k 13. 11. 2026 (verze 2.79.2):
+
+- Uživatel vybral z dalších skillů (mattpocock, ponytail, cloudflare security-audit, impeccable, anatomy,
+  diagram-design, graphify, superpowers, taste-skill, hallmark) jako přínosné: bezpečnostní audit Cloudflare
+  (zatím nespuštěn, víc agentů) a kontrolu UI (break-ui z emilkowalski/skills + kontrolní seznam auditu
+  z Impeccable). Spuštění detektoru Impeccable z npm zablokovalo oprávnění session, neobcházeno.
+  Uživatel: „muzes se pustit do kontroly UI“.
+  - Průzkum (skript jen v paměti session): Shortage 1000 položek a 1049 poddílů, Po termínu 300 položek,
+    Docházka a Lidé s dlouhými jmény, 1280 / 1440 / 1920 / 390 / 320 px, PDF; měřeno přetečení, oříznutý
+    text, dotykové plochy, kontrast (přibližně), fokus, popisky polí, NaN v textu, omezení pohybu, výkon.
+  - Opraveno (CSS na konci `app.css` „Kontrola UI nejhoršími daty (2.79.2)“):
+    - čip filtru s dlouhým názvem oddělení nebo operace na telefonu stránku posunul o 212–282 px
+      (`.chip` na telefonu `flex: none`) → `.chip { max-width: 100%; overflow-wrap: anywhere }`;
+    - tabulka Shortage / Po termínu na 1440 px měla 2370 px kvůli nezalomitelné objednávce a kódu
+      → `td.sh-ord` (min 11ch), `td.name`, `td.sh-opc`, index, `.sh-ean`, `.tag.sh-code` se zalomí,
+      `select` nejvýš šířka buňky; běžné hodnoty zůstanou na řádku;
+    - poznámka od plánování o 2000 znacích natáhla řádek přes obrazovku → `.sh-note` nejvýš 10 řádků,
+      zbytek se posouvá (`field-sizing` z 2.75 zůstává);
+    - Docházka: dlouhé jméno schovalo konec měsíce a součty, na telefonu 320 px přetečení 179 px →
+      `.att-table td.name` max 16rem a zalomení; 901–1400 px dny nejméně 17 px (`min-width: 0`),
+      na 1280 a 1366 px jsou vidět Hodiny i Víkend (dřív posun 122 px); 1024 px se dál posouvá v kartě.
+  - Opraveno v PDF (`drawShortage`): kód pod QR se zmenšoval jen na 4 pt a delší vyjel přes levý okraj
+    strany do sousedních sloupců → `qrCap` (zalomení, nejvýš 8 řádků, výška řádku podle něj); řádek sestavy
+    ořezával objednávku a název na 2 řádky, množství na 1 („1 000 000“ → „1…“), operaci na 2 → 6 / 4 / 2 / 4
+    a výška podle nich; index nejvýš 8 řádků a nově ve výšce běžného řádku (dřív ji nezapočítával).
+  - Bez nálezu: omezení pohybu, popisky polí, NaN / undefined v textu, fokus (`:focus-visible` v lock.css;
+    programové měření bylo nespolehlivé, klávesa Tab rámeček potvrdila), PDF Docházky. Falešné nálezy:
+    tlačítka „bez názvu“ ve sbaleném `<details>`, `.sr-only`.
+  - Neřešeno, k rozhodnutí uživatele: kontrast bílého textu na oranžové `--acc` #ff7a2e je 2,6 : 1
+    (tlačítka, menu, odznak úrovně 4, buňky Docházky ranní 3,6 : 1, číslo kroku 3,4 : 1; WCAG AA chce 4,5).
+    Návrh: tmavý text na oranžové (7,4 : 1), nebo tmavší oranžová (#c2470a, 5 : 1). Dále: vykreslení
+    Shortage s 2049 řádky 1,3 s (lineárně, ~400 řádků 0,4 s); prázdná 1. strana PDF, když se extrémně velký
+    první blok nevejde; dny kalendáře Docházky 22 px (výjimka WCAG za rozestupy); na 1024 px posun tabulky.
+  - Test: nový `tests/e2e_zatez.js` (90 položek, Po termínu 45, pět extrémních jmen, 5 velikostí, PDF přes
+    PyMuPDF: nic mimo stranu ani přes sebe, objednávka, množství, kód a index celé); proti kódu před
+    opravou selže (ověřeno). `ODM_VERSION` 2.79.2, data beze změny (57).
 
 Stav k 13. 11. 2026 (verze 2.79.1):
 
@@ -2671,7 +2708,8 @@ Stav k 1. 10. 2026:
 | 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
 | 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
 | 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
-| 2.81 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
+| 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
+| 2.81.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
 
 Verze 2.1 přidala:
 

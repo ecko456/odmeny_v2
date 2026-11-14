@@ -424,14 +424,19 @@ Skříňka se pozná podle řady a čísla, v soupisu je jen jednou. Core `priva
   člověkem ji zruší. Řádek ukáže „výzva vyvěšena …, lhůta do …“, po lhůtě „lhůta uplynula, lze vyklidit“.
   Tisk: tlačítko Výzva v řádku, Vytisknout výzvy (N) v pruhu, a okno po vyřazení nebo smazání člověka se skříňkou
   (`lkAfterLeave`: Vytisknout výzvu / Později). Historie „vyvěšena výzva k vyklizení, lhůta do …“.
-- **Tisk bez nastavování** (2.81, `lkPdf`): (1) Zebra Browser Print na počítači (`lkZebra`: `GET default?type=printer`
-  na `http://127.0.0.1:9100/`, pak `https://localhost:9101/`; `lkZebraSend`: `POST write` s `{device, data}`
-  jako `text/plain`) → ZPL bez okna tisku; (2) jinak PDF ve skrytém rámci `#lkPrintFrame` a `print()` = okno tisku
-  hned (PDF má `PrintScaling None`, `PickTrayByPDFSize`, `NumCopies 1`); (3) telefon (`lkPrintDirect`) nebo
-  Stáhnout PDF → soubor. ZPL (`lkZplFor`): štítek se nakreslí `lkDrawLabel` přes `lkCanvasDoc` (stejné rozhraní jako
-  jsPDF, 8 bodů na mm, písmo Plex přes `FontFace`) do 800 × 280 bodů, práh na černobílou, `lkZplLabel` v core
-  (`^XA^PW800^LL280^LH0,0^FO0,0^GFA,28000,28000,100,…^FS^PQ1^XZ`, komprese ZPL v `lkZplGfa`). Hromadný tisk má
-  výstup Tisknout / Stáhnout PDF / Stáhnout ZPL pro Zebru a ukáže, jestli našel Browser Print.
+- **Tisk bez nastavování** (2.81, oprava 2.81.1, `lkOutput`): (1) Zebra Browser Print na počítači (`lkZebra`:
+  `GET default?type=printer` na `http://127.0.0.1:9100/`, pak `https://localhost:9101/`; `lkZebraSend`: `POST write`
+  s `{device, data}` jako `text/plain`) → ZPL bez okna tisku; (2) jinak okno tisku s **obrázky** štítků
+  (`lkRender` → černobílé PNG 800 × 280 bodů, `lkPrintImages`: `#lkPrintArea` s `.lk-plabel` po stránce,
+  `@page { size: 100mm 35mm; margin: 0 }` přes `adoptedStyleSheets` jen na dobu tisku, `body.lk-printing`,
+  `afterprint` → `lkPrintCleanup`); Chrome pak velikost papíru, okraje ani měřítko nenabízí, vybere se jen tiskárna.
+  Stránka se zaokrouhlí na 377 × 132 px (99,75 × 34,92 mm), štítek má stejnou velikost. Na telefonu taky okno
+  tisku. (3) Stáhnout PDF (`lkPdfDownload`, vektorově s textem, `PrintScaling None`, `PickTrayByPDFSize`,
+  `NumCopies 1`) a Stáhnout ZPL. 2.81 tiskl PDF ve skrytém rámci; prohlížeč s „PDF stahovat“ ho jen stáhl a tisk
+  z jiného programu šel na špatnou velikost papíru, proto 2.81.1. ZPL (`lkZplFor`): `lkRender` bez PNG, `lkZplLabel`
+  v core (`^XA^PW800^LL280^LH0,0^FO0,0^GFA,28000,28000,100,…^FS^PQ1^XZ`, komprese ZPL v `lkZplGfa`). Hromadný
+  tisk: Všechny / Jen zobrazené / Jen řada / **Zkušební štítek** (kind `test`: rámeček 1 mm od okraje, čárky
+  po 10 mm, kříž uprostřed), výstup Tisknout / Stáhnout PDF / Stáhnout ZPL a stav Browser Print.
 - **Historie** (kind `locker`, filtr Skříňky): přidání a smazání skříňky, přidělení, uvolnění, „už nepracuje“,
   poznámka. Přidělení / uvolnění / „už nepracuje“ mají každé vlastní `m` (`lk:id:k:p|f|g`), takže se při rychlém
   sledu v historii neslučují (vyprázdnění zůstane vidět); poznámky se slučují (`lk:id:t`).

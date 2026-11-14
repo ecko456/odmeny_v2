@@ -1,5 +1,5 @@
 // Test aktualizace z předchozí verze na aktuální bez ztráty dat na Apachi (od 2.37 v repu,
-// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.80 → 2.81):
+// při každé další verzi stačí upravit ADDED, SAME_DATA, krok 5 a archiv; teď 2.81 → 2.81.1):
 //   1. v předchozí verzi vytvoří data jejími vlastními funkcemi (skupiny s dovednostmi, lidé s ID
 //      a historií, Kontroly s plánem, KPI s kusy a hranicí zaškolení, rozpracovaný seznam Shortage
 //      s poznámkami, záznamem, stavem, poddílem a čekajícím poddílem s jinou operací) a uloží je;
@@ -23,7 +23,7 @@
 //   z předchozího dne je na konci seznamu (od 2.76). Výkony nahrané ve staré verzi data
 //   pro normy nemají, záložka Normy je ohlásí (2.74).
 // Spuštění v kontejneru (lokální Apache, nikdy ne na ostrém serveru):
-//   git archive f9883e0 | tar -x -C $S/v280 && sudo bash $S/v280/deploy/install.sh
+//   git archive aee56c0 | tar -x -C $S/v281 && sudo bash $S/v281/deploy/install.sh
 //   NO_PROXY=127.0.0.1 PW=… S=$S UPGRADE_CMD='sudo bash deploy/install.sh' node tests/e2e_upgrade_prev.js
 const { chromium } = require(process.env.PW);
 const { execSync } = require('child_process');
@@ -31,16 +31,16 @@ const fs = require('fs');
 const path = require('path');
 const S = process.env.S;
 const BASE = process.env.BASE || 'http://127.0.0.1/odmeny_v2/';
-const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.80$');
-const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.81$');
+const PREV = new RegExp(process.env.PREV_VERSION || '^2\\.81$');
+const NEXT = new RegExp(process.env.EXPECT_VERSION || '^2\\.81\\.1$');
 const shots = path.join(S, 'ushots-prev');
 const problems = [];
 const check = (ok, message) => { if (!ok) problems.push(message); };
 /* Co nová verze k uloženým datům přidá (cesta → očekávaná hodnota ve výchozím stavu). Hodnota null = část,
    která se při převodu mění schválně a kontroluje se zvlášť (Shortage 2.70); úkoly a Vrátit zpět mění krok 5. */
 const ADDED = { 'shortage.lists': null, 'shortage.cols': null, 'shortage.colors': null, 'shortage.scans': null, 'workAudit.normPct': null, late: null, lockers: null, tasks: null, undo: null };
-/* Verze dat se mění (2.81: výzva k vyklizení skříňky, verze dat 59): stará stránka dostane 426. */
-const SAME_DATA = false;
+/* Verze dat se nemění (2.81.1: jen tisk štítků, data 59): stará stránka smí dál ukládat. */
+const SAME_DATA = true;
 const shRecListT = r => (r ? [r.state, ...(r.prev || []).map(x => x.state)] : []);   // stavy posledních záznamů dílu (2.78)
 
 async function watch(page, label, allow426 = false) {
@@ -166,6 +166,10 @@ const STATE = added => `(() => {
     const oldDialog = await old.textContent('#dlg');
     check(/Aplikace byla aktualizována/.test(oldDialog), `stará stránka: ${oldDialog.slice(0, 120)}`);
     await old.screenshot({ path: path.join(shots, '01-stara-po-aktualizaci.png') });
+  } else {
+    // stejná verze dat: stará stránka by ukládat smila, ale souběžná synchronizace dvou oken dává konflikty
+    // (409, okno Přepsat / Načíst), které s aktualizací nesouvisí; uživatel stránku stejně obnoví (Ctrl+Shift+R)
+    await old.close();
   }
 
   // ---- 4. nová verze: stejná data ----
