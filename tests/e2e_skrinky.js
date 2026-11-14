@@ -401,7 +401,7 @@ function readPdf(file, name) {
     const x = JSON.parse(xr.stdout);
     const a7 = (x['Skříňky'] || []).find(r => r[0] === 'A 7') || [];
     check(Object.keys(x).join(',') === 'Skříňky,Bez skříňky' && x['Skříňky'].length === 18, `Excel listy: ${Object.keys(x)} ${x['Skříňky'] && x['Skříňky'].length}`);
-    check(a7[3] === 'Kovaříková Zdeňka' && a7[6] === 'K vyklizení' && a7[7] === 'Je třeba vyprázdnit (vyřazený ze seznamu)' && a7[8] === 'Kovarikova', `Excel A 7: ${JSON.stringify(a7)}`);
+    check(a7[3] === 'Kovaříková Zdeňka' && a7[6] === 'K vyklizení' && a7[7] === 'Je třeba vyprázdnit (vyřazený ze seznamu)' && a7[8] === 'ano' && a7[9] === 'Kovarikova', `Excel A 7: ${JSON.stringify(a7)}`);
     check((x['Bez skříňky'] || []).map(r => r[0]).join(',') === 'Příjmení a jméno,Dvořák Pavel', `Excel bez skříňky: ${JSON.stringify(x['Bez skříňky'])}`);
   }
 
@@ -418,6 +418,76 @@ function readPdf(file, name) {
   await page.screenshot({ path: path.join(shots, '06-historie.png') });
   await page.keyboard.press('Escape');
   await dlgClosed(page);
+
+  // ---------- 2.82: sdílená skříňka (víc lidí), odchod jednoho = odebrat ----------
+  await page.evaluate(() => { lkUi().f = 'all'; lkUi().q = ''; showView('skrinky'); });
+  await rowOf(page, 'A 1').locator('[data-lkaddp]').click();
+  await dlgOpen(page, /Další člověk do skříňky A 1/);
+  check(await page.locator('#dlg select[name="who"] option[value="novak|jan"]').count() === 0, 'kdo už ve skříňce je, v nabídce není');
+  await page.selectOption('#dlg select[name="who"]', 'dvorak|pavel');
+  await page.click('#dlgOk');
+  await dlgClosed(page);
+  await until(page, () => lkKeys(S.lockers.list.find(l => lkLabel(l) === 'A 1')).join('+') === 'novak|jan+dvorak|pavel');
+  await saved(page);
+  check(await rowOf(page, 'A 1').locator('.lk-pp').count() === 2 && await rowOf(page, 'A 1').locator('[data-lkrm]').count() === 2 && /sdílená · 2/.test(await rowOf(page, 'A 1').locator('.lk-tags').textContent()), 'A 1: dva lidé, každý jde odebrat, štítek sdílená');
+  check(!(await page.evaluate(() => lkOverview(S.lockers, S.employees, todayIso()).without.length)), 'Dvořák Pavel už není bez skříňky');
+  await page.screenshot({ path: path.join(shots, '07a-sdilena.png') });
+  await page.evaluate(() => openPersonKey('dvorak|pavel'));
+  await page.waitForSelector('#view-lide.on .lk-person');
+  check(/Skříňka A 1\s+sdílí s Novák Jan/.test(await page.textContent('#view-lide .lk-person')), `detail: sdílí ${await page.textContent('#view-lide .lk-person')}`);
+  // vyřazení jednoho ze dvou: potvrzení a okno Odebrat; Později = skříňka zůstane obsazená s „odebrat“
+  await page.evaluate(() => openPersonKey('novak|jan'));
+  await page.waitForSelector('#view-lide.on [data-exclude="novak|jan"]');
+  await page.click('#view-lide [data-exclude="novak|jan"]');
+  await dlgOpen(page, /Vyřadit ze seznamu/);
+  check(/Sdílí skříňku A 1: jeho věci je třeba vyklidit a odebrat ho ze skříňky/.test(await page.textContent('#dlg')), `potvrzení: sdílená ${await page.textContent('#dlg')}`);
+  await page.click('#dlgOk');
+  await dlgOpen(page, /Odebrat ze sdílené skříňky A 1/);
+  check(/sdílí skříňku A 1 \(Dvořák Pavel\)/.test(await page.textContent('#dlg')), 'okno: s kým sdílí');
+  await page.click('#dlgCancel');
+  await dlgClosed(page);
+  await page.waitForFunction(() => /Odeber Novák Jan ze skříňky A 1/.test(document.querySelector('#toast').textContent));
+  await saved(page);
+  await page.evaluate(() => showView('skrinky'));
+  check(await page.evaluate(() => { const x = lkOverview(S.lockers, S.employees, todayIso()).rows.find(r => lkLabel(r.l) === 'A 1'); return x.st === 'used' && x.leaving.map(p => p.key).join() === 'novak|jan'; }), 'A 1 zůstane obsazená, Novák odebrat');
+  check((await page.textContent('#navLockers')).trim() === '3' && /Odebrat ze sdílené skříňky:\s*A 1 \(Novák Jan, vyřazený ze seznamu\)/.test(await page.textContent('#lkView')), 'odznak 2 K vyklizení + 1 odebrat, pruh Odebrat');
+  await page.click('#lkView .chip[data-lkf="leave"]');
+  check(await page.evaluate(() => [...document.querySelectorAll('#lkView tr[data-lkrow] td.lk-lab')].map(x => x.textContent.trim()).join(',')) === 'A 1' && /odebrat Novák Jan/.test(await rowOf(page, 'A 1').locator('.lk-tags').textContent()), 'filtr Odebrat: A 1');
+  await page.screenshot({ path: path.join(shots, '07b-odebrat.png') });
+  await rowOf(page, 'A 1').locator('[data-lkrm][data-lkkey="novak|jan"]').click();
+  await dlgOpen(page, /Odebrat ze skříňky A 1/);
+  await page.click('#dlgOk');
+  await dlgClosed(page);
+  await until(page, () => lkKeys(S.lockers.list.find(l => lkLabel(l) === 'A 1')).join() === 'dvorak|pavel');
+  await saved(page);
+  check((await page.textContent('#navLockers')).trim() === '2', 'po odebrání odznak 2');
+  // Přidělit skříňku člověku bez skříňky: sdílet obsazenou A 2
+  await page.evaluate(() => { const k = 'novy|karel'; S.employees[k] = { key: k, first: 'Karel', last: 'Nový', positionId: '' }; save(); lkUi().f = 'without'; renderAll(); });
+  await saved(page);
+  await page.click('#lkView [data-lkgive="novy|karel"]');
+  await dlgOpen(page, /Skříňka pro Nový Karel/);
+  check(await page.locator('#dlg optgroup[label="Sdílet obsazenou"] option').count() > 0, 'nabídka: sdílet obsazenou');
+  const a2 = await page.evaluate(() => S.lockers.list.find(l => lkLabel(l) === 'A 2').id);
+  await page.selectOption('#dlg select[name="lk"]', a2);
+  await page.click('#dlgOk');
+  await dlgClosed(page);
+  await until(page, () => lkKeys(S.lockers.list.find(l => lkLabel(l) === 'A 2')).join() === 'novakova|jana,novy|karel');
+  await saved(page);
+  // Není záložní klíč: A 2
+  await page.evaluate(() => { lkUi().f = 'all'; renderLockers(); });
+  await rowOf(page, 'A 2').locator('[data-lknokey]').click();
+  await until(page, () => !!S.lockers.list.find(l => lkLabel(l) === 'A 2').nokey);
+  await saved(page);
+  check(await rowOf(page, 'A 2').locator('[data-lknokey][aria-pressed="true"]').count() === 1 && /bez záložního klíče/.test(await rowOf(page, 'A 2').locator('.lk-tags').textContent()), 'A 2: není záložní klíč');
+  check(/Bez záložního klíče\s*1/.test(await page.textContent('#lkView .lk-chips')), 'filtr Bez záložního klíče');
+  const [dk] = await Promise.all([page.waitForEvent('download', { timeout: 60000 }), page.evaluate(() => lkLabelsPdf([S.lockers.list.find(l => lkLabel(l) === 'A 2')], {}, 'A2', 'download'))]);
+  const fk = path.join(shots, 'stitky-a2-bez-klice.pdf');
+  await dk.saveAs(fk);
+  const pk = readPdf(fk, 'stitky-a2');
+  check(pk.length === 1 && pk[0].flat === 'SKŘÍŇKAA2', `A 2 bez záložního klíče: jen štítek na skříňku ${JSON.stringify(pk.map(p => p.flat))}`);
+  await page.screenshot({ path: path.join(shots, '07c-bez-klice.png') });
+  const log82 = await page.evaluate(() => S.log.filter(x => x.kind === 'locker').map(x => x.text));
+  check(['Skříňka A 1: přidán další člověk Dvořák Pavel', 'Skříňka A 1: odebrán Novák Jan', 'Skříňka A 2: přidán další člověk Nový Karel', 'Skříňka A 2: není záložní klíč'].every(t => log82.includes(t)), `historie 2.82: ${JSON.stringify(log82.slice(-6))}`);
 
   // ---------- smazání skříňky a smazání člověka ----------
   await rowOf(page, 'C 5').locator('[data-lkdel]').click();
@@ -503,7 +573,7 @@ function readPdf(file, name) {
   await dlgClosed(page);
   await until(page, () => S.lockers.list.length === 18);
   await saved(page);
-  check(await page.evaluate(() => lkOf('dvorak|pavel').map(lkLabel).join(',')) === 'D 1' && await page.evaluate(() => S.lockers.list.length) === 18, 'telefon: D 1 a D 2 přidány, ostatní zůstaly');
+  check(await page.evaluate(() => lkOf('dvorak|pavel').map(lkLabel).join(',')) === 'A 1,D 1' && await page.evaluate(() => S.lockers.list.length) === 18, 'telefon: D 1 a D 2 přidány, ostatní zůstaly');
   // i na telefonu se tiskne přes okno tisku (obrázky štítků, Browser Print se tam nehledá)
   await page.evaluate(() => { lkUi().f = 'all'; renderLockers(); });
   await rowOf(page, 'D 1').locator('[data-lklbl]').click();

@@ -3645,3 +3645,13 @@ tr.lk-unknown td { background: color-mix(in srgb, var(--warn-soft) 45%, transpar
   body.lk-printing .lk-plabel img { display: block; width: 377px; height: 132px; image-rendering: pixelated; }
 }
 .lk-out select { width: auto; min-width: 14rem; }
+/* Sdílené skříňky a bez záložního klíče (2.82) */
+.lk-pp { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.lk-pp + .lk-pp { margin-top: 2px; }
+.lk-pp .lk-why { flex-basis: 100%; margin-top: 0; }
+.lk-pp.gone .lk-who, .lk-pp.gone b { text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--crit) 60%, transparent); }
+.icon-btn.lk-rm { width: 26px; height: 26px; border-radius: 8px; }
+.icon-btn.lk-rm .icon { width: 14px; height: 14px; }
+.icon-btn.lk-rm:hover { background: var(--crit-soft); border-color: color-mix(in srgb, var(--crit) 35%, transparent); color: var(--crit); }
+.btn.lk-addp { display: inline-flex; margin-top: 4px; min-height: 28px; padding: 3px 10px; font-size: 12.5px; }
+.btn.lk-nokey.on { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 45%, transparent); color: var(--warn); }

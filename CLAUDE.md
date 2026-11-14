@@ -28,7 +28,7 @@ dřív měl 290 kB a session se zahlcovala. Nic se nesmazalo, jen přesunulo do 
 | soubor | co tam je | kdy číst |
 |---|---|---|
 | `CLAUDE.md` (tento) | pravidla, poslední 3 zápisy, architektura, datový model, výpočty, testy v kostce | vždy (načte se sám) |
-| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.79.2) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
+| `docs/historie.md` | všechny starší zápisy „Kde jsme skončili“ (od 1. 10. 2026 po 2.80) se zadáním uživatele jeho slovy, celá tabulka verzí s commity, původní text o ostré verzi, nezačaté zadání „víc modulů“ | když potřebuješ vědět, proč něco je, jak to uživatel zadal, nebo commit starší verze |
 | `docs/moduly.md` | podrobný popis modulů: data, funkce, UI (Matice, Přeformulování, Top 5, Kontroly, Protokoly, Servis, Shortage, KPI, Plán kapacit) | před prací na modulu |
 | `docs/testy.md` | všechny průchody v prohlížeči a co hlídají, testy na Apachi | před psaním nebo úpravou testu |
 | `README.md` | pro uživatele (novinky, instalace, zálohy) | při každé verzi doplnit „Co je nového“ |
@@ -60,6 +60,31 @@ Klony na serveru jsou `/root/trading_desk` a `/root/odmeny_v2`. Všechny repozit
 nepushne), celá tabulka je v `docs/historie.md`.
 
 ## Kde jsme skončili
+
+Stav k 14. 11. 2026 (verze 2.82):
+
+- Uživatel: „Ještě přidej tlačítko "Není záložní klíč" a přidej možnost přidělit více osob pro jednu skříňku“.
+  - **Není záložní klíč**: `nokey: true` u skříňky (jen když je), přepínač v řádku (`data-lknokey`, `aria-pressed`,
+    oranžový, když je zapnutý), štítek „bez záložního klíče“, filtr Bez záložního klíče, `lkLabelSeq` pro takovou
+    skříňku štítek klíče netiskne (hromadný tisk to v okně řekne), Excel sloupec Záložní klíč (ano / není),
+    historie „není záložní klíč“ / „záložní klíč je“ (`m` `lk:id:z`).
+  - **Víc lidí ve skříňce**: `more: [{key, name}]` vedle hlavního `key` (jen když jsou, nejvýš 9 dalších;
+    `lkKeys`, `lkHas`, `lkNameIn`), `lkAddPerson` (u volné = hlavní), `lkRemovePerson` (za hlavního nastoupí
+    první další, poslední odebraný skříňku uvolní). `lkAssign` (Změnit) mění jen hlavního, další zůstanou;
+    `lkFree`, `lkSetGone` a import s jiným hlavním další smažou. `lkState`: K vyklizení až když nikdo z lidí není
+    aktivní, jinak obsazená s `leaving` (vyřazený / smazaný = „odebrat“); `lkOverview` `leave`, `nokey`, `shared`,
+    `byKey` a lidé bez skříňky přes všechny lidi.
+  - App: v řádku každý člověk zvlášť (✕ odebrat s potvrzením, odešlý přeškrtnutý), „+ další člověk“
+    (`lkAddPersonDialog`, kdo už ve skříňce je, v nabídce není; přesun z dosavadní skříňky jen odebere, sdílenou
+    neuvolní), štítky „sdílená · N“ a „odebrat X“, žlutý pruh Odebrat ze sdílené skříňky, filtr Odebrat, odznak
+    v menu = K vyklizení + odebrat. Přidělit skříňku (dřív Přidělit volnou) nabídne i Sdílet obsazenou. Vyřazení
+    nebo smazání člověka ve sdílené skříňce: potvrzení „Sdílí skříňku …“, okno Odebrat ze skříňky / Později
+    (`lkLeaveShared`); detail v Lidech „sdílí s …“ / „Odebrat ze sdílené skříňky“.
+  - Data verze 60, `ODM_VERSION` 2.82. Testy: core „Skříňky (2.82)“, `test_odmeny` (426 pro 59), `e2e_skrinky`
+    (sdílená A 1, vyřazení jednoho, Později, odznak a pruh Odebrat, ✕, sdílet přes Přidělit skříňku, Není záložní
+    klíč a PDF jen se štítkem skříňky, historie), `e2e_upgrade_prev` 2.81.1 → 2.82 (archiv `aa91632`).
+  - Vložení z Excelu dál dává do skříňky jednoho člověka (čárka v jménu je často „Příjmení, Jméno“); další lidi
+    jde přidat ručně.
 
 Stav k 14. 11. 2026 (verze 2.81.1):
 
@@ -119,44 +144,7 @@ Stav k 14. 11. 2026 (verze 2.81):
     hromadně, tisk přes rámec s náhradou `print`, náhradní Browser Print na 9100 a dekódování ZPL, stažení ZPL,
     telefon stáhne PDF), `e2e_upgrade_prev` 2.80 → 2.81 (archiv `f9883e0`, výzva nad převzatými daty).
 
-Stav k 14. 11. 2026 (verze 2.80):
-
-- Uživatel: „Ještě přidej modul "Skříňky" kde bude soupis skříněk spárováno s lidmi. Abych měl přehled kdo má
-  a kdo nemá skříňku, případně kdo již není v seznamu nebo je vyřazený a stále mu evidujeme skříňku, abych mi u toho
-  vyskočilo upozornění "Je třeba vyprázdnit". Dále prvotně budu potřebovat mít možnost vložil data pomocí ctrl + v
-  z excelu, s tím že sloupec A je písmenkové označení, B číselní označení a C jméno a příjmení. Zde budu potřebovat
-  zapojit AI, protože je to psané ručně a mohou tam být překlepy atd.. … U těch kde to nebude možné nebo nejisté, tak
-  mi nabídne možnost přiřadit pracovníka, který ještě nebyl spárovaný nebo vyberu pracovník u nás již nepracuje.
-  A nahoře bude přehled "Volné skříňky" "Obsazené skříňky" "K vyklizení"“. Během práce doplnil: „ať je možné u každé
-  skříňky tisk štítku, vždy aby tam byly dva štítky jeden na skříňku s označením skříňky a beze jména a druhý štítek
-  to samé jen tam bude ještě nápis "Záložní klíč" a bude to jen na polovině štítku, aby se klíč zalepil dovnitř …
-  štítky tisknu pomocí zebry 100 × 35 mm … Případně ať je možnost hromadného tisku všech štítků.“
-  - **Párování bez AI**: jména lidí nesmí k třetí straně (pravidlo z 2.48), páruje se jen v prohlížeči. AI jako
-    doplněk pro nejisté řádky je otázka na uživatele (poslalo by jména Anthropicu, chce výslovný souhlas).
-  - Core `28-skrinky.js`: `S.lockers = {list: [{id, row, no, key, name (snímek), gone, raw, note, at, by}]}`,
-    `cleanLockers` (skříňka řada + číslo jednou, nejvýš 3000), `lkState` (free / used / unknown = jméno z importu bez
-    člověka / clear = K vyklizení: vyřazený, smazaný z Lidí, „už u nás nepracuje“), `lkOverview` (počty, lidé bez
-    skříňky, víc skříněk), `lkParse` (nadpis, duplicita, bez čísla), `lkMatch` (`endTok`, Levenshtein `attDist`,
-    y/i, w/v, zdvojená písmena; jistě: přesně, jen příjmení jediné v Lidech, příjmení a iniciála, jasný překlep;
-    přesná shoda má přednost; člověk jen jednou; návrhy s ≥ 0,6), `lkApply` (přepíše stejné řada + číslo, `replace`
-    smaže ostatní), `lkAssign`, `lkSetGone`, `lkFree`, `lkSetNote`, `lkDelete`, `lkAddRange` (nejvýš 500),
-    `lkSheets` (Excel), `lkLabelSeq` (štítky po dvojicích), `lkChanges` (kind `locker`, přidělení / uvolnění /
-    „už nepracuje“ mají vlastní značku `m`, aby se v historii neslučovaly).
-  - App `35-skrinky.js`: menu `skrinky` s odznakem K vyklizení (`#navLockers`), dlaždice Volné / Obsazené
-    (z toho nespárováno) / K vyklizení / Lidé bez skříňky, pruh Je třeba vyprázdnit, filtry, hledání, tabulka
-    (Přidělit, Změnit s přesunem, Uvolnit, Vyprázdněno, Štítky, poznámka, smazat), Ctrl+V kdekoli ve Skříňkách
-    (`shClipRows`) i tlačítko Vložit z Excelu (pole pro vložení, telefon), okno K rozhodnutí (Návrh, Ještě bez
-    skříňky, Vyřazení, Ostatní, Už u nás nepracuje, Volná, nerozhodnuto), Spárováno automaticky (jde změnit),
-    Nahradit celý soupis, Přidat řadu, Excel, štítky PDF 100 × 35 mm (jedna strana = štítek; štítek na skříňku
-    jen označení, štítek klíče jen levá polovina s černým pruhem ZÁLOŽNÍ KLÍČ a značkami přehybu), hromadně
-    všechny / filtr / řada a druhy štítků. Lidé: řádek se skříňkou v detailu, potvrzení vyřazení a smazání
-    zmíní skříňku, hláška Je třeba vyprázdnit; import Konců trestů hlásí skříňky vyřazených.
-  - Data verze 58 (`DATA_VERSION`, `CLIENT_VERSION`, `ODM_MIN_CLIENT`), `ODM_VERSION` 2.80, `blank().lockers`,
-    `LOG_KINDS` + `locker`, `MERGE_TOP.lockers`, historie filtr a ikona.
-  - Testy: core „Skříňky (2.80)“, `test_odmeny` (426 pro 57), nový `tests/e2e_skrinky.js`, `e2e_mobil` (19 položek
-    menu), `e2e_upgrade_prev` 2.79.2 → 2.80 (archiv `fb58f73`, vložení soupisu nad převzatými lidmi).
-
-Starší zápisy (2.79.2 a dál dozadu) jsou v `docs/historie.md`.
+Starší zápisy (2.80 a dál dozadu) jsou v `docs/historie.md`.
 
 ## Pravidla spolupráce
 
@@ -201,11 +189,11 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
 
 | verze | commit | obsah |
 |---|---|---|
-| 2.79.1 | `4582f62` | v PDF se netiskne poddíl rozdělené sestavy, který patří jinému oddělení (bez Zobrazit plně) |
 | 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
 | 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
 | 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
-| 2.81.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
+| 2.81.1 | `aa91632` | tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
+| 2.82 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
 
 ## Pojmy
 
@@ -289,7 +277,7 @@ aktualizace (`e2e_upgrade_prev.js`, archiv v hlavičce).
    3. uloží přes `Vault.saveData(shared, store.rev)`.
 3. Konflikt (409) otevře dialog Přepsat, nebo Načíst. Při přepsání se sloučí log z obou stran.
 
-**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `59` (od 2.81):
+**Verze tvaru dat.** Tyhle tři konstanty se mění **vždy spolu** a teď jsou `60` (od 2.82):
 
 - `DATA_VERSION` v `private/core/06-kontrola-dat.js`;
 - `CLIENT_VERSION` v `static/vault.js`;
@@ -348,7 +336,7 @@ Stav `S` definují `blank()` (`private/core/01-zaklad-stav.js`) a `sanitizeState
   - `undo` (2.45): uložené změny za 3 dny pro Vrátit zpět, `log[].u`/`log[].un`;
   - `workAudit.drep` (2.41): skupiny Reportu docházky a značky dnů (přesčas, práce ve svátek);
   - `capPlan` (2.38): Plán kapacit, potřeba lidí po skupinách (viz níže);
-  - `lockers` (2.80): Skříňky, `{list: [{id, row, no, key, name, gone, raw, note, at, by, notice?{at, until, by}}]}` (výzva k vyklizení 2.81; viz `docs/moduly.md`);
+  - `lockers` (2.80): Skříňky, `{list: [{id, row, no, key, name, gone, raw, note, at, by, notice?{at, until, by}, more?[{key, name}], nokey?}]}` (výzva k vyklizení 2.81, další lidé a bez záložního klíče 2.82; viz `docs/moduly.md`);
   - `eff`: Top 5 nejméně efektivně (viz níže);
   - `audit`: Kontroly (viz níže);
   - `settings{shift, excused, excusedReducesFund, friShift, absenceCutoff, adjStep, adjOver, prodCols}`;
@@ -485,7 +473,7 @@ a Playwright s Chromiem. Apache ne; pro testy na Apachi ho nainstaluje `deploy/i
 
 ```bash
 python3 -m unittest discover -s tests   # 33 testů: server, šifrovaný tok, kopie dat, oddělení od ostré verze, AI (náhradní API), šifrované soubory
-node tests/test_core.js                 # 135 testů: proti původní aplikaci + opravy + každá verze od 2.1
+node tests/test_core.js                 # 136 testů: proti původní aplikaci + opravy + každá verze od 2.1
 OUT=$S/e2e PW=/opt/node22/lib/node_modules/playwright bash tests/run_e2e.sh [testy…]   # průchody v prohlížeči souběžně
 ```
 

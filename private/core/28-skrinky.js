@@ -5,7 +5,7 @@
    Jména jsou psaná ručně, proto párování snese překlepy, chybějící háčky, prohozené pořadí,
    jen příjmení nebo příjmení s iniciálou. Páruje se jen v prohlížeči, jména nikam neodcházejí.
    ===================================================================== */
-const LK_MAX=3000,LK_TXT=120,LK_NOTE=300,LK_RANGE_MAX=500,LK_NOTICE_DAYS=7;
+const LK_MAX=3000,LK_TXT=120,LK_NOTE=300,LK_RANGE_MAX=500,LK_NOTICE_DAYS=7,LK_MORE_MAX=9;
 const LK_STATES={free:"Volná",used:"Obsazená",unknown:"Nespárovaná",clear:"K vyklizení"};
 const LK_HOW={exact:"přesně",surname:"podle příjmení",initial:"příjmení a iniciála",fuzzy:"podobné",manual:"ručně",none:"nejisté"};
 function blankLockers(){return {list:[]};}
@@ -28,6 +28,10 @@ function lkCmp(a,b){
 }
 function lkNewId(){return "lk"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
 function lkName(e){return e?[e.last,e.first].filter(Boolean).join(" "):"";}
+/** Lidé ve skříňce (2.82): hlavní (key) a další (more [{key, name}], sdílená skříňka). */
+function lkKeys(l){return l?[l.key,...((l.more||[]).map(m=>m.key))].filter(Boolean):[];}
+function lkHas(l,key){return !!key&&lkKeys(l).includes(key);}
+function lkNameIn(l,k){return k===l.key?l.name:((l.more||[]).find(x=>x.key===k)||{}).name||"";}
 /** Čištění soupisu: platné id, skříňka podle řady a čísla jen jednou, texty omezené; jméno
     (snímek) se obnoví podle Lidí, ať je vidět i po smazání člověka. */
 function cleanLockers(o,emps){
@@ -43,9 +47,17 @@ function cleanLockers(o,emps){
     let id=String(x.id||"");
     if(!/^lk[0-9a-z]{4,40}$/.test(id)||ids.has(id))id=lkNewId();
     ids.add(id);labels.add(lab);
-    const key=txt(x.key,200),e=key&&emps?emps[key]:null;
-    const l={id,row,no,key,name:key?(e?lkName(e):txt(x.name,LK_TXT)):"",gone:key?"":txt(x.gone,LK_TXT),raw:txt(x.raw,LK_TXT),note:txt(x.note,LK_NOTE),
+    let key=txt(x.key,200),pname=x.name;
+    // další lidé (2.82): bez opakování, bez hlavního, nejvýš LK_MORE_MAX; bez hlavního se první povýší
+    let more=(Array.isArray(x.more)?x.more:[]).map(m=>m&&typeof m==="object"?{key:txt(m.key,200),name:txt(m.name,LK_TXT)}:null).filter(m=>m&&m.key);
+    if(!key&&more.length&&!txt(x.gone,LK_TXT)){const f=more.shift();key=f.key;pname=f.name;}
+    const seen=new Set([key]);
+    more=key?more.filter(m=>!seen.has(m.key)&&seen.add(m.key)).slice(0,LK_MORE_MAX).map(m=>({key:m.key,name:emps&&emps[m.key]?lkName(emps[m.key]):m.name})):[];
+    const e=key&&emps?emps[key]:null;
+    const l={id,row,no,key,name:key?(e?lkName(e):txt(pname,LK_TXT)):"",gone:key?"":txt(x.gone,LK_TXT),raw:txt(x.raw,LK_TXT),note:txt(x.note,LK_NOTE),
       at:Number.isFinite(+x.at)?+x.at:0,by:txt(x.by,80)};
+    if(more.length)l.more=more;
+    if(x.nokey===true)l.nokey=true;   // 2.82: skříňka nemá záložní klíč (štítek klíče se netiskne)
     const n=lkCleanNotice(x.notice);
     if(n)l.notice=n;
     list.push(l);
@@ -89,11 +101,14 @@ function lkNoticeLines(l,n){
     clear = K vyklizení (vyřazený, není v Lidech, nebo „už u nás nepracuje“). */
 function lkState(l,emps,today){
   emps=emps||(S&&S.employees)||{};
-  if(l.key){
-    const e=emps[l.key];
-    if(!e)return lkClearOut({st:"clear",why:"už není v Lidech",e:null},l,today);
-    if(e.excluded)return lkClearOut({st:"clear",why:"vyřazený ze seznamu",e},l,today);
-    return {st:"used",e,endPast:e.end&&e.end<(today||todayIso())?e.end:""};
+  const keys=lkKeys(l);
+  if(keys.length){
+    // sdílená skříňka (2.82): K vyklizení, až když v ní nezůstane nikdo aktivní; kdo odešel, je „odebrat“
+    const people=keys.map(k=>{const e=emps[k]||null;return {key:k,e,name:e?lkName(e):lkNameIn(l,k)||"člověk",why:!e?"už není v Lidech":e.excluded?"vyřazený ze seznamu":""};});
+    const act=people.filter(p=>!p.why);
+    if(!act.length)return lkClearOut({st:"clear",why:people.length>1?"nikdo z nich už není v seznamu":people[0].why,e:people[0].e,people,leaving:[]},l,today);
+    const e=act[0].e;
+    return {st:"used",e,people,leaving:people.filter(p=>p.why),endPast:e.end&&e.end<(today||todayIso())?e.end:""};
   }
   if(l.gone)return lkClearOut({st:"clear",why:"už u nás nepracuje",e:null},l,today);
   if(l.raw)return {st:"unknown",e:null};
@@ -104,12 +119,15 @@ function lkClearOut(o,l,today){if(l.notice){o.notice=l.notice;o.noticeLate=(toda
 function lkOverview(lk,emps,today){
   emps=emps||(S&&S.employees)||{};today=today||todayIso();
   const list=((lk||(S&&S.lockers)||{}).list)||[];
-  const out={total:list.length,free:0,used:0,unknown:0,clear:0,rows:[],byKey:new Map(),without:[],multi:[]};
+  const out={total:list.length,free:0,used:0,unknown:0,clear:0,leave:0,nokey:0,shared:0,rows:[],byKey:new Map(),without:[],multi:[]};
   list.forEach(l=>{
     const s=lkState(l,emps,today);
     out[s.st]++;
+    if(s.leaving&&s.leaving.length)out.leave++;
+    if(l.nokey)out.nokey++;
+    if(lkKeys(l).length>1)out.shared++;
     out.rows.push({l,...s});
-    if(l.key){if(!out.byKey.has(l.key))out.byKey.set(l.key,[]);out.byKey.get(l.key).push(l);}
+    lkKeys(l).forEach(k=>{if(!out.byKey.has(k))out.byKey.set(k,[]);out.byKey.get(k).push(l);});
   });
   out.without=Object.values(emps).filter(e=>e&&e.key&&!e.excluded&&!out.byKey.has(e.key))
     .sort((a,b)=>lkName(a).localeCompare(lkName(b),"cs"));
@@ -117,7 +135,7 @@ function lkOverview(lk,emps,today){
   return out;
 }
 /** Skříňky člověka (pro detail v Lidech a upozornění při vyřazení). */
-function lkOf(key,lk){return key?(((lk||S.lockers||{}).list)||[]).filter(l=>l.key===key):[];}
+function lkOf(key,lk){return key?(((lk||S.lockers||{}).list)||[]).filter(l=>lkHas(l,key)):[];}
 
 /* ---------- Vložení z Excelu (Ctrl+V) ---------- */
 /** Řádky schránky [[A, B, C], …] → {items[{n, row, no, text}], skipped[{n, why}], dup[štítky], header}. */
@@ -236,8 +254,9 @@ function lkApply(st,rows,opts,meta){
     let l=by.get(k);
     if(!l){if(L.length>=LK_MAX)return;l={id:lkNewId(),row,no,key:"",name:"",gone:"",raw:"",note:"",at:0,by:""};L.push(l);by.set(k,l);out.added++;}
     else out.updated++;
-    const e=r.key?(st.employees||{})[r.key]:null,was=l.key+"|"+l.gone;
+    const e=r.key?(st.employees||{})[r.key]:null,was=l.key+"|"+l.gone,oldKey=l.key;
     l.key=e?r.key:"";l.name=e?lkName(e):"";
+    if(l.more&&(l.key!==oldKey||!l.key))delete l.more;
     l.gone=e?"":String(r.gone||"").slice(0,LK_TXT);
     if(was!==l.key+"|"+l.gone)delete l.notice;
     l.raw=String(r.raw||"").slice(0,LK_TXT);
@@ -256,18 +275,46 @@ function lkAssign(st,id,key,meta){
   if(key&&!e)return {err:"Člověk už v Lidech není."};
   const m=lkMeta(meta);
   l.key=key||"";l.name=e?lkName(e):"";l.gone="";l.raw="";l.at=m.at;l.by=m.by;delete l.notice;
+  // další lidé zůstanou (jen ne nový hlavní dvakrát); bez člověka skříňka nikomu nepatří
+  if(l.more)l.more=key?l.more.filter(x=>x.key!==key):[];
+  if(l.more&&!l.more.length)delete l.more;
   return {l};
 }
+/** Sdílená skříňka (2.82): přidá dalšího člověka (u volné skříňky se stane hlavním). */
+function lkAddPerson(st,id,key,meta){
+  const l=lkFind(st,id),e=key?(st.employees||{})[key]:null;
+  if(!l)return {err:"Skříňka už v soupisu není."};
+  if(!e)return {err:"Člověk už v Lidech není."};
+  if(lkHas(l,key))return {err:`${lkName(e)} už ve skříňce ${lkLabel(l)} je.`};
+  if(!l.key){const r=lkAssign(st,id,key,meta);return r;}
+  if((l.more||[]).length>=LK_MORE_MAX)return {err:`Ve skříňce může být nejvýš ${LK_MORE_MAX+1} lidí.`};
+  const m=lkMeta(meta);
+  l.more=[...(l.more||[]),{key,name:lkName(e)}];l.at=m.at;l.by=m.by;delete l.notice;
+  return {l};
+}
+/** Odebere člověka ze skříňky; za hlavního nastoupí první další, poslední odebraný skříňku uvolní. */
+function lkRemovePerson(st,id,key,meta){
+  const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};
+  if(!lkHas(l,key))return {err:"Ten člověk ve skříňce není."};
+  const m=lkMeta(meta);
+  if(l.key===key){const nx=(l.more||[]).shift();l.key=nx?nx.key:"";l.name=nx?nx.name:"";if(!nx){l.raw="";delete l.notice;}}
+  else l.more=(l.more||[]).filter(x=>x.key!==key);
+  if(l.more&&!l.more.length)delete l.more;
+  l.at=m.at;l.by=m.by;
+  return {l};
+}
+/** Není záložní klíč (2.82): štítek na záložní klíč se pro skříňku netiskne. */
+function lkSetNoKey(st,id,on){const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};if(on)l.nokey=true;else delete l.nokey;return {l};}
 function lkSetGone(st,id,name,meta){
   const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};
   const m=lkMeta(meta),was=l.key?(lkName((st.employees||{})[l.key])||l.name):"";
-  l.gone=String(name||was||l.raw||l.name||"neznámý").slice(0,LK_TXT);l.key="";l.name="";l.raw="";l.at=m.at;l.by=m.by;
+  l.gone=String(name||was||l.raw||l.name||"neznámý").slice(0,LK_TXT);l.key="";l.name="";l.raw="";l.at=m.at;l.by=m.by;delete l.more;
   return {l};
 }
 /** Uvolní skříňku (i po vyklizení): bez člověka, jména i textu z importu. */
 function lkFree(st,id,meta){
   const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};
-  const m=lkMeta(meta);l.key="";l.name="";l.gone="";l.raw="";l.at=m.at;l.by=m.by;delete l.notice;
+  const m=lkMeta(meta);l.key="";l.name="";l.gone="";l.raw="";l.at=m.at;l.by=m.by;delete l.notice;delete l.more;
   return {l};
 }
 function lkSetNote(st,id,note){const l=lkFind(st,id);if(!l)return {err:"Skříňka už v soupisu není."};l.note=String(note||"").replace(/\s+/g," ").trim().slice(0,LK_NOTE);return {l};}
@@ -295,7 +342,7 @@ function lkAddRange(st,row,from,to,meta){
     druhou polovinou se klíč zalepí). opts {locker, key} vybere druhy; pořadí podle soupisu, po dvojicích. */
 function lkLabelSeq(list,opts){
   opts=opts||{};const lo=opts.locker!==false,ke=opts.key!==false,out=[];
-  (list||[]).slice().sort(lkCmp).forEach(l=>{const t=lkLabel(l);if(lo)out.push({kind:"locker",text:t,id:l.id});if(ke)out.push({kind:"key",text:t,id:l.id});});
+  (list||[]).slice().sort(lkCmp).forEach(l=>{const t=lkLabel(l);if(lo)out.push({kind:"locker",text:t,id:l.id});if(ke&&!l.nokey)out.push({kind:"key",text:t,id:l.id});});
   return out;
 }
 /* ---------- ZPL pro Zebru (2.81) ----------
@@ -344,32 +391,44 @@ function lkZplLabel(bits){return "^XA^PW"+LK_ZW+"^LL"+LK_ZH+"^LH0,0^FO0,0"+lkZpl
 /** Excel: soupis skříněk a lidé bez skříňky. */
 function lkSheets(lk,emps,today,positions){
   const ov=lkOverview(lk,emps,today),pos=positions||(S&&S.positions)||[],gr=e=>{const p=e?pos.find(g=>g.id===e.positionId):null;return p?p.name:"";};
-  const who=x=>x.e?lkName(x.e):x.l.gone||x.l.name||x.l.raw||"";
-  const rows=[["Skříňka","Řada","Číslo","Pracovník","ID","Skupina","Stav","Upozornění","Z importu","Poznámka"]];
+  const who=x=>x.people?x.people.map(p=>p.name).join("; "):x.l.gone||x.l.name||x.l.raw||"";
+  const ids=x=>x.people?x.people.map(p=>p.e&&p.e.wid).filter(Boolean).join("; "):"";
+  const warn=x=>x.st==="clear"?"Je třeba vyprázdnit ("+x.why+")"+(x.notice?(x.noticeLate?", lhůta výzvy uplynula "+dayText(x.notice.until):", výzva do "+dayText(x.notice.until)):"")
+    :[...(x.leaving||[]).map(p=>"odebrat "+p.name+" ("+p.why+")"),...(x.people||[]).filter(p=>ov.multi.includes(p.key)).map(p=>p.name+" má víc skříněk")].join("; ");
+  const rows=[["Skříňka","Řada","Číslo","Pracovník","ID","Skupina","Stav","Upozornění","Záložní klíč","Z importu","Poznámka"]];
   ov.rows.forEach(x=>{
-    rows.push([lkLabel(x.l),x.l.row,x.l.no,who(x),x.e?x.e.wid||"":"",gr(x.e),LK_STATES[x.st],x.st==="clear"?"Je třeba vyprázdnit ("+x.why+")"+(x.notice?(x.noticeLate?", lhůta výzvy uplynula "+dayText(x.notice.until):", výzva do "+dayText(x.notice.until)):""):ov.multi.includes(x.l.key)?"má víc skříněk":"",x.l.raw||"",x.l.note||""]);
+    rows.push([lkLabel(x.l),x.l.row,x.l.no,who(x),ids(x),gr(x.e),LK_STATES[x.st],warn(x),x.l.nokey?"není":"ano",x.l.raw||"",x.l.note||""]);
   });
   const w=[["Příjmení a jméno","ID","Skupina","Vedoucí"]];
   ov.without.forEach(e=>w.push([lkName(e),e.wid||"",gr(e),isLead(e)?"ano":""]));
   return [{name:"Skříňky",rows},{name:"Bez skříňky",rows:w}];
 }
-/** Historie změn (kind locker): přidání a smazání skříňky, přidělení, uvolnění, „už nepracuje“, poznámka. */
+/** Historie změn (kind locker): přidání a smazání skříňky, přidělení, uvolnění, „už nepracuje“, další lidé
+    (2.82), záložní klíč (2.82), výzva, poznámka. */
 function lkChanges(A,B,add){
   const a=((A&&A.list)||[]),b=((B&&B.list)||[]),am=new Map(a.map(l=>[l.id,l])),bm=new Set(b.map(l=>l.id));
-  const nm=(l,emps)=>l.key?(lkName(emps&&emps[l.key])||l.name||"člověk"):"";
+  const names=l=>lkKeys(l).map(k=>lkNameIn(l,k)||"člověk").join(", ");
   b.forEach(l=>{
     const o=am.get(l.id),lab=lkLabel(l);
-    if(!o){add("locker","Skříňka "+lab+" přidána"+(l.key?": "+(l.name||"člověk"):l.gone?": "+l.gone+" (už u nás nepracuje)":""),{m:"lk:"+l.id+":n",...(l.key?{key:l.key}:{})});return;}
-    if(o.key!==l.key||o.gone!==l.gone){
-      // přidělení, „už nepracuje“ a uvolnění se v historii neslučují (vyprázdnění musí zůstat vidět)
-      const mk="lk:"+l.id+":k:"+(l.key?"p":l.gone?"g":"f");
-      if(l.key)add("locker","Skříňka "+lab+" přidělena: "+(l.name||"člověk")+(o.key?" (dřív "+(o.name||"jiný člověk")+")":""),{m:mk,key:l.key});
-      else if(l.gone)add("locker","Skříňka "+lab+": "+l.gone+" už u nás nepracuje, je třeba vyprázdnit",{m:mk,...(o.key?{key:o.key}:{})});
-      else add("locker","Skříňka "+lab+" uvolněna"+(o.key||o.gone?" ("+(o.name||o.gone)+")":""),{m:mk,...(o.key?{key:o.key}:{})});
+    if(!o){add("locker","Skříňka "+lab+" přidána"+(l.key?": "+names(l):l.gone?": "+l.gone+" (už u nás nepracuje)":""),{m:"lk:"+l.id+":n",...(l.key?{key:l.key}:{})});return;}
+    const oK=lkKeys(o),nK=lkKeys(l);
+    if(oK.join("|")!==nK.join("|")||o.gone!==l.gone){
+      if(oK.length&&nK.length&&!(oK.length===1&&nK.length===1)){
+        // sdílená skříňka: kdo přibyl a kdo ubyl (každý zvlášť, ať jde dohledat)
+        nK.filter(k=>!oK.includes(k)).forEach(k=>add("locker","Skříňka "+lab+": přidán další člověk "+(lkNameIn(l,k)||"člověk"),{m:"lk:"+l.id+":a:"+k,key:k}));
+        oK.filter(k=>!nK.includes(k)).forEach(k=>add("locker","Skříňka "+lab+": odebrán "+(lkNameIn(o,k)||"člověk"),{m:"lk:"+l.id+":r:"+k,key:k}));
+      }else{
+        // přidělení, „už nepracuje“ a uvolnění se v historii neslučují (vyprázdnění musí zůstat vidět)
+        const mk="lk:"+l.id+":k:"+(nK.length?"p":l.gone?"g":"f");
+        if(nK.length)add("locker","Skříňka "+lab+" přidělena: "+names(l)+(oK.length?" (dřív "+names(o)+")":""),{m:mk,key:l.key});
+        else if(l.gone)add("locker","Skříňka "+lab+": "+l.gone+" už u nás nepracuje, je třeba vyprázdnit",{m:mk,...(o.key?{key:o.key}:{})});
+        else add("locker","Skříňka "+lab+" uvolněna"+(oK.length||o.gone?" ("+(oK.length?names(o):o.gone)+")":""),{m:mk,...(o.key?{key:o.key}:{})});
+      }
     }
+    if(!!o.nokey!==!!l.nokey)add("locker","Skříňka "+lab+": "+(l.nokey?"není záložní klíč":"záložní klíč je"),{m:"lk:"+l.id+":z"});
     const on=o.notice?o.notice.until:"",nn=l.notice?l.notice.until:"";
     if(nn&&on!==nn)add("locker","Skříňka "+lab+": vyvěšena výzva k vyklizení, lhůta do "+dayText(nn),{m:"lk:"+l.id+":v",...(o.key?{key:o.key}:{})});
     if(o.note!==l.note)add("locker","Skříňka "+lab+": poznámka „"+(l.note||"—")+"“",{m:"lk:"+l.id+":t"});
   });
-  a.filter(l=>!bm.has(l.id)).forEach(l=>add("locker","Skříňka "+lkLabel(l)+" smazána"+(l.key?" ("+(l.name||"člověk")+")":""),{m:"lk:"+l.id+":x"}));
+  a.filter(l=>!bm.has(l.id)).forEach(l=>add("locker","Skříňka "+lkLabel(l)+" smazána"+(l.key?" ("+names(l)+")":""),{m:"lk:"+l.id+":x"}));
 }

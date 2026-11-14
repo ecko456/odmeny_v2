@@ -437,6 +437,18 @@ Skříňka se pozná podle řady a čísla, v soupisu je jen jednou. Core `priva
   v core (`^XA^PW800^LL280^LH0,0^FO0,0^GFA,28000,28000,100,…^FS^PQ1^XZ`, komprese ZPL v `lkZplGfa`). Hromadný
   tisk: Všechny / Jen zobrazené / Jen řada / **Zkušební štítek** (kind `test`: rámeček 1 mm od okraje, čárky
   po 10 mm, kříž uprostřed), výstup Tisknout / Stáhnout PDF / Stáhnout ZPL a stav Browser Print.
+- **Víc lidí v jedné skříňce** (2.82): vedle hlavního `key` (a snímku `name`) pole `more: [{key, name}]` (jen když
+  jsou, nejvýš 9). `lkKeys(l)` = všichni, `lkHas`, `lkNameIn`. `lkAddPerson` (volná skříňka = hlavní), `lkRemovePerson`
+  (za hlavního nastoupí první další, poslední odebraný skříňku uvolní); `lkAssign` mění jen hlavního, `lkFree`,
+  `lkSetGone` a import s jiným hlavním další lidi smažou. Stav: K vyklizení, až když nikdo není aktivní (důvod
+  „nikdo z nich už není v seznamu“); jinak obsazená a `leaving` = kdo odešel (vyřazený, smazaný) → štítek
+  „odebrat X“, žlutý pruh Odebrat ze sdílené skříňky, filtr Odebrat, odznak v menu K vyklizení + odebrat.
+  Obrazovka: každý člověk na svém řádku s ✕ (Odebrat ze skříňky, potvrzení), „+ další člověk“
+  (`lkAddPersonDialog`), Přidělit skříňku (`lkGiveDialog`: Volné / Sdílet obsazenou), po vyřazení nebo smazání
+  člověka ze sdílené skříňky `lkLeaveShared` (Odebrat ze skříňky / Později). Excel: všichni lidé a ID, „odebrat …“.
+  Historie: „přidán další člověk X“ (`lk:id:a:klíč`), „odebrán X“ (`lk:id:r:klíč`).
+- **Není záložní klíč** (2.82): `nokey: true` (jen když je), přepínač v řádku (`aria-pressed`), štítek „bez záložního
+  klíče“, filtr; `lkLabelSeq` štítek klíče vynechá, Excel sloupec Záložní klíč, historie (`lk:id:z`).
 - **Historie** (kind `locker`, filtr Skříňky): přidání a smazání skříňky, přidělení, uvolnění, „už nepracuje“,
   poznámka. Přidělení / uvolnění / „už nepracuje“ mají každé vlastní `m` (`lk:id:k:p|f|g`), takže se při rychlém
   sledu v historii neslučují (vyprázdnění zůstane vidět); poznámky se slučují (`lk:id:t`).

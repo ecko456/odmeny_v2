@@ -12,60 +12,97 @@ function lkLabels(list) { return list.map(lkLabel).join(', '); }
 /** Upozornění do potvrzení vyřazení nebo smazání člověka (prázdné, když skříňku nemá). */
 function lkWarnText(key) {
   const ls = lkOf(key);
-  return ls.length ? ` Má ${ls.length === 1 ? 'skříňku' : 'skříňky'} ${lkLabels(ls)}: ve Skříňkách se ukáže jako K vyklizení (je třeba vyprázdnit).` : '';
+  if (!ls.length) return '';
+  // sdílená skříňka (2.82): když v ní zůstane někdo aktivní, je jen „odebrat“, ne K vyklizení
+  const others = l => lkKeys(l).filter(k => k !== key && S.employees[k] && !S.employees[k].excluded);
+  const own = ls.filter(l => !others(l).length), shared = ls.filter(l => others(l).length);
+  return (own.length ? ` Má ${own.length === 1 ? 'skříňku' : 'skříňky'} ${lkLabels(own)}: ve Skříňkách se ukáže jako K vyklizení (je třeba vyprázdnit).` : '')
+    + (shared.length ? ` Sdílí ${shared.length === 1 ? 'skříňku' : 'skříňky'} ${lkLabels(shared)}: jeho věci je třeba vyklidit a odebrat ho ze skříňky.` : '');
 }
 /** Po vyřazení nebo smazání člověka: je třeba vyprázdnit jeho skříňku, nabídne štítek s výzvou (2.81). */
 async function lkAfterLeave(key, name) {
-  const ls = lkOf(key);
-  if (!ls.length) return;
+  const all = lkOf(key);
+  if (!all.length) return;
+  const ls = all.filter(l => lkState(l, S.employees, todayIso()).st === 'clear'), shared = all.filter(l => !ls.includes(l));
+  if (!ls.length) { lkLeaveShared(key, name, shared); return; }
   const one = ls.length === 1, until = dayText(lkWorkDaysAdd(todayIso(), LK_NOTICE_DAYS));
   const res = await dialog({
     title: `Je třeba vyprázdnit ${one ? 'skříňku' : 'skříňky'} ${lkLabels(ls)}`, ok: 'Vytisknout výzvu', cancel: 'Později',
     html: `<p>${name ? `<b>${esc(name)}</b> má` : 'Člověk měl'} ${one ? 'skříňku' : 'skříňky'} <b>${esc(lkLabels(ls))}</b>. Ve Skříňkách ${one ? 'je' : 'jsou'} teď K vyklizení.</p>
-      <p class="small">Štítek s výzvou (Zebra 100 × 35 mm): uživatel skříňky se má nahlásit u vedoucího do <b>${esc(until)}</b> (${LK_NOTICE_DAYS} pracovních dnů), jinak bude skříňka komisionálně otevřena a vyklizena.</p>`,
+      <p class="small">Štítek s výzvou (Zebra 100 × 35 mm): uživatel skříňky se má nahlásit u vedoucího do <b>${esc(until)}</b> (${LK_NOTICE_DAYS} pracovních dnů), jinak bude skříňka komisionálně otevřena a vyklizena.</p>
+      ${shared.length ? `<p class="small">Sdílená ${shared.length === 1 ? 'skříňka' : 'skříňky'} <b>${esc(lkLabels(shared))}</b>: jeho věci vyklidit a odebrat ho (Skříňky → Odebrat).</p>` : ''}`,
   });
   if (res.value === 'ok') lkNoticePrint(ls.map(l => l.id));
   else toast(`Je třeba vyprázdnit ${one ? 'skříňku' : 'skříňky'} ${lkLabels(ls)}. Výzvu vytiskneš ve Skříňkách.`, true);
 }
+/** Odchod člověka ze sdílené skříňky (2.82): ostatní ji používají dál, jeho věci vyklidit a odebrat ho. */
+async function lkLeaveShared(key, name, ls) {
+  const one = ls.length === 1, rest = ls.map(l => `${lkLabel(l)} (${lkKeys(l).filter(k => k !== key).map(k => lkName(S.employees[k]) || lkNameIn(l, k)).join(', ')})`).join(', ');
+  const res = await dialog({
+    title: `Odebrat ze ${one ? 'sdílené skříňky' : 'sdílených skříněk'} ${lkLabels(ls)}`, ok: 'Odebrat ze skříňky', cancel: 'Později',
+    html: `<p>${name ? `<b>${esc(name)}</b>` : 'Člověk'} ${one ? 'sdílí skříňku' : 'sdílí skříňky'} ${esc(rest)}. Skříňku používají dál ostatní, jeho věci je třeba vyklidit.</p>`,
+  });
+  if (res.value !== 'ok') { toast(`Odeber ${name || 'ho'} ze ${one ? 'skříňky' : 'skříněk'} ${lkLabels(ls)} (Skříňky → Odebrat).`, true); return; }
+  const meta = { by: ui.me ? ui.me.label : '' };
+  ls.forEach(l => lkRemovePerson(S, l.id, key, meta));
+  save();
+  renderAll();
+  toast(`${name || 'Člověk'} odebrán ze ${one ? 'skříňky' : 'skříněk'} ${lkLabels(ls)}.`);
+}
 /** Řádek do detailu člověka v Lidech. */
 function lkPersonHtml(e) {
   if (!e || !S.lockers) return '';
-  const ls = lkOf(e.key);
-  if (ls.length && e.excluded) return `<div class="note e lk-person"><b>Je třeba vyprázdnit ${ls.length === 1 ? 'skříňku' : 'skříňky'} ${esc(lkLabels(ls))}.</b> Vyřazený ze seznamu pořád má skříňku. <button class="btn small" type="button" data-golk="clear">Skříňky</button></div>`;
-  if (ls.length) return `<p class="small lk-person">Skříňka <b>${esc(lkLabels(ls))}</b>${ls.length > 1 ? ' <span class="tag warn">má víc skříněk</span>' : ''} <button class="btn ghost small" type="button" data-golk="">Skříňky</button></p>`;
+  const ls = lkOf(e.key), today = todayIso();
+  const mates = l => lkKeys(l).filter(k => k !== e.key).map(k => lkName(S.employees[k]) || lkNameIn(l, k));
+  if (ls.length && e.excluded) {
+    const clr = ls.filter(l => lkState(l, S.employees, today).st === 'clear'), sh = ls.filter(l => !clr.includes(l));
+    return `<div class="note e lk-person">${clr.length ? `<b>Je třeba vyprázdnit ${clr.length === 1 ? 'skříňku' : 'skříňky'} ${esc(lkLabels(clr))}.</b> Vyřazený ze seznamu pořád má skříňku. ` : ''}${sh.length ? `<b>Odebrat ze sdílené skříňky ${esc(lkLabels(sh))}</b> a vyklidit jeho věci. ` : ''}<button class="btn small" type="button" data-golk="${clr.length ? 'clear' : 'leave'}">Skříňky</button></div>`;
+  }
+  if (ls.length) return `<p class="small lk-person">Skříňka <b>${esc(lkLabels(ls))}</b>${ls.some(l => mates(l).length) ? ` <span class="muted">sdílí s ${esc([...new Set(ls.flatMap(mates))].join(', '))}</span>` : ''}${ls.length > 1 ? ' <span class="tag warn">má víc skříněk</span>' : ''} <button class="btn ghost small" type="button" data-golk="">Skříňky</button></p>`;
   if (e.excluded || isLead(e) || !lkList().length) return '';
-  return `<p class="small muted lk-person">Bez skříňky. <button class="btn ghost small" type="button" data-lkgive="${esc(e.key)}">Přidělit volnou</button></p>`;
+  return `<p class="small muted lk-person">Bez skříňky. <button class="btn ghost small" type="button" data-lkgive="${esc(e.key)}">Přidělit skříňku</button></p>`;
 }
 function renderLkBadge() {
   const b = $('#navLockers');
   if (!b || !S) return;
-  const ov = lkOverview(S.lockers, S.employees, todayIso());
-  b.hidden = !ov.clear;
-  b.textContent = String(ov.clear);
-  b.classList.toggle('late', !!ov.clear);
-  b.title = ov.clear ? `K vyklizení ${ov.clear} ${lkN(ov.clear)}` : '';
+  const ov = lkOverview(S.lockers, S.employees, todayIso()), n = ov.clear + ov.leave;
+  b.hidden = !n;
+  b.textContent = String(n);
+  b.classList.toggle('late', !!n);
+  b.title = n ? [ov.clear ? `K vyklizení ${ov.clear} ${lkN(ov.clear)}` : '', ov.leave ? `odebrat ze sdílené ${ov.leave}` : ''].filter(Boolean).join(', ') : '';
 }
 
 /* ---------- obrazovka ---------- */
-const LK_FILTERS = [['all', 'Vše'], ['free', 'Volné'], ['used', 'Obsazené'], ['unknown', 'Nespárované'], ['clear', 'K vyklizení'], ['multi', 'Víc skříněk'], ['without', 'Bez skříňky']];
+const LK_FILTERS = [['all', 'Vše'], ['free', 'Volné'], ['used', 'Obsazené'], ['unknown', 'Nespárované'], ['clear', 'K vyklizení'], ['leave', 'Odebrat'], ['multi', 'Víc skříněk'], ['nokey', 'Bez záložního klíče'], ['without', 'Bez skříňky']];
 function lkWho(x) {
-  if (x.e) return lkName(x.e);
+  if (x.people) return x.people.map(p => p.name).join(', ');
   return x.l.gone || x.l.name || x.l.raw || '';
 }
 function lkMatchQ(x, q) {
   if (!q) return true;
-  return norm([lkLabel(x.l), lkWho(x), x.l.raw, x.l.note, x.e && x.e.wid].filter(Boolean).join(' ')).includes(q);
+  return norm([lkLabel(x.l), lkWho(x), x.l.raw, x.l.note, ...(x.people || []).map(p => p.e && p.e.wid)].filter(Boolean).join(' ')).includes(q);
+}
+/** Řádek ve filtru (obrazovka i hromadný tisk). */
+function lkInFilter(x, f, ov) {
+  if (f === 'all') return true;
+  if (f === 'used') return x.st === 'used' || x.st === 'unknown';
+  if (f === 'multi') return lkKeys(x.l).some(k => ov.multi.includes(k));
+  if (f === 'leave') return !!(x.leaving && x.leaving.length);
+  if (f === 'nokey') return !!x.l.nokey;
+  return x.st === f;
 }
 function lkRowHtml(x, ov, today) {
-  const l = x.l, id = esc(l.id), multi = l.key && ov.multi.includes(l.key);
+  const l = x.l, id = esc(l.id), ppl = x.people || [], many = ppl.length > 1, multi = ppl.some(p => ov.multi.includes(p.key));
   const grp = x.e ? (S.positions.find(g => g.id === x.e.positionId) || {}).name : '';
+  // jeden člověk na řádek; ve sdílené skříňce (2.82) jde každý odebrat
+  const person = p => `<span class="lk-pp${p.why ? ' gone' : ''}">${p.e ? `<button class="lk-who" type="button" data-lkperson="${esc(p.key)}">${esc(p.name)}</button>` : `<b>${esc(p.name)}</b>`}${many ? `<button class="icon-btn lk-rm" type="button" data-lkrm="${id}" data-lkkey="${esc(p.key)}" title="Odebrat ze skříňky" aria-label="Odebrat ${esc(p.name)} ze skříňky ${esc(lkLabel(l))}">${I.x}</button>` : ''}${p.why && (many || x.st !== 'clear') ? `<small class="lk-why">${esc(p.why)}</small>` : ''}</span>`;
   let who;
-  if (x.st === 'used') who = `<button class="lk-who" type="button" data-lkperson="${esc(l.key)}">${esc(lkName(x.e))}</button>${grp || x.e.wid ? `<small class="muted">${esc([grp, x.e.wid ? `ID ${x.e.wid}` : ''].filter(Boolean).join(' · '))}</small>` : ''}`;
-  else if (x.st === 'clear') who = `${x.e ? `<button class="lk-who" type="button" data-lkperson="${esc(l.key)}">${esc(lkName(x.e))}</button>` : `<b>${esc(lkWho(x) || 'neznámý')}</b>`}<small class="lk-why">${esc(x.why)}</small>${x.notice ? `<small class="lk-notice${x.noticeLate ? ' late' : ''}">${x.noticeLate ? `lhůta výzvy uplynula ${esc(dayText(x.notice.until))}, lze vyklidit` : `výzva vyvěšena ${esc(dayText(x.notice.at))}, lhůta do ${esc(dayText(x.notice.until))}`}</small>` : ''}`;
+  if (x.st === 'used') who = `${ppl.map(person).join('')}${!many && (grp || x.e.wid) ? `<small class="muted">${esc([grp, x.e.wid ? `ID ${x.e.wid}` : ''].filter(Boolean).join(' · '))}</small>` : ''}<button class="btn ghost small lk-addp" type="button" data-lkaddp="${id}" title="Sdílená skříňka: přidat dalšího člověka">+ další člověk</button>`;
+  else if (x.st === 'clear') who = `${ppl.length ? ppl.map(person).join('') : `<b>${esc(lkWho(x) || 'neznámý')}</b>`}<small class="lk-why">${esc(x.why)}</small>${x.notice ? `<small class="lk-notice${x.noticeLate ? ' late' : ''}">${x.noticeLate ? `lhůta výzvy uplynula ${esc(dayText(x.notice.until))}, lze vyklidit` : `výzva vyvěšena ${esc(dayText(x.notice.at))}, lhůta do ${esc(dayText(x.notice.until))}`}</small>` : ''}`;
   else if (x.st === 'unknown') who = `<span class="lk-raw">„${esc(l.raw)}“</span><small class="muted">v Lidech nenalezeno, přiřaď</small>`;
   else who = '<span class="muted">—</span>';
   const tag = { used: '<span class="tag ok">Obsazená</span>', unknown: '<span class="tag warn">Nespárovaná</span>', clear: '<span class="tag crit">Je třeba vyprázdnit</span>', free: '<span class="tag">Volná</span>' }[x.st];
-  const extra = [x.noticeLate ? '<span class="tag crit">lhůta uplynula</span>' : x.notice ? '<span class="tag warn">výzva vyvěšena</span>' : '', x.endPast ? `<span class="tag warn" title="Konec trestu ${esc(dayText(x.endPast))}">konec trestu minul</span>` : '', multi ? '<span class="tag warn">má víc skříněk</span>' : ''].join('');
+  const extra = [x.leaving && x.leaving.length ? `<span class="tag crit">odebrat ${esc(x.leaving.map(p => p.name).join(', '))}</span>` : '', many ? `<span class="tag">sdílená · ${ppl.length}</span>` : '', l.nokey ? '<span class="tag">bez záložního klíče</span>' : '', x.noticeLate ? '<span class="tag crit">lhůta uplynula</span>' : x.notice ? '<span class="tag warn">výzva vyvěšena</span>' : '', x.endPast ? `<span class="tag warn" title="Konec trestu ${esc(dayText(x.endPast))}">konec trestu minul</span>` : '', multi ? '<span class="tag warn">má víc skříněk</span>' : ''].join('');
   const act = x.st === 'clear'
     ? `<button class="btn ${x.notice ? 'ghost ' : 'sec '}small" type="button" data-lknotice="${id}" title="Štítek s výzvou k vyklizení (Zebra 100 × 35 mm)${x.notice ? ', stejná lhůta' : `, lhůta ${LK_NOTICE_DAYS} pracovních dnů`}">Výzva</button><button class="btn small" type="button" data-lkfree="${id}" title="Skříňka je prázdná, zůstane volná">Vyprázdněno</button><button class="btn ghost small" type="button" data-lkassign="${id}">Přidělit</button>`
     : x.st === 'free' ? `<button class="btn sec small" type="button" data-lkassign="${id}">Přidělit</button>`
@@ -75,7 +112,7 @@ function lkRowHtml(x, ov, today) {
     <td class="name lk-whocell" data-label="Pracovník">${who}</td>
     <td class="wrap" data-label="Stav"><span class="lk-tags">${tag}${extra}</span></td>
     <td class="lk-notecell" data-label="Poznámka"><input type="text" data-lknote="${id}" value="${esc(l.note || '')}" maxlength="${LK_NOTE}" placeholder="poznámka" aria-label="Poznámka ke skříňce ${esc(lkLabel(l))}"></td>
-    <td class="actions lk-act">${act}<button class="btn ghost small" type="button" data-lklbl="${id}" title="Štítek na skříňku a na záložní klíč (Zebra 100 × 35 mm)">Štítky</button><button class="icon-btn lk-del" type="button" data-lkdel="${id}" title="Smazat skříňku ze soupisu" aria-label="Smazat skříňku ${esc(lkLabel(l))}">${I.x}</button></td></tr>`;
+    <td class="actions lk-act">${act}<button class="btn ghost small" type="button" data-lklbl="${id}" title="${l.nokey ? 'Štítek na skříňku (záložní klíč není)' : 'Štítek na skříňku a na záložní klíč'} (Zebra 100 × 35 mm)">Štítky</button><button class="btn ghost small lk-nokey${l.nokey ? ' on' : ''}" type="button" data-lknokey="${id}" aria-pressed="${!!l.nokey}" title="${l.nokey ? 'Zapnuto: skříňka nemá záložní klíč, štítek klíče se netiskne. Kliknutím vypneš.' : 'Skříňka nemá záložní klíč (štítek klíče se pak netiskne)'}">Není záložní klíč</button><button class="icon-btn lk-del" type="button" data-lkdel="${id}" title="Smazat skříňku ze soupisu" aria-label="Smazat skříňku ${esc(lkLabel(l))}">${I.x}</button></td></tr>`;
 }
 function lkWithoutHtml(ov, q) {
   const list = ov.without.filter(e => !q || norm(`${lkName(e)} ${e.wid || ''}`).includes(q));
@@ -86,7 +123,7 @@ function lkWithoutHtml(ov, q) {
     const g = (S.positions.find(p => p.id === e.positionId) || {}).name || '';
     return `<tr><td class="name lk-whocell" data-label="Pracovník"><button class="lk-who" type="button" data-lkperson="${esc(e.key)}">${esc(lkName(e))}</button>${e.wid ? `<small class="muted">ID ${esc(e.wid)}</small>` : ''}${isLead(e) ? ' <span class="tag">vedoucí</span>' : ''}</td>
       <td data-label="Skupina">${g ? esc(g) : '<span class="muted">—</span>'}</td><td class="num" data-label="Konec trestu">${e.end ? esc(dayText(e.end)) : '<span class="muted">—</span>'}</td>
-      <td class="actions lk-act"><button class="btn sec small" type="button" data-lkgive="${esc(e.key)}"${free ? '' : ' disabled title="Žádná skříňka není volná"'}>Přidělit volnou</button></td></tr>`;
+      <td class="actions lk-act"><button class="btn sec small" type="button" data-lkgive="${esc(e.key)}" title="${free ? 'Volnou skříňku, nebo sdílet obsazenou' : 'Žádná skříňka není volná: sdílet obsazenou'}">Přidělit skříňku</button></td></tr>`;
   }).join('')}</tbody></table></div>`;
 }
 function renderLockers() {
@@ -101,36 +138,37 @@ function renderLockers() {
   }
   const q = norm(u.q.trim());
   const occ = ov.used + ov.unknown;
-  const count = { all: ov.total, free: ov.free, used: occ, unknown: ov.unknown, clear: ov.clear, multi: ov.rows.filter(x => x.l.key && ov.multi.includes(x.l.key)).length, without: ov.without.length };
-  if ((u.f === 'unknown' || u.f === 'multi') && !count[u.f]) u.f = 'all';
-  const clearRows = ov.rows.filter(x => x.st === 'clear');
+  const count = { all: ov.total, free: ov.free, used: occ, unknown: ov.unknown, clear: ov.clear, leave: ov.leave, nokey: ov.nokey, multi: ov.rows.filter(x => lkInFilter(x, 'multi', ov)).length, without: ov.without.length };
+  if (['unknown', 'multi', 'leave', 'nokey'].includes(u.f) && !count[u.f]) u.f = 'all';
+  const clearRows = ov.rows.filter(x => x.st === 'clear'), leaveRows = ov.rows.filter(x => lkInFilter(x, 'leave', ov));
   const tiles = `<div class="stats lk-stats">
       ${statTile('Volné skříňky', String(ov.free), ov.free ? `z ${ov.total} ${lkN(ov.total)}` : 'žádná volná', ov.free ? 'good' : '')}
       ${statTile('Obsazené skříňky', String(occ), ov.unknown ? `z toho ${ov.unknown} nespárováno` : 'spárováno s Lidmi', ov.unknown ? 'warn' : '')}
       ${statTile('K vyklizení', String(ov.clear), ov.clear ? 'je třeba vyprázdnit' : 'nic k vyklizení', ov.clear ? 'crit' : '')}
       ${statTile('Lidé bez skříňky', String(ov.without.length), ov.without.length ? 'v seznamu Lidí' : 'každý má skříňku')}</div>`;
   const alert = clearRows.length ? `<div class="note e lk-alert"><div><b>Je třeba vyprázdnit ${clearRows.length} ${lkN(clearRows.length)}:</b> ${clearRows.slice(0, 8).map(x => `${esc(lkLabel(x.l))} <span class="muted">(${esc(lkWho(x) || 'neznámý')}, ${esc(x.why)})</span>`).join(', ')}${clearRows.length > 8 ? ' …' : ''}</div><div class="row gap wrap lk-alertact"><button class="btn small" type="button" data-lknoticeall title="Štítky s výzvou k vyklizení pro všechny skříňky K vyklizení (Zebra 100 × 35 mm)">Vytisknout výzvy (${clearRows.length})</button>${u.f !== 'clear' ? '<button class="btn ghost small" type="button" data-lkf="clear">Ukázat</button>' : ''}</div></div>` : '';
-  const chips = `<div class="chips lk-chips" role="tablist" aria-label="Filtr skříněk">${LK_FILTERS.filter(([k]) => k === 'all' || k === 'free' || k === 'used' || k === 'clear' || k === 'without' || count[k]).map(([k, label]) => `<button type="button" class="chip${u.f === k ? ' on' : ''}" data-lkf="${k}" role="tab" aria-selected="${u.f === k}">${label} <em class="t5-count${k === 'clear' && count[k] ? ' late' : ''}">${count[k]}</em></button>`).join('')}</div>`;
+  const leaveNote = leaveRows.length ? `<div class="note w lk-alert"><div><b>Odebrat ze sdílené skříňky:</b> ${leaveRows.slice(0, 8).map(x => `${esc(lkLabel(x.l))} <span class="muted">(${esc(x.leaving.map(p => `${p.name}, ${p.why}`).join('; '))})</span>`).join(', ')}${leaveRows.length > 8 ? ' …' : ''}. Skříňku používají dál ostatní, věci odešlého vyklidit.</div>${u.f !== 'leave' ? '<div class="row gap wrap lk-alertact"><button class="btn ghost small" type="button" data-lkf="leave">Ukázat</button></div>' : ''}</div>` : '';
+  const chips = `<div class="chips lk-chips" role="tablist" aria-label="Filtr skříněk">${LK_FILTERS.filter(([k]) => k === 'all' || k === 'free' || k === 'used' || k === 'clear' || k === 'without' || count[k]).map(([k, label]) => `<button type="button" class="chip${u.f === k ? ' on' : ''}" data-lkf="${k}" role="tab" aria-selected="${u.f === k}">${label} <em class="t5-count${(k === 'clear' || k === 'leave') && count[k] ? ' late' : ''}">${count[k]}</em></button>`).join('')}</div>`;
   const tools = `<div class="toolbar lk-tools">${chips}<label class="lk-search"><span class="sr-only">Hledat skříňku nebo člověka</span><input type="search" id="lkQ" value="${esc(u.q)}" placeholder="Hledat skříňku nebo jméno" autocomplete="off"></label></div>`;
   let body;
   if (u.f === 'without') body = lkWithoutHtml(ov, q);
   else {
-    const rows = ov.rows.filter(x => (u.f === 'all' || (u.f === 'used' ? x.st === 'used' || x.st === 'unknown' : u.f === 'multi' ? x.l.key && ov.multi.includes(x.l.key) : x.st === u.f)) && lkMatchQ(x, q));
+    const rows = ov.rows.filter(x => lkInFilter(x, u.f, ov) && lkMatchQ(x, q));
     const shown = rows.slice(0, u.n);
     body = rows.length ? `<div class="table-card flat"><table class="stack lk-tab"><thead><tr><th>Skříňka</th><th>Pracovník</th><th>Stav</th><th>Poznámka</th><th></th></tr></thead><tbody>${shown.map(x => lkRowHtml(x, ov, today)).join('')}</tbody></table></div>
       ${rows.length > shown.length ? `<p class="lk-more"><button class="btn ghost" type="button" data-lkmore>Ukázat dalších ${Math.min(LK_PAGE, rows.length - shown.length)} (zbývá ${rows.length - shown.length})</button></p>` : ''}`
       : `<div class="card"><p class="muted">${q ? 'Nic neodpovídá hledání.' : 'V tomhle filtru nic není.'}</p></div>`;
   }
-  box.innerHTML = `${tiles}${alert}${tools}${body}
+  box.innerHTML = `${tiles}${alert}${leaveNote}${tools}${body}
     <p class="tiny muted lk-foot">Vložit nebo doplnit soupis: v Excelu zkopíruj sloupce A (písmeno), B (číslo) a C (jméno) a tady stiskni Ctrl+V. Skříňky se stejným písmenem a číslem se přepíšou, ostatní zůstanou.</p>`;
 }
 
 /* ---------- vložení soupisu z Excelu ---------- */
 /** Volby výběru člověka (ruční přiřazení): návrhy, bez skříňky, vyřazení, ostatní. */
-function lkPeopleOptions(sel, cand, haveLocker) {
-  const people = Object.values(S.employees).filter(e => e && e.key).sort((a, b) => lkName(a).localeCompare(lkName(b), 'cs'));
+function lkPeopleOptions(sel, cand, haveLocker, skip) {
+  const people = Object.values(S.employees).filter(e => e && e.key && !(skip && skip.has(e.key))).sort((a, b) => lkName(a).localeCompare(lkName(b), 'cs'));
   const opt = e => `<option value="${esc(e.key)}"${e.key === sel ? ' selected' : ''}>${esc(lkName(e))}${e.wid ? ` · ID ${esc(e.wid)}` : ''}${haveLocker.has(e.key) ? ` (má ${esc(haveLocker.get(e.key))})` : ''}${e.excluded ? ' (vyřazen)' : ''}</option>`;
-  const sug = (cand || []).map(k => S.employees[k]).filter(Boolean);
+  const sug = (cand || []).map(k => S.employees[k]).filter(e => e && !(skip && skip.has(e.key)));
   const inSug = new Set(sug.map(e => e.key));
   const rest = people.filter(e => !inSug.has(e.key));
   const g = (label, list) => (list.length ? `<optgroup label="${label}">${list.map(opt).join('')}</optgroup>` : '');
@@ -159,7 +197,7 @@ async function lkPaste(html, text) {
   by.forEach((m, n) => { if (m.key) sure.add(n); });
   const haveLocker = () => {
     const h = new Map();
-    if (!replace) lkList().forEach(l => { if (l.key && !labels.has(`${l.row}|${l.no}`)) h.set(l.key, h.has(l.key) ? `${h.get(l.key)}, ${lkLabel(l)}` : lkLabel(l)); });
+    if (!replace) lkList().forEach(l => { if (!labels.has(`${l.row}|${l.no}`)) lkKeys(l).forEach(k => h.set(k, h.has(k) ? `${h.get(k)}, ${lkLabel(l)}` : lkLabel(l))); });
     by.forEach((m, n) => { if (m.key) { const it = p.items.find(x => x.n === n); h.set(m.key, h.has(m.key) ? `${h.get(m.key)}, ${lkLabel(it)}` : lkLabel(it)); } });
     return h;
   };
@@ -279,13 +317,13 @@ async function lkAssignDialog(id) {
   const l = lkFind(S, id);
   if (!l) return;
   const have = new Map();
-  lkList().forEach(x => { if (x.key && x.id !== id) have.set(x.key, have.has(x.key) ? `${have.get(x.key)}, ${lkLabel(x)}` : lkLabel(x)); });
+  lkList().forEach(x => { if (x.id !== id) lkKeys(x).forEach(k => have.set(k, have.has(k) ? `${have.get(k)}, ${lkLabel(x)}` : lkLabel(x))); });
   const cand = l.raw ? lkMatch([{ n: 1, text: l.raw }], S.employees)[0] : null;
   const sug = cand ? [...new Set([...(cand.key ? [cand.key] : []), ...cand.cand])] : [];
   const cur = l.key || (l.gone ? '@gone' : '');
   const res = await dialog({
     title: `Skříňka ${lkLabel(l)}`, ok: 'Uložit',
-    html: `${l.raw && !l.key ? `<p class="small">V soupisu bylo napsáno <b>„${esc(l.raw)}“</b>.</p>` : ''}
+    html: `${l.raw && !l.key ? `<p class="small">V soupisu bylo napsáno <b>„${esc(l.raw)}“</b>.</p>` : ''}${(l.more || []).length ? `<p class="small">Skříňku sdílí i <b>${esc(l.more.map(m => lkName(S.employees[m.key]) || m.name).join(', '))}</b>: změna hlavního člověka je nechá, volná nebo „už nepracuje“ skříňku uvolní celou.</p>` : ''}
       <label class="field"><span>Komu patří</span><select name="who" autofocus>
         <option value=""${cur === '' ? ' selected' : ''}>— volná (nikdo) —</option>
         <option value="@gone"${cur === '@gone' ? ' selected' : ''}>Už u nás nepracuje → K vyklizení</option>
@@ -308,27 +346,62 @@ async function lkAssignDialog(id) {
     const r = lkAssign(S, id, who, meta);
     if (r.err) { toast(r.err, true); return; }
     const move = res.form.elements.namedItem('move');
-    if (move && move.checked && !$('#lkMoveBox').hidden) lkOf(who).filter(x => x.id !== id).forEach(x => lkFree(S, x.id, meta));
+    if (move && move.checked && !$('#lkMoveBox').hidden) lkOf(who).filter(x => x.id !== id).forEach(x => lkRemovePerson(S, x.id, who, meta));
   }
   save();
   renderAll();
 }
-/** Člověku bez skříňky přidělí volnou (výběr, první volná předvybraná). */
+/** Člověku přidělí skříňku: volnou (první předvybraná), nebo sdílet obsazenou (2.82). */
 async function lkGiveDialog(key) {
   const e = S.employees[key];
   if (!e) return;
-  const free = lkOverview(S.lockers, S.employees, todayIso()).rows.filter(x => x.st === 'free').map(x => x.l);
-  if (!free.length) { toast('Žádná skříňka není volná. Přidej řadu, nebo nejdřív vyprázdni skříňku K vyklizení.', true); return; }
+  const rows = lkOverview(S.lockers, S.employees, todayIso()).rows;
+  const free = rows.filter(x => x.st === 'free').map(x => x.l), used = rows.filter(x => x.st === 'used' && !lkHas(x.l, key));
+  if (!free.length && !used.length) { toast('Žádná skříňka není volná ani obsazená. Přidej řadu skříněk.', true); return; }
   const res = await dialog({
     title: `Skříňka pro ${lkName(e)}`, ok: 'Přidělit',
-    html: `<label class="field"><span>Volná skříňka</span><select name="lk" autofocus>${free.map((l, i) => `<option value="${esc(l.id)}"${i ? '' : ' selected'}>${esc(lkLabel(l))}${l.note ? ` · ${esc(l.note)}` : ''}</option>`).join('')}</select></label>`,
+    html: `<label class="field"><span>Skříňka</span><select name="lk" autofocus>
+      ${free.length ? `<optgroup label="Volné">${free.map((l, i) => `<option value="${esc(l.id)}"${i ? '' : ' selected'}>${esc(lkLabel(l))}${l.note ? ` · ${esc(l.note)}` : ''}</option>`).join('')}</optgroup>` : ''}
+      ${used.length ? `<optgroup label="Sdílet obsazenou">${used.map(x => `<option value="${esc(x.l.id)}">${esc(lkLabel(x.l))} · ${esc(lkWho(x))}</option>`).join('')}</optgroup>` : ''}</select></label>
+      ${free.length ? '' : '<p class="small muted">Žádná skříňka není volná, jde jen sdílet obsazenou.</p>'}`,
   });
   if (res.value !== 'ok') return;
-  const r = lkAssign(S, res.form.elements.namedItem('lk').value, key, { by: ui.me ? ui.me.label : '' });
+  const id = res.form.elements.namedItem('lk').value, meta = { by: ui.me ? ui.me.label : '' }, l = lkFind(S, id);
+  const r = l && l.key ? lkAddPerson(S, id, key, meta) : lkAssign(S, id, key, meta);
   if (r.err) { toast(r.err, true); return; }
   save();
   renderAll();
-  toast(`${lkName(e)}: skříňka ${lkLabel(r.l)}.`);
+  toast(`${lkName(e)}: skříňka ${lkLabel(r.l)}${lkKeys(r.l).length > 1 ? ' (sdílená)' : ''}.`);
+}
+/** Další člověk do obsazené skříňky (sdílená, 2.82). */
+async function lkAddPersonDialog(id) {
+  const l = lkFind(S, id);
+  if (!l) return;
+  const have = new Map();
+  lkList().forEach(x => { if (x.id !== id) lkKeys(x).forEach(k => have.set(k, have.has(k) ? `${have.get(k)}, ${lkLabel(x)}` : lkLabel(x))); });
+  const inIt = new Set(lkKeys(l));
+  const res = await dialog({
+    title: `Další člověk do skříňky ${lkLabel(l)}`, ok: 'Přidat',
+    html: `<p class="small">Skříňku teď má <b>${esc(lkKeys(l).map(k => lkName(S.employees[k]) || lkNameIn(l, k)).join(', '))}</b>. Přidaný ji bude sdílet.</p>
+      <label class="field"><span>Kdo</span><select name="who" autofocus><option value="">— vyber člověka —</option>${lkPeopleOptions('', [], have, inIt)}</select></label>
+      <label class="check" id="lkMoveBox" hidden><input type="checkbox" name="move" checked><span id="lkMoveTxt"></span></label>`,
+    onOpen: dlg => {
+      const sel = $('select[name="who"]', dlg), box = $('#lkMoveBox', dlg);
+      const upd = () => { const h = have.get(sel.value); box.hidden = !h; if (h) $('#lkMoveTxt', dlg).textContent = `Přesun: z dosavadní skříňky ${h} ho odebrat`; };
+      sel.addEventListener('change', upd);
+      upd();
+    },
+    validate: form => (form.elements.namedItem('who').value ? '' : 'Vyber člověka.'),
+  });
+  if (res.value !== 'ok') return;
+  const who = res.form.elements.namedItem('who').value, meta = { by: ui.me ? ui.me.label : '' };
+  const r = lkAddPerson(S, id, who, meta);
+  if (r.err) { toast(r.err, true); return; }
+  const move = res.form.elements.namedItem('move');
+  if (move && move.checked && !$('#lkMoveBox').hidden) lkOf(who).filter(x => x.id !== id).forEach(x => lkRemovePerson(S, x.id, who, meta));
+  save();
+  renderAll();
+  toast(`${lkName(S.employees[who])} přidán do skříňky ${lkLabel(r.l)}.`);
 }
 async function lkRangeDialog() {
   const res = await dialog({
@@ -632,7 +705,7 @@ async function lkLabelsDialog() {
   const all = lkList();
   if (!all.length) { toast('Soupis skříněk je prázdný.', true); return; }
   const u = lkUi(), ov = lkOverview(S.lockers, S.employees, todayIso()), q = norm(u.q.trim());
-  const shown = u.f === 'without' ? [] : ov.rows.filter(x => (u.f === 'all' || (u.f === 'used' ? x.st === 'used' || x.st === 'unknown' : u.f === 'multi' ? x.l.key && ov.multi.includes(x.l.key) : x.st === u.f)) && lkMatchQ(x, q)).map(x => x.l);
+  const shown = u.f === 'without' ? [] : ov.rows.filter(x => lkInFilter(x, u.f, ov) && lkMatchQ(x, q)).map(x => x.l);
   const rows = [...new Set(all.map(l => l.row))];
   const filtered = shown.length && shown.length < all.length;
   const res = await dialog({
@@ -644,7 +717,7 @@ async function lkLabelsDialog() {
         <label class="check"><input type="radio" name="which" value="test"><span>Zkušební štítek (kontrola velikosti a okrajů)</span></label>
       </div>
       <div class="lk-lblpick"><label class="check"><input type="checkbox" name="locker" checked><span>Štítek na skříňku (označení, beze jména)</span></label>
-        <label class="check"><input type="checkbox" name="key" checked><span>Štítek na záložní klíč (polovina s nápisem, druhou polovinou se klíč zalepí)</span></label></div>
+        <label class="check"><input type="checkbox" name="key" checked><span>Štítek na záložní klíč (polovina s nápisem, druhou polovinou se klíč zalepí)${ov.nokey ? `; ${ov.nokey} ${lkN(ov.nokey)} bez záložního klíče se vynechá` : ''}</span></label></div>
       <label class="field lk-out"><span>Výstup</span><select name="out"><option value="">Tisknout</option><option value="download">Stáhnout PDF</option><option value="zpl">Stáhnout ZPL pro Zebru</option></select></label>
       <p class="small muted lk-printhint" id="lkZbState">Hledám Zebra Browser Print…</p>`,
     onOpen: dlg => {
@@ -703,6 +776,26 @@ function bindLockers() {
       lkDelete(S, l.id);
       save();
       renderAll();
+      return;
+    }
+    if (t.dataset.lkaddp) { lkAddPersonDialog(t.dataset.lkaddp); return; }
+    if (t.dataset.lkrm) {
+      const l = lkFind(S, t.dataset.lkrm), k = t.dataset.lkkey;
+      if (!l || !lkHas(l, k)) return;
+      const nm = lkName(S.employees[k]) || lkNameIn(l, k);
+      if (!(await confirmBox(`Odebrat ze skříňky ${lkLabel(l)}?`, `${nm} skříňku ${lkLabel(l)} mít nebude, ostatní ji mají dál.`, 'Odebrat'))) return;
+      lkRemovePerson(S, l.id, k, meta);
+      save();
+      renderAll();
+      return;
+    }
+    if (t.dataset.lknokey) {
+      const l = lkFind(S, t.dataset.lknokey);
+      if (!l) return;
+      lkSetNoKey(S, l.id, !l.nokey);
+      save();
+      renderLockers();
+      toast(l.nokey ? `Skříňka ${lkLabel(l)}: není záložní klíč, štítek klíče se netiskne.` : `Skříňka ${lkLabel(l)}: záložní klíč je.`);
       return;
     }
     if (t.dataset.lkgive) lkGiveDialog(t.dataset.lkgive);

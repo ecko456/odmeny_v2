@@ -62,6 +62,18 @@ Tři oddělené projekty, každý ve vlastním repozitáři:
   text neukládá ani nezapisuje do logu, v databázi je jen počet volání kvůli limitu. Bez
   klíče k API je funkce vypnutá a tlačítko se neukáže.
 
+## Co je nového ve verzi 2.82
+
+- **Není záložní klíč**: u každé skříňky je tlačítko Není záložní klíč (zapnuté svítí oranžově). Skříňka
+  dostane štítek „bez záložního klíče“ a jde vyfiltrovat. Při tisku se pro ni štítek záložního klíče netiskne.
+- **Víc lidí v jedné skříňce**:
+  - u obsazené skříňky je „+ další člověk“, každého jde odebrat křížkem;
+  - Přidělit skříňku (u lidí bez skříňky a v Lidech) nabídne volné skříňky i sdílení obsazené;
+  - když ze sdílené skříňky odejde jen jeden (vyřazený nebo smazaný), skříňka zůstane obsazená a svítí
+    „odebrat …“ (žlutý pruh a filtr Odebrat), aplikace hned nabídne Odebrat ze skříňky;
+  - K vyklizení je skříňka, až když odejdou všichni.
+  - Vložení z Excelu dál dává do skříňky jednoho člověka, další se přidají ručně.
+
 ## Co je nového ve verzi 2.81.1
 
 - **Oprava tisku štítků**: tisk už nepoužívá PDF, takže se nic nestahuje a nezáleží na tom, čím se v počítači

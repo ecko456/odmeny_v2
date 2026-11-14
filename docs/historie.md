@@ -6,13 +6,50 @@ Text zápisů se nepřepisuje (jsou to zadání uživatele a rozhodnutí v době
 
 Obsah:
 
-- Zápisy „Kde jsme skončili“ (od 2.79.2 dozadu po 1. 10. 2026)
+- Zápisy „Kde jsme skončili“ (od 2.80 dozadu po 1. 10. 2026)
 - Verze a stav (celá tabulka verzí s commity, zadání 2.1)
 - Ostrá verze a verze 2 (původní text, platil do 7. 11. 2026)
 - Plán: víc modulů v jedné aplikaci (zadání 2. 10. 2026, nezačato)
 - Původní úvod a Tři oddělené projekty
 
 ## Zápisy „Kde jsme skončili“
+
+Stav k 14. 11. 2026 (verze 2.80):
+
+- Uživatel: „Ještě přidej modul "Skříňky" kde bude soupis skříněk spárováno s lidmi. Abych měl přehled kdo má
+  a kdo nemá skříňku, případně kdo již není v seznamu nebo je vyřazený a stále mu evidujeme skříňku, abych mi u toho
+  vyskočilo upozornění "Je třeba vyprázdnit". Dále prvotně budu potřebovat mít možnost vložil data pomocí ctrl + v
+  z excelu, s tím že sloupec A je písmenkové označení, B číselní označení a C jméno a příjmení. Zde budu potřebovat
+  zapojit AI, protože je to psané ručně a mohou tam být překlepy atd.. … U těch kde to nebude možné nebo nejisté, tak
+  mi nabídne možnost přiřadit pracovníka, který ještě nebyl spárovaný nebo vyberu pracovník u nás již nepracuje.
+  A nahoře bude přehled "Volné skříňky" "Obsazené skříňky" "K vyklizení"“. Během práce doplnil: „ať je možné u každé
+  skříňky tisk štítku, vždy aby tam byly dva štítky jeden na skříňku s označením skříňky a beze jména a druhý štítek
+  to samé jen tam bude ještě nápis "Záložní klíč" a bude to jen na polovině štítku, aby se klíč zalepil dovnitř …
+  štítky tisknu pomocí zebry 100 × 35 mm … Případně ať je možnost hromadného tisku všech štítků.“
+  - **Párování bez AI**: jména lidí nesmí k třetí straně (pravidlo z 2.48), páruje se jen v prohlížeči. AI jako
+    doplněk pro nejisté řádky je otázka na uživatele (poslalo by jména Anthropicu, chce výslovný souhlas).
+  - Core `28-skrinky.js`: `S.lockers = {list: [{id, row, no, key, name (snímek), gone, raw, note, at, by}]}`,
+    `cleanLockers` (skříňka řada + číslo jednou, nejvýš 3000), `lkState` (free / used / unknown = jméno z importu bez
+    člověka / clear = K vyklizení: vyřazený, smazaný z Lidí, „už u nás nepracuje“), `lkOverview` (počty, lidé bez
+    skříňky, víc skříněk), `lkParse` (nadpis, duplicita, bez čísla), `lkMatch` (`endTok`, Levenshtein `attDist`,
+    y/i, w/v, zdvojená písmena; jistě: přesně, jen příjmení jediné v Lidech, příjmení a iniciála, jasný překlep;
+    přesná shoda má přednost; člověk jen jednou; návrhy s ≥ 0,6), `lkApply` (přepíše stejné řada + číslo, `replace`
+    smaže ostatní), `lkAssign`, `lkSetGone`, `lkFree`, `lkSetNote`, `lkDelete`, `lkAddRange` (nejvýš 500),
+    `lkSheets` (Excel), `lkLabelSeq` (štítky po dvojicích), `lkChanges` (kind `locker`, přidělení / uvolnění /
+    „už nepracuje“ mají vlastní značku `m`, aby se v historii neslučovaly).
+  - App `35-skrinky.js`: menu `skrinky` s odznakem K vyklizení (`#navLockers`), dlaždice Volné / Obsazené
+    (z toho nespárováno) / K vyklizení / Lidé bez skříňky, pruh Je třeba vyprázdnit, filtry, hledání, tabulka
+    (Přidělit, Změnit s přesunem, Uvolnit, Vyprázdněno, Štítky, poznámka, smazat), Ctrl+V kdekoli ve Skříňkách
+    (`shClipRows`) i tlačítko Vložit z Excelu (pole pro vložení, telefon), okno K rozhodnutí (Návrh, Ještě bez
+    skříňky, Vyřazení, Ostatní, Už u nás nepracuje, Volná, nerozhodnuto), Spárováno automaticky (jde změnit),
+    Nahradit celý soupis, Přidat řadu, Excel, štítky PDF 100 × 35 mm (jedna strana = štítek; štítek na skříňku
+    jen označení, štítek klíče jen levá polovina s černým pruhem ZÁLOŽNÍ KLÍČ a značkami přehybu), hromadně
+    všechny / filtr / řada a druhy štítků. Lidé: řádek se skříňkou v detailu, potvrzení vyřazení a smazání
+    zmíní skříňku, hláška Je třeba vyprázdnit; import Konců trestů hlásí skříňky vyřazených.
+  - Data verze 58 (`DATA_VERSION`, `CLIENT_VERSION`, `ODM_MIN_CLIENT`), `ODM_VERSION` 2.80, `blank().lockers`,
+    `LOG_KINDS` + `locker`, `MERGE_TOP.lockers`, historie filtr a ikona.
+  - Testy: core „Skříňky (2.80)“, `test_odmeny` (426 pro 57), nový `tests/e2e_skrinky.js`, `e2e_mobil` (19 položek
+    menu), `e2e_upgrade_prev` 2.79.2 → 2.80 (archiv `fb58f73`, vložení soupisu nad převzatými lidmi).
 
 Stav k 13. 11. 2026 (verze 2.79.2):
 
@@ -2709,7 +2746,8 @@ Stav k 1. 10. 2026:
 | 2.79.2 | `fb58f73` | kontrola UI nejhoršími daty (čipy a tabulky na telefonu i monitoru, poznámka, Docházka s dlouhými jmény, PDF bez textu mimo stranu, celá objednávka a množství), test e2e_zatez |
 | 2.80 | `f9883e0` | modul Skříňky (soupis z Excelu Ctrl+V, párování ručně psaných jmen v prohlížeči, Volné / Obsazené / K vyklizení, Je třeba vyprázdnit u vyřazených a odešlých, štítky Zebra 100 × 35 mm na skříňku a záložní klíč) (data verze 58) |
 | 2.81 | `aee56c0` | Skříňky – výzva k vyklizení (štítek s datem a lhůtou 7 pracovních dnů, nabídka po vyřazení, lhůta uplynula), tisk štítků bez nastavování (ZPL 203 dpi přes Zebra Browser Print, jinak okno tisku s PDF ve skutečné velikosti, stažení ZPL) (data verze 59) |
-| 2.81.1 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
+| 2.81.1 | `aa91632` | tisk štítků přes okno tisku bez PDF (obrázky štítků, stránka 100 × 35 mm bez okrajů), zkušební štítek, CSP bez rámců |
+| 2.82 | větev `claude/elegant-clarke-vl5n7d` | **aktuální**: Skříňky – Není záložní klíč (štítek klíče se netiskne, filtr), víc lidí v jedné skříňce (přidat, odebrat, sdílet přes Přidělit skříňku, odchod jednoho = odebrat, všech = K vyklizení) (data verze 60) |
 
 Verze 2.1 přidala:
 
